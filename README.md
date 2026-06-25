@@ -38,20 +38,9 @@ set -e
 
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y curl git build-essential
-curl -fsSL https://pnpm.io | sh -
-
-```
-
-## Script 2
-
-Restart the terminal and verify pnpm is on the path.
-
-```
-
-export SHELL=/bin/bash
-pnpm env use --global lts
-
-echo "=== 5. Optimizing Hyper-V Desktop Enhanced Session (XRDP) ==="
+curl -fsSL https://get.pnpm.io/install.sh | sh -
+source /home/username/.bashrc
+pnpm runtime set node latest -g
 
 ```
 
