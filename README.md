@@ -55,7 +55,7 @@ echo "=== 5. Optimizing Hyper-V Desktop Enhanced Session (XRDP) ==="
 
 ```
 
-## Script 3
+## Skipped Scripts
 
 I'm not going to run these
 
