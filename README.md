@@ -44,6 +44,13 @@ pnpm runtime set node latest -g
 
 ```
 
+Install Claude and add to path
+
+```
+curl -fsSL https://claude.ai/install.sh | bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+```
+
 ## Skipped Scripts
 
 I'm not going to run these
