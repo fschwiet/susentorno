@@ -49,6 +49,19 @@ Install Claude and add to path
 ```
 curl -fsSL https://claude.ai/install.sh | bash
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+claude mcp add --transport http context7 https://mcp.context7.com/mcp
+```
+
+Install codex
+
+```
+curl -fsSL https://chatgpt.com/codex/install.sh | sh
+```
+
+## Misc Scripts
+
+```
+sudo apt update && sudo apt install okular  # another markdown reader
 ```
 
 ## Skipped Scripts
