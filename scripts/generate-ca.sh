@@ -12,4 +12,6 @@ openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
   -subj "/CN=sbx-sandbox-proxy-ca" \
   -addext "subjectAltName=DNS:api.anthropic.com,DNS:claude.com,DNS:platform.claude.com,DNS:statsig.anthropic.com,DNS:mcp-proxy.anthropic.com,DNS:downloads.claude.ai"
 
+cp "$out_dir/cert.pem" vm
+
 echo "Generated CA cert/key in $out_dir"

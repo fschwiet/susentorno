@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "commander": "^15.0.0",
+    "configamatron": "link:",
     "yaml": "^2.6.0"
   },
   "devDependencies": {

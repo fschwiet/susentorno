@@ -11,10 +11,10 @@ See `docs/superpowers/specs/2026-07-01-envoy-sandbox-proxy-design.md` for the fu
 
 ## Host-side setup
 
-1. `pnpm install`
-2. `configamatron import-sbx-network-policy balanced.policy.txt` — produces `allowlist.txt`.
-3. `bash scripts/generate-ca.sh` — produces `envoy/ca/cert.pem` and `envoy/ca/key.pem`.
-4. `configamatron build-envoy-config` — produces `envoy/envoy.yaml` from `allowlist.txt`.
+1. `pnpm install .`
+2. `pnpm exec configamatron import-sbx-network-policy balanced.policy.txt` — produces `allowlist.txt`.
+3. `bash scripts/generate-ca.sh` — produces `envoy/ca/cert.pem` and `envoy/ca/key.pem`. Duplicates cert.pem in the vm folder.
+4. `pnpm exec configamatron build-envoy-config` — produces `envoy/envoy.yaml` from `allowlist.txt`.
 5. Add the `SessionStart` hook to `~/.claude/settings.json`, then run `claude` once on the host so the hook populates `envoy/secrets/sds-secret.yaml`.
 
 ```
@@ -36,10 +36,10 @@ See `docs/superpowers/specs/2026-07-01-envoy-sandbox-proxy-design.md` for the fu
 
 ## VM-side setup
 
-1. Copy `envoy/ca/cert.pem` into the VM.
+1. Copy vm folder into the VM.
 2. Copy `vm/credentials.json.template` into the VM, to wherever the Claude Code CLI expects `credentials.json`.
-3. `sudo bash scripts/vm-trust-ca.sh <path-to-cert.pem>` (inside the VM).
-4. `sudo bash scripts/vm-setup-iptables.sh <host-ip>` (inside the VM).
+3. `sudo bash vm/vm-trust-ca.sh <path-to-cert.pem>` (inside the VM).
+4. `sudo bash vm/vm-setup-iptables.sh <host-ip>` (inside the VM).
 
 ## Verification
 

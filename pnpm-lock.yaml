@@ -11,6 +11,9 @@ importers:
       commander:
         specifier: ^15.0.0
         version: 15.0.0
+      configamatron:
+        specifier: 'link:'
+        version: 'link:'
       yaml:
         specifier: ^2.6.0
         version: 2.9.0
