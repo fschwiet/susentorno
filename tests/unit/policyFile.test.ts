@@ -1,0 +1,33 @@
+import { describe, it, expect } from 'vitest';
+import { parsePolicyFile } from '../../src/policyFile';
+
+describe('parsePolicyFile', () => {
+  it('collects network/allow resources, splitting terminate hosts from passthrough', () => {
+    const content = [
+      'PROVENANCE   APPLIES_TO      POLICY/RULE                    TYPE               DECISION   RESOURCES',
+      'local        all             default-ai-services            network            allow      **.chatgpt.com:443',
+      '                                                                                          api.anthropic.com:443',
+      '                                                                                          claude.com:443',
+      '',
+      'local        all             default-os-packages            network            allow      archive.ubuntu.com:80',
+      '',
+      'local        all             default-fs-read-allow-all      filesystem:read    allow      **',
+      '',
+      'kit          sandbox:onion   kit:onion                      network            allow      claude.com:443',
+    ].join('\n');
+
+    expect(parsePolicyFile(content)).toEqual({
+      passthrough: ['**.chatgpt.com:443', 'archive.ubuntu.com:80'],
+      terminate: ['api.anthropic.com:443', 'claude.com:443'],
+    });
+  });
+
+  it('returns empty arrays when there are no network/allow rows', () => {
+    const content = [
+      'PROVENANCE   APPLIES_TO      POLICY/RULE                    TYPE               DECISION   RESOURCES',
+      'local        all             default-fs-write-allow-all     filesystem:write   allow      **',
+    ].join('\n');
+
+    expect(parsePolicyFile(content)).toEqual({ passthrough: [], terminate: [] });
+  });
+});
