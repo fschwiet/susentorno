@@ -82,9 +82,10 @@ The VM never holds a usable Claude credential. Instead:
 
 ### Allow-list maintenance
 
-- A simple source-of-truth file (`allowlist.txt` or similar), seeded from `balanced.policy.txt`'s `network allow` rows, lists `host:port` entries, split into *passthrough* (everything except the Anthropic/Claude family) and *terminate* (the Anthropic/Claude family).
-- A generator script reads this file and produces the verbose Envoy `envoy.yaml` (filter chains, SNI/Host matches, routes, access log config).
-- Updating the allow list later means editing the simple file and re-running the generator, then restarting the Envoy container.
+- The repo root is a pnpm/TypeScript project — `configamatron` — scaffolded from the `e2e-starter-projects` template (commander CLI, ESLint/Prettier, tsup build, Vitest unit + e2e tests). This gives a `pnpm test` verification pipeline (format → lint → typecheck → unit tests → build → e2e tests) from the start, rather than a bare, unverified generator script.
+- `configamatron import-sbx-network-policy <policyFile> [-o allowlist.txt]` parses a policy file (e.g. `balanced.policy.txt`) into the source-of-truth `allowlist.txt`: `host:port` entries split into *passthrough* (everything except the Anthropic/Claude family) and *terminate* (the Anthropic/Claude family). `policyFile` is required — no default path, since the current location/format of `balanced.policy.txt` is temporary.
+- `configamatron build-envoy-config [allowlistFile=allowlist.txt] [-o envoy/envoy.yaml]` reads `allowlist.txt` and produces the verbose Envoy `envoy.yaml` (filter chains, SNI/Host matches, routes, access log config).
+- Updating the allow list later means re-running `import-sbx-network-policy` (if the source policy changed) or hand-editing `allowlist.txt`, then `build-envoy-config`, then restarting the Envoy container.
 
 ### Logging
 
@@ -95,17 +96,21 @@ The VM never holds a usable Claude credential. Instead:
 
 ## Components / Deliverables
 
+- `package.json` (name `configamatron`, `bin: configamatron`), `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `tsconfig.json`, `eslint.config.mjs`, `.prettierrc`, `tsup.config.ts`, `vitest.config.ts`, `vitest.e2e.config.ts` — pnpm/TypeScript project at repo root, scaffolded from the `e2e-starter-projects` template.
+- `src/cli.ts` — commander entry point registering the `import-sbx-network-policy` and `build-envoy-config` subcommands.
+- `src/commands/importSbxNetworkPolicy.ts` — parses a policy file into `allowlist.txt`.
+- `src/commands/buildEnvoyConfig.ts` — reads `allowlist.txt`, produces `envoy.yaml`.
+- `tests/unit/*`, `tests/e2e/*` — Vitest unit tests (parsing/generation logic) and e2e tests (invoking the built CLI), per the template's convention.
 - `docker-compose.yml` — runs the Envoy container; publishes 80/443 to the host; bind-mounts config, the CA cert/key, and the SDS secret file.
-- `allowlist.txt` — source-of-truth allow list, seeded from `balanced.policy.txt`.
-- `scripts/generate-envoy-config.*` — reads `allowlist.txt`, produces `envoy.yaml`.
-- `envoy/envoy.yaml` (generated) — Envoy's full config.
+- `allowlist.txt` (generated) — source-of-truth allow list, produced by `configamatron import-sbx-network-policy` from `balanced.policy.txt`.
+- `envoy/envoy.yaml` (generated) — Envoy's full config, produced by `configamatron build-envoy-config`.
 - `envoy/gate.lua` — the placeholder-match gate filter (no secret material in it).
 - `envoy/ca/` — self-signed CA cert/key used only for the terminated Anthropic/Claude domain family.
 - `scripts/host-session-hook.sh` — invoked via the host's `~/.claude/settings.json` `SessionStart` hook; syncs the real token from `~/.claude/credentials.json` into the SDS secret file. Bash rather than PowerShell, so it works unchanged on Windows (via Git Bash), Mac, or Linux.
 - `scripts/vm-setup-iptables.sh` — sets up the DNAT rules inside the Ubuntu VM (run at VM boot).
 - `scripts/vm-trust-ca.sh` — installs Envoy's CA cert into the VM's trust store.
 - `vm/credentials.json.template` — the placeholder OAuth credential to seed inside the VM.
-- `envoy-proxy.md` — new setup/walkthrough doc (prerequisites, host-side steps, VM-side steps, verification steps). The existing `README.md` is out of scope and must not be modified.
+- `envoy-proxy.md` — new setup/walkthrough doc (prerequisites, host-side steps, VM-side steps, verification steps). `legacy/README.md` is out of scope and must not be modified. The template scaffold introduces its own new `README.md` at repo root (describing the `configamatron` CLI), which is separate and not a modification of the legacy one.
 
 ## Error Handling / Failure Behavior
 
@@ -119,6 +124,7 @@ The VM never holds a usable Claude credential. Instead:
 
 ## Testing / Verification Plan
 
+- `pnpm test` (format, lint, typecheck, unit tests, build, e2e tests) passes for the `configamatron` CLI.
 - From inside the VM: `curl` an allow-listed domain succeeds; `curl` a non-allow-listed domain fails/resets.
 - From inside the VM: run the coding agent against `api.anthropic.com` using only the placeholder credential; confirm it gets real responses (proves injection works without the VM ever holding the real token).
 - From inside the VM: manually send a non-placeholder `Authorization` header to `api.anthropic.com` through the proxy; confirm it's rejected (proves the guardrail).
