@@ -16,7 +16,7 @@ describe('generate-ca.sh', () => {
   });
 
   it('generates a CA cert/key covering the terminate hostnames', async () => {
-    await execa('bash', [scriptPath]);
+    await execa('bash', [scriptPath.replace(/\\/g, '/')]);
 
     expect(existsSync(certPath1)).toBe(true);
     expect(existsSync(certPath2)).toBe(true);
