@@ -15,7 +15,23 @@ See `docs/superpowers/specs/2026-07-01-envoy-sandbox-proxy-design.md` for the fu
 2. `configamatron import-sbx-network-policy balanced.policy.txt` — produces `allowlist.txt`.
 3. `bash scripts/generate-ca.sh` — produces `envoy/ca/cert.pem` and `envoy/ca/key.pem`.
 4. `configamatron build-envoy-config` — produces `envoy/envoy.yaml` from `allowlist.txt`.
-5. Add the `SessionStart` hook from `scripts/host-session-hook.sh`'s manual-verification step to `~/.claude/settings.json`, then run `claude` once on the host so the hook populates `envoy/secrets/sds-secret.yaml`.
+5. Add the `SessionStart` hook to `~/.claude/settings.json`, then run `claude` once on the host so the hook populates `envoy/secrets/sds-secret.yaml`.
+
+```
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /path/to/repo/scripts/host-session-hook.sh"
+          }
+        ]
+      }
+    ]
+  }
+```
+
 6. `docker compose up -d`
 
 ## VM-side setup

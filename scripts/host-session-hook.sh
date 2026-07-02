@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-credentials_path="${HOME}/.claude/credentials.json"
+credentials_path="${HOME}/.claude/.credentials.json"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 secret_path="${repo_root}/envoy/secrets/sds-secret.yaml"
 
