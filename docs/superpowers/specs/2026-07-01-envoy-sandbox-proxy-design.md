@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Sandbox a coding agent that runs inside an Ubuntu VM (VMware, on a Windows host) by forcing all of its network traffic through an Envoy proxy (Docker on the Windows host). Envoy:
+Sandbox a coding agent that runs inside an Ubuntu VM (VMware, on a host machine — Windows initially, but the design should not depend on that) by forcing all of its network traffic through an Envoy proxy (Docker on the host machine). Envoy:
 
 1. Restricts outbound network access to an allow list, initially matching `balanced.policy.txt`.
 2. Injects real Claude credentials into requests to Anthropic/Claude endpoints, so the VM itself never holds a usable secret.
@@ -13,15 +13,15 @@ This document supersedes any prior notes in this repo on proxying/sandboxing (`P
 
 - Building our own OAuth refresh-token exchange (relies on the Claude Code CLI on the host refreshing its own credentials normally).
 - Filtering DNS resolution itself — the VM can resolve arbitrary hostnames; enforcement happens at the TLS/HTTP connection layer in Envoy.
-- Changing VMware network mode/topology — routing is enforced entirely via VM-side iptables and Windows-host port publishing.
+- Changing VMware network mode/topology — routing is enforced entirely via VM-side iptables and host-machine port publishing.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────┐         ┌───────────────────────────────────┐
-│  Ubuntu VM (VMware)          │         │  Windows Host                     │
+│  Ubuntu VM (VMware)          │         │  Host Machine (Windows initially) │
 │                              │         │                                   │
-│  coding agent (Claude Code)  │         │  Docker Desktop                   │
+│  coding agent (Claude Code)  │         │  Docker                           │
 │  placeholder credentials.json│         │  ┌─────────────────────────────┐  │
 │                              │         │  │ Envoy container             │  │
 │  iptables (nat/OUTPUT):      │  DNAT   │  │  :443 listener              │  │
@@ -49,7 +49,7 @@ This document supersedes any prior notes in this repo on proxying/sandboxing (`P
 ### Routing
 
 - The VM's traffic is **not** routed via `HTTP_PROXY`/`HTTPS_PROXY` env vars, because the agent inside the VM cannot be trusted to honor them.
-- Instead, VM-side `iptables` NAT rules DNAT all outbound `tcp/443` and `tcp/80` traffic (any destination) directly to the Windows host's IP on Envoy's listener ports. This works regardless of what the agent's tools do, since it operates below the application layer.
+- Instead, VM-side `iptables` NAT rules DNAT all outbound `tcp/443` and `tcp/80` traffic (any destination) directly to the host machine's IP on Envoy's listener ports. This works regardless of what the agent's tools do, since it operates below the application layer.
 - No changes to VMware's network mode are required — the VM only needs routable access to the host's IP, which NAT/bridged modes already provide.
 
 ### TLS handling (port 443)
@@ -76,7 +76,7 @@ The VM never holds a usable Claude credential. Instead:
      - Absent → pass through unchanged (e.g. unauthenticated telemetry calls).
      - Present but does not match the placeholder → reject (403), fail closed. This catches any real or unexpected credential before it can be forwarded, and never has the real secret in its own logic.
    - **Inject (`credential_injector` filter, built into Envoy):** for requests that passed the gate, replaces the `Authorization` header with the real bearer token, sourced from a file-based SDS (Secret Discovery Service) secret. SDS watches the file and hot-reloads on change — no Envoy restart needed.
-3. On the Windows host, a Claude Code `SessionStart` hook (configured in `~/.claude/settings.json`) runs a script every time a Claude Code session starts on the host. It reads `~/.claude/credentials.json`, extracts `.claudeAiOauth.accessToken`, and writes it into the SDS secret file. This keeps the injected token in sync with whatever the host's own logged-in session currently has, without a standalone watcher process.
+3. On the host machine, a Claude Code `SessionStart` hook (configured in `~/.claude/settings.json`) runs a bash script every time a Claude Code session starts on the host. It reads `~/.claude/credentials.json`, extracts `.claudeAiOauth.accessToken`, and writes it into the SDS secret file. This keeps the injected token in sync with whatever the host's own logged-in session currently has, without a standalone watcher process. Bash is used (rather than a Windows-only shell) so the same hook works unchanged if the host machine later moves to Mac or Linux.
 
 **Known limitation:** this only refreshes at host session start, not mid-session token rotation. If the host credentials go fully stale (e.g. `claude` isn't run on the host for a long time and the refresh window lapses), requests needing injection will start failing with 401 until the host token is refreshed by using `claude` there again. Building an independent OAuth refresh flow is explicitly out of scope for this design.
 
@@ -101,7 +101,7 @@ The VM never holds a usable Claude credential. Instead:
 - `envoy/envoy.yaml` (generated) — Envoy's full config.
 - `envoy/gate.lua` — the placeholder-match gate filter (no secret material in it).
 - `envoy/ca/` — self-signed CA cert/key used only for the terminated Anthropic/Claude domain family.
-- `scripts/host-session-hook.ps1` — invoked via the host's `~/.claude/settings.json` `SessionStart` hook; syncs the real token from `~/.claude/credentials.json` into the SDS secret file.
+- `scripts/host-session-hook.sh` — invoked via the host's `~/.claude/settings.json` `SessionStart` hook; syncs the real token from `~/.claude/credentials.json` into the SDS secret file. Bash rather than PowerShell, so it works unchanged on Windows (via Git Bash), Mac, or Linux.
 - `scripts/vm-setup-iptables.sh` — sets up the DNAT rules inside the Ubuntu VM (run at VM boot).
 - `scripts/vm-trust-ca.sh` — installs Envoy's CA cert into the VM's trust store.
 - `vm/credentials.json.template` — the placeholder OAuth credential to seed inside the VM.
