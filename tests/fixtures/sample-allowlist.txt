@@ -1,0 +1,6 @@
+# passthrough
+**.chatgpt.com:443
+archive.ubuntu.com:80
+
+# terminate
+api.anthropic.com:443

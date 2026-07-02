@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { parse } from 'yaml';
 
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
 
@@ -41,6 +42,35 @@ describe('configamatron CLI', () => {
           '',
         ].join('\n'),
       );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('generates envoy.yaml from allowlist.txt with build-envoy-config', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
+    const outputPath = join(dir, 'envoy.yaml');
+    const fixturePath = fileURLToPath(new URL('../fixtures/sample-allowlist.txt', import.meta.url));
+
+    try {
+      const { exitCode } = await execa('node', [
+        cliPath,
+        'build-envoy-config',
+        fixturePath,
+        '-o',
+        outputPath,
+        '--upstream-override',
+        'api.anthropic.com=127.0.0.1:9443',
+      ]);
+
+      expect(exitCode).toBe(0);
+      const config = parse(readFileSync(outputPath, 'utf8')) as any;
+      const cluster = config.static_resources.clusters.find(
+        (c: any) => c.name === 'cluster_terminate_api_anthropic_com',
+      );
+      expect(
+        cluster.load_assignment.endpoints[0].lb_endpoints[0].endpoint.address.socket_address,
+      ).toEqual({ address: '127.0.0.1', port_value: 9443 });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

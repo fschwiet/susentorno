@@ -34,9 +34,9 @@ describe('generateEnvoyConfig', () => {
     const cluster = config.static_resources.clusters.find(
       (c: any) => c.name === 'cluster_terminate_api_anthropic_com',
     );
-    expect(cluster.load_assignment.endpoints[0].lb_endpoints[0].endpoint.address.socket_address).toEqual(
-      { address: 'api.anthropic.com', port_value: 443 },
-    );
+    expect(
+      cluster.load_assignment.endpoints[0].lb_endpoints[0].endpoint.address.socket_address,
+    ).toEqual({ address: 'api.anthropic.com', port_value: 443 });
     expect(cluster.transport_socket.typed_config['@type']).toBe(
       'type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext',
     );
@@ -50,9 +50,9 @@ describe('generateEnvoyConfig', () => {
     const cluster = config.static_resources.clusters.find(
       (c: any) => c.name === 'cluster_terminate_api_anthropic_com',
     );
-    expect(cluster.load_assignment.endpoints[0].lb_endpoints[0].endpoint.address.socket_address).toEqual(
-      { address: '127.0.0.1', port_value: 9443 },
-    );
+    expect(
+      cluster.load_assignment.endpoints[0].lb_endpoints[0].endpoint.address.socket_address,
+    ).toEqual({ address: '127.0.0.1', port_value: 9443 });
     expect(
       cluster.transport_socket.typed_config.common_tls_context.validation_context
         .trust_chain_verification,
@@ -95,9 +95,9 @@ describe('generateEnvoyConfig', () => {
     const cluster = config.static_resources.clusters.find(
       (c: any) => c.name === 'cluster_http_archive_ubuntu_com',
     );
-    expect(cluster.load_assignment.endpoints[0].lb_endpoints[0].endpoint.address.socket_address).toEqual(
-      { address: 'archive.ubuntu.com', port_value: 80 },
-    );
+    expect(
+      cluster.load_assignment.endpoints[0].lb_endpoints[0].endpoint.address.socket_address,
+    ).toEqual({ address: 'archive.ubuntu.com', port_value: 80 });
   });
 
   it('exposes an admin endpoint for readiness checks', () => {

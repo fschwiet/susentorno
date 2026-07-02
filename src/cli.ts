@@ -2,6 +2,7 @@
 import { Command } from 'commander';
 import packageJson from '../package.json';
 import { registerImportSbxNetworkPolicy } from './commands/importSbxNetworkPolicy';
+import { registerBuildEnvoyConfig } from './commands/buildEnvoyConfig';
 
 const program = new Command();
 
@@ -11,5 +12,6 @@ program
   .version(packageJson.version, '-v, --version', 'output the version number');
 
 registerImportSbxNetworkPolicy(program);
+registerBuildEnvoyConfig(program);
 
 program.parse();

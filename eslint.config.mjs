@@ -14,4 +14,10 @@ export default tseslint.config(
       globals: globals.node,
     },
   },
+  {
+    files: ['tests/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
 );
