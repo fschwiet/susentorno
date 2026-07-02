@@ -85,7 +85,19 @@ The VM never holds a usable Claude credential. Instead:
 - The repo root is a pnpm/TypeScript project — `configamatron` — scaffolded from the `e2e-starter-projects` template (commander CLI, ESLint/Prettier, tsup build, Vitest unit + e2e tests). This gives a `pnpm test` verification pipeline (format → lint → typecheck → unit tests → build → e2e tests) from the start, rather than a bare, unverified generator script.
 - `configamatron import-sbx-network-policy <policyFile> [-o allowlist.txt]` parses a policy file (e.g. `balanced.policy.txt`) into the source-of-truth `allowlist.txt`: `host:port` entries split into *passthrough* (everything except the Anthropic/Claude family) and *terminate* (the Anthropic/Claude family). `policyFile` is required — no default path, since the current location/format of `balanced.policy.txt` is temporary.
 - `configamatron build-envoy-config [allowlistFile=allowlist.txt] [-o envoy/envoy.yaml]` reads `allowlist.txt` and produces the verbose Envoy `envoy.yaml` (filter chains, SNI/Host matches, routes, access log config).
+- `build-envoy-config` also accepts a repeatable `--upstream-override <sni-host>=<host:port>` flag that redirects a terminate-cluster's upstream to an arbitrary address instead of the SNI-derived hostname. Production runs never pass this flag; it exists solely so the automated integration tests (see below) can point the Anthropic/Claude cluster at a local mock server while still connecting with the real SNI (e.g. `api.anthropic.com`).
 - Updating the allow list later means re-running `import-sbx-network-policy` (if the source policy changed) or hand-editing `allowlist.txt`, then `build-envoy-config`, then restarting the Envoy container.
+
+### Automated integration testing
+
+- The full Envoy stack (`docker-compose.yml`, generated `envoy.yaml`, `gate.lua`, CA cert/key, SDS secret file) is treated as a transient resource: integration tests bring it up with `docker compose up -d`, exercise it with real HTTP/TLS requests, then tear it down with `docker compose down`. No manual setup is required to run these tests.
+- A small local mock upstream server (HTTPS, returns a canned response and echoes back the `Authorization` header it received) stands in for the real Anthropic/Claude API. Test setup runs `build-envoy-config` with `--upstream-override api.anthropic.com=127.0.0.1:<mockPort>` to build a test-only `envoy.yaml` that routes the terminate cluster there instead of the real service.
+- What this proves automatically, without ever touching a real Anthropic credential or a real VM:
+  - SNI-matched passthrough domains (using real, public, allow-listed hosts) succeed; non-allow-listed SNI is closed with no bytes forwarded.
+  - Port 80 Host-header allow/deny (403) behaves as specified, using real public allow-listed HTTP hosts.
+  - The Lua gate passes the placeholder `Authorization` header through to injection, passes through requests with no `Authorization` header, and rejects (403) any other value — verified by inspecting what the mock upstream received.
+  - The `credential_injector` filter replaces the placeholder with the real secret sourced from the SDS file — verified by asserting the mock upstream received the SDS file's contents, not the placeholder.
+- What stays out of scope for automated tests, because it requires the actual Ubuntu VM: VM-side `iptables` DNAT rules, VM trust of Envoy's CA, and a real coding-agent run inside the VM. These are covered by a manual verification checklist instead (see Testing / Verification Plan).
 
 ### Logging
 
@@ -101,6 +113,8 @@ The VM never holds a usable Claude credential. Instead:
 - `src/commands/importSbxNetworkPolicy.ts` — parses a policy file into `allowlist.txt`.
 - `src/commands/buildEnvoyConfig.ts` — reads `allowlist.txt`, produces `envoy.yaml`.
 - `tests/unit/*`, `tests/e2e/*` — Vitest unit tests (parsing/generation logic) and e2e tests (invoking the built CLI), per the template's convention.
+- `vitest.integration.config.ts` — Vitest config for the `test:integration` script (separate from unit/e2e; longer timeout to account for `docker compose up`).
+- `tests/integration/*` — Vitest integration tests that bring up the full `docker-compose.yml` stack (transiently, via `docker compose up`/`down`), drive it with real requests, and tear it down. Includes `tests/integration/mockUpstream.ts`, the local HTTPS stand-in for the real Anthropic/Claude API.
 - `docker-compose.yml` — runs the Envoy container; publishes 80/443 to the host; bind-mounts config, the CA cert/key, and the SDS secret file.
 - `allowlist.txt` (generated) — source-of-truth allow list, produced by `configamatron import-sbx-network-policy` from `balanced.policy.txt`.
 - `envoy/envoy.yaml` (generated) — Envoy's full config, produced by `configamatron build-envoy-config`.
@@ -124,9 +138,18 @@ The VM never holds a usable Claude credential. Instead:
 
 ## Testing / Verification Plan
 
+**Automated (run in CI, no VM or real credentials required):**
+
 - `pnpm test` (format, lint, typecheck, unit tests, build, e2e tests) passes for the `configamatron` CLI.
+- `pnpm test:integration` brings up the Envoy stack against a mock upstream (see Automated integration testing) and confirms:
+  - An allow-listed passthrough SNI succeeds; a non-allow-listed SNI is closed with no data forwarded.
+  - An allow-listed port-80 `Host` succeeds; a non-allow-listed `Host` gets a 403.
+  - The placeholder `Authorization` header results in the mock upstream receiving the real SDS-sourced token.
+  - A non-placeholder, non-empty `Authorization` header is rejected (403) before reaching the mock upstream.
+  - Envoy logs reflect the allow/deny decisions per the configured log level.
+
+**Manual (requires the actual Ubuntu VM; not automated):**
+
 - From inside the VM: `curl` an allow-listed domain succeeds; `curl` a non-allow-listed domain fails/resets.
-- From inside the VM: run the coding agent against `api.anthropic.com` using only the placeholder credential; confirm it gets real responses (proves injection works without the VM ever holding the real token).
-- From inside the VM: manually send a non-placeholder `Authorization` header to `api.anthropic.com` through the proxy; confirm it's rejected (proves the guardrail).
-- Confirm Envoy logs reflect allow/deny decisions per the configured log level.
-- Confirm an OS package install (`apt-get update`) succeeds through the proxy (validates port 80 handling).
+- From inside the VM: run the coding agent against `api.anthropic.com` using only the placeholder credential; confirm it gets real responses (proves injection works end-to-end without the VM ever holding the real token).
+- Confirm an OS package install (`apt-get update`) succeeds through the proxy (validates port 80 handling from inside the VM).
