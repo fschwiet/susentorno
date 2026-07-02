@@ -108,6 +108,7 @@ function buildTerminateEntry(entry: string, overrides: UpstreamOverride[]) {
   const cluster = {
     name: clusterName,
     type: 'STRICT_DNS',
+    dns_lookup_family: 'V4_ONLY',
     lb_policy: 'ROUND_ROBIN',
     load_assignment: {
       cluster_name: clusterName,
@@ -153,6 +154,7 @@ function buildHttp80Entry(entry: string) {
   const cluster = {
     name: clusterName,
     type: 'STRICT_DNS',
+    dns_lookup_family: 'V4_ONLY',
     lb_policy: 'ROUND_ROBIN',
     load_assignment: {
       cluster_name: clusterName,
@@ -188,6 +190,7 @@ export function generateEnvoyConfig(
   const http80Built = allowlist.passthrough.filter((e) => e.endsWith(':80')).map(buildHttp80Entry);
 
   return {
+    node: { id: 'sandbox-proxy', cluster: 'sandbox-proxy' },
     admin: {
       address: { socket_address: { address: '0.0.0.0', port_value: 9901 } },
     },

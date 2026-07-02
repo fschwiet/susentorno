@@ -3,7 +3,7 @@ dist/
 
 test-results/
 
-allowlist.txt
+/allowlist.txt
 envoy/envoy.yaml
 envoy/ca/*.pem
 envoy/secrets/*.yaml

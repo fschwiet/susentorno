@@ -8,7 +8,10 @@ export interface MockUpstream {
 }
 
 export function startMockUpstream(): Promise<MockUpstream> {
-  const pems = selfsigned.generate([{ name: 'commonName', value: 'mock-upstream' }], { days: 1 });
+  const pems = selfsigned.generate([{ name: 'commonName', value: 'mock-upstream' }], {
+    days: 1,
+    keySize: 2048,
+  });
   const receivedAuthorizationHeaders: string[] = [];
 
   const server = createServer({ key: pems.private, cert: pems.cert }, (req, res) => {
@@ -18,7 +21,7 @@ export function startMockUpstream(): Promise<MockUpstream> {
   });
 
   return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(0, '0.0.0.0', () => {
       const address = server.address();
       if (address === null || typeof address === 'string') {
         throw new Error('failed to bind mock upstream');
