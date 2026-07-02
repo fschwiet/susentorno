@@ -5,3 +5,4 @@ test-results/
 
 allowlist.txt
 envoy/envoy.yaml
+envoy/ca/*.pem
