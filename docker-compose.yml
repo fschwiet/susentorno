@@ -1,6 +1,7 @@
 services:
   envoy:
     image: envoyproxy/envoy:v1.31-latest
+    restart: always
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     ports:
