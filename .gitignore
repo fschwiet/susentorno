@@ -8,3 +8,4 @@ envoy/envoy.yaml
 envoy/ca/*.pem
 envoy/secrets/*.yaml
 vm/cert.pem
+vm/github-config.txt
