@@ -6,56 +6,6 @@ Should I disable side channel mitigations? https://kb.vmware.com/s/article/79832
 
 # Create a Virtual Machine
 
-## Create a new VM in VM Workstation Pro
-
-- 12288 MB of static memory
-- 127gb of dynamic disk spacee
-- 1 processor with 6 cores
-- default network switch
-
-# Copy and run setup.bash
-
-## Enable open-vm-tools
-
-```
-sudo apt update && sudo apt install -y open-vm-tools-desktop
-```
-
-VMware > VM Settings > Options > Isolation:
-
-- Uncheck Enable copy and paste
-- Uncheck Enable drag and drop
-- Disable Shared Folders
-
-## Script 1
-
-The first sudo will request a password.
-
-```
-#!/bin/bash
-# Exit immediately if a command exits with a non-zero status
-set -e
-
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y curl git build-essential
-curl -fsSL https://get.pnpm.io/install.sh | sh -
-source /home/username/.bashrc
-pnpm runtime set node latest -g
-
-```
-
-Install Claude and add to path
-
-```
-curl -fsSL https://claude.ai/install.sh | bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
-claude mcp add --transport http context7 https://mcp.context7.com/mcp
-```
-
-Install codex
-
-```
-curl -fsSL https://chatgpt.com/codex/install.sh | sh
 ```
 
 ## Misc Scripts

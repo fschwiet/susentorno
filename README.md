@@ -2,7 +2,8 @@
 
 Utility code to help set up isolated environments for agents on Windows. A proxy is configured to run in Docker to restrict network access and inject necessary credentials.
 
-See [usage instructions](envoy-proxy.md).
+See [VM setup](vm-setup.md)
+See [Envoy proxy setup](envoy-proxy.md).
 
 ## Prerequisites
 
