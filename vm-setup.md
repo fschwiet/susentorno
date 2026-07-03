@@ -33,7 +33,10 @@ vmhgfs-fuse   /mnt/hgfs    fuse    defaults,allow_other    0    0
 
 Run these in order, without `sudo` — each script uses `sudo` internally where it actually needs root. Open a **new terminal** wherever noted, so the shell picks up PATH changes the previous step's installer wrote to `~/.bashrc`.
 
+Before step 5, create a fine-grained personal access token at https://github.com/settings/personal-access-tokens/new (scoped to whichever repos the VM needs to clone/push), then on the host run `pnpm exec configamatron write-github-config` and paste the token when prompted.
+
 1. `bash vm/01-apt-packages.sh`
 2. `bash vm/02-install-pnpm.sh`
 3. Open a new terminal, then `bash vm/03-install-tools.sh`
 4. Open a new terminal, then `bash vm/04-configure-tools.sh`
+5. `bash vm/05-github-auth.sh`
