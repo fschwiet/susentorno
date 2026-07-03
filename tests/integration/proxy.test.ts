@@ -6,6 +6,7 @@ import { request as httpRequest } from 'node:http';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { startMockUpstream, stopMockUpstream, type MockUpstream } from './mockUpstream';
+import { gitBashPath } from './gitBash';
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
@@ -44,7 +45,7 @@ async function waitForAdminReady(timeoutMs: number): Promise<void> {
 beforeAll(async () => {
   mockUpstream = await startMockUpstream();
 
-  await execa('bash', ['scripts/generate-ca.sh'], { cwd: repoRoot });
+  await execa(gitBashPath(), ['scripts/generate-ca.sh'], { cwd: repoRoot });
   caCertPem = readFileSync(`${repoRoot}/envoy/ca/cert.pem`, 'utf8');
 
   await execa(
