@@ -1,6 +1,8 @@
 # configamatron
 
-CLI that builds the Envoy sandbox proxy's configuration from a network policy allow list.
+Utility code to help set up isolated environments for agents on Windows. A proxy is configured to run in Docker to restrict network access and inject necessary credentials.
+
+See [usage instructions](envoy-proxy.md).
 
 ## Prerequisites
 
@@ -31,8 +33,3 @@ Run the full pipeline in one command:
 ```
 pnpm test
 ```
-
-## Commands
-
-- `configamatron import-sbx-network-policy <policyFile> [-o allowlist.txt]` — parses a network
-  policy file (e.g. `balanced.policy.txt`) into the source-of-truth `allowlist.txt`.
