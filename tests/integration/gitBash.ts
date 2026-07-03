@@ -27,7 +27,10 @@ export function gitBashPath(): string {
  */
 export function opensslPath(): string {
   return resolveFrom(
-    ['C:\\Program Files\\Git\\usr\\bin\\openssl.exe', 'C:\\Program Files\\Git\\mingw64\\bin\\openssl.exe'],
+    [
+      'C:\\Program Files\\Git\\usr\\bin\\openssl.exe',
+      'C:\\Program Files\\Git\\mingw64\\bin\\openssl.exe',
+    ],
     'openssl',
   );
 }

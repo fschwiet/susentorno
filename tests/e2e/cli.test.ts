@@ -87,7 +87,10 @@ describe('write-github-config', () => {
   it('writes vm/github-config.txt from a valid token and host git identity', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
     const gitConfigPath = join(dir, 'gitconfig');
-    writeFixtureGitConfig(gitConfigPath, '[user]\n\tname = Test User\n\temail = test@example.com\n');
+    writeFixtureGitConfig(
+      gitConfigPath,
+      '[user]\n\tname = Test User\n\temail = test@example.com\n',
+    );
 
     try {
       const { exitCode, stdout } = await execa('node', [cliPath, 'write-github-config'], {
@@ -114,7 +117,10 @@ describe('write-github-config', () => {
   it('rejects a malformed token without writing the file', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
     const gitConfigPath = join(dir, 'gitconfig');
-    writeFixtureGitConfig(gitConfigPath, '[user]\n\tname = Test User\n\temail = test@example.com\n');
+    writeFixtureGitConfig(
+      gitConfigPath,
+      '[user]\n\tname = Test User\n\temail = test@example.com\n',
+    );
 
     try {
       const { exitCode, stderr } = await execa('node', [cliPath, 'write-github-config'], {
