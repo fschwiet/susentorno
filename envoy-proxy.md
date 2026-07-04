@@ -33,16 +33,15 @@ See `docs/superpowers/specs/2026-07-01-envoy-sandbox-proxy-design.md` for the fu
 ```
 
 6. `docker compose up -d`
-7. **Windows hosts only:** in an **Administrator** PowerShell, `powershell -File scripts/host-allow-vm-inbound.ps1` — Windows Firewall blocks inbound connections by default, which silently breaks the VM's DNAT'd traffic to Envoy even though everything else is configured correctly. This opens inbound TCP 80/443 (Envoy) and UDP 53 (the DNS stub, step 8) from the VM's host-only network adapter, and prints the host IP to use in VM-side step 4 and host-side step 8. It defaults to the `VMware Network Adapter VMnet1` interface; pass `-AdapterAlias` if your host-only network uses a different adapter (`Get-NetIPConfiguration` lists them). Safe to re-run if the host's IP on that network changes.
-   - (Mac/Linux hosts: not yet scripted — allow inbound tcp/80, tcp/443, and udp/53 from the VM through your host firewall equivalent (`pfctl`/`ufw`) and determine the host-only interface's IP yourself.)
-8. `node scripts/host-dns-stub.js <host-ip>` (leave running in its own terminal) — when the VM is on a host-only network it has no route to the internet at all, but its DHCP-assigned DNS server is still the host's own IP (see `vmnetdhcp.conf`), and nothing normally answers there. This isn't a real resolver: since the VM's iptables rules (VM-side step 4) redirect tcp/80 and tcp/443 to Envoy regardless of destination IP, and Envoy resolves the real hostname itself, the actual IP returned to the VM never matters for the connections that count — the stub just answers every A-record query with a fixed placeholder IP so the VM's own DNS lookups stop timing out and its tools proceed to attempt the (redirected) connection at all. `<host-ip>` is the same address as step 7.
+7. **Windows hosts only:** in an **Administrator** PowerShell, `powershell -File scripts/host-allow-vm-inbound.ps1` — Windows Firewall blocks inbound connections by default, which silently breaks the VM's DNAT'd traffic to Envoy even though everything else is configured correctly. This opens inbound TCP 80/443 (Envoy) from the VM's host-only network adapter, and prints the host IP to use in VM-side setup. It defaults to the `VMware Network Adapter VMnet1` interface; pass `-AdapterAlias` if your host-only network uses a different adapter (`Get-NetIPConfiguration` lists them). Safe to re-run if the host's IP on that network changes.
+   - (Mac/Linux hosts: not yet scripted — allow inbound tcp/80 and tcp/443 from the VM through your host firewall equivalent (`pfctl`/`ufw`) and determine the host-only interface's IP yourself.)
 
 ## VM-side setup
 
 1. Copy vm folder into the VM.
 2. Copy `vm/credentials.json.template` into the VM, to wherever the Claude Code CLI expects `credentials.json`.
 3. `sudo bash vm/vm-trust-ca.sh <path-to-cert.pem>` (inside the VM).
-4. `sudo bash vm/vm-setup-iptables.sh <host-ip>` (inside the VM) — `<host-ip>` is printed by host-side step 7.
+4. `sudo bash vm/vm-setup-persistence.sh <host-ip>` (inside the VM) — `<host-ip>` is printed by host-side step 7. Installs and starts `dns-stub.service` (answers the VM's own DNS queries locally — see `docs/superpowers/specs/2026-07-04-vm-dns-stub-design.md`) and `iptables-rules@<host-ip>.service` (the DNAT rules previously applied by a standalone `vm-setup-iptables.sh` run), and points the VM's resolver at the local stub via a netplan override. Both units are enabled to start automatically on every future VM boot — no manual re-run needed after this.
 
 ## Verification
 
