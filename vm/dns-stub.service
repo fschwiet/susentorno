@@ -1,0 +1,12 @@
+[Unit]
+Description=Sandbox VM DNS stub (answers all A queries with a placeholder)
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/node @@VM_DIR@@/dns-stub.js
+Restart=on-failure
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target
