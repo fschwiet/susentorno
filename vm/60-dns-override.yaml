@@ -1,0 +1,8 @@
+network:
+  version: 2
+  ethernets:
+    dns-override:
+      match:
+        name: "en*"
+      nameservers:
+        addresses: [127.0.0.1]
