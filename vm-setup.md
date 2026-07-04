@@ -52,11 +52,14 @@ vmhgfs-fuse   /mnt/hgfs    fuse    defaults,allow_other    0    0
 
 Run these in order, without `sudo` — each script uses `sudo` internally where it actually needs root. Open a **new terminal** wherever noted, so the shell picks up PATH changes the previous step's installer wrote to `~/.bashrc`.
 
-1. `bash vm/01-apt-packages.sh`
-2. `bash vm/02-install-pnpm.sh`
-3. Open a new terminal, then `bash vm/03-install-tools.sh`
-4. Open a new terminal, then `bash vm/04-configure-tools.sh`
+1. `vm/01-apt-packages.sh`
+2. `vm/02-install-pnpm.sh`
+3. Open a new terminal, then `vm/03-install-tools.sh`
+4. Open a new terminal, then `vm/04-configure-tools.sh`
 
-- A browser will open for context7 login. Close it and cancel the script if you don't have credentials
+- A browser will open for context7 login. Close it and cancel the script if you don't want to use credentials.
 
 5. `bash vm/05-github-auth.sh`
+
+6. Do the VM-side things from [envoy-proxy](envoy-proxy.md).
+7. Change network connection from NAT to host-only
