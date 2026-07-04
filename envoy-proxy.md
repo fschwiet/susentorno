@@ -41,7 +41,7 @@ See `docs/superpowers/specs/2026-07-01-envoy-sandbox-proxy-design.md` for the fu
 1. Copy vm folder into the VM.
 2. Copy `vm/credentials.json.template` into the VM, to wherever the Claude Code CLI expects `credentials.json`.
 3. `sudo bash vm/vm-trust-ca.sh <path-to-cert.pem>` (inside the VM).
-4. `sudo bash vm/vm-setup-persistence.sh <host-ip>` (inside the VM) — `<host-ip>` is printed by host-side step 7. Installs and starts `dns-stub.service` (answers the VM's own DNS queries locally — see `docs/superpowers/specs/2026-07-04-vm-dns-stub-design.md`) and `iptables-rules@<host-ip>.service` (the DNAT rules previously applied by a standalone `vm-setup-iptables.sh` run), and points the VM's resolver at the local stub via a netplan override. Both units are enabled to start automatically on every future VM boot — no manual re-run needed after this.
+4. `sudo bash vm/vm-setup-persistence.sh <host-ip>` (inside the VM) — `<host-ip>` is printed by host-side step 7. Installs and starts `dnsmasq` (answers the VM's own DNS queries locally — see `docs/superpowers/specs/2026-07-04-vm-dns-stub-dnsmasq-design.md`) and `iptables-rules@<host-ip>.service` (the DNAT rules previously applied by a standalone `vm-setup-iptables.sh` run), and points the VM's resolver at the local stub via a netplan override. Both units are enabled to start automatically on every future VM boot — no manual re-run needed after this.
 
 ## Verification
 
