@@ -12,9 +12,9 @@ See `docs/superpowers/specs/2026-07-01-envoy-sandbox-proxy-design.md` for the fu
 ## Host-side setup
 
 1. `pnpm install .`
-2. `pnpm exec configamatron import-sbx-network-policy balanced.policy.txt` — produces `allowlist.txt`.
+2. `pnpm exec configamatron import-sbx-network-policy balanced.policy.txt` — produces `allowlist.txt`. (copy to current-allow-list.txt to update version tracked in source control)
 3. `bash scripts/generate-ca.sh` — produces `envoy/ca/cert.pem` and `envoy/ca/key.pem`. Duplicates cert.pem in the vm folder.
-4. `pnpm exec configamatron build-envoy-config` — produces `envoy/envoy.yaml` from `allowlist.txt`.
+4. `pnpm exec configamatron build-envoy-config  ./current-allow-list.txt` — produces `envoy/envoy.yaml` from `allowlist.txt`.
 5. Add the `SessionStart` hook to `~/.claude/settings.json`, then run `claude` once on the host so the hook populates `envoy/secrets/sds-secret.yaml`.
 
 ```
