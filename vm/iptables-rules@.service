@@ -1,0 +1,11 @@
+[Unit]
+Description=Sandbox VM iptables DNAT rules (host IP: %i)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/bash @@VM_DIR@@/vm-setup-iptables.sh %i
+
+[Install]
+WantedBy=multi-user.target
