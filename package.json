@@ -16,6 +16,7 @@
   ],
   "scripts": {
     "build": "tsup",
+    "cli": "pnpm build && node dist/cli.js",
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
