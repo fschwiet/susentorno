@@ -4,6 +4,7 @@ import packageJson from '../package.json';
 import { registerImportSbxNetworkPolicy } from './commands/importSbxNetworkPolicy';
 import { registerBuildEnvoyConfig } from './commands/buildEnvoyConfig';
 import { registerWriteGithubConfig } from './commands/writeGithubConfig';
+import { registerRunProxy } from './commands/runProxy';
 
 const program = new Command();
 
@@ -15,5 +16,6 @@ program
 registerImportSbxNetworkPolicy(program);
 registerBuildEnvoyConfig(program);
 registerWriteGithubConfig(program);
+registerRunProxy(program);
 
 await program.parseAsync();

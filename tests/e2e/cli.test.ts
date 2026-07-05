@@ -15,6 +15,14 @@ describe('configamatron CLI', () => {
     expect(exitCode).toBe(0);
   });
 
+  it('lists run-proxy with its flags in help output', async () => {
+    const { stdout, exitCode } = await execa('node', [cliPath, 'run-proxy', '--help']);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain('--credentials');
+    expect(stdout).toContain('--no-refresh');
+    expect(stdout).toContain('--service');
+  });
+
   it('parses a policy file into allowlist.txt with import-sbx-network-policy', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
     const outputPath = join(dir, 'allowlist.txt');
