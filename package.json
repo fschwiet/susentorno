@@ -28,6 +28,8 @@
   "dependencies": {
     "commander": "^15.0.0",
     "configamatron": "link:",
+    "execa": "^9.6.1",
+    "watcher": "^2.3.1",
     "yaml": "^2.6.0"
   },
   "devDependencies": {
@@ -35,7 +37,6 @@
     "@types/node": "^25.9.3",
     "eslint": "^10.5.0",
     "eslint-config-prettier": "^10.1.8",
-    "execa": "^9.6.1",
     "globals": "^17.6.0",
     "prettier": "^3.8.4",
     "selfsigned": "^2.4.1",

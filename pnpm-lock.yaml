@@ -14,6 +14,12 @@ importers:
       configamatron:
         specifier: 'link:'
         version: 'link:'
+      execa:
+        specifier: ^9.6.1
+        version: 9.6.1
+      watcher:
+        specifier: ^2.3.1
+        version: 2.3.1
       yaml:
         specifier: ^2.6.0
         version: 2.9.0
@@ -30,9 +36,6 @@ importers:
       eslint-config-prettier:
         specifier: ^10.1.8
         version: 10.1.8(eslint@10.6.0)
-      execa:
-        specifier: ^9.6.1
-        version: 9.6.1
       globals:
         specifier: ^17.6.0
         version: 17.7.0
@@ -745,6 +748,9 @@ packages:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
 
+  dettle@1.0.5:
+    resolution: {integrity: sha512-ZVyjhAJ7sCe1PNXEGveObOH9AC8QvMga3HJIghHawtG7mE4K5pW9nz/vDGAr/U7a3LWgdOzEE7ac9MURnyfaTA==}
+
   es-module-lexer@2.2.0:
     resolution: {integrity: sha512-3lGxdTXCLfe1MYfTz1y2ksAAUM4NAOP6rPEjxGJVKO7TZ5+tvHCaQWGpC4Y3IXvW3ece0Cz1cIP4FWBxOnGCTQ==}
 
@@ -1141,6 +1147,12 @@ packages:
     resolution: {integrity: sha512-gjVS5hOP+M3wMm5nmNOucbIrqudzs9v/57bWRHQWLYklXqoXKrVfYW2W9+glfGsqtPgpiz5WwyEEB+ksXIx3gQ==}
     engines: {node: '>=18'}
 
+  promise-make-counter@1.0.2:
+    resolution: {integrity: sha512-FJAxTBWQuQoAs4ZOYuKX1FHXxEgKLEzBxUvwr4RoOglkTpOjWuM+RXsK3M9q5lMa8kjqctUrhwYeZFT4ygsnag==}
+
+  promise-make-naked@3.0.2:
+    resolution: {integrity: sha512-B+b+kQ1YrYS7zO7P7bQcoqqMUizP06BOyNSBEnB5VJKDSWo8fsVuDkfSmwdjF0JsRtaNh83so5MMFJ95soH5jg==}
+
   punycode@2.3.1:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
@@ -1205,6 +1217,9 @@ packages:
     resolution: {integrity: sha512-aulFJcD6YK8V1G7iRB5tigAP4TsHBZZrOV8pjV++zdUwmeV8uzbY7yn6h9MswN62adStNZFuCIx4haBnRuMDaw==}
     engines: {node: '>=18'}
 
+  stubborn-fs@1.2.5:
+    resolution: {integrity: sha512-H2N9c26eXjzL/S/K+i/RHHcFanE74dptvvjM8iwzwbVcWY/zjBbgRqF3K0DY4+OD+uTTASTBvDoxPDaPN02D7g==}
+
   sucrase@3.35.1:
     resolution: {integrity: sha512-DhuTmvZWux4H1UOnWMB3sk0sbaCVOoQZjv8u1rDoTV0HTdGem9hkAZtl4JZy8P2z4Bg0nT+YMeOFyVr4zcG5Tw==}
     engines: {node: '>=16 || 14 >=14.17'}
@@ -1216,6 +1231,9 @@ packages:
 
   thenify@3.3.1:
     resolution: {integrity: sha512-RVZSIV5IG10Hk3enotrhvz0T9em6cyHBLkH/YAZuKqd8hRkKhSfCGIcP2KUY0EPxndzANBmNllzWPwak+bheSw==}
+
+  tiny-readdir@2.7.4:
+    resolution: {integrity: sha512-721U+zsYwDirjr8IM6jqpesD/McpZooeFi3Zc6mcjy1pse2C+v19eHPFRqz4chGXZFw7C3KITDjAtHETc2wj7Q==}
 
   tinybench@2.9.0:
     resolution: {integrity: sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg==}
@@ -1382,6 +1400,9 @@ packages:
         optional: true
       jsdom:
         optional: true
+
+  watcher@2.3.1:
+    resolution: {integrity: sha512-d3yl+ey35h05r5EFP0TafE2jsmQUJ9cc2aernRVyAkZiu0J3+3TbNugNcqdUJDoWOfL2p+bNsN427stsBC/HnA==}
 
   which@2.0.2:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
@@ -1929,6 +1950,8 @@ snapshots:
 
   detect-libc@2.1.2: {}
 
+  dettle@1.0.5: {}
+
   es-module-lexer@2.2.0: {}
 
   esbuild@0.27.7:
@@ -2297,6 +2320,12 @@ snapshots:
     dependencies:
       parse-ms: 4.0.0
 
+  promise-make-counter@1.0.2:
+    dependencies:
+      promise-make-naked: 3.0.2
+
+  promise-make-naked@3.0.2: {}
+
   punycode@2.3.1: {}
 
   readdirp@4.1.2: {}
@@ -2382,6 +2411,8 @@ snapshots:
 
   strip-final-newline@4.0.0: {}
 
+  stubborn-fs@1.2.5: {}
+
   sucrase@3.35.1:
     dependencies:
       '@jridgewell/gen-mapping': 0.3.13
@@ -2399,6 +2430,10 @@ snapshots:
   thenify@3.3.1:
     dependencies:
       any-promise: 1.3.0
+
+  tiny-readdir@2.7.4:
+    dependencies:
+      promise-make-counter: 1.0.2
 
   tinybench@2.9.0: {}
 
@@ -2518,6 +2553,12 @@ snapshots:
       '@types/node': 25.9.4
     transitivePeerDependencies:
       - msw
+
+  watcher@2.3.1:
+    dependencies:
+      dettle: 1.0.5
+      stubborn-fs: 1.2.5
+      tiny-readdir: 2.7.4
 
   which@2.0.2:
     dependencies:
