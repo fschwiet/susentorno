@@ -20,9 +20,14 @@ describe('readCredentials', () => {
   it('parses accessToken and expiresAt from claudeAiOauth', () => {
     writeFileSync(
       path,
-      JSON.stringify({ claudeAiOauth: { accessToken: 'sk-ant-oat01-xyz', expiresAt: 1_700_000_000_000 } }),
+      JSON.stringify({
+        claudeAiOauth: { accessToken: 'sk-ant-oat01-xyz', expiresAt: 1_700_000_000_000 },
+      }),
     );
-    expect(readCredentials(path)).toEqual({ accessToken: 'sk-ant-oat01-xyz', expiresAt: 1_700_000_000_000 });
+    expect(readCredentials(path)).toEqual({
+      accessToken: 'sk-ant-oat01-xyz',
+      expiresAt: 1_700_000_000_000,
+    });
   });
 
   it('returns null when the file does not exist', () => {

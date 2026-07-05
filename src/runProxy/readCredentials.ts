@@ -22,8 +22,7 @@ export function readCredentials(path: string): Credentials | null {
   }
 
   const oauth = (parsed as { claudeAiOauth?: unknown } | null)?.claudeAiOauth as
-    | { accessToken?: unknown; expiresAt?: unknown }
-    | undefined;
+    { accessToken?: unknown; expiresAt?: unknown } | undefined;
 
   if (!oauth || typeof oauth.accessToken !== 'string' || typeof oauth.expiresAt !== 'number') {
     return null;

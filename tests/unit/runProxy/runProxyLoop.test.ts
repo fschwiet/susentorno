@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { runProxyLoop, type RunProxyConfig, type RunProxyDeps } from '../../../src/runProxy/runProxyLoop';
+import {
+  runProxyLoop,
+  type RunProxyConfig,
+  type RunProxyDeps,
+} from '../../../src/runProxy/runProxyLoop';
 import type { Credentials } from '../../../src/runProxy/types';
 
 const MIN = 60_000;

@@ -22,7 +22,10 @@ describe('planNextActions', () => {
 
   it('propagates when the token differs from the last applied one', () => {
     const result = planNextActions(
-      input({ creds: { accessToken: 'token-B', expiresAt: 1_000_000 }, lastAppliedToken: 'token-A' }),
+      input({
+        creds: { accessToken: 'token-B', expiresAt: 1_000_000 },
+        lastAppliedToken: 'token-A',
+      }),
     );
     expect(result.propagate).toBe(true);
   });

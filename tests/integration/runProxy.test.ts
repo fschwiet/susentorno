@@ -64,7 +64,11 @@ function secretLastUpdated(dump: string): string | null {
   return null;
 }
 
-async function waitFor<T>(fn: () => Promise<T>, predicate: (value: T) => boolean, timeoutMs: number): Promise<T> {
+async function waitFor<T>(
+  fn: () => Promise<T>,
+  predicate: (value: T) => boolean,
+  timeoutMs: number,
+): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   let last: T;
   while (Date.now() < deadline) {
@@ -117,7 +121,11 @@ beforeAll(async () => {
   );
 
   // run-proxy performs the startup writeSecret + force-recreate; wait for admin readiness.
-  await waitFor(() => adminConfigDump(), (dump) => secretLastUpdated(dump) !== null, 60000);
+  await waitFor(
+    () => adminConfigDump(),
+    (dump) => secretLastUpdated(dump) !== null,
+    60000,
+  );
 }, 90000);
 
 afterAll(async () => {
@@ -127,7 +135,10 @@ afterAll(async () => {
   } catch {
     // ignore non-zero/kill result
   }
-  await execa('docker', ['compose', 'down'], { cwd: repoRoot, env: { ...process.env, ...envoyEnv } });
+  await execa('docker', ['compose', 'down'], {
+    cwd: repoRoot,
+    env: { ...process.env, ...envoyEnv },
+  });
   await stopMockUpstream(mockUpstream);
   rmSync(tempDir, { recursive: true, force: true });
 }, 60000);
