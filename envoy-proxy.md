@@ -27,7 +27,7 @@ See `docs/superpowers/specs/2026-07-01-envoy-sandbox-proxy-design.md` for the fu
 2. Copy `vm/credentials.json.template` within the vm to wherever the Claude Code CLI expects `credentials.json` (~/.claude/.credentials.json)
 3. `sudo vm/vm-trust-ca.sh <path-to-cert.pem>` (inside the VM).
 4. `sudo vm/vm-setup-persistence.sh <host-ip>` (inside the VM) — `<host-ip>` is printed by host-side step 6. Installs and starts `dnsmasq` (answers the VM's own DNS queries locally — see `docs/superpowers/specs/2026-07-04-vm-dns-stub-dnsmasq-design.md`) and `iptables-rules@<host-ip>.service` (the DNAT rules previously applied by a standalone `vm-setup-iptables.sh` run), and points the VM's resolver at the local stub via a netplan override. Both units are enabled to start automatically on every future VM boot — no manual re-run needed after this.
-5. Switch the virtual machine's network to host-only
+5. Switch the virtual machine's network to host-only, then **reboot the VM** so the boot-time rules unit installs the host-only default route (host-only mode has no DHCP gateway; see `docs/superpowers/specs/2026-07-05-vm-host-only-default-route-design.md`). A live mode-switch alone does not re-run the unit; `sudo systemctl restart iptables-rules@<host-ip>.service` is an alternative to a reboot.
 
 ## Verification
 

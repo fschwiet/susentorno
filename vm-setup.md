@@ -64,4 +64,4 @@ Run these in order, without `sudo` — each script uses `sudo` internally where 
 5. `bash vm/05-github-auth.sh`
 
 6. Do the VM-side things from [envoy-proxy](envoy-proxy.md).
-7. Change network connection from NAT to host-only
+7. Change network connection from NAT to host-only, then **reboot the VM** so the boot-time sandbox rules unit installs the host-only default route (see [envoy-proxy](envoy-proxy.md) and `docs/superpowers/specs/2026-07-05-vm-host-only-default-route-design.md`).
