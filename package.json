@@ -28,7 +28,6 @@
   },
   "dependencies": {
     "commander": "^15.0.0",
-    "configamatron": "link:",
     "execa": "^9.6.1",
     "watcher": "^2.3.1",
     "yaml": "^2.6.0"

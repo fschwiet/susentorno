@@ -5,7 +5,7 @@ dir="$(cd "$(dirname "$0")" && pwd)"
 config_path="$dir/github-config.txt"
 
 if [ ! -f "$config_path" ]; then
-  echo "05-github-auth: $config_path not found. Run 'pnpm exec configamatron write-github-config' on the host first, then re-copy vm/ to the VM." >&2
+  echo "05-github-auth: $config_path not found. Run 'configamatron write-github-config' on the host first, then re-copy vm/ to the VM." >&2
   exit 1
 fi
 

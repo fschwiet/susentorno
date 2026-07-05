@@ -45,7 +45,7 @@ vmhgfs-fuse   /mnt/hgfs    fuse    defaults,allow_other    0    0
 - Create a fine-grained personal access token at https://github.com/settings/personal-access-tokens/new
   - Scope it to whatever repositories you want
   - For pull/push ability to those repositories, enable read/write access to Contents
-- run `pnpm exec configamatron write-github-config` and provide the access token when prompted
+- run `pnpm cli write-github-config` and provide the access token when prompted
   - username and email will also be extracted from current git config
 
 ## Install other typical tools
