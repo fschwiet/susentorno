@@ -34,6 +34,8 @@ Once that completes, shut down the VM so host-VM integration can be configured:
 
 Start the VM and verify shared folders show up within '/mnt/hgfs/'. If /mnt/hgfs isn't availabe stop and start folder sharing. If /mnt/hgfs is empty add the following to /etc/fstab and reboot:
 
+> sudo vi /etc/fstab
+
 ```
 vmhgfs-fuse   /mnt/hgfs    fuse    defaults,allow_other    0    0
 ```
