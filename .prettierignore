@@ -3,3 +3,4 @@ pnpm-lock.yaml
 .claude/
 docs/
 legacy/
+templates/

@@ -1,0 +1,6 @@
+network:
+  version: 2
+  ethernets:
+    __IFACE__:
+      nameservers:
+        addresses: [127.0.0.1]
