@@ -7,6 +7,7 @@ import { registerImportSbxNetworkPolicy } from './commands/importSbxNetworkPolic
 import { registerBuildEnvoyConfig } from './commands/buildEnvoyConfig';
 import { registerWriteGithubConfig } from './commands/writeGithubConfig';
 import { registerRunProxy } from './commands/runProxy';
+import { registerProxyLogs } from './commands/proxyLogs';
 
 const program = new Command();
 
@@ -21,5 +22,6 @@ registerImportSbxNetworkPolicy(program);
 registerBuildEnvoyConfig(program);
 registerWriteGithubConfig(program);
 registerRunProxy(program);
+registerProxyLogs(program);
 
 await program.parseAsync();

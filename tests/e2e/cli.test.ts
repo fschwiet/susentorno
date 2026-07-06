@@ -200,4 +200,43 @@ describe('write-github-config', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('lists proxy-logs with its flags in help output', async () => {
+    const { stdout, exitCode } = await execa('node', [cliPath, 'proxy-logs', '--help']);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain('--blocked');
+    expect(stdout).toContain('--unique');
+    expect(stdout).toContain('--debounce');
+    expect(stdout).toContain('--no-follow');
+  });
+
+  it('proxy-logs exits 1 without an environment', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
+    try {
+      const { exitCode, stderr } = await execa('node', [cliPath, 'proxy-logs'], {
+        cwd: dir,
+        reject: false,
+      });
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain("run 'configamatron init' first");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('proxy-logs rejects --unique together with --debounce', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
+    try {
+      await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: dir });
+      const { exitCode, stderr } = await execa(
+        'node',
+        [cliPath, 'proxy-logs', '--unique', '--debounce', '30'],
+        { cwd: dir, reject: false },
+      );
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain('mutually exclusive');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
