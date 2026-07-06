@@ -3,14 +3,17 @@ import { execa } from 'execa';
 import { connect as tlsConnect } from 'node:tls';
 import { request as httpsRequest } from 'node:https';
 import { request as httpRequest } from 'node:http';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { startMockUpstream, stopMockUpstream, type MockUpstream } from './mockUpstream';
-import { gitBashPath } from './gitBash';
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
 const allowlistFixture = fileURLToPath(new URL('./fixtures/allowlist.txt', import.meta.url));
+const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
+const envRoot = join(repoRoot, '.configamatron');
+const proxyDir = join(envRoot, 'proxy');
 
 const HTTPS_PORT = 18443;
 const HTTP_PORT = 18080;
@@ -45,8 +48,11 @@ async function waitForAdminReady(timeoutMs: number): Promise<void> {
 beforeAll(async () => {
   mockUpstream = await startMockUpstream();
 
-  await execa(gitBashPath(), ['scripts/generate-ca.sh'], { cwd: repoRoot });
-  caCertPem = readFileSync(`${repoRoot}/envoy/ca/cert.pem`, 'utf8');
+  // Fresh environment per run: environments are rebuilt from scratch, never migrated.
+  rmSync(envRoot, { recursive: true, force: true });
+  await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: repoRoot });
+  await execa('node', [cliPath, 'generate-ca'], { cwd: repoRoot });
+  caCertPem = readFileSync(join(proxyDir, 'ca', 'cert.pem'), 'utf8');
 
   await execa(
     'node',
@@ -54,17 +60,15 @@ beforeAll(async () => {
       cliPath,
       'build-envoy-config',
       allowlistFixture,
-      '-o',
-      `${repoRoot}/envoy/envoy.yaml`,
       '--upstream-override',
       `api.anthropic.com=host.docker.internal:${mockUpstream.port}`,
     ],
     { cwd: repoRoot },
   );
 
-  mkdirSync(`${repoRoot}/envoy/secrets`, { recursive: true });
+  mkdirSync(join(proxyDir, 'secrets'), { recursive: true });
   writeFileSync(
-    `${repoRoot}/envoy/secrets/sds-secret.yaml`,
+    join(proxyDir, 'secrets', 'sds-secret.yaml'),
     [
       'resources:',
       '  - "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret',
@@ -77,7 +81,7 @@ beforeAll(async () => {
   );
 
   await execa('docker', ['compose', 'up', '-d'], {
-    cwd: repoRoot,
+    cwd: proxyDir,
     env: {
       ...process.env,
       ENVOY_HTTPS_PORT: String(HTTPS_PORT),
@@ -87,10 +91,10 @@ beforeAll(async () => {
   });
 
   await waitForAdminReady(30000);
-}, 60000);
+}, 90000);
 
 afterAll(async () => {
-  await execa('docker', ['compose', 'down'], { cwd: repoRoot });
+  await execa('docker', ['compose', 'down'], { cwd: proxyDir });
   await stopMockUpstream(mockUpstream);
 }, 30000);
 

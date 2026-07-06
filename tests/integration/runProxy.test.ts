@@ -1,16 +1,18 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { execa, type ResultPromise } from 'execa';
 import { request as httpRequest } from 'node:http';
-import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startMockUpstream, stopMockUpstream, type MockUpstream } from './mockUpstream';
-import { gitBashPath } from './gitBash';
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
 const allowlistFixture = fileURLToPath(new URL('./fixtures/allowlist.txt', import.meta.url));
+const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
+const envRoot = join(repoRoot, '.configamatron');
+const proxyDir = join(envRoot, 'proxy');
 
 const HTTPS_PORT = 18543;
 const HTTP_PORT = 18180;
@@ -89,34 +91,26 @@ beforeAll(async () => {
   credentialsPath = join(tempDir, '.credentials.json');
   writeCredentials('token-initial');
 
-  await execa(gitBashPath(), ['scripts/generate-ca.sh'], { cwd: repoRoot });
+  rmSync(envRoot, { recursive: true, force: true });
+  await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: repoRoot });
+  await execa('node', [cliPath, 'generate-ca'], { cwd: repoRoot });
   await execa(
     'node',
     [
       cliPath,
       'build-envoy-config',
       allowlistFixture,
-      '-o',
-      `${repoRoot}/envoy/envoy.yaml`,
       '--upstream-override',
       `api.anthropic.com=host.docker.internal:${mockUpstream.port}`,
     ],
     { cwd: repoRoot },
   );
-  mkdirSync(`${repoRoot}/envoy/secrets`, { recursive: true });
 
   // Start run-proxy in the background with refresh disabled (no real auth/network).
+  // No --secret flag: exercises the environment default secret path.
   proxyProc = execa(
     'node',
-    [
-      cliPath,
-      'run-proxy',
-      '--no-refresh',
-      '--credentials',
-      credentialsPath,
-      '--secret',
-      'envoy/secrets/sds-secret.yaml',
-    ],
+    [cliPath, 'run-proxy', '--no-refresh', '--credentials', credentialsPath],
     { cwd: repoRoot, env: { ...process.env, ...envoyEnv }, reject: false },
   );
 
@@ -126,7 +120,7 @@ beforeAll(async () => {
     (dump) => secretLastUpdated(dump) !== null,
     60000,
   );
-}, 90000);
+}, 120000);
 
 afterAll(async () => {
   proxyProc?.kill('SIGINT');
@@ -136,7 +130,7 @@ afterAll(async () => {
     // ignore non-zero/kill result
   }
   await execa('docker', ['compose', 'down'], {
-    cwd: repoRoot,
+    cwd: proxyDir,
     env: { ...process.env, ...envoyEnv },
   });
   await stopMockUpstream(mockUpstream);
@@ -160,7 +154,7 @@ describe('run-proxy propagates credential changes to the running proxy', () => {
     );
 
     expect(secretLastUpdated(after)).not.toBe(before);
-    expect(readFileSync(`${repoRoot}/envoy/secrets/sds-secret.yaml`, 'utf8')).toContain(
+    expect(readFileSync(join(proxyDir, 'secrets', 'sds-secret.yaml'), 'utf8')).toContain(
       'Bearer token-rotated',
     );
   }, 90000);
