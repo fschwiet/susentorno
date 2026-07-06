@@ -67,6 +67,8 @@ Start the VM and verify the share appears under `/mnt/hgfs/`. If it doesn't, sto
 vmhgfs-fuse   /mnt/hgfs    fuse    defaults,allow_other    0    0
 ```
 
+Note: I've had to edit /etc/fstab every single time eventually. You may just want to edit it now, or reboot and check if the drive is mounted to be super sure you don't need to.
+
 ### Run the numbered scripts
 
 Complete "Proxy setup" first, so `vm-shared` contains `cert.pem`, `github-config.txt`, and `credentials.json`.
