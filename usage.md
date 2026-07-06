@@ -73,15 +73,15 @@ Note: I've had to edit /etc/fstab every single time eventually. You may just wan
 
 Complete "Proxy setup" first, so `vm-shared` contains `cert.pem`, `github-config.txt`, and `credentials.json`.
 
-Run the scripts from the shared folder in number order. Run them without `sudo` except where noted — each script uses `sudo` internally where it needs root. Open a **new terminal** where noted so the shell picks up PATH changes written to `~/.bashrc`:
+Run the scripts from the shared folder in number order. Run them without `sudo` — each script uses `sudo` internally where it needs root. Open a **new terminal** where noted so the shell picks up PATH changes written to `~/.bashrc`:
 
 1. `01-apt-packages.sh`
 2. `02-install-pnpm.sh`
 3. Open a new terminal, then `03-install-tools.sh`
 4. Open a new terminal, then `04-configure-tools.sh` — a browser opens for context7 login; close it and cancel the script if you don't want to use credentials.
 5. `05-github-auth.sh`
-6. `sudo <path>/06-trust-ca.sh` — trusts the proxy CA. Defaults to the `cert.pem` sitting next to the script.
-7. `sudo <path>/07-setup-persistence.sh <host-ip>` — `<host-ip>` is printed by proxy setup step 6. Installs and starts dnsmasq (local DNS stub) and the `iptables-rules@<host-ip>.service` DNAT rules, and points the VM's resolver at the local stub via a netplan override. Both units start automatically on every future VM boot.
+6. `06-trust-ca.sh` — trusts the proxy CA. Defaults to the `cert.pem` sitting next to the script.
+7. `07-setup-persistence.sh <host-ip>` — `<host-ip>` is printed by proxy setup step 6. Installs and starts dnsmasq (local DNS stub) and the `iptables-rules@<host-ip>.service` DNAT rules, and points the VM's resolver at the local stub via a netplan override. Both units start automatically on every future VM boot.
 8. Put the placeholder credential where the Claude Code CLI expects it:
 
    ```

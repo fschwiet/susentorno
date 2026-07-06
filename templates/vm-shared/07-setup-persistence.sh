@@ -5,11 +5,11 @@ host_ip="${1:?usage: 07-setup-persistence.sh <host-ip>}"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-apt-get install -y dnsmasq
+sudo apt-get install -y dnsmasq
 
-cp "${script_dir}/dnsmasq-stub.conf" /etc/dnsmasq.d/sandbox-stub.conf
+sudo cp "${script_dir}/dnsmasq-stub.conf" /etc/dnsmasq.d/sandbox-stub.conf
 
-cp "${script_dir}/iptables-rules@.service" /etc/systemd/system/iptables-rules@.service
+sudo cp "${script_dir}/iptables-rules@.service" /etc/systemd/system/iptables-rules@.service
 
 # Discover the primary network interface. The netplan DNS override must bind to
 # the same ethernet id the installer used (the physical NIC name, e.g. ens33) so
@@ -30,12 +30,12 @@ if [[ -z "${iface}" ]]; then
   exit 1
 fi
 
-sed "s|__IFACE__|${iface}|g" "${script_dir}/60-dns-override.yaml" > /etc/netplan/60-dns-override.yaml
-chmod 600 /etc/netplan/60-dns-override.yaml
-netplan apply
+sed "s|__IFACE__|${iface}|g" "${script_dir}/60-dns-override.yaml" | sudo tee /etc/netplan/60-dns-override.yaml > /dev/null
+sudo chmod 600 /etc/netplan/60-dns-override.yaml
+sudo netplan apply
 
-systemctl daemon-reload
-systemctl enable --now dnsmasq
-systemctl enable --now "iptables-rules@${host_ip}.service"
+sudo systemctl daemon-reload
+sudo systemctl enable --now dnsmasq
+sudo systemctl enable --now "iptables-rules@${host_ip}.service"
 
 echo "07-setup-persistence: dnsmasq and iptables-rules@${host_ip}.service enabled and started; netplan DNS override applied"
