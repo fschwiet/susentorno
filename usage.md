@@ -34,25 +34,6 @@ Usually done once per environment. Run every command from the environment direct
 
 - It defaults to the `VMware Network Adapter VMnet1` interface; pass `-AdapterAlias` if your host-only network uses a different adapter (`Get-NetIPConfiguration` lists them). Safe to re-run if the host's IP on that network changes.
 
-## Watching proxy traffic
-
-`configamatron proxy-logs` (run from the environment directory, while the proxy is up) streams how the proxy handled each host:
-
-- `ALLOW CRED` — :443, TLS-terminated, real token injected
-- `ALLOW PASS` — :443, SNI passthrough (VM's own TLS)
-- `ALLOW HTTP` — :80, allowed
-- `BLOCK TLS` — :443, no allow-list match (connection dropped)
-- `BLOCK HTTP` — :80, not allow-listed (403)
-
-Flags:
-
-- `--blocked` — only show blocked hosts.
-- `--unique` — show each host/handling once for the session.
-- `--debounce <seconds>` — collapse repeats of a host/handling within a window; the reprint notes how many were collapsed.
-- `--no-follow` — print recent history and exit instead of streaming.
-
-Existing environments created before this feature need `configamatron build-envoy-config` re-run and the proxy restarted (`configamatron run-proxy`) to start emitting access logs.
-
 ## VM setup
 
 May be repeated for any number of VMs; each VM pairs with one environment via its shared folder.
@@ -115,3 +96,20 @@ Run the scripts from the shared folder in number order. Run them without `sudo` 
   - `curl` to an allow-listed domain succeeds; a non-allow-listed domain fails/resets.
   - The coding agent works against `api.anthropic.com` using only the placeholder credential.
   - `apt-get update` succeeds (validates port 80 handling).
+
+### Watching proxy traffic
+
+`configamatron proxy-logs` (run from the environment directory, while the proxy is up) streams how the proxy handled each host:
+
+- `ALLOW CRED` — :443, TLS-terminated, real token injected
+- `ALLOW PASS` — :443, SNI passthrough (VM's own TLS)
+- `ALLOW HTTP` — :80, allowed
+- `BLOCK TLS` — :443, no allow-list match (connection dropped)
+- `BLOCK HTTP` — :80, not allow-listed (403)
+
+Flags:
+
+- `--blocked` — only show blocked hosts.
+- `--unique` — show each host/handling once for the session.
+- `--debounce <seconds>` — collapse repeats of a host/handling within a window; the reprint notes how many were collapsed.
+- `--no-follow` — print recent history and exit instead of streaming.
