@@ -1,9 +1,7 @@
 import type { Entry, Tag } from './classify';
 
 export type ReduceMode =
-  | { kind: 'all' }
-  | { kind: 'unique' }
-  | { kind: 'debounce'; windowMs: number };
+  { kind: 'all' } | { kind: 'unique' } | { kind: 'debounce'; windowMs: number };
 
 export interface OutputLine {
   time: string;

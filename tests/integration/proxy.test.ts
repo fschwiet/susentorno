@@ -240,7 +240,13 @@ describe('Envoy access logging', () => {
     // have a response — that's what flushes the tcp_proxy access log.
     await new Promise<void>((resolve) => {
       const req = httpsRequest(
-        { host: '127.0.0.1', port: HTTPS_PORT, servername: 'pypi.org', path: '/simple/', headers: { host: 'pypi.org' } },
+        {
+          host: '127.0.0.1',
+          port: HTTPS_PORT,
+          servername: 'pypi.org',
+          path: '/simple/',
+          headers: { host: 'pypi.org' },
+        },
         (res) => {
           res.resume();
           req.destroy();

@@ -34,14 +34,17 @@ describe('classify', () => {
 
   it('uses the authority as domain on port 80 and maps via_upstream to ALLOW HTTP', () => {
     expect(
-      classify(line({ pathId: 'http', authority: 'archive.ubuntu.com', codeDetails: 'via_upstream' })),
+      classify(
+        line({ pathId: 'http', authority: 'archive.ubuntu.com', codeDetails: 'via_upstream' }),
+      ),
     ).toEqual({ time: '2026-07-06T12:00:00', tag: 'ALLOW HTTP', domain: 'archive.ubuntu.com' });
   });
 
   it('maps a port-80 direct_response to BLOCK HTTP', () => {
     expect(
-      classify(line({ pathId: 'http', authority: 'nope.example.com', codeDetails: 'direct_response' }))
-        .tag,
+      classify(
+        line({ pathId: 'http', authority: 'nope.example.com', codeDetails: 'direct_response' }),
+      ).tag,
     ).toBe('BLOCK HTTP');
   });
 });

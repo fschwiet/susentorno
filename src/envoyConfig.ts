@@ -22,8 +22,7 @@ function accessLog(pathId: string): Record<string, unknown>[] {
     {
       name: 'envoy.access_loggers.file',
       typed_config: {
-        '@type':
-          'type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog',
+        '@type': 'type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog',
         path: '/dev/stdout',
         log_format: {
           text_format_source: {

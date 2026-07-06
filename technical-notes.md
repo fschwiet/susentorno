@@ -29,6 +29,10 @@ Design history (reference only, not updated):
 - `docs/superpowers/specs/2026-07-05-run-proxy-credential-monitor-design.md`
 - `docs/superpowers/specs/2026-07-05-configamatron-environments-design.md`
 
+### Access logging
+
+Every Envoy path writes a machine-parseable access-log line to the container's stdout: `CFGM|<path-id>|<start-time>|<server-name>|<authority>|<response-code-details>`, where `path-id` is `term`, `pass`, `http`, or `deny443`. Blocked `:443` connections are caught by `listener_443`'s `default_filter_chain`, which routes to the endpoint-less `blackhole` cluster (dropping the connection) after logging the rejected SNI as `deny443`. The `proxy-logs` command parses these lines and maps them to friendly tags; port-80 allow-vs-block is disambiguated by response-code details (`direct_response` = the default-deny 403). The access-log format never includes the `Authorization` header, so injected tokens never reach the logs.
+
 ## VM networking details
 
 `07-setup-persistence.sh` installs two persistent units:

@@ -118,7 +118,9 @@ describe('generateEnvoyConfig', () => {
     const termLog = termChain.filters[0].typed_config.access_log[0];
     expect(termLog.name).toBe('envoy.access_loggers.file');
     expect(termLog.typed_config.path).toBe('/dev/stdout');
-    expect(termLog.typed_config.log_format.text_format_source.inline_string).toMatch(/^CFGM\|term\|/);
+    expect(termLog.typed_config.log_format.text_format_source.inline_string).toMatch(
+      /^CFGM\|term\|/,
+    );
 
     const passChain = listener443.filter_chains.find((fc: any) =>
       fc.filter_chain_match?.server_names?.includes('*.chatgpt.com'),
