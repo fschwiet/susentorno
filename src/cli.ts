@@ -2,6 +2,7 @@
 import { Command } from 'commander';
 import packageJson from '../package.json';
 import { registerInit } from './commands/init';
+import { registerGenerateCa } from './commands/generateCa';
 import { registerImportSbxNetworkPolicy } from './commands/importSbxNetworkPolicy';
 import { registerBuildEnvoyConfig } from './commands/buildEnvoyConfig';
 import { registerWriteGithubConfig } from './commands/writeGithubConfig';
@@ -15,6 +16,7 @@ program
   .version(packageJson.version, '-v, --version', 'output the version number');
 
 registerInit(program);
+registerGenerateCa(program);
 registerImportSbxNetworkPolicy(program);
 registerBuildEnvoyConfig(program);
 registerWriteGithubConfig(program);
