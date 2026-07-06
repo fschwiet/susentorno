@@ -58,7 +58,7 @@ Created by `configamatron init` at `<cwd>/.configamatron`:
     dnsmasq-stub.conf             # ┐ support files consumed by the scripts
     60-dns-override.yaml          # │ above — unnumbered, copied from
     iptables-rules@.service       # ┘ templates
-    credentials.json              # static placeholder credential, copied by init
+    credentials.json              # sanitized copy of the host credential, written by init
     cert.pem                      # written by generate-ca
     github-config.txt             # written by write-github-config
   proxy/                          # everything the host-side proxy needs
@@ -85,8 +85,8 @@ Rules embodied by the layout:
 
 ```
 templates/
-  vm-shared/               # today's vm/ folder: renamed/renumbered scripts, support
-                           #   files, credentials.json (today's credentials.json.template)
+  vm-shared/               # today's vm/ folder: renamed/renumbered scripts and
+                           #   support files (credentials.json.template goes away)
   proxy/                   # gate.lua, docker-compose.yml, host-allow-vm-inbound.ps1
 current-allow-list.txt     # tracked; the shared default allowlist
 usage.md                   # consolidated user guide (replaces envoy-proxy.md + vm-setup.md)
@@ -108,7 +108,7 @@ the stray untracked `vm/.credentials.json`.
 
 | Command | Behavior |
 |---|---|
-| `init` *(new)* | Refuses if `.configamatron` exists ("delete it to rebuild"). Copies `templates/vm-shared/` and `templates/proxy/` into `.configamatron/`, and copies packaged `current-allow-list.txt` → `proxy/allowlist.txt`. Prints next steps. |
+| `init` *(new)* | Refuses if `.configamatron` exists ("delete it to rebuild"). Copies `templates/vm-shared/` and `templates/proxy/` into `.configamatron/`, and copies packaged `current-allow-list.txt` → `proxy/allowlist.txt`. Writes `vm-shared/credentials.json` by reading the host's `~/.claude/.credentials.json` (`--credentials <path>` overrides, as in `run-proxy`) and sanitizing it: `accessToken` → `sk-ant-oat-SANDBOX-PLACEHOLDER` (the exact value the proxy substitutes), `refreshToken` → `sandbox-placeholder-refresh-token`, `expiresAt` → far future (`4102444800000`); all other fields (scopes, subscriptionType, rateLimitTier, …) pass through so the file matches the user's real account shape. The file is written with LF line endings, never CRLF. Prints next steps. |
 | `generate-ca` *(new; replaces `scripts/generate-ca.sh`)* | Node implementation via `selfsigned`, same CN (`sbx-sandbox-proxy-ca`) and SANs as the bash script. Writes `proxy/ca/{cert,key}.pem`; copies `cert.pem` → `vm-shared/`. If a parseable cert+key pair exists, reuses it and just re-copies the cert; present-but-unparseable fails loudly naming the bad file (never silently overwrites key material). Drops the openssl/Git Bash dependency. |
 | `build-envoy-config` | Default input `.configamatron/proxy/allowlist.txt`; default output `.configamatron/proxy/envoy.yaml`. Explicit path arguments/options still accepted. |
 | `write-github-config` | Output moves to `.configamatron/vm-shared/github-config.txt`. |
@@ -143,16 +143,20 @@ detail, spec cross-references) moves to `technical-notes.md`.
   `import-sbx-network-policy`): exit 1, "no .configamatron here — run
   `configamatron init` first".
 - `init` with `.configamatron` present: exit 1, instruct to delete and rebuild.
+- `init` with the host credentials file missing or unparseable: exit 1, naming the
+  path it tried (log in with the `claude` CLI first, or pass `--credentials`).
 - `generate-ca`: reuse valid existing pair; fail loudly on unparseable files.
 - `run-proxy` / `build-envoy-config` with missing inputs: error names the command
   that produces the missing file.
 
 ## Testing
 
-- **Unit:** `envPaths` resolution; init copy manifest; CA generation (expected
-  CN/SANs, reuse-if-valid, reject-if-garbage).
+- **Unit:** `envPaths` resolution; init copy manifest; credential sanitization
+  (placeholder substitution, field pass-through, LF-only output); CA generation
+  (expected CN/SANs, reuse-if-valid, reject-if-garbage).
 - **Integration:** run `init` against the repo root (creating the gitignored
-  `.configamatron`), then `generate-ca`, `build-envoy-config` with the fixture
+  `.configamatron`) with `--credentials` pointing at a fixture so tests never read
+  the developer's real credential file, then `generate-ca`, `build-envoy-config` with the fixture
   allowlist + `--upstream-override`, and the compose stack / `run-proxy` from
   `.configamatron/proxy` using the existing `ENVOY_*` port overrides. The Git Bash
   `generate-ca.sh` invocation disappears; the `gitBash.ts` helper likely goes with it.
