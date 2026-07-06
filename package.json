@@ -29,6 +29,7 @@
   "dependencies": {
     "commander": "^15.0.0",
     "execa": "^9.6.1",
+    "selfsigned": "^2.4.1",
     "watcher": "^2.3.1",
     "yaml": "^2.6.0"
   },
@@ -39,7 +40,6 @@
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.6.0",
     "prettier": "^3.8.4",
-    "selfsigned": "^2.4.1",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.1",
