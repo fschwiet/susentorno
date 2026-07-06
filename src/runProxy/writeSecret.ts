@@ -2,9 +2,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 /**
- * Render the Envoy file-based SDS secret. Structure must match the committed
- * `envoy/secrets/sds-secret.yaml`. This is `scripts/host-session-hook.sh`'s
- * heredoc body ported to TypeScript.
+ * Render the Envoy file-based SDS secret consumed from
+ * .configamatron/proxy/secrets/sds-secret.yaml.
  */
 export function formatSecret(token: string): string {
   return [

@@ -24,6 +24,21 @@ describe('configamatron CLI', () => {
     expect(stdout).toContain('--service');
   });
 
+  it('run-proxy names the missing prerequisite command', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
+    try {
+      await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: dir });
+      const { exitCode, stderr } = await execa('node', [cliPath, 'run-proxy'], {
+        cwd: dir,
+        reject: false,
+      });
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain("run 'configamatron build-envoy-config' first");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('parses a policy file into allowlist.txt with import-sbx-network-policy', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
     const outputPath = join(dir, 'allowlist.txt');

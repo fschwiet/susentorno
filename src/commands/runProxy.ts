@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Command } from 'commander';
@@ -7,10 +8,11 @@ import { recreateContainer } from '../runProxy/recreateContainer';
 import { nudgeRefresh } from '../runProxy/nudgeRefresh';
 import { watchCredentials } from '../runProxy/watchCredentials';
 import { runProxyLoop, type RunProxyDeps } from '../runProxy/runProxyLoop';
+import { requireEnvPathsOrExit } from '../envPaths';
 
 interface RunProxyOptions {
   credentials: string;
-  secret: string;
+  secret?: string;
   service: string;
   refreshWindow: string;
   retryInterval: string;
@@ -31,17 +33,38 @@ export function registerRunProxy(program: Command): void {
       'Claude credentials file to watch',
       join(homedir(), '.claude', '.credentials.json'),
     )
-    .option('--secret <path>', 'SDS secret output path', 'envoy/secrets/sds-secret.yaml')
+    .option(
+      '--secret <path>',
+      'SDS secret output path (default: .configamatron/proxy/secrets/sds-secret.yaml)',
+    )
     .option('--service <name>', 'docker compose service to recreate', 'envoy')
     .option('--refresh-window <minutes>', 'nudge this many minutes before expiry', '3')
     .option('--retry-interval <minutes>', 'wait this many minutes for a nudge to take', '2')
     .option('--max-attempts <n>', 'consecutive failed refreshes before exiting', '3')
     .option('--no-refresh', 'watch and propagate only; never nudge the CLI to refresh')
     .action(async (options: RunProxyOptions) => {
+      const paths = requireEnvPathsOrExit('run-proxy');
+      if (!paths) return;
+      if (!existsSync(paths.envoyConfig)) {
+        console.error(
+          `run-proxy: ${paths.envoyConfig} not found — run 'configamatron build-envoy-config' first`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      if (!existsSync(paths.caCert)) {
+        console.error(
+          `run-proxy: ${paths.caCert} not found — run 'configamatron generate-ca' first`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const secretPath = options.secret ?? paths.sdsSecret;
+
       const deps: RunProxyDeps = {
         readCredentials,
         writeSecret,
-        recreateContainer,
+        recreateContainer: (serviceName) => recreateContainer(serviceName, paths.proxy),
         nudgeRefresh,
         watch: watchCredentials,
         onSigint: (handler) => process.on('SIGINT', handler),
@@ -53,7 +76,7 @@ export function registerRunProxy(program: Command): void {
       const exitCode = await runProxyLoop(
         {
           credentialsPath: options.credentials,
-          secretPath: options.secret,
+          secretPath,
           serviceName: options.service,
           refreshWindowMs: Number(options.refreshWindow) * 60_000,
           retryIntervalMs: Number(options.retryInterval) * 60_000,
