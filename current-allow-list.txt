@@ -1,4 +1,11 @@
 # passthrough
+
+## ubunto unblocked specifically for connectivity-check.ubuntu.com
+**.ubuntu.com:443
+**.ubuntu.com:80
+ubuntu.com:443
+ubuntu.com:80
+
 **.amazonaws.com:443
 **.amazontrust.com:443
 **.amazontrust.com:80
