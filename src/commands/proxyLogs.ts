@@ -7,6 +7,7 @@ import { classify } from '../proxyLogs/classify';
 import { keepEntry } from '../proxyLogs/entryFilter';
 import { Reducer, type ReduceMode } from '../proxyLogs/reducer';
 import { formatOutput } from '../proxyLogs/formatOutput';
+import { killProcessTree } from '../proxyLogs/killProcessTree';
 
 interface ProxyLogsOptions {
   service: string;
@@ -56,10 +57,18 @@ export function registerProxyLogs(program: Command): void {
 
       const reducer = new Reducer(mode);
       const args = ['compose', 'logs', ...(options.follow ? ['--follow'] : []), options.service];
-      const child = execa('docker', args, { cwd: paths.proxy, buffer: false });
+      const child = execa('docker', args, {
+        cwd: paths.proxy,
+        buffer: false,
+        detached: process.platform !== 'win32',
+      });
 
       const onSigint = (): void => {
-        child.kill('SIGINT');
+        if (child.pid === undefined) {
+          child.kill('SIGINT');
+          return;
+        }
+        void killProcessTree(child.pid, 'SIGINT');
       };
       process.on('SIGINT', onSigint);
 
