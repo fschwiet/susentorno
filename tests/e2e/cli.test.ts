@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { parse } from 'yaml';
 
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
+const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
 
 describe('configamatron CLI', () => {
   it('prints the version with --version', async () => {
@@ -55,23 +56,26 @@ describe('configamatron CLI', () => {
     }
   });
 
-  it('generates envoy.yaml from allowlist.txt with build-envoy-config', async () => {
+  it('generates envoy.yaml into the environment by default with build-envoy-config', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
-    const outputPath = join(dir, 'envoy.yaml');
     const fixturePath = fileURLToPath(new URL('../fixtures/sample-allowlist.txt', import.meta.url));
 
     try {
-      const { exitCode } = await execa('node', [
-        cliPath,
-        'build-envoy-config',
-        fixturePath,
-        '-o',
-        outputPath,
-        '--upstream-override',
-        'api.anthropic.com=127.0.0.1:9443',
-      ]);
+      await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: dir });
+      const { exitCode } = await execa(
+        'node',
+        [
+          cliPath,
+          'build-envoy-config',
+          fixturePath,
+          '--upstream-override',
+          'api.anthropic.com=127.0.0.1:9443',
+        ],
+        { cwd: dir },
+      );
 
       expect(exitCode).toBe(0);
+      const outputPath = join(dir, '.configamatron', 'proxy', 'envoy.yaml');
       const config = parse(readFileSync(outputPath, 'utf8')) as any;
       const cluster = config.static_resources.clusters.find(
         (c: any) => c.name === 'cluster_terminate_api_anthropic_com',
@@ -79,6 +83,20 @@ describe('configamatron CLI', () => {
       expect(
         cluster.load_assignment.endpoints[0].lb_endpoints[0].endpoint.address.socket_address,
       ).toEqual({ address: '127.0.0.1', port_value: 9443 });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('build-envoy-config exits 1 without an environment', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
+    try {
+      const { exitCode, stderr } = await execa('node', [cliPath, 'build-envoy-config'], {
+        cwd: dir,
+        reject: false,
+      });
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain("run 'configamatron init' first");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
