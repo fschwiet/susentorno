@@ -110,7 +110,7 @@ describe('write-github-config', () => {
     writeFileSync(path, contents);
   }
 
-  it('writes vm/github-config.txt from a valid token and host git identity', async () => {
+  it('writes vm-shared/github-config.txt from a valid token and host git identity', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
     const gitConfigPath = join(dir, 'gitconfig');
     writeFixtureGitConfig(
@@ -119,6 +119,7 @@ describe('write-github-config', () => {
     );
 
     try {
+      await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: dir });
       const { exitCode, stdout } = await execa('node', [cliPath, 'write-github-config'], {
         cwd: dir,
         input: `${validToken}\n`,
@@ -126,8 +127,10 @@ describe('write-github-config', () => {
       });
 
       expect(exitCode).toBe(0);
-      expect(stdout).toContain('wrote vm/github-config.txt for Test User <test@example.com>');
-      expect(readFileSync(join(dir, 'vm', 'github-config.txt'), 'utf8')).toBe(
+      expect(stdout).toContain('github-config.txt for Test User <test@example.com>');
+      expect(
+        readFileSync(join(dir, '.configamatron', 'vm-shared', 'github-config.txt'), 'utf8'),
+      ).toBe(
         [
           'GITHUB_USERNAME="Test User"',
           'GITHUB_EMAIL="test@example.com"',
@@ -149,6 +152,7 @@ describe('write-github-config', () => {
     );
 
     try {
+      await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: dir });
       const { exitCode, stderr } = await execa('node', [cliPath, 'write-github-config'], {
         cwd: dir,
         input: 'not-a-real-token\n',
@@ -158,7 +162,7 @@ describe('write-github-config', () => {
 
       expect(exitCode).toBe(1);
       expect(stderr).toContain('invalid token');
-      expect(existsSync(join(dir, 'vm', 'github-config.txt'))).toBe(false);
+      expect(existsSync(join(dir, '.configamatron', 'vm-shared', 'github-config.txt'))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -170,6 +174,7 @@ describe('write-github-config', () => {
     writeFixtureGitConfig(gitConfigPath, '');
 
     try {
+      await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: dir });
       const { exitCode, stderr } = await execa('node', [cliPath, 'write-github-config'], {
         cwd: dir,
         input: `${validToken}\n`,

@@ -5,8 +5,7 @@ import { createInterface } from 'node:readline/promises';
 import type { Command } from 'commander';
 import { validateGithubTokenFormat } from '../githubToken';
 import { formatGithubConfig } from '../githubConfig';
-
-const OUTPUT_PATH = 'vm/github-config.txt';
+import { requireEnvPathsOrExit } from '../envPaths';
 
 function readGitConfigValue(key: string): string {
   try {
@@ -20,9 +19,12 @@ export function registerWriteGithubConfig(program: Command): void {
   program
     .command('write-github-config')
     .description(
-      'Prompt for a GitHub fine-grained PAT and write vm/github-config.txt for the VM setup scripts',
+      'Prompt for a GitHub fine-grained PAT and write .configamatron/vm-shared/github-config.txt for the VM setup scripts',
     )
     .action(async () => {
+      const paths = requireEnvPathsOrExit('write-github-config');
+      if (!paths) return;
+
       const rl = createInterface({ input: process.stdin, output: process.stdout });
       const token = (await rl.question('GitHub fine-grained PAT: ')).trim();
       rl.close();
@@ -44,9 +46,9 @@ export function registerWriteGithubConfig(program: Command): void {
         return;
       }
 
-      mkdirSync(dirname(OUTPUT_PATH), { recursive: true });
-      writeFileSync(OUTPUT_PATH, formatGithubConfig({ username, email, token }));
+      mkdirSync(dirname(paths.githubConfig), { recursive: true });
+      writeFileSync(paths.githubConfig, formatGithubConfig({ username, email, token }));
 
-      console.log(`write-github-config: wrote ${OUTPUT_PATH} for ${username} <${email}>`);
+      console.log(`write-github-config: wrote ${paths.githubConfig} for ${username} <${email}>`);
     });
 }
