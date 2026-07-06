@@ -2,7 +2,7 @@
 
 Utility code to help set up isolated environments for agents on Windows. A proxy is configured to run in Docker to restrict network access and inject necessary credentials.
 
-See [usage.md](usage.md) for setting up environments (proxy + VM). See [technical-notes.md](technical-notes.md) for maintainer notes.
+See [usage.md](usage.md) for setting up environments (proxy + VM).
 
 ## Prerequisites
 

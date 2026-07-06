@@ -6,6 +6,9 @@ Only one proxy container can exist on the host (it binds ports 80/443). Starting
 
 ## Host prerequisites
 
+- Running on platforms besides Windows and/or VM hosts besides VMWare may work fine. In those cases though you'll need to open http/https ports 80/443 for the proxy host to your VM.
+
+- Windows
 - Docker and Docker Compose.
 - Node.js >= 18 and pnpm.
 - The `claude` CLI installed and logged in (so `~/.claude/.credentials.json` exists).
@@ -22,15 +25,13 @@ Only one proxy container can exist on the host (it binds ports 80/443). Starting
 
 Usually done once per environment. Run every command from the environment directory (the folder that owns the environment, e.g. `e:\repo`):
 
-1. `configamatron init` — creates `.configamatron/` containing `vm-shared/` (everything the VM consumes) and `proxy/` (everything the proxy consumes), copies the packaged allow list to `proxy/allowlist.txt`, and writes `vm-shared/credentials.json` — a copy of your host Claude credential with the tokens replaced by sandbox placeholders. Refuses to run if `.configamatron` already exists; delete the folder to rebuild from scratch.
-2. `configamatron generate-ca` — writes `proxy/ca/cert.pem` + `key.pem` and copies the cert to `vm-shared/cert.pem`. An existing valid pair is reused, so restoring a previously generated CA into `proxy/ca/` before this step preserves it.
+1. `configamatron init` — creates `.configamatron/` scaffolding needed to manage the environment. Do not commit to source control, includes credentials that the isolating proxy may inject.
+2. `configamatron generate-ca` — writes certificates used by the proxy for https.
 3. `configamatron build-envoy-config` — builds `proxy/envoy.yaml` from `proxy/allowlist.txt`. Edit this environment's allow list and re-run to change what the VM may reach.
-4. `configamatron write-github-config` — prompts for a GitHub fine-grained personal access token and writes `vm-shared/github-config.txt` (username/email come from your global git config). Create the token at https://github.com/settings/personal-access-tokens/new, scoped to the repositories the agent should use, with read/write access to Contents.
-5. `configamatron run-proxy` — writes the SDS secret from your current Claude credential, (re)creates the Envoy container so it serves that token, then stays in the foreground: it watches `~/.claude/.credentials.json`, recreates the container whenever the token changes, and nudges the `claude` CLI to refresh the token shortly before it expires. Leave it running (like `docker compose up` without `-d`); Ctrl-C stops it and leaves the container running.
-   - Must run on the host with the `claude` CLI installed and logged in (it is the sole authority over `credentials.json`).
-   - Pass `--no-refresh` to only watch and propagate without nudging the CLI. `configamatron run-proxy --help` lists all flags.
-6. **Windows hosts only:** in an **Administrator** PowerShell, run `powershell -File .configamatron\proxy\host-allow-vm-inbound.ps1`. Windows Firewall blocks inbound connections by default, which silently breaks the VM's DNAT'd traffic to Envoy even though everything else is configured correctly. This opens inbound TCP 80/443 (Envoy) from the VM's host-only network adapter, and prints the host IP to use in VM-side setup. It defaults to the `VMware Network Adapter VMnet1` interface; pass `-AdapterAlias` if your host-only network uses a different adapter (`Get-NetIPConfiguration` lists them). Safe to re-run if the host's IP on that network changes.
-   - Mac/Linux hosts: not yet scripted — allow inbound tcp/80 and tcp/443 from the VM through your host firewall equivalent (`pfctl`/`ufw`) and determine the host-only interface's IP yourself.
+4. `configamatron write-github-config` — prompts for a GitHub fine-grained personal access token and writes `vm-shared/github-config.txt` (username/email come from your global git config). Create the token at https://github.com/settings/personal-access-tokens/new, scoped to the repositories the agent should use, with read/write permission to 'Contents'.
+5. `configamatron run-proxy` — Launches the proxy in a docker container with latest Claude credentials. Makes an effort to keep those credentials updated.
+6. **Windows hosts only:** in an **Administrator** PowerShell, run `powershell -File cd `. This opens inbound TCP 80/443 (Envoy) from the VM's host-only network adapter, and *prints the host IP you need to use in VM-side setup*. 
+  - It defaults to the `VMware Network Adapter VMnet1` interface; pass `-AdapterAlias` if your host-only network uses a different adapter (`Get-NetIPConfiguration` lists them). Safe to re-run if the host's IP on that network changes.
 
 ## VM setup
 
@@ -40,8 +41,8 @@ May be repeated for any number of VMs; each VM pairs with one environment via it
 
 - In VMware Workstation, create a new virtual machine:
   - Set a recent Ubuntu release as the installer image (ubuntu-26.04-desktop-amd64.iso is known to work).
-  - 120 GB of dynamic disk space.
-  - Select "Customize Hardware" before finishing: 12288 MB of static memory (or no more than half of the host machine's memory), 1 processor with 6 cores (ask google for values for your specific processor). Leave the network as NAT for initial setup, pre-isolation.
+  - 120 GB of dynamic disk space (or ask google for values for your intended use cases).
+  - Select "Customize Hardware" before finishing: 12288 MB of static memory (or no more than half of the host machine's memory), 1 processor with 6 cores (or ask google for values for your specific processor). Leave the network as NAT for initial setup, pre-isolation.
 - Start the VM and install the OS. Pick the defaults, except:
   - Uncheck "Require my password to log in" — anyone with access to the VM already has access to the host, and it is easier this way. Your password is still required for sudo.
   - Do not select "Install third-party apps for graphics and wi-fi hardware"; it may stall OS installation.
@@ -49,7 +50,7 @@ May be repeated for any number of VMs; each VM pairs with one environment via it
 
 ### Enable open-vm-tools and share the environment folder
 
-Run in the VM's terminal ('-desktop' helps with screen resolution on top of open-vm-tools' shared folders and copy'n'paste integration):
+Run in the VM's terminal ('-desktop' helps with screen resolution on top of open-vm-tools' shared folders and copy'n'paste integration).
 
 ```
 sudo apt update && sudo apt install -y open-vm-tools-desktop
