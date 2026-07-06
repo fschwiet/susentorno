@@ -39,22 +39,19 @@ describe('configamatron CLI', () => {
     }
   });
 
-  it('parses a policy file into allowlist.txt with import-sbx-network-policy', async () => {
+  it('parses a policy file into current-allow-list.txt with import-sbx-network-policy', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
-    const outputPath = join(dir, 'allowlist.txt');
     const fixturePath = fileURLToPath(new URL('../fixtures/sample-policy.txt', import.meta.url));
 
     try {
-      const { exitCode } = await execa('node', [
-        cliPath,
-        'import-sbx-network-policy',
-        fixturePath,
-        '-o',
-        outputPath,
-      ]);
+      const { exitCode } = await execa(
+        'node',
+        [cliPath, 'import-sbx-network-policy', fixturePath],
+        { cwd: dir },
+      );
 
       expect(exitCode).toBe(0);
-      expect(readFileSync(outputPath, 'utf8')).toBe(
+      expect(readFileSync(join(dir, 'current-allow-list.txt'), 'utf8')).toBe(
         [
           '# passthrough',
           '**.chatgpt.com:443',
