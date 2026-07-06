@@ -215,3 +215,79 @@ describe('Envoy sandbox proxy stack', () => {
     expect(statusCode).toBe(403);
   });
 });
+
+describe('Envoy access logging', () => {
+  async function readEnvoyLogs(): Promise<string> {
+    const { stdout } = await execa('docker', ['compose', 'logs', '--no-color', 'envoy'], {
+      cwd: proxyDir,
+      env: {
+        ...process.env,
+        ENVOY_HTTPS_PORT: String(HTTPS_PORT),
+        ENVOY_HTTP_PORT: String(HTTP_PORT),
+        ENVOY_ADMIN_PORT: String(ADMIN_PORT),
+      },
+    });
+    return stdout;
+  }
+
+  it('emits a CFGM line for terminate, passthrough, port-80, and blocked SNI', async () => {
+    // terminate (ALLOW CRED)
+    await requestThroughTerminate(PLACEHOLDER_AUTH);
+
+    // passthrough (ALLOW PASS)
+    // pypi.org's response never fires Node's 'end' event on its own (no close-delimited
+    // body completion within a reasonable window), so force the socket closed once we
+    // have a response — that's what flushes the tcp_proxy access log.
+    await new Promise<void>((resolve) => {
+      const req = httpsRequest(
+        { host: '127.0.0.1', port: HTTPS_PORT, servername: 'pypi.org', path: '/simple/', headers: { host: 'pypi.org' } },
+        (res) => {
+          res.resume();
+          req.destroy();
+          resolve();
+        },
+      );
+      req.on('error', () => resolve());
+      req.end();
+    });
+
+    // port-80 allowed (ALLOW HTTP)
+    await new Promise<void>((resolve) => {
+      const req = httpRequest(
+        { host: '127.0.0.1', port: HTTP_PORT, path: '/', headers: { host: 'archive.ubuntu.com' } },
+        (res) => {
+          res.resume();
+          res.on('end', () => resolve());
+        },
+      );
+      req.on('error', () => resolve());
+      req.end();
+    });
+
+    // blocked SNI (BLOCK TLS)
+    await new Promise<void>((resolve) => {
+      const socket = tlsConnect(
+        { host: '127.0.0.1', port: HTTPS_PORT, servername: 'blocked.example.com' },
+        () => socket.end(),
+      );
+      socket.on('error', () => resolve());
+      socket.on('close', () => resolve());
+    });
+
+    const markers = ['CFGM|term|', 'CFGM|pass|', 'CFGM|http|', 'CFGM|deny443|'];
+    const deadline = Date.now() + 10000;
+    let logs = '';
+    // Access logs flush on connection close; poll until all markers are present.
+    while (Date.now() < deadline) {
+      logs = await readEnvoyLogs();
+      if (markers.every((m) => logs.includes(m))) break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    for (const marker of markers) {
+      expect(logs).toContain(marker);
+    }
+    expect(logs).toContain('CFGM|deny443|2026'.slice(0, 12)); // deny443 line present
+    expect(logs).toMatch(/CFGM\|deny443\|[^|]*\|blocked\.example\.com\|/);
+  });
+});
