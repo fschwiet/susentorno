@@ -1,0 +1,48 @@
+import { copyFileSync, cpSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { envPaths } from './envPaths';
+import { sanitizeCredentials } from './sanitizeCredentials';
+
+export interface InitOptions {
+  cwd: string;
+  credentialsPath: string;
+  templatesDir: string;
+  allowlistSource: string;
+}
+
+/**
+ * Scaffold <cwd>/.configamatron. Validates all inputs before writing anything so a
+ * failed init leaves no partial environment behind. Throws on any failure.
+ */
+export function initEnvironment(options: InitOptions): void {
+  const paths = envPaths(options.cwd);
+  if (existsSync(paths.root)) {
+    throw new Error(
+      `${paths.root} already exists — delete it to rebuild the environment from scratch`,
+    );
+  }
+
+  let rawCredentials: string;
+  try {
+    rawCredentials = readFileSync(options.credentialsPath, 'utf8');
+  } catch {
+    throw new Error(
+      `could not read credentials at ${options.credentialsPath} — log in with the claude CLI first, or pass --credentials`,
+    );
+  }
+
+  let sanitized: string;
+  try {
+    sanitized = sanitizeCredentials(rawCredentials);
+  } catch (error) {
+    throw new Error(
+      `invalid credentials file at ${options.credentialsPath}: ${(error as Error).message}`,
+      { cause: error },
+    );
+  }
+
+  cpSync(join(options.templatesDir, 'vm-shared'), paths.vmShared, { recursive: true });
+  cpSync(join(options.templatesDir, 'proxy'), paths.proxy, { recursive: true });
+  copyFileSync(options.allowlistSource, paths.allowlist);
+  writeFileSync(paths.vmCredentials, sanitized);
+}
