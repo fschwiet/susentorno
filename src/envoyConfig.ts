@@ -17,6 +17,26 @@ function toEnvoyWildcard(host: string): string {
   return host.startsWith('**.') ? `*.${host.slice(3)}` : host;
 }
 
+function accessLog(pathId: string): Record<string, unknown>[] {
+  return [
+    {
+      name: 'envoy.access_loggers.file',
+      typed_config: {
+        '@type':
+          'type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog',
+        path: '/dev/stdout',
+        log_format: {
+          text_format_source: {
+            inline_string:
+              `CFGM|${pathId}|%START_TIME(%Y-%m-%dT%H:%M:%S)%|%REQUESTED_SERVER_NAME%|` +
+              `%REQ(:AUTHORITY)%|%RESPONSE_CODE_DETAILS%\n`,
+          },
+        },
+      },
+    },
+  ];
+}
+
 function buildTerminateEntry(entry: string, overrides: UpstreamOverride[]) {
   const [sniHost, portStr] = entry.split(':');
   const override = overrides.find((o) => o.sniHost === sniHost);
@@ -49,6 +69,7 @@ function buildTerminateEntry(entry: string, overrides: UpstreamOverride[]) {
           '@type':
             'type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager',
           stat_prefix: `terminate_${sanitizeName(sniHost)}`,
+          access_log: accessLog('term'),
           route_config: {
             name: 'local_route',
             virtual_hosts: [
@@ -232,11 +253,26 @@ export function generateEnvoyConfig(
                       'type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy',
                     stat_prefix: 'passthrough_443',
                     cluster: 'dynamic_forward_proxy_cluster',
+                    access_log: accessLog('pass'),
                   },
                 },
               ],
             },
           ],
+          default_filter_chain: {
+            filters: [
+              {
+                name: 'envoy.filters.network.tcp_proxy',
+                typed_config: {
+                  '@type':
+                    'type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy',
+                  stat_prefix: 'blocked_443',
+                  cluster: 'blackhole',
+                  access_log: accessLog('deny443'),
+                },
+              },
+            ],
+          },
         },
         {
           name: 'listener_80',
@@ -250,6 +286,7 @@ export function generateEnvoyConfig(
                     '@type':
                       'type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager',
                     stat_prefix: 'passthrough_80',
+                    access_log: accessLog('http'),
                     route_config: {
                       name: 'local_route_80',
                       virtual_hosts: [
@@ -288,6 +325,11 @@ export function generateEnvoyConfig(
       clusters: [
         ...terminateBuilt.map((b) => b.cluster),
         ...http80Built.map((b) => b.cluster),
+        {
+          name: 'blackhole',
+          type: 'STATIC',
+          load_assignment: { cluster_name: 'blackhole', endpoints: [] },
+        },
         {
           name: 'dynamic_forward_proxy_cluster',
           lb_policy: 'CLUSTER_PROVIDED',
