@@ -12,7 +12,9 @@
     "configamatron": "dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "templates",
+    "current-allow-list.txt"
   ],
   "scripts": {
     "build": "tsup",
