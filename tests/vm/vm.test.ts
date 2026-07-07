@@ -8,6 +8,7 @@ import {
   stopProxyStack,
   HTTP_PORT,
   HTTPS_PORT,
+  PLACEHOLDER_AUTH,
   type ProxyStack,
 } from '../proxyStack';
 
@@ -104,5 +105,88 @@ describe('S1: setup during NAT phase', () => {
     const { stdout } = await guest('g1', 'ip -4 route show default');
     // Still DHCP's route — the guarded `ip route replace` must not have fired.
     expect(stdout).toContain('proto dhcp');
+  });
+});
+
+describe('S2: switch to host-only and reboot', () => {
+  it('reboots into host-only mode with both units active', async () => {
+    await harness('net.sh', 'dhcp', 'hostonly');
+    await harness('guest.sh', 'reboot', 'g1');
+
+    expect((await guest('g1', 'systemctl is-active dnsmasq')).stdout.trim()).toBe('active');
+    expect(
+      (await guest('g1', `systemctl is-active iptables-rules@${BRIDGE_IP}.service`)).stdout.trim(),
+    ).toBe('active');
+  }, 600_000);
+
+  it('installed the guarded host-only default route', async () => {
+    const { stdout } = await guest('g1', 'ip -4 route show default');
+    expect(stdout).toContain(`default via ${BRIDGE_IP}`);
+    expect(stdout).not.toContain('proto dhcp'); // static, installed by the unit
+  });
+
+  it('stub is the effective resolver after reboot', async () => {
+    const { stdout } = await guest('g1', 'dig +short example.com');
+    expect(stdout.trim()).toBe('203.0.113.1');
+  });
+
+  it('terminated :443 host works and the CA is trusted', async () => {
+    // Either response arriving at all proves the TLS handshake succeeded, i.e.
+    // 06 installed and trusted the proxy CA. The gate (gate.lua) then rejects an
+    // *unexpected* credential — a present, non-placeholder Authorization header —
+    // with 403, and passes the placeholder, which the credential injector swaps
+    // for the real token → 200. (A request with no Authorization header is
+    // deliberately not rejected: the injector supplies the credential. That
+    // matches the integration suite's auth cases, which likewise never assert on
+    // a missing header.)
+    const wrongAuth = await guest(
+      'g1',
+      `curl -s -o /dev/null -w '%{http_code}' --max-time 20 -H 'Authorization: Bearer not-the-placeholder' https://api.anthropic.com/`,
+    );
+    expect(wrongAuth.stdout.trim()).toBe('403');
+
+    const withAuth = await guest(
+      'g1',
+      `curl -s -o /dev/null -w '%{http_code}' --max-time 20 -H 'Authorization: ${PLACEHOLDER_AUTH}' https://api.anthropic.com/`,
+    );
+    expect(withAuth.stdout.trim()).toBe('200');
+  });
+
+  it('passthrough :443 host works end-to-end', async () => {
+    const { stdout } = await guest(
+      'g1',
+      `curl -s -o /dev/null -w '%{http_code}' --max-time 30 https://pypi.org/simple/`,
+    );
+    expect(Number(stdout.trim())).toBeLessThan(400);
+  });
+
+  it('allow-listed :80 host works', async () => {
+    const { stdout } = await guest(
+      'g1',
+      `curl -s -o /dev/null -w '%{http_code}' --max-time 20 http://archive.ubuntu.com/`,
+    );
+    expect(Number(stdout.trim())).toBeLessThan(400);
+  });
+
+  it('non-allow-listed :443 connection is dropped', async () => {
+    const { stdout } = await guest(
+      'g1',
+      `curl -s -o /dev/null --max-time 20 https://blocked.example.com/ ; echo exit=$?`,
+    );
+    expect(stdout).toContain('exit=');
+    expect(stdout.trim()).not.toBe('exit=0');
+  });
+
+  it('non-allow-listed :80 gets the default-deny 403', async () => {
+    const { stdout } = await guest(
+      'g1',
+      `curl -s -o /dev/null -w '%{http_code}' --max-time 20 http://blocked.example.com/`,
+    );
+    expect(stdout.trim()).toBe('403');
+  });
+
+  it('06 configured NODE_EXTRA_CA_CERTS for login shells', async () => {
+    const { stdout } = await guest('g1', `bash -lc 'echo $NODE_EXTRA_CA_CERTS'`);
+    expect(stdout).toContain('sbx-sandbox-proxy-ca.crt');
   });
 });
