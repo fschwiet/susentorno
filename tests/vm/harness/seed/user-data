@@ -1,0 +1,33 @@
+#cloud-config
+hostname: cfgm-vmtest
+users:
+  - name: vmtest
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - __SSH_PUBKEY__
+packages:
+  - network-manager
+  - dnsmasq
+  - bind9-dnsutils
+write_files:
+  # Mimic the Ubuntu Desktop installer: netplan renders through NetworkManager,
+  # and the base profile carries only the renderer (no per-device config), so
+  # 07's 60-dns-override.yaml merges exactly as it does in production.
+  - path: /etc/netplan/01-network-manager-all.yaml
+    permissions: '0600'
+    content: |
+      network:
+        version: 2
+        renderer: NetworkManager
+  # Stop cloud-init regenerating its systemd-networkd profile on later boots.
+  - path: /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
+    content: |
+      network: {config: disabled}
+runcmd:
+  - rm -f /etc/netplan/50-cloud-init.yaml
+  # dnsmasq is pre-installed so 07's `apt-get install -y dnsmasq` is an offline
+  # no-op, but production has it absent-therefore-disabled before 07 runs.
+  - systemctl disable --now dnsmasq || true
+  - mkdir -p /mnt/vm-shared
+  - printf 'vmshared /mnt/vm-shared 9p trans=virtio,ro,nofail,version=9p2000.L 0 0\n' >> /etc/fstab

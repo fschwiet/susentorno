@@ -2,7 +2,7 @@
 set -euo pipefail
 
 apt-get update
-apt-get install -y qemu-system-x86 qemu-utils cloud-image-utils dnsmasq socat curl openssh-client
+apt-get install -y qemu-system-x86 qemu-utils cloud-image-utils dnsmasq socat curl openssh-client iptables
 
 # The harness runs its own dnsmasq bound to the test bridge; the system
 # service must not sit on port 53.
