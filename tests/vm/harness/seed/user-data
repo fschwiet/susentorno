@@ -13,7 +13,8 @@ packages:
 write_files:
   # Mimic the Ubuntu Desktop installer: netplan renders through NetworkManager,
   # and the base profile carries only the renderer (no per-device config), so
-  # 07's 60-dns-override.yaml merges exactly as it does in production.
+  # 07's 60-dns-override.yaml is the sole definition of the interface (which is
+  # exactly why that override must set dhcp4 itself — see 60-dns-override.yaml).
   - path: /etc/netplan/01-network-manager-all.yaml
     permissions: '0600'
     content: |
@@ -26,6 +27,16 @@ write_files:
       network: {config: disabled}
 runcmd:
   - rm -f /etc/netplan/50-cloud-init.yaml
+  # The Ubuntu *cloud* image ships systemd-networkd enabled, and a match-all
+  # /run/systemd/network/zzzz-dracut-default.network gives it ownership of the
+  # NIC even though the netplan renderer is NetworkManager. networkd then
+  # registers the DHCP-supplied DNS with systemd-resolved and holds the link, so
+  # the 127.0.0.1 stub that 07's netplan override pushes through NetworkManager is
+  # rejected LinkBusy and never becomes the resolver. A real Ubuntu Desktop runs
+  # NetworkManager exclusively; masking networkd makes this golden image behave
+  # the same. Plain `mask` (not `--now`) leaves the build boot's own networking
+  # alone and only takes effect on the test overlays booted from this image.
+  - systemctl mask systemd-networkd.service systemd-networkd.socket systemd-networkd-wait-online.service
   # dnsmasq is pre-installed so 07's `apt-get install -y dnsmasq` is an offline
   # no-op, but production has it absent-therefore-disabled before 07 runs.
   - systemctl disable --now dnsmasq || true
