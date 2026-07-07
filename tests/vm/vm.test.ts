@@ -187,7 +187,7 @@ describe('S2: switch to host-only and reboot', () => {
 
   it('06 configured NODE_EXTRA_CA_CERTS for login shells', async () => {
     const { stdout } = await guest('g1', `bash -lc 'echo $NODE_EXTRA_CA_CERTS'`);
-    expect(stdout).toContain('sbx-sandbox-proxy-ca.crt');
+    expect(stdout).toContain('configamatron-proxy-certificate-authority.crt');
   });
 });
 

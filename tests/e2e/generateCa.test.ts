@@ -31,7 +31,7 @@ describe('configamatron generate-ca', () => {
     expect(readFileSync(vmCert(), 'utf8')).toBe(readFileSync(caCert(), 'utf8'));
 
     const cert = new X509Certificate(readFileSync(caCert(), 'utf8'));
-    expect(cert.subject).toContain('sbx-sandbox-proxy-ca');
+    expect(cert.subject).toContain('configamatron-proxy-certificate-authority');
     expect(cert.subjectAltName).toContain('DNS:api.anthropic.com');
     expect(cert.subjectAltName).toContain('DNS:downloads.claude.ai');
   });

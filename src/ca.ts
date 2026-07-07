@@ -1,7 +1,7 @@
 import { X509Certificate, createPrivateKey } from 'node:crypto';
 import selfsigned from 'selfsigned';
 
-export const CA_COMMON_NAME = 'sbx-sandbox-proxy-ca';
+export const CA_COMMON_NAME = 'configamatron-proxy-certificate-authority';
 
 /** Hostnames the proxy terminates TLS for; the cert must cover all of them. */
 export const CA_SANS = [
