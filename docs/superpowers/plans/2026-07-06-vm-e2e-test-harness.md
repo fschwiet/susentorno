@@ -8,6 +8,8 @@
 
 **Tech Stack:** QEMU/KVM, cloud-init (NoCloud), dnsmasq, socat, 9p share, vitest, execa, wsl.exe.
 
+> **Amended 2026-07-06 (after Task 2 shipped):** three implementation discoveries folded in. (1) `iptables` added to setup-wsl.sh and preflight.sh — net.sh/cleanup.sh need it and nothing installed or checked it. (2) The harness dnsmasq config gains `except-interface=lo`: WSL2's DNS-tunneling feature holds a loopback alias (10.255.255.254) on port 53, which dnsmasq otherwise collides with. (3) forward.sh no longer backgrounds socat with `setsid ... &` — WSL tears down the invoking session's processes (even setsid'd ones) when the `wsl.exe` call exits, so each socat now runs as a transient systemd service via `systemd-run` (verified to survive session exit on the target machine). Preflight therefore requires a systemd-enabled distro (the modern WSL Ubuntu default).
+
 ## Global Constraints
 
 - All harness scripts run **as root inside WSL** (`wsl.exe -u root ...`); they must not use `sudo`. `lib.sh` enforces this.
@@ -129,7 +131,12 @@ fail() {
 [ -e /dev/kvm ] || fail "/dev/kvm missing (KVM unavailable in WSL2)" \
   "Windows 11 WSL2 enables nested virtualization by default; check %UserProfile%\\.wslconfig has no nestedVirtualization=false, then run: wsl --shutdown"
 
-for cmd in qemu-system-x86_64 qemu-img cloud-localds dnsmasq socat curl ssh ssh-keygen; do
+# forward.sh runs socat as transient systemd units; without systemd as PID 1
+# nothing started by a wsl.exe call can outlive that call.
+[ -d /run/systemd/system ] || fail "systemd not running in this WSL distro" \
+  "add [boot] systemd=true to /etc/wsl.conf inside the distro, then run: wsl --shutdown"
+
+for cmd in qemu-system-x86_64 qemu-img cloud-localds dnsmasq socat iptables curl ssh ssh-keygen; do
   command -v "$cmd" > /dev/null || fail "$cmd not installed in WSL" \
     "run once: wsl.exe -u root bash <repo>/tests/vm/harness/setup-wsl.sh"
 done
@@ -146,7 +153,7 @@ echo "preflight: ok"
 set -euo pipefail
 
 apt-get update
-apt-get install -y qemu-system-x86 qemu-utils cloud-image-utils dnsmasq socat curl openssh-client
+apt-get install -y qemu-system-x86 qemu-utils cloud-image-utils dnsmasq socat iptables curl openssh-client
 
 # The harness runs its own dnsmasq bound to the test bridge; the system
 # service must not sit on port 53.
@@ -392,8 +399,8 @@ git commit -m "feat: vm e2e golden image builder (cloud image + NetworkManager r
 - Consumes: `lib.sh` constants.
 - Produces:
   - `net.sh up` — idempotent bridge + NAT masquerade; `net.sh dhcp gateway|hostonly` — (re)starts harness dnsmasq on the bridge in the given mode; `net.sh down` — removes everything.
-  - `forward.sh up <target-host> <http-port> <https-port>` — socat listeners on `$BRIDGE_IP:80/443` → target; `forward.sh down`.
-  - `cleanup.sh` — kills every pid in `$RUN/*.pid` (guests, dnsmasq, socat), deletes `tap-*` links, the MASQUERADE rule and the bridge. Safe to run when nothing is up. Tests run it before setup (stale state from a killed run) and at teardown.
+  - `forward.sh up <target-host> <http-port> <https-port>` — socat listeners on `$BRIDGE_IP:80/443` → target, each a transient systemd unit (`cfgm-fwd-80`/`cfgm-fwd-443`); `forward.sh down` stops the units.
+  - `cleanup.sh` — stops the forwarder units, kills every pid in `$RUN/*.pid` (guests, dnsmasq), deletes `tap-*` links, the MASQUERADE rule and the bridge. Safe to run when nothing is up. Tests run it before setup (stale state from a killed run) and at teardown.
 
 - [ ] **Step 1: Write `tests/vm/harness/net.sh`**
 
@@ -425,6 +432,10 @@ case "${1:?usage: net.sh up|down|dhcp <gateway|hostonly>}" in
     {
       echo "interface=$BRIDGE"
       echo "bind-interfaces"
+      # WSL2's DNS-tunneling feature aliases 10.255.255.254 onto lo and holds
+      # port 53 there; dnsmasq implicitly binds loopback addresses too unless
+      # excluded, which collides with that address.
+      echo "except-interface=lo"
       echo "dhcp-range=$DHCP_RANGE,12h"
       echo "dhcp-leasefile=$RUN/dnsmasq.leases"
       echo "pid-file=$RUN/dnsmasq.pid"
@@ -461,27 +472,30 @@ esac
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+# The forwarders must outlive this wsl.exe call, but WSL tears down the
+# invoking session's processes when the call exits — even setsid'd background
+# jobs. dnsmasq and QEMU survive by self-daemonizing; socat cannot, so each
+# forwarder runs as a transient systemd service (parented to PID 1, outside
+# the doomed session). Bonus: `systemctl stop` kills the whole unit cgroup,
+# including socat's per-connection fork children, which a pidfile kill leaks.
+fwd_stop() {
+  systemctl stop cfgm-fwd-80.service cfgm-fwd-443.service 2> /dev/null || true
+}
+
 case "${1:?usage: forward.sh up <target-host> <http-port> <https-port> | down}" in
   up)
     target="${2:?target host}"
     http_port="${3:?http port}"
     https_port="${4:?https port}"
-    # setsid + full detach: the socat processes must outlive this wsl.exe call.
-    setsid socat "TCP-LISTEN:80,bind=$BRIDGE_IP,fork,reuseaddr" "TCP:$target:$http_port" \
-      < /dev/null > /dev/null 2>&1 &
-    echo $! > "$RUN/socat-80.pid"
-    setsid socat "TCP-LISTEN:443,bind=$BRIDGE_IP,fork,reuseaddr" "TCP:$target:$https_port" \
-      < /dev/null > /dev/null 2>&1 &
-    echo $! > "$RUN/socat-443.pid"
+    fwd_stop
+    systemd-run --collect --unit=cfgm-fwd-80 \
+      socat "TCP-LISTEN:80,bind=$BRIDGE_IP,fork,reuseaddr" "TCP:$target:$http_port"
+    systemd-run --collect --unit=cfgm-fwd-443 \
+      socat "TCP-LISTEN:443,bind=$BRIDGE_IP,fork,reuseaddr" "TCP:$target:$https_port"
     echo "forward: $BRIDGE_IP:80 -> $target:$http_port, $BRIDGE_IP:443 -> $target:$https_port"
     ;;
   down)
-    for port in 80 443; do
-      if [ -f "$RUN/socat-$port.pid" ]; then
-        kill "$(cat "$RUN/socat-$port.pid")" 2> /dev/null || true
-        rm -f "$RUN/socat-$port.pid"
-      fi
-    done
+    fwd_stop
     echo "forward: down"
     ;;
 esac
@@ -494,7 +508,10 @@ esac
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-# Kill everything the harness may have left behind (guests, dnsmasq, socat).
+# Kill everything the harness may have left behind: socat forwarders live in
+# transient systemd units, guests and dnsmasq behind pidfiles.
+systemctl stop cfgm-fwd-80.service cfgm-fwd-443.service 2> /dev/null || true
+
 for pidfile in "$RUN"/*.pid; do
   [ -f "$pidfile" ] || continue
   kill "$(cat "$pidfile")" 2> /dev/null || true
@@ -514,8 +531,8 @@ echo "cleanup: done"
 
 1. `net.sh up` → `net: cfgmbr0 up at 10.213.87.1`
 2. `net.sh dhcp gateway` → `net: dhcp mode gateway`; `wsl.exe -u root bash -c "ss -ulpn | grep 10.213.87.1"` shows dnsmasq on :53 and :67 (hostonly mode would show :67 only)
-3. `forward.sh up 127.0.0.1 18080 18443` → `forward: ...`; `wsl.exe -u root bash -c "ss -tlpn | grep 10.213.87.1"` shows socat on :80 and :443
-4. `cleanup.sh` → `cleanup: done`; re-run `cleanup.sh` → still `cleanup: done` (idempotent)
+3. `forward.sh up 127.0.0.1 18080 18443` → `forward: ...`; then — critically, from a **fresh** `wsl.exe` call, since surviving the launching session's exit is the property that was broken — `wsl.exe -u root bash -c "ss -tlpn | grep 10.213.87.1"` shows socat on :80 and :443, and `wsl.exe -u root bash -c "systemctl is-active cfgm-fwd-80.service cfgm-fwd-443.service"` prints `active` twice
+4. `cleanup.sh` → `cleanup: done`; re-run `cleanup.sh` → still `cleanup: done` (idempotent); `systemctl is-active` now reports the units inactive/not-found
 
 - [ ] **Step 5: Commit**
 
