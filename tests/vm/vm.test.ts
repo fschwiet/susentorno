@@ -190,3 +190,28 @@ describe('S2: switch to host-only and reboot', () => {
     expect(stdout).toContain('sbx-sandbox-proxy-ca.crt');
   });
 });
+
+describe('S3: fresh setup with no default route', () => {
+  it('07 discovers the interface via the fallback and installs the route', async () => {
+    // DHCP is still in host-only mode (S2), so g2 boots gateway-less: the
+    // interface-discovery fallback branch in 07 is the only path that works.
+    await harness('guest.sh', 'start', 'g2', '--share', shareDir);
+    await harness('guest.sh', 'wait-ssh', 'g2');
+
+    const before = await guest('g2', 'ip -4 route show default');
+    expect(before.stdout.trim()).toBe(''); // precondition: no default route
+
+    const run = await guest('g2', `bash /mnt/vm-shared/07-setup-persistence.sh ${BRIDGE_IP}`);
+    expect(run.stdout).toContain('07-setup-persistence:');
+
+    const after = await guest('g2', 'ip -4 route show default');
+    expect(after.stdout).toContain(`default via ${BRIDGE_IP}`);
+
+    const nat = await guest('g2', 'sudo iptables -t nat -S OUTPUT');
+    expect(nat.stdout).toContain(`--dport 443 -j DNAT --to-destination ${BRIDGE_IP}:443`);
+    expect(nat.stdout).toContain(`--dport 80 -j DNAT --to-destination ${BRIDGE_IP}:80`);
+
+    const dns = await guest('g2', 'dig +short example.com @127.0.0.1');
+    expect(dns.stdout.trim()).toBe('203.0.113.1');
+  }, 900_000);
+});
