@@ -2,5 +2,15 @@ network:
   version: 2
   ethernets:
     __IFACE__:
+      # dhcp4 must be declared here explicitly. When the installer's base netplan
+      # carries no per-interface config (e.g. Ubuntu Desktop's renderer-only
+      # 01-network-manager-all.yaml), this override is the ONLY definition of the
+      # interface, so there is no existing dhcp4 for netplan to inherit. Omit it
+      # and netplan emits an NM profile with ipv4.method=link-local (no DHCP
+      # address); NM then declines to activate that dead profile and falls back to
+      # its built-in "Wired connection 1", whose DHCP-supplied DNS wins — the
+      # 127.0.0.1 stub below never reaches systemd-resolved. Declaring dhcp4 keeps
+      # DHCP addressing and makes this the active profile carrying the stub.
+      dhcp4: true
       nameservers:
         addresses: [127.0.0.1]
