@@ -53,4 +53,40 @@ describe('parseAllowlist', () => {
       terminate: ['api.anthropic.com:443', 'claude.com:443'],
     });
   });
+
+  it('drops an exact-duplicate line within a section, keeping first-occurrence order', () => {
+    const content = [
+      '# passthrough',
+      'archive.ubuntu.com:80',
+      '**.chatgpt.com:443',
+      'archive.ubuntu.com:80',
+      '',
+      '# terminate',
+      'api.anthropic.com:443',
+      'api.anthropic.com:443',
+      'claude.com:443',
+      '',
+    ].join('\n');
+
+    expect(parseAllowlist(content)).toEqual({
+      passthrough: ['archive.ubuntu.com:80', '**.chatgpt.com:443'],
+      terminate: ['api.anthropic.com:443', 'claude.com:443'],
+    });
+  });
+
+  it('keeps the same host in both passthrough and terminate independently', () => {
+    const content = [
+      '# passthrough',
+      'shared.example.com:443',
+      '',
+      '# terminate',
+      'shared.example.com:443',
+      '',
+    ].join('\n');
+
+    expect(parseAllowlist(content)).toEqual({
+      passthrough: ['shared.example.com:443'],
+      terminate: ['shared.example.com:443'],
+    });
+  });
 });

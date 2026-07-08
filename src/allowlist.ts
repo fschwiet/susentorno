@@ -4,8 +4,8 @@ export interface Allowlist {
 }
 
 export function parseAllowlist(content: string): Allowlist {
-  const passthrough: string[] = [];
-  const terminate: string[] = [];
+  const passthrough = new Set<string>();
+  const terminate = new Set<string>();
   let section: 'passthrough' | 'terminate' | null = null;
 
   for (const rawLine of content.split(/\r?\n/)) {
@@ -20,11 +20,11 @@ export function parseAllowlist(content: string): Allowlist {
       continue;
     }
     if (line.startsWith('#')) continue;
-    if (section === 'passthrough') passthrough.push(line);
-    else if (section === 'terminate') terminate.push(line);
+    if (section === 'passthrough') passthrough.add(line);
+    else if (section === 'terminate') terminate.add(line);
   }
 
-  return { passthrough, terminate };
+  return { passthrough: [...passthrough], terminate: [...terminate] };
 }
 
 export function formatAllowlist(allowlist: Allowlist): string {
