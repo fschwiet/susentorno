@@ -17,6 +17,7 @@ const expectedTemplateFiles = [
   'proxy/docker-compose.yml',
   'proxy/gate.lua',
   'proxy/host-allow-vm-inbound.ps1',
+  'proxy/verify-proxy.ps1',
 ];
 
 describe('templates', () => {
