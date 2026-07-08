@@ -14,6 +14,7 @@ const expectedTemplateFiles = [
   'vm-shared/dnsmasq-stub.conf',
   'vm-shared/60-dns-override.yaml',
   'vm-shared/iptables-rules@.service',
+  'vm-shared/verify-config.sh',
   'proxy/docker-compose.yml',
   'proxy/gate.lua',
   'proxy/host-allow-vm-inbound.ps1',
