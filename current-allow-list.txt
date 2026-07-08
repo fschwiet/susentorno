@@ -6,6 +6,9 @@
 ubuntu.com:443
 ubuntu.com:80
 
+##
+github.githubassets.com:443
+
 **.amazonaws.com:443
 **.amazontrust.com:443
 **.amazontrust.com:80
