@@ -89,12 +89,23 @@ describe('configamatron CLI', () => {
       expect(exitCode).toBe(0);
       const outputPath = join(dir, '.configamatron', 'proxy', 'envoy.yaml');
       const config = parse(readFileSync(outputPath, 'utf8')) as any;
-      const cluster = config.static_resources.clusters.find(
+
+      const matchingClusters = config.static_resources.clusters.filter(
         (c: any) => c.name === 'cluster_terminate_api_anthropic_com',
       );
+      expect(matchingClusters).toHaveLength(1);
+      const cluster = matchingClusters[0];
       expect(
         cluster.load_assignment.endpoints[0].lb_endpoints[0].endpoint.address.socket_address,
       ).toEqual({ address: '127.0.0.1', port_value: 9443 });
+
+      const listener443 = config.static_resources.listeners.find(
+        (l: any) => l.name === 'listener_443',
+      );
+      const matchingFilterChains = listener443.filter_chains.filter((fc: any) =>
+        fc.filter_chain_match?.server_names?.includes('api.anthropic.com'),
+      );
+      expect(matchingFilterChains).toHaveLength(1);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

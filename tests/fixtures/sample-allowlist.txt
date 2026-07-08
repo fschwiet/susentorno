@@ -4,3 +4,4 @@ archive.ubuntu.com:80
 
 # terminate
 api.anthropic.com:443
+api.anthropic.com:443
