@@ -97,6 +97,15 @@ Run the scripts from the shared folder in number order. Run them without `sudo` 
   - The coding agent works against `api.anthropic.com` using only the placeholder credential.
   - `apt-get update` succeeds (validates port 80 handling).
 
+### Verifying an environment
+
+Two read-only diagnostic scripts report whether the proxy and the VM are set up correctly. Neither changes any state; each prints a `PASS`/`FAIL`/`WARN` line per check and exits non-zero if anything failed.
+
+- **Host (proxy):** from the environment directory, with the proxy up, run `powershell -ExecutionPolicy Bypass -File .configamatron\proxy\verify-proxy.ps1`. It checks Docker and the Envoy container, that ports 80/443 are listening, that the injected credential secret matches your current host credential, and that live allow/block behavior is correct. It never spends a real token — the credential path is proven by a wrong-`Authorization` request the proxy rejects locally with `403`.
+- **VM (configuration):** inside the VM, run `bash /mnt/hgfs/vm-shared/verify-config.sh [host-ip]`. It checks CA trust, the dnsmasq stub and resolver, the DNAT rules and default route, the placeholder credential, and live allow/block egress. Pass the `<host-ip>` from proxy setup to assert the rules point at it; omit it to have the script discover and report the IP from the installed rules.
+
+Both make real requests to allow-listed hosts (`archive.ubuntu.com`, `pypi.org`) and never make the billable call to `api.anthropic.com`.
+
 ### Watching proxy traffic
 
 `configamatron proxy-logs` (run from the environment directory, while the proxy is up) streams how the proxy handled each host:
