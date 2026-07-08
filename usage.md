@@ -86,7 +86,7 @@ Run the scripts from the shared folder in number order. Run them without `sudo` 
 8. Put the placeholder credential where the Claude Code CLI expects it:
 
    ```
-   mkdir -p ~/.claude && cp /mnt/hgfs/vm-shared/credentials.json ~/.claude/.credentials.json
+   cp /mnt/hgfs/vm-shared/credentials.json ~/.claude/.credentials.json
    ```
 
 ### Isolate and verify
