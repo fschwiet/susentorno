@@ -208,3 +208,4 @@ statsig.anthropic.com:443
 # added after original import from sandbox
 claude.ai:443
 a.claude.ai:443
+a-api.anthropic.com:443
