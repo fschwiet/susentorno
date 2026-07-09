@@ -12,6 +12,8 @@ export interface EnvPaths {
   caDir: string;
   caCert: string;
   caKey: string;
+  caLeafCert: string;
+  caLeafKey: string;
   secretsDir: string;
   sdsSecret: string;
   vmCert: string;
@@ -32,6 +34,8 @@ export function envPaths(cwd: string): EnvPaths {
     caDir: join(proxy, 'ca'),
     caCert: join(proxy, 'ca', 'cert.pem'),
     caKey: join(proxy, 'ca', 'key.pem'),
+    caLeafCert: join(proxy, 'ca', 'leaf-cert.pem'),
+    caLeafKey: join(proxy, 'ca', 'leaf-key.pem'),
     secretsDir: join(proxy, 'secrets'),
     sdsSecret: join(proxy, 'secrets', 'sds-secret.yaml'),
     vmCert: join(vmShared, 'cert.pem'),

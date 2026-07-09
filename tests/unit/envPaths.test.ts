@@ -16,6 +16,8 @@ describe('envPaths', () => {
     expect(paths.caDir).toBe(join(root, 'proxy', 'ca'));
     expect(paths.caCert).toBe(join(root, 'proxy', 'ca', 'cert.pem'));
     expect(paths.caKey).toBe(join(root, 'proxy', 'ca', 'key.pem'));
+    expect(paths.caLeafCert).toBe(join(root, 'proxy', 'ca', 'leaf-cert.pem'));
+    expect(paths.caLeafKey).toBe(join(root, 'proxy', 'ca', 'leaf-key.pem'));
     expect(paths.secretsDir).toBe(join(root, 'proxy', 'secrets'));
     expect(paths.sdsSecret).toBe(join(root, 'proxy', 'secrets', 'sds-secret.yaml'));
     expect(paths.vmCert).toBe(join(root, 'vm-shared', 'cert.pem'));
