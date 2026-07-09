@@ -9,6 +9,12 @@ import { nudgeRefresh } from '../runProxy/nudgeRefresh';
 import { watchCredentials } from '../runProxy/watchCredentials';
 import { runProxyLoop, type RunProxyDeps } from '../runProxy/runProxyLoop';
 import { requireEnvPathsOrExit } from '../envPaths';
+import {
+  planForwarder,
+  resolveForwardListenAddress,
+  startForwarder,
+  type ForwarderHandle,
+} from '../runProxy/forwarder';
 
 interface RunProxyOptions {
   credentials: string;
@@ -18,6 +24,9 @@ interface RunProxyOptions {
   retryInterval: string;
   maxAttempts: string;
   refresh: boolean;
+  forward: boolean;
+  forwardListen?: string;
+  forwardPorts?: string;
 }
 
 export function registerRunProxy(program: Command): void {
@@ -42,6 +51,15 @@ export function registerRunProxy(program: Command): void {
     .option('--retry-interval <minutes>', 'wait this many minutes for a nudge to take', '2')
     .option('--max-attempts <n>', 'consecutive failed refreshes before exiting', '3')
     .option('--no-refresh', 'watch and propagate only; never nudge the CLI to refresh')
+    .option('--no-forward', 'do not forward the VMware host-only interface to loopback')
+    .option(
+      '--forward-listen <ip>',
+      'IP to forward from (default: the VMware host-only adapter IP)',
+    )
+    .option(
+      '--forward-ports <http,https>',
+      'ports to forward (default: ENVOY_HTTP_PORT,ENVOY_HTTPS_PORT or 80,443)',
+    )
     .action(async (options: RunProxyOptions) => {
       const paths = requireEnvPathsOrExit('run-proxy');
       if (!paths) return;
@@ -73,19 +91,59 @@ export function registerRunProxy(program: Command): void {
         now: () => Date.now(),
       };
 
-      const exitCode = await runProxyLoop(
-        {
-          credentialsPath: options.credentials,
-          secretPath,
-          serviceName: options.service,
-          refreshWindowMs: Number(options.refreshWindow) * 60_000,
-          retryIntervalMs: Number(options.retryInterval) * 60_000,
-          maxAttempts: Number(options.maxAttempts),
-          refreshEnabled: options.refresh,
-        },
-        deps,
-      );
+      const [httpPort, httpsPort] = options.forwardPorts
+        ? options.forwardPorts.split(',').map((p) => Number(p.trim()))
+        : [Number(process.env.ENVOY_HTTP_PORT ?? 80), Number(process.env.ENVOY_HTTPS_PORT ?? 443)];
 
-      process.exitCode = exitCode;
+      let forwarder: ForwarderHandle | null = null;
+      const plan = planForwarder(
+        {
+          noForward: !options.forward,
+          forwardListen: options.forwardListen,
+          httpPort,
+          httpsPort,
+        },
+        () => resolveForwardListenAddress(),
+      );
+      if (plan.kind === 'error') {
+        console.error(`run-proxy: ${plan.message}`);
+        process.exitCode = 1;
+        return;
+      }
+      if (plan.kind === 'start') {
+        try {
+          forwarder = await startForwarder({
+            listenAddress: plan.listenAddress,
+            rules: plan.rules,
+          });
+          console.log(
+            `run-proxy: forwarding ${plan.listenAddress}:${httpPort}/${httpsPort} -> 127.0.0.1`,
+          );
+        } catch (err) {
+          console.error(
+            `run-proxy: failed to start forwarder on ${plan.listenAddress}: ${String(err)}`,
+          );
+          process.exitCode = 1;
+          return;
+        }
+      }
+
+      try {
+        const exitCode = await runProxyLoop(
+          {
+            credentialsPath: options.credentials,
+            secretPath,
+            serviceName: options.service,
+            refreshWindowMs: Number(options.refreshWindow) * 60_000,
+            retryIntervalMs: Number(options.retryInterval) * 60_000,
+            maxAttempts: Number(options.maxAttempts),
+            refreshEnabled: options.refresh,
+          },
+          deps,
+        );
+        process.exitCode = exitCode;
+      } finally {
+        await forwarder?.close();
+      }
     });
 }

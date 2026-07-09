@@ -110,7 +110,7 @@ beforeAll(async () => {
   // No --secret flag: exercises the environment default secret path.
   proxyProc = execa(
     'node',
-    [cliPath, 'run-proxy', '--no-refresh', '--credentials', credentialsPath],
+    [cliPath, 'run-proxy', '--no-refresh', '--no-forward', '--credentials', credentialsPath],
     { cwd: repoRoot, env: { ...process.env, ...envoyEnv }, reject: false },
   );
 

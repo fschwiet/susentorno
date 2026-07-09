@@ -84,3 +84,43 @@ export function startForwarder(opts: ForwarderOptions): Promise<ForwarderHandle>
     };
   })();
 }
+
+export interface ForwarderPlanInput {
+  noForward: boolean;
+  forwardListen?: string;
+  httpPort: number;
+  httpsPort: number;
+}
+
+export type ForwarderPlan =
+  | { kind: 'disabled' }
+  | { kind: 'error'; message: string }
+  | { kind: 'start'; listenAddress: string; rules: ForwardRule[] };
+
+/**
+ * Decide whether/how to start the forwarder from CLI options. Pure and testable;
+ * `resolveAddress` is called only when discovery is needed.
+ */
+export function planForwarder(
+  input: ForwarderPlanInput,
+  resolveAddress: () => string | null,
+): ForwarderPlan {
+  if (input.noForward) return { kind: 'disabled' };
+  const listenAddress = input.forwardListen ?? resolveAddress();
+  if (!listenAddress) {
+    return {
+      kind: 'error',
+      message:
+        'could not find the VMware host-only adapter IP to forward from. ' +
+        'Pass --forward-listen <ip>, or --no-forward to disable forwarding.',
+    };
+  }
+  return {
+    kind: 'start',
+    listenAddress,
+    rules: [
+      { listenPort: input.httpPort, connectPort: input.httpPort },
+      { listenPort: input.httpsPort, connectPort: input.httpsPort },
+    ],
+  };
+}
