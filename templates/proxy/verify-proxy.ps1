@@ -126,7 +126,9 @@ $block443 = Invoke-CurlCode @('--resolve', 'blocked.example.com:443:127.0.0.1', 
 if ($block443.Exit -ne 0) { Add-Pass "blocked :443 connection dropped (curlExit=$($block443.Exit))" }
 else { Add-Fail 'blocked :443 connection dropped' "expected a connection failure, but curl succeeded (code=$($block443.Code))" }
 
-$gate = Invoke-CurlCode @('--cacert', $caCert, '--resolve', 'api.anthropic.com:443:127.0.0.1', '-H', 'Authorization: Bearer not-the-placeholder', '--max-time', '20', 'https://api.anthropic.com/')
+# --ssl-no-revoke: our leaf has no CRL/OCSP endpoint, so schannel's default
+# revocation check fails closed (curl error 60) even though the chain is valid.
+$gate = Invoke-CurlCode @('--ssl-no-revoke', '--cacert', $caCert, '--resolve', 'api.anthropic.com:443:127.0.0.1', '-H', 'Authorization: Bearer not-the-placeholder', '--max-time', '20', 'https://api.anthropic.com/')
 if ($gate.Code -eq '403') { Add-Pass 'credential gate: wrong Authorization -> 403 (rejected locally, no token spent)' }
 else { Add-Fail 'credential gate wrong-auth' "expected 403 from gate.lua, got code=$($gate.Code) curlExit=$($gate.Exit)" }
 
@@ -148,7 +150,7 @@ else {
     if ($fwd80.Exit -eq 0 -and [int]($fwd80.Code) -lt 400) { Add-Pass "allow-listed :80 via ${vmIp} -> $($fwd80.Code)" }
     else { Add-Fail "allow-listed :80 via ${vmIp}" "code=$($fwd80.Code) curlExit=$($fwd80.Exit)" }
 
-    $fwdGate = Invoke-CurlCode @('--cacert', $caCert, '--resolve', "api.anthropic.com:443:$vmIp", '-H', 'Authorization: Bearer not-the-placeholder', '--max-time', '20', 'https://api.anthropic.com/')
+    $fwdGate = Invoke-CurlCode @('--ssl-no-revoke', '--cacert', $caCert, '--resolve', "api.anthropic.com:443:$vmIp", '-H', 'Authorization: Bearer not-the-placeholder', '--max-time', '20', 'https://api.anthropic.com/')
     if ($fwdGate.Code -eq '403') { Add-Pass "credential gate via ${vmIp} -> 403" }
     else { Add-Fail "credential gate via ${vmIp}" "expected 403, got code=$($fwdGate.Code) curlExit=$($fwdGate.Exit)" }
 }
