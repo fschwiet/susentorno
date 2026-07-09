@@ -29,7 +29,7 @@ Usually done once per environment. Run every command from the environment direct
 2. `configamatron generate-ca` — writes certificates used by the proxy for https.
 3. `configamatron build-envoy-config` — builds `proxy/envoy.yaml` from `proxy/allowlist.txt`. Edit this environment's allow list and re-run to change what the VM may reach.
 4. `configamatron write-github-config` — prompts for a GitHub fine-grained personal access token and writes `vm-shared/github-config.txt` (username/email come from your global git config). Create the token at https://github.com/settings/personal-access-tokens/new, scoped to the repositories the agent should use, with read/write permission to 'Contents'.
-5. `configamatron run-proxy` — Launches the proxy in a docker container with latest Claude credentials. Makes an effort to keep those credentials updated.
+5. `configamatron run-proxy` — Launches the proxy in a docker container with latest Claude credentials. Makes an effort to keep those credentials updated. It also forwards the VMware host-only interface's `:80`/`:443` to Envoy on loopback, so it must stay running for the VM to reach the proxy (Envoy is published on `127.0.0.1` only). Pass `--no-forward` to disable this, or `--forward-listen <ip>` to override the bind address.
 6. **Windows hosts only:** in an **Administrator** PowerShell, run `powershell -File cd `. This opens inbound TCP 80/443 (Envoy) from the VM's host-only network adapter, and _prints the host IP you need to use in VM-side setup_.
 
 - It defaults to the `VMware Network Adapter VMnet1` interface; pass `-AdapterAlias` if your host-only network uses a different adapter (`Get-NetIPConfiguration` lists them). Safe to re-run if the host's IP on that network changes.
