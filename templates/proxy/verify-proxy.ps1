@@ -130,6 +130,29 @@ $gate = Invoke-CurlCode @('--cacert', $caCert, '--resolve', 'api.anthropic.com:4
 if ($gate.Code -eq '403') { Add-Pass 'credential gate: wrong Authorization -> 403 (rejected locally, no token spent)' }
 else { Add-Fail 'credential gate wrong-auth' "expected 403 from gate.lua, got code=$($gate.Code) curlExit=$($gate.Exit)" }
 
+Write-Section 'VM-path (forwarder -> loopback)'
+
+$vmIpCfg = Get-NetIPConfiguration -InterfaceAlias 'VMware Network Adapter VMnet1' -ErrorAction SilentlyContinue
+$vmIp = ($vmIpCfg.IPv4Address | Select-Object -First 1).IPAddress
+if (-not $vmIp) {
+    Add-Warn 'VM-path checks' 'no IPv4 on VMware Network Adapter VMnet1 -- skipping (is the host-only adapter up?)'
+}
+else {
+    foreach ($port in 80, 443) {
+        $listen = Get-NetTCPConnection -LocalAddress $vmIp -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+        if ($listen) { Add-Pass "forwarder listening on ${vmIp}:$port" }
+        else { Add-Fail "forwarder listening on ${vmIp}:$port" "no listener -- is 'configamatron run-proxy' running?" }
+    }
+
+    $fwd80 = Invoke-CurlCode @('--resolve', "archive.ubuntu.com:80:$vmIp", '--max-time', '20', 'http://archive.ubuntu.com/')
+    if ($fwd80.Exit -eq 0 -and [int]($fwd80.Code) -lt 400) { Add-Pass "allow-listed :80 via ${vmIp} -> $($fwd80.Code)" }
+    else { Add-Fail "allow-listed :80 via ${vmIp}" "code=$($fwd80.Code) curlExit=$($fwd80.Exit)" }
+
+    $fwdGate = Invoke-CurlCode @('--cacert', $caCert, '--resolve', "api.anthropic.com:443:$vmIp", '-H', 'Authorization: Bearer not-the-placeholder', '--max-time', '20', 'https://api.anthropic.com/')
+    if ($fwdGate.Code -eq '403') { Add-Pass "credential gate via ${vmIp} -> 403" }
+    else { Add-Fail "credential gate via ${vmIp}" "expected 403, got code=$($fwdGate.Code) curlExit=$($fwdGate.Exit)" }
+}
+
 Write-Section 'VM reachability'
 
 $rule = Get-NetFirewallRule -DisplayName 'Envoy Sandbox Proxy (VM inbound)' -ErrorAction SilentlyContinue
