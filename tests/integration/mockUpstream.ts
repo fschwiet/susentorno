@@ -1,5 +1,5 @@
 import { createServer, type Server } from 'node:https';
-import selfsigned from 'selfsigned';
+import forge from 'node-forge';
 
 export interface MockUpstream {
   port: number;
@@ -7,14 +7,25 @@ export interface MockUpstream {
   receivedAuthorizationHeaders: string[];
 }
 
+function generateSelfSignedCert(): { key: string; cert: string } {
+  const keys = forge.pki.rsa.generateKeyPair(2048);
+  const cert = forge.pki.createCertificate();
+  cert.publicKey = keys.publicKey;
+  cert.serialNumber = '01';
+  cert.validity.notBefore = new Date();
+  cert.validity.notAfter = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const attrs = [{ name: 'commonName', value: 'mock-upstream' }];
+  cert.setSubject(attrs);
+  cert.setIssuer(attrs);
+  cert.sign(keys.privateKey, forge.md.sha256.create());
+  return { key: forge.pki.privateKeyToPem(keys.privateKey), cert: forge.pki.certificateToPem(cert) };
+}
+
 export function startMockUpstream(): Promise<MockUpstream> {
-  const pems = selfsigned.generate([{ name: 'commonName', value: 'mock-upstream' }], {
-    days: 1,
-    keySize: 2048,
-  });
+  const pems = generateSelfSignedCert();
   const receivedAuthorizationHeaders: string[] = [];
 
-  const server = createServer({ key: pems.private, cert: pems.cert }, (req, res) => {
+  const server = createServer({ key: pems.key, cert: pems.cert }, (req, res) => {
     receivedAuthorizationHeaders.push(req.headers.authorization ?? '');
     res.writeHead(200, { 'content-type': 'text/plain' });
     res.end('mock upstream ok');
