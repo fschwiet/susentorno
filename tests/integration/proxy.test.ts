@@ -124,6 +124,27 @@ describe('Envoy sandbox proxy stack', () => {
     expect(statusCode).toBeLessThan(400);
   });
 
+  it('allows a wildcard-covered Host header on port 80 that was never explicitly listed', async () => {
+    const statusCode = await new Promise<number | undefined>((resolve, reject) => {
+      const req = httpRequest(
+        {
+          host: '127.0.0.1',
+          port: HTTP_PORT,
+          path: '/',
+          headers: { host: 'connectivity-check.ubuntu.com' },
+        },
+        (res) => {
+          res.resume();
+          res.on('end', () => resolve(res.statusCode));
+        },
+      );
+      req.on('error', reject);
+      req.end();
+    });
+
+    expect(statusCode).toBeLessThan(400);
+  });
+
   it('returns 403 for a non-allow-listed Host header on port 80', async () => {
     const statusCode = await new Promise<number | undefined>((resolve, reject) => {
       const req = httpRequest(
