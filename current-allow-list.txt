@@ -9,6 +9,8 @@ ubuntu.com:80
 ##
 github.githubassets.com:443
 assets-proxy.anthropic.com:443
+s-cdn.anthropic.com:443
+assets.claude.ai:443
 
 ## original passthrough entries
 
@@ -203,3 +205,4 @@ statsig.anthropic.com:443
 
 # added after original import from sandbox
 claude.ai:443
+a.claude.ai:443
