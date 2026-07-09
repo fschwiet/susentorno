@@ -90,6 +90,27 @@ describe('Envoy sandbox proxy stack', () => {
     expect(statusCode).toBeLessThan(400);
   });
 
+  it('presents a leaf that chains to the CA, not a self-signed CA cert', async () => {
+    const peer = await new Promise<{ subjectCN?: string; issuerCN?: string }>((resolve, reject) => {
+      const socket = tlsConnect(
+        { host: '127.0.0.1', port: HTTPS_PORT, servername: 'api.anthropic.com', ca: caCertPem },
+        () => {
+          const cert = socket.getPeerCertificate();
+          socket.end();
+          const cn = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+          resolve({ subjectCN: cn(cert.subject?.CN), issuerCN: cn(cert.issuer?.CN) });
+        },
+      );
+      socket.on('error', reject);
+    });
+
+    // Handshake succeeded with `ca: caCertPem` (rejectUnauthorized defaults true), so the leaf
+    // already chained to the installed root. Confirm it is a distinct leaf, not the CA itself.
+    expect(peer.subjectCN).toBe('configamatron-proxy-leaf');
+    expect(peer.issuerCN).toBe('configamatron-proxy-certificate-authority');
+    expect(peer.subjectCN).not.toBe(peer.issuerCN);
+  });
+
   it('closes the connection for a non-allow-listed SNI', async () => {
     await expect(
       new Promise<void>((resolve, reject) => {
