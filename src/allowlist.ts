@@ -15,6 +15,25 @@ function normalizeWildcardHost(host: string): string {
   return host.startsWith('**.') ? `*.${host.slice(3)}` : host;
 }
 
+function prunePassthrough(entries: string[]): string[] {
+  const wildcardSuffixesByPort = new Map<string, string[]>();
+  for (const entry of entries) {
+    const { host, port } = splitHostPort(entry);
+    if (host.startsWith('*.')) {
+      const suffixes = wildcardSuffixesByPort.get(port) ?? [];
+      suffixes.push(host.slice(1)); // "*.ubuntu.com" -> ".ubuntu.com"
+      wildcardSuffixesByPort.set(port, suffixes);
+    }
+  }
+
+  return entries.filter((entry) => {
+    const { host, port } = splitHostPort(entry);
+    if (host.startsWith('*.')) return true;
+    const suffixes = wildcardSuffixesByPort.get(port);
+    return !suffixes?.some((suffix) => host.endsWith(suffix));
+  });
+}
+
 export function parseAllowlist(content: string): Allowlist {
   const passthrough = new Set<string>();
   const terminate = new Set<string>();
@@ -48,7 +67,11 @@ export function parseAllowlist(content: string): Allowlist {
     else terminate.add(entry);
   }
 
-  return { passthrough: [...passthrough], terminate: [...terminate], invalid: [...invalid] };
+  return {
+    passthrough: prunePassthrough([...passthrough]),
+    terminate: [...terminate],
+    invalid: [...invalid],
+  };
 }
 
 export function formatAllowlist(allowlist: Allowlist): string {

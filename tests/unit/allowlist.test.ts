@@ -131,6 +131,77 @@ describe('parseAllowlist', () => {
     });
   });
 
+  it('prunes an exact passthrough entry covered by a same-port wildcard', () => {
+    const content = [
+      '# passthrough',
+      '**.ubuntu.com:80',
+      'archive.ubuntu.com:80',
+      '',
+      '# terminate',
+      'api.anthropic.com:443',
+      '',
+    ].join('\n');
+
+    expect(parseAllowlist(content)).toEqual({
+      passthrough: ['*.ubuntu.com:80'],
+      terminate: ['api.anthropic.com:443'],
+      invalid: [],
+    });
+  });
+
+  it('does not prune an exact entry at a different port than the wildcard', () => {
+    const content = [
+      '# passthrough',
+      '**.ubuntu.com:80',
+      'archive.ubuntu.com:443',
+      '',
+      '# terminate',
+      'api.anthropic.com:443',
+      '',
+    ].join('\n');
+
+    expect(parseAllowlist(content)).toEqual({
+      passthrough: ['*.ubuntu.com:80', 'archive.ubuntu.com:443'],
+      terminate: ['api.anthropic.com:443'],
+      invalid: [],
+    });
+  });
+
+  it('does not prune the wildcard\'s own bare base domain, since it is not a subdomain', () => {
+    const content = [
+      '# passthrough',
+      '**.ubuntu.com:80',
+      'ubuntu.com:80',
+      '',
+      '# terminate',
+      'api.anthropic.com:443',
+      '',
+    ].join('\n');
+
+    expect(parseAllowlist(content)).toEqual({
+      passthrough: ['*.ubuntu.com:80', 'ubuntu.com:80'],
+      terminate: ['api.anthropic.com:443'],
+      invalid: [],
+    });
+  });
+
+  it('does not prune a terminate entry covered by a passthrough wildcard', () => {
+    const content = [
+      '# passthrough',
+      '**.ubuntu.com:80',
+      '',
+      '# terminate',
+      'archive.ubuntu.com:80',
+      '',
+    ].join('\n');
+
+    expect(parseAllowlist(content)).toEqual({
+      passthrough: ['*.ubuntu.com:80'],
+      terminate: ['archive.ubuntu.com:80'],
+      invalid: [],
+    });
+  });
+
   it('flags a mid-string wildcard as invalid instead of treating it as passthrough', () => {
     const content = [
       '# passthrough',
