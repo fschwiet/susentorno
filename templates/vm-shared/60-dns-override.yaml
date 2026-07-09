@@ -12,5 +12,18 @@ network:
       # 127.0.0.1 stub below never reaches systemd-resolved. Declaring dhcp4 keeps
       # DHCP addressing and makes this the active profile carrying the stub.
       dhcp4: true
+      # DHCP-supplied DNS must be suppressed, not just supplemented: VMware's
+      # host-only DHCP hands out the VMnet host IP as a DNS server, nothing on
+      # the host answers DNS there, and systemd-resolved rotates onto the dead
+      # server causing intermittent multi-second lookup stalls (curl exit 28
+      # before any packet leaves the VM). Netplan's NM renderer never emits
+      # ignore-auto-dns on its own — static nameservers merely ADD to the DHCP
+      # ones — and use-dns only affects the networkd renderer, hence both the
+      # override (networkd) and the passthrough (NetworkManager) below.
+      dhcp4-overrides:
+        use-dns: false
       nameservers:
         addresses: [127.0.0.1]
+      networkmanager:
+        passthrough:
+          ipv4.ignore-auto-dns: "true"

@@ -99,6 +99,16 @@ else
   bad 'resolvectl lists 127.0.0.1 as a resolver' 'netplan DNS override not applied?'
 fi
 
+# A second, unreachable upstream (e.g. DHCP-supplied host IP) makes resolved
+# stall intermittently on every lookup that lands on it, so the stub must be
+# the ONLY configured server, not merely present.
+extra_dns="$(resolvectl dns 2>/dev/null | sed 's/^[^:]*://' | tr ' \t' '\n\n' | grep -v '^$' | grep -Fxv '127.0.0.1' | sort -u | tr '\n' ' ')"
+if [ -z "$extra_dns" ]; then
+  ok 'resolvectl lists no resolver besides 127.0.0.1'
+else
+  bad 'resolvectl lists no resolver besides 127.0.0.1' "extra DNS servers configured: $extra_dns(DHCP DNS not suppressed? intermittent lookup stalls likely)"
+fi
+
 section 'Routing / NAT (07)'
 
 if printf '%s\n' "$nat_dump" | grep -q -- "--dport 443 -j DNAT --to-destination ${host_ip}:443"; then
