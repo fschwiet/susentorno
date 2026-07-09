@@ -5,6 +5,7 @@ import type { Allowlist } from '../../src/allowlist';
 const allowlist: Allowlist = {
   passthrough: ['**.chatgpt.com:443', 'archive.ubuntu.com:80'],
   terminate: ['api.anthropic.com:443'],
+  invalid: [],
 };
 
 describe('generateEnvoyConfig', () => {

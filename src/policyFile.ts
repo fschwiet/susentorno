@@ -41,5 +41,6 @@ export function parsePolicyFile(content: string): Allowlist {
   return {
     passthrough: [...passthrough].sort(),
     terminate: [...terminate].sort(),
+    invalid: [],
   };
 }

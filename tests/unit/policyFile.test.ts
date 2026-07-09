@@ -19,6 +19,7 @@ describe('parsePolicyFile', () => {
     expect(parsePolicyFile(content)).toEqual({
       passthrough: ['**.chatgpt.com:443', 'archive.ubuntu.com:80'],
       terminate: ['api.anthropic.com:443', 'claude.com:443'],
+      invalid: [],
     });
   });
 
@@ -28,6 +29,6 @@ describe('parsePolicyFile', () => {
       'local        all             default-fs-write-allow-all     filesystem:write   allow      **',
     ].join('\n');
 
-    expect(parsePolicyFile(content)).toEqual({ passthrough: [], terminate: [] });
+    expect(parsePolicyFile(content)).toEqual({ passthrough: [], terminate: [], invalid: [] });
   });
 });
