@@ -76,7 +76,6 @@ clerk.com:443
 cocoapods.org:443
 cpan.org:443
 crates.io:443
-crl*.digicert.com:80
 crl.comodoca.com:80
 crl.globalsign.com:80
 crl.globalsign.net:80
