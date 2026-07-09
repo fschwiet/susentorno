@@ -78,6 +78,40 @@ else
   bad 'NODE_EXTRA_CA_CERTS set for login shells' "got '${node_ca:-empty}'"
 fi
 
+# Firefox trusts only what its enterprise policy successfully imports, and the
+# snap build imports nothing it cannot read from inside its sandbox (which
+# shadows /usr/local) -- an unreadable Install path fails silently with
+# SEC_ERROR_UNKNOWN_ISSUER on terminated hosts. So check the policy cert is
+# current AND readable from within the confinement, not just present on disk.
+ff_policy=/etc/firefox/policies/policies.json
+ff_ca=/etc/firefox/policies/configamatron-proxy-certificate-authority.pem
+if command -v firefox > /dev/null 2>&1 || snap list firefox > /dev/null 2>&1; then
+  if [ -f "$ff_ca" ] && cmp -s "$ff_ca" "$ca_src"; then
+    ok 'firefox policy cert matches installed proxy CA'
+  else
+    bad 'firefox policy cert matches installed proxy CA' "missing or stale $ff_ca -- re-run 06-trust-ca.sh"
+  fi
+
+  if snap list firefox > /dev/null 2>&1 && [ -f "$ff_policy" ]; then
+    while IFS= read -r cert; do
+      [ -n "$cert" ] || continue
+      if printf 'head -c1 "%s" >/dev/null 2>&1 && echo __READABLE__\nexit\n' "$cert" |
+        snap run --shell firefox 2>/dev/null | grep -q __READABLE__; then
+        ok "firefox snap can read policy cert $cert"
+      else
+        bad 'firefox snap can read policy cert' "$cert unreadable inside snap confinement -- Firefox will not import it"
+      fi
+    done < <(python3 -c 'import json,sys
+try:
+    data = json.load(open(sys.argv[1]))
+    print("\n".join(data.get("policies", {}).get("Certificates", {}).get("Install", [])))
+except Exception:
+    pass' "$ff_policy")
+  fi
+else
+  adv 'firefox CA checks' 'Firefox not found; skipped'
+fi
+
 section 'DNS stub (07)'
 
 if [ "$(systemctl is-active dnsmasq 2>/dev/null)" = 'active' ]; then ok 'dnsmasq active'; else bad 'dnsmasq active' "is-active=$(systemctl is-active dnsmasq 2>/dev/null)"; fi

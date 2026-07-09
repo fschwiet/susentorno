@@ -21,18 +21,30 @@ echo "06-trust-ca: installed and trusted $cert_path; NODE_EXTRA_CA_CERTS configu
 # does this regardless of how Firefox was installed: apt, snap (Canonical
 # special-cased this path), and Mozilla's tarball builds all read
 # /etc/firefox/policies/policies.json. Skip gracefully when Firefox is absent.
-ca_installed=/usr/local/share/ca-certificates/configamatron-proxy-certificate-authority.crt
+#
+# The cert itself must live in /etc/firefox/policies too: the snap build runs
+# strictly confined and its mount namespace shadows /usr/local, so a
+# Certificates.Install entry pointing at /usr/local/share/ca-certificates/*
+# fails silently (policy shows Active in about:policies, import never happens,
+# terminated hosts die with SEC_ERROR_UNKNOWN_ISSUER). /etc/firefox/policies is
+# the one sanctioned path all builds can read — verified from inside the snap
+# sandbox with `snap run --shell firefox`.
 if command -v firefox > /dev/null 2>&1 || snap list firefox > /dev/null 2>&1; then
   policy_dir=/etc/firefox/policies
   policy_file="${policy_dir}/policies.json"
+  ca_for_firefox="${policy_dir}/configamatron-proxy-certificate-authority.pem"
+  ca_stale=/usr/local/share/ca-certificates/configamatron-proxy-certificate-authority.crt
   sudo mkdir -p "$policy_dir"
+  sudo cp "$cert_path" "$ca_for_firefox"
+  sudo chmod 644 "$ca_for_firefox"
 
-  # Merge our CA into any existing policy rather than clobbering it. python3 is
-  # part of the Ubuntu base system, so this adds no package dependency.
-  sudo python3 - "$policy_file" "$ca_installed" <<'PY'
+  # Merge our CA into any existing policy rather than clobbering it, and drop
+  # the snap-unreadable /usr/local path earlier revisions of this script wrote.
+  # python3 is part of the Ubuntu base system, so this adds no package dependency.
+  sudo python3 - "$policy_file" "$ca_for_firefox" "$ca_stale" <<'PY'
 import json, os, sys
 
-policy_file, ca = sys.argv[1], sys.argv[2]
+policy_file, ca, stale = sys.argv[1], sys.argv[2], sys.argv[3]
 data = {}
 if os.path.exists(policy_file):
     with open(policy_file) as f:
@@ -43,6 +55,8 @@ if os.path.exists(policy_file):
 
 certs = data.setdefault("policies", {}).setdefault("Certificates", {})
 installs = certs.setdefault("Install", [])
+if stale in installs:
+    installs.remove(stale)
 if ca not in installs:
     installs.append(ca)
 
