@@ -36,4 +36,11 @@ describe('templates', () => {
     const compose = readFileSync(join(templatesDir(), 'proxy', 'docker-compose.yml'), 'utf8');
     expect(compose).toContain('name: configamatron');
   });
+
+  it('publishes Envoy on loopback only so the run-proxy forwarder owns the host-only interface', () => {
+    const compose = readFileSync(join(templatesDir(), 'proxy', 'docker-compose.yml'), 'utf8');
+    expect(compose).toContain('127.0.0.1:${ENVOY_HTTPS_PORT:-443}:443');
+    expect(compose).toContain('127.0.0.1:${ENVOY_HTTP_PORT:-80}:80');
+    expect(compose).toContain('127.0.0.1:${ENVOY_ADMIN_PORT:-9901}:9901');
+  });
 });
