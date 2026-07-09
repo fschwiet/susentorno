@@ -157,6 +157,50 @@ function buildTerminateEntry(entry: string, overrides: UpstreamOverride[]) {
   return { filterChain, cluster };
 }
 
+const DYNAMIC_FORWARD_PROXY_HTTP_CACHE = 'dynamic_forward_proxy_cache_config_http';
+
+function buildWildcardHttp80VirtualHost(hosts: string[]) {
+  return {
+    name: 'http_wildcard',
+    domains: hosts,
+    routes: [
+      { match: { prefix: '/' }, route: { cluster: 'dynamic_forward_proxy_cluster_http' } },
+    ],
+  };
+}
+
+function buildDynamicForwardProxyHttpCluster() {
+  return {
+    name: 'dynamic_forward_proxy_cluster_http',
+    lb_policy: 'CLUSTER_PROVIDED',
+    cluster_type: {
+      name: 'envoy.clusters.dynamic_forward_proxy',
+      typed_config: {
+        '@type':
+          'type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig',
+        dns_cache_config: {
+          name: DYNAMIC_FORWARD_PROXY_HTTP_CACHE,
+          dns_lookup_family: 'V4_ONLY',
+        },
+      },
+    },
+  };
+}
+
+function buildDynamicForwardProxyHttpFilter() {
+  return {
+    name: 'envoy.filters.http.dynamic_forward_proxy',
+    typed_config: {
+      '@type':
+        'type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig',
+      dns_cache_config: {
+        name: DYNAMIC_FORWARD_PROXY_HTTP_CACHE,
+        dns_lookup_family: 'V4_ONLY',
+      },
+    },
+  };
+}
+
 function buildHttp80Entry(entry: string) {
   const [host, portStr] = entry.split(':');
   const clusterName = `cluster_http_${sanitizeName(host)}`;
@@ -203,7 +247,12 @@ export function generateEnvoyConfig(
   const passthroughServerNames = allowlist.passthrough
     .filter((e) => e.endsWith(':443'))
     .map((e) => e.split(':')[0]);
-  const http80Built = allowlist.passthrough.filter((e) => e.endsWith(':80')).map(buildHttp80Entry);
+  const http80Entries = allowlist.passthrough.filter((e) => e.endsWith(':80'));
+  const http80ExactBuilt = http80Entries.filter((e) => !e.startsWith('*.')).map(buildHttp80Entry);
+  const http80WildcardHosts = http80Entries
+    .filter((e) => e.startsWith('*.'))
+    .map((e) => e.split(':')[0]);
+  const hasWildcardHttp80 = http80WildcardHosts.length > 0;
 
   return {
     node: { id: 'sandbox-proxy', cluster: 'sandbox-proxy' },
@@ -285,7 +334,10 @@ export function generateEnvoyConfig(
                     route_config: {
                       name: 'local_route_80',
                       virtual_hosts: [
-                        ...http80Built.map((b) => b.virtualHost),
+                        ...http80ExactBuilt.map((b) => b.virtualHost),
+                        ...(hasWildcardHttp80
+                          ? [buildWildcardHttp80VirtualHost(http80WildcardHosts)]
+                          : []),
                         {
                           name: 'default_deny',
                           domains: ['*'],
@@ -302,6 +354,7 @@ export function generateEnvoyConfig(
                       ],
                     },
                     http_filters: [
+                      ...(hasWildcardHttp80 ? [buildDynamicForwardProxyHttpFilter()] : []),
                       {
                         name: 'envoy.filters.http.router',
                         typed_config: {
@@ -319,7 +372,8 @@ export function generateEnvoyConfig(
       ],
       clusters: [
         ...terminateBuilt.map((b) => b.cluster),
-        ...http80Built.map((b) => b.cluster),
+        ...http80ExactBuilt.map((b) => b.cluster),
+        ...(hasWildcardHttp80 ? [buildDynamicForwardProxyHttpCluster()] : []),
         {
           name: 'blackhole',
           type: 'STATIC',

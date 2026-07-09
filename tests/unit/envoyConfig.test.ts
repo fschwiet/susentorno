@@ -139,6 +139,55 @@ describe('generateEnvoyConfig', () => {
     expect(httpLog).toMatch(/^CFGM\|http\|/);
   });
 
+  it('routes wildcard :80 hosts through a shared dynamic_forward_proxy_cluster_http', () => {
+    const wildcardAllowlist: Allowlist = {
+      passthrough: ['*.ubuntu.com:80', 'security.ubuntu.com:80'],
+      terminate: ['api.anthropic.com:443'],
+      invalid: [],
+    };
+    const config = generateEnvoyConfig(wildcardAllowlist) as any;
+    const listener80 = config.static_resources.listeners.find(
+      (l: any) => l.name === 'listener_80',
+    );
+    const hcm = listener80.filter_chains[0].filters[0].typed_config;
+    const vhosts = hcm.route_config.virtual_hosts;
+
+    const wildcardVhost = vhosts.find((v: any) => v.domains.includes('*.ubuntu.com'));
+    expect(wildcardVhost.routes[0].route.cluster).toBe('dynamic_forward_proxy_cluster_http');
+
+    const exactVhost = vhosts.find((v: any) => v.domains.includes('security.ubuntu.com'));
+    expect(exactVhost.routes[0].route.cluster).toBe('cluster_http_security_ubuntu_com');
+
+    expect(hcm.http_filters.map((f: any) => f.name)).toEqual([
+      'envoy.filters.http.dynamic_forward_proxy',
+      'envoy.filters.http.router',
+    ]);
+
+    const cluster = config.static_resources.clusters.find(
+      (c: any) => c.name === 'dynamic_forward_proxy_cluster_http',
+    );
+    expect(cluster.lb_policy).toBe('CLUSTER_PROVIDED');
+    expect(cluster.cluster_type.name).toBe('envoy.clusters.dynamic_forward_proxy');
+    expect(cluster.cluster_type.typed_config.dns_cache_config.name).toBe(
+      'dynamic_forward_proxy_cache_config_http',
+    );
+  });
+
+  it('omits the shared http dynamic_forward_proxy cluster and filter when there are no wildcard :80 entries', () => {
+    const config = generateEnvoyConfig(allowlist) as any;
+    const listener80 = config.static_resources.listeners.find(
+      (l: any) => l.name === 'listener_80',
+    );
+    const hcm = listener80.filter_chains[0].filters[0].typed_config;
+
+    expect(hcm.http_filters.map((f: any) => f.name)).toEqual(['envoy.filters.http.router']);
+    expect(
+      config.static_resources.clusters.find(
+        (c: any) => c.name === 'dynamic_forward_proxy_cluster_http',
+      ),
+    ).toBeUndefined();
+  });
+
   it('adds a default_filter_chain that logs blocked SNI and routes to the blackhole cluster', () => {
     const config = generateEnvoyConfig(allowlist) as any;
     const listener443 = config.static_resources.listeners.find(
