@@ -8,6 +8,9 @@ ubuntu.com:80
 
 ##
 github.githubassets.com:443
+assets-proxy.anthropic.com:443
+
+## original passthrough entries
 
 **.amazonaws.com:443
 **.amazontrust.com:443
