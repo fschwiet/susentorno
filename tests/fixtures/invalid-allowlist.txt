@@ -1,0 +1,5 @@
+# passthrough
+crl*.digicert.com:80
+
+# terminate
+api.anthropic.com:443

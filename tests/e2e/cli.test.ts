@@ -111,6 +111,26 @@ describe('configamatron CLI', () => {
     }
   });
 
+  it('build-envoy-config rejects an allowlist with unsupported wildcard syntax', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
+    const fixturePath = fileURLToPath(new URL('../fixtures/invalid-allowlist.txt', import.meta.url));
+
+    try {
+      await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: dir });
+      const { exitCode, stderr } = await execa(
+        'node',
+        [cliPath, 'build-envoy-config', fixturePath],
+        { cwd: dir, reject: false },
+      );
+
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain('crl*.digicert.com:80');
+      expect(existsSync(join(dir, '.configamatron', 'proxy', 'envoy.yaml'))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('build-envoy-config exits 1 without an environment', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
     try {

@@ -41,6 +41,14 @@ export function registerBuildEnvoyConfig(program: Command): void {
         }
         const content = readFileSync(inputPath, 'utf8');
         const allowlist = parseAllowlist(content);
+        if (allowlist.invalid.length > 0) {
+          console.error(
+            `build-envoy-config: unsupported wildcard syntax in ${inputPath}:\n` +
+              allowlist.invalid.map((entry) => `  - ${entry}`).join('\n'),
+          );
+          process.exitCode = 1;
+          return;
+        }
         const config = generateEnvoyConfig(allowlist, { overrides: options.upstreamOverride });
         writeFileSync(outputPath, stringify(config));
         console.log(`build-envoy-config: wrote ${outputPath} from ${inputPath}`);
