@@ -13,10 +13,6 @@ function sanitizeName(host: string): string {
   return host.replace(/[^a-zA-Z0-9]/g, '_');
 }
 
-function toEnvoyWildcard(host: string): string {
-  return host.startsWith('**.') ? `*.${host.slice(3)}` : host;
-}
-
 function accessLog(pathId: string): Record<string, unknown>[] {
   return [
     {
@@ -206,7 +202,7 @@ export function generateEnvoyConfig(
     .map((e) => buildTerminateEntry(e, overrides));
   const passthroughServerNames = allowlist.passthrough
     .filter((e) => e.endsWith(':443'))
-    .map((e) => toEnvoyWildcard(e.split(':')[0]));
+    .map((e) => e.split(':')[0]);
   const http80Built = allowlist.passthrough.filter((e) => e.endsWith(':80')).map(buildHttp80Entry);
 
   return {
