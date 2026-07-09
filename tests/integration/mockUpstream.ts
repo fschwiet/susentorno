@@ -18,7 +18,10 @@ function generateSelfSignedCert(): { key: string; cert: string } {
   cert.setSubject(attrs);
   cert.setIssuer(attrs);
   cert.sign(keys.privateKey, forge.md.sha256.create());
-  return { key: forge.pki.privateKeyToPem(keys.privateKey), cert: forge.pki.certificateToPem(cert) };
+  return {
+    key: forge.pki.privateKeyToPem(keys.privateKey),
+    cert: forge.pki.certificateToPem(cert),
+  };
 }
 
 export function startMockUpstream(): Promise<MockUpstream> {
