@@ -50,8 +50,8 @@ function buildTerminateEntry(entry: string, overrides: UpstreamOverride[]) {
         common_tls_context: {
           tls_certificates: [
             {
-              certificate_chain: { filename: '/etc/envoy/ca/cert.pem' },
-              private_key: { filename: '/etc/envoy/ca/key.pem' },
+              certificate_chain: { filename: '/etc/envoy/ca/leaf-cert.pem' },
+              private_key: { filename: '/etc/envoy/ca/leaf-key.pem' },
             },
           ],
         },

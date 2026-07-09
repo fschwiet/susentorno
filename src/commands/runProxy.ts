@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Command } from 'commander';
@@ -73,6 +73,20 @@ export function registerRunProxy(program: Command): void {
       if (!existsSync(paths.caCert)) {
         console.error(
           `run-proxy: ${paths.caCert} not found — run 'configamatron generate-ca' first`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      // The generated Envoy config references leaf-cert.pem only when it terminates TLS.
+      // If it does, the leaf must be present — a stale allowlist edit without a re-run of
+      // generate-ca would otherwise fail deep inside Envoy startup.
+      if (
+        readFileSync(paths.envoyConfig, 'utf8').includes('leaf-cert.pem') &&
+        !existsSync(paths.caLeafCert)
+      ) {
+        console.error(
+          `run-proxy: ${paths.caLeafCert} not found — the Envoy config terminates TLS; ` +
+            "run 'configamatron generate-ca' after updating the allowlist",
         );
         process.exitCode = 1;
         return;

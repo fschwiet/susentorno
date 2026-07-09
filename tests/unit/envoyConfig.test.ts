@@ -184,6 +184,19 @@ describe('generateEnvoyConfig', () => {
     ).toBeUndefined();
   });
 
+  it('serves the leaf certificate (not the root CA) on terminate chains', () => {
+    const config = generateEnvoyConfig(allowlist) as any;
+    const listener443 = config.static_resources.listeners.find(
+      (l: any) => l.name === 'listener_443',
+    );
+    const terminateChain = listener443.filter_chains.find((fc: any) =>
+      fc.filter_chain_match?.server_names?.includes('api.anthropic.com'),
+    );
+    const tls = terminateChain.transport_socket.typed_config.common_tls_context.tls_certificates[0];
+    expect(tls.certificate_chain.filename).toBe('/etc/envoy/ca/leaf-cert.pem');
+    expect(tls.private_key.filename).toBe('/etc/envoy/ca/leaf-key.pem');
+  });
+
   it('adds a default_filter_chain that logs blocked SNI and routes to the blackhole cluster', () => {
     const config = generateEnvoyConfig(allowlist) as any;
     const listener443 = config.static_resources.listeners.find(
