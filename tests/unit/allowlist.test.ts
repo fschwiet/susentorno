@@ -38,7 +38,7 @@ describe('parseAllowlist', () => {
     ].join('\n');
 
     expect(parseAllowlist(content)).toEqual({
-      passthrough: ['**.chatgpt.com:443', 'archive.ubuntu.com:80'],
+      passthrough: ['*.chatgpt.com:443', 'archive.ubuntu.com:80'],
       terminate: ['api.anthropic.com:443', 'claude.com:443'],
       invalid: [],
     });
@@ -52,7 +52,7 @@ describe('parseAllowlist', () => {
     };
 
     expect(parseAllowlist(formatAllowlist(allowlist))).toEqual({
-      passthrough: ['**.chatgpt.com:443', 'archive.ubuntu.com:80'],
+      passthrough: ['*.chatgpt.com:443', 'archive.ubuntu.com:80'],
       terminate: ['api.anthropic.com:443', 'claude.com:443'],
       invalid: [],
     });
@@ -73,7 +73,7 @@ describe('parseAllowlist', () => {
     ].join('\n');
 
     expect(parseAllowlist(content)).toEqual({
-      passthrough: ['archive.ubuntu.com:80', '**.chatgpt.com:443'],
+      passthrough: ['archive.ubuntu.com:80', '*.chatgpt.com:443'],
       terminate: ['api.anthropic.com:443', 'claude.com:443'],
       invalid: [],
     });
@@ -92,6 +92,41 @@ describe('parseAllowlist', () => {
     expect(parseAllowlist(content)).toEqual({
       passthrough: ['shared.example.com:443'],
       terminate: ['shared.example.com:443'],
+      invalid: [],
+    });
+  });
+
+  it('normalizes **.host to Envoy-native *.host', () => {
+    const content = [
+      '# passthrough',
+      '**.ubuntu.com:80',
+      '',
+      '# terminate',
+      'api.anthropic.com:443',
+      '',
+    ].join('\n');
+
+    expect(parseAllowlist(content)).toEqual({
+      passthrough: ['*.ubuntu.com:80'],
+      terminate: ['api.anthropic.com:443'],
+      invalid: [],
+    });
+  });
+
+  it('collapses **.host and *.host for the same host:port into one normalized entry', () => {
+    const content = [
+      '# passthrough',
+      '**.ubuntu.com:80',
+      '*.ubuntu.com:80',
+      '',
+      '# terminate',
+      'api.anthropic.com:443',
+      '',
+    ].join('\n');
+
+    expect(parseAllowlist(content)).toEqual({
+      passthrough: ['*.ubuntu.com:80'],
+      terminate: ['api.anthropic.com:443'],
       invalid: [],
     });
   });

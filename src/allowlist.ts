@@ -11,6 +11,10 @@ function splitHostPort(entry: string): { host: string; port: string } {
   return { host: entry.slice(0, idx), port: entry.slice(idx + 1) };
 }
 
+function normalizeWildcardHost(host: string): string {
+  return host.startsWith('**.') ? `*.${host.slice(3)}` : host;
+}
+
 export function parseAllowlist(content: string): Allowlist {
   const passthrough = new Set<string>();
   const terminate = new Set<string>();
@@ -39,8 +43,9 @@ export function parseAllowlist(content: string): Allowlist {
       continue;
     }
 
-    if (section === 'passthrough') passthrough.add(line);
-    else terminate.add(line);
+    const entry = hasWildcard ? `${normalizeWildcardHost(host)}:${splitHostPort(line).port}` : line;
+    if (section === 'passthrough') passthrough.add(entry);
+    else terminate.add(entry);
   }
 
   return { passthrough: [...passthrough], terminate: [...terminate], invalid: [...invalid] };
