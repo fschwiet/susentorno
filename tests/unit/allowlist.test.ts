@@ -167,7 +167,7 @@ describe('parseAllowlist', () => {
     });
   });
 
-  it('does not prune the wildcard\'s own bare base domain, since it is not a subdomain', () => {
+  it("does not prune the wildcard's own bare base domain, since it is not a subdomain", () => {
     const content = [
       '# passthrough',
       '**.ubuntu.com:80',

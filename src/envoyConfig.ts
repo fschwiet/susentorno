@@ -163,9 +163,7 @@ function buildWildcardHttp80VirtualHost(hosts: string[]) {
   return {
     name: 'http_wildcard',
     domains: hosts,
-    routes: [
-      { match: { prefix: '/' }, route: { cluster: 'dynamic_forward_proxy_cluster_http' } },
-    ],
+    routes: [{ match: { prefix: '/' }, route: { cluster: 'dynamic_forward_proxy_cluster_http' } }],
   };
 }
 

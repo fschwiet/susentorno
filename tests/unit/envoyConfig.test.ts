@@ -146,9 +146,7 @@ describe('generateEnvoyConfig', () => {
       invalid: [],
     };
     const config = generateEnvoyConfig(wildcardAllowlist) as any;
-    const listener80 = config.static_resources.listeners.find(
-      (l: any) => l.name === 'listener_80',
-    );
+    const listener80 = config.static_resources.listeners.find((l: any) => l.name === 'listener_80');
     const hcm = listener80.filter_chains[0].filters[0].typed_config;
     const vhosts = hcm.route_config.virtual_hosts;
 
@@ -175,9 +173,7 @@ describe('generateEnvoyConfig', () => {
 
   it('omits the shared http dynamic_forward_proxy cluster and filter when there are no wildcard :80 entries', () => {
     const config = generateEnvoyConfig(allowlist) as any;
-    const listener80 = config.static_resources.listeners.find(
-      (l: any) => l.name === 'listener_80',
-    );
+    const listener80 = config.static_resources.listeners.find((l: any) => l.name === 'listener_80');
     const hcm = listener80.filter_chains[0].filters[0].typed_config;
 
     expect(hcm.http_filters.map((f: any) => f.name)).toEqual(['envoy.filters.http.router']);

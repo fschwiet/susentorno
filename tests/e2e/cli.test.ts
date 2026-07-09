@@ -113,7 +113,9 @@ describe('configamatron CLI', () => {
 
   it('build-envoy-config rejects an allowlist with unsupported wildcard syntax', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
-    const fixturePath = fileURLToPath(new URL('../fixtures/invalid-allowlist.txt', import.meta.url));
+    const fixturePath = fileURLToPath(
+      new URL('../fixtures/invalid-allowlist.txt', import.meta.url),
+    );
 
     try {
       await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: dir });
