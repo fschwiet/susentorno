@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { parseAllowlist, formatAllowlist, type Allowlist } from '../../src/allowlist';
+import {
+  parseAllowlist,
+  formatAllowlist,
+  terminateTlsHosts,
+  type Allowlist,
+} from '../../src/allowlist';
 
 describe('formatAllowlist', () => {
   it('writes sorted passthrough and terminate sections', () => {
@@ -254,5 +259,21 @@ describe('parseAllowlist', () => {
       terminate: ['api.anthropic.com:443'],
       invalid: ['crl*.digicert.com:80'],
     });
+  });
+});
+
+describe('terminateTlsHosts', () => {
+  it('returns terminate :443 hosts without the port and excludes passthrough', () => {
+    const allowlist: Allowlist = {
+      passthrough: ['pypi.org:443', 'archive.ubuntu.com:80'],
+      terminate: ['api.anthropic.com:443', 'claude.com:443'],
+      invalid: [],
+    };
+    expect(terminateTlsHosts(allowlist)).toEqual(['api.anthropic.com', 'claude.com']);
+  });
+
+  it('ignores non-:443 terminate entries', () => {
+    const allowlist: Allowlist = { passthrough: [], terminate: ['example.com:80'], invalid: [] };
+    expect(terminateTlsHosts(allowlist)).toEqual([]);
   });
 });

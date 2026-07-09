@@ -74,6 +74,13 @@ export function parseAllowlist(content: string): Allowlist {
   };
 }
 
+/** Hosts the proxy terminates TLS for (the leaf's SANs): terminate entries on :443, port stripped. */
+export function terminateTlsHosts(allowlist: Allowlist): string[] {
+  return allowlist.terminate
+    .filter((entry) => entry.endsWith(':443'))
+    .map((entry) => entry.slice(0, entry.lastIndexOf(':')));
+}
+
 export function formatAllowlist(allowlist: Allowlist): string {
   const lines: string[] = ['# passthrough'];
   for (const entry of [...allowlist.passthrough].sort()) lines.push(entry);
