@@ -4,15 +4,11 @@ export interface Allowlist {
   invalid: string[];
 }
 
-const WILDCARD_HOST_PATTERN = /^\*{1,2}\.[^*]+$/;
+export const WILDCARD_HOST_PATTERN = /^\*\.[^*]+$/;
 
 function splitHostPort(entry: string): { host: string; port: string } {
   const idx = entry.lastIndexOf(':');
   return { host: entry.slice(0, idx), port: entry.slice(idx + 1) };
-}
-
-function normalizeWildcardHost(host: string): string {
-  return host.startsWith('**.') ? `*.${host.slice(3)}` : host;
 }
 
 function prunePassthrough(entries: string[]): string[] {
@@ -62,9 +58,8 @@ export function parseAllowlist(content: string): Allowlist {
       continue;
     }
 
-    const entry = hasWildcard ? `${normalizeWildcardHost(host)}:${splitHostPort(line).port}` : line;
-    if (section === 'passthrough') passthrough.add(entry);
-    else terminate.add(entry);
+    if (section === 'passthrough') passthrough.add(line);
+    else terminate.add(line);
   }
 
   return {

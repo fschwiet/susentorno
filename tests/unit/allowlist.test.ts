@@ -9,7 +9,7 @@ import {
 describe('formatAllowlist', () => {
   it('writes sorted passthrough and terminate sections', () => {
     const allowlist: Allowlist = {
-      passthrough: ['archive.ubuntu.com:80', '**.chatgpt.com:443'],
+      passthrough: ['archive.ubuntu.com:80', '*.chatgpt.com:443'],
       terminate: ['claude.com:443', 'api.anthropic.com:443'],
       invalid: [],
     };
@@ -17,7 +17,7 @@ describe('formatAllowlist', () => {
     expect(formatAllowlist(allowlist)).toBe(
       [
         '# passthrough',
-        '**.chatgpt.com:443',
+        '*.chatgpt.com:443',
         'archive.ubuntu.com:80',
         '',
         '# terminate',
@@ -33,7 +33,7 @@ describe('parseAllowlist', () => {
   it('splits entries into passthrough and terminate by section header', () => {
     const content = [
       '# passthrough',
-      '**.chatgpt.com:443',
+      '*.chatgpt.com:443',
       'archive.ubuntu.com:80',
       '',
       '# terminate',
@@ -51,7 +51,7 @@ describe('parseAllowlist', () => {
 
   it('round-trips through formatAllowlist', () => {
     const allowlist: Allowlist = {
-      passthrough: ['archive.ubuntu.com:80', '**.chatgpt.com:443'],
+      passthrough: ['archive.ubuntu.com:80', '*.chatgpt.com:443'],
       terminate: ['claude.com:443', 'api.anthropic.com:443'],
       invalid: [],
     };
@@ -67,7 +67,7 @@ describe('parseAllowlist', () => {
     const content = [
       '# passthrough',
       'archive.ubuntu.com:80',
-      '**.chatgpt.com:443',
+      '*.chatgpt.com:443',
       'archive.ubuntu.com:80',
       '',
       '# terminate',
@@ -101,10 +101,11 @@ describe('parseAllowlist', () => {
     });
   });
 
-  it('normalizes **.host to Envoy-native *.host', () => {
+  it('flags a **.host wildcard as invalid instead of normalizing it', () => {
     const content = [
       '# passthrough',
       '**.ubuntu.com:80',
+      'archive.ubuntu.com:80',
       '',
       '# terminate',
       'api.anthropic.com:443',
@@ -112,17 +113,17 @@ describe('parseAllowlist', () => {
     ].join('\n');
 
     expect(parseAllowlist(content)).toEqual({
-      passthrough: ['*.ubuntu.com:80'],
+      passthrough: ['archive.ubuntu.com:80'],
       terminate: ['api.anthropic.com:443'],
-      invalid: [],
+      invalid: ['**.ubuntu.com:80'],
     });
   });
 
-  it('collapses **.host and *.host for the same host:port into one normalized entry', () => {
+  it('keeps *.host but flags the **.host spelling of the same host as invalid', () => {
     const content = [
       '# passthrough',
-      '**.ubuntu.com:80',
       '*.ubuntu.com:80',
+      '**.ubuntu.com:80',
       '',
       '# terminate',
       'api.anthropic.com:443',
@@ -132,14 +133,14 @@ describe('parseAllowlist', () => {
     expect(parseAllowlist(content)).toEqual({
       passthrough: ['*.ubuntu.com:80'],
       terminate: ['api.anthropic.com:443'],
-      invalid: [],
+      invalid: ['**.ubuntu.com:80'],
     });
   });
 
   it('prunes an exact passthrough entry covered by a same-port wildcard', () => {
     const content = [
       '# passthrough',
-      '**.ubuntu.com:80',
+      '*.ubuntu.com:80',
       'archive.ubuntu.com:80',
       '',
       '# terminate',
@@ -157,7 +158,7 @@ describe('parseAllowlist', () => {
   it('does not prune an exact entry at a different port than the wildcard', () => {
     const content = [
       '# passthrough',
-      '**.ubuntu.com:80',
+      '*.ubuntu.com:80',
       'archive.ubuntu.com:443',
       '',
       '# terminate',
@@ -175,7 +176,7 @@ describe('parseAllowlist', () => {
   it("does not prune the wildcard's own bare base domain, since it is not a subdomain", () => {
     const content = [
       '# passthrough',
-      '**.ubuntu.com:80',
+      '*.ubuntu.com:80',
       'ubuntu.com:80',
       '',
       '# terminate',
@@ -193,7 +194,7 @@ describe('parseAllowlist', () => {
   it('does not prune a terminate entry covered by a passthrough wildcard', () => {
     const content = [
       '# passthrough',
-      '**.ubuntu.com:80',
+      '*.ubuntu.com:80',
       '',
       '# terminate',
       'archive.ubuntu.com:80',
@@ -231,7 +232,7 @@ describe('parseAllowlist', () => {
       'archive.ubuntu.com:80',
       '',
       '# terminate',
-      '**.anthropic.com:443',
+      '*.anthropic.com:443',
       'api.anthropic.com:443',
       '',
     ].join('\n');
@@ -239,7 +240,7 @@ describe('parseAllowlist', () => {
     expect(parseAllowlist(content)).toEqual({
       passthrough: ['archive.ubuntu.com:80'],
       terminate: ['api.anthropic.com:443'],
-      invalid: ['**.anthropic.com:443'],
+      invalid: ['*.anthropic.com:443'],
     });
   });
 
