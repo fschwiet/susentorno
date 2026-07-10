@@ -157,7 +157,7 @@ describe('S2: switch to host-only and reboot', () => {
 
     expect((await guest('g1', 'systemctl is-active dnsmasq')).stdout.trim()).toBe('active');
     expect(
-      (await guest('g1', `systemctl is-active iptables-rules@${BRIDGE_IP}.service`)).stdout.trim(),
+      (await guest('g1', 'systemctl is-active configamatron-egress.service')).stdout.trim(),
     ).toBe('active');
   }, 600_000);
 

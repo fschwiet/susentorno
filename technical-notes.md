@@ -38,7 +38,7 @@ Every Envoy path writes a machine-parseable access-log line to the container's s
 `07-setup-persistence.sh` installs two persistent units:
 
 - **dnsmasq** answers the VM's DNS queries locally so name resolution works without outbound DNS; a netplan override pins the VM's resolver to the local stub. See `docs/superpowers/specs/2026-07-04-vm-dns-stub-dnsmasq-design.md` and `docs/superpowers/specs/2026-07-04-vm-dns-netplan-merge-and-iptables-path-design.md`.
-- **iptables-rules@\<host-ip\>.service** DNATs the VM's outbound 80/443 traffic to Envoy on the host and installs a guarded host-only default route at boot (host-only networking hands out no DHCP gateway). See `docs/superpowers/specs/2026-07-05-vm-host-only-default-route-design.md`. A live NAT→host-only switch does not re-run the unit: reboot, or `sudo systemctl restart iptables-rules@<host-ip>.service`.
+- **configamatron-egress.service** DNATs the VM's outbound 80/443 traffic to Envoy on the host and installs a guarded host-only default route at boot (host-only networking hands out no DHCP gateway). See `docs/superpowers/specs/2026-07-05-vm-host-only-default-route-design.md` and `docs/superpowers/specs/2026-07-10-configamatron-egress-service-idempotent-design.md`. A live NAT→host-only switch does not re-run the unit: reboot, or `sudo systemctl restart configamatron-egress.service`.
 
 ## Testing
 

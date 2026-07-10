@@ -82,12 +82,12 @@ Run the scripts from the shared folder in number order. Run them without `sudo` 
 4. Open a new terminal, then `04-configure-tools.sh` — a browser opens for context7 login; close it and cancel the script if you don't want to use credentials.
 5. `05-github-auth.sh`
 6. `06-trust-ca.sh` — trusts the proxy CA. Defaults to the `cert.pem` sitting next to the script.
-7. `07-setup-persistence.sh <host-ip>` — `<host-ip>` is printed by proxy setup step 6. Installs and starts dnsmasq (local DNS stub) and the `iptables-rules@<host-ip>.service` DNAT rules, and points the VM's resolver at the local stub via a netplan override. Both units start automatically on every future VM boot.
+7. `07-setup-persistence.sh <host-ip>` — `<host-ip>` is printed by proxy setup step 6. Installs and starts dnsmasq (local DNS stub) and the `configamatron-egress.service` DNAT rules, and points the VM's resolver at the local stub via a netplan override. Both units start automatically on every future VM boot.
 8. `08-claude-config.sh` — sets `hasCompletedOnboarding` in `~/.claude.json` (the CLI refuses to run otherwise) and symlinks `~/.claude/.credentials.json` to the shared `credentials.json`, replacing the old manual copy.
 
 ### Isolate and verify
 
-- Switch the VM's network from NAT to host-only, then **reboot the VM** so the boot-time rules unit installs the host-only default route (host-only mode has no DHCP gateway). `sudo systemctl restart iptables-rules@<host-ip>.service` is an alternative to a reboot.
+- Switch the VM's network from NAT to host-only, then **reboot the VM** so the boot-time rules unit installs the host-only default route (host-only mode has no DHCP gateway). `sudo systemctl restart configamatron-egress.service` is an alternative to a reboot.
 - Verify from inside the VM:
   - `curl` to an allow-listed domain succeeds; a non-allow-listed domain fails/resets.
   - The coding agent works against `api.anthropic.com` using only the placeholder credential.

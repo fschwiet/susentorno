@@ -83,7 +83,7 @@ case "$cmd" in
     out="${3:?usage: guest.sh diag <name> <outdir>}"
     mkdir -p "$out"
     cp "$RUN/$name-serial.log" "$out/serial.log" 2> /dev/null || true
-    gexec "$name" 'sudo journalctl -u dnsmasq -u "iptables-rules@*" --no-pager' > "$out/journal.txt" 2>&1 || true
+    gexec "$name" 'sudo journalctl -u dnsmasq -u configamatron-egress.service --no-pager' > "$out/journal.txt" 2>&1 || true
     gexec "$name" 'ip addr; echo; ip -4 route; echo; sudo iptables -t nat -S; echo; resolvectl status' > "$out/network.txt" 2>&1 || true
     echo "guest $name: diagnostics in $out"
     ;;

@@ -167,7 +167,7 @@ else
   adv 'default route present' "unexpected route: $(printf '%s' "$route" | head -n1)"
 fi
 
-svc="iptables-rules@${host_ip}.service"
+svc="configamatron-egress.service"
 if [ -n "$host_ip" ]; then
   if [ "$(systemctl is-active "$svc" 2>/dev/null)" = 'active' ]; then ok "$svc active"; else bad "$svc active" "is-active=$(systemctl is-active "$svc" 2>/dev/null)"; fi
   if [ "$(systemctl is-enabled "$svc" 2>/dev/null)" = 'enabled' ]; then ok "$svc enabled at boot"; else bad "$svc enabled at boot" "is-enabled=$(systemctl is-enabled "$svc" 2>/dev/null)"; fi
