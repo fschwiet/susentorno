@@ -1,5 +1,5 @@
 # passthrough
-**.chatgpt.com:443
+*.chatgpt.com:443
 archive.ubuntu.com:80
 
 # terminate

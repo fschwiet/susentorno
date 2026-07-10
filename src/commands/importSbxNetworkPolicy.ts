@@ -15,6 +15,12 @@ export function registerImportSbxNetworkPolicy(program: Command): void {
     .action((policyFile: string, options: { output: string }) => {
       const content = readFileSync(policyFile, 'utf8');
       const allowlist = parsePolicyFile(content);
+      if (allowlist.invalid.length > 0) {
+        console.warn(
+          'import-sbx-network-policy: skipping unsupported wildcard pattern(s):\n' +
+            allowlist.invalid.map((entry) => `  - ${entry}`).join('\n'),
+        );
+      }
       writeFileSync(options.output, formatAllowlist(allowlist));
     });
 }

@@ -54,7 +54,7 @@ describe('configamatron CLI', () => {
       expect(readFileSync(join(dir, 'current-allow-list.txt'), 'utf8')).toBe(
         [
           '# passthrough',
-          '**.chatgpt.com:443',
+          '*.chatgpt.com:443',
           'archive.ubuntu.com:80',
           '',
           '# terminate',
@@ -63,6 +63,27 @@ describe('configamatron CLI', () => {
           '',
         ].join('\n'),
       );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('warns and skips unsupported wildcard patterns but still writes the file', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
+    const fixturePath = fileURLToPath(new URL('../fixtures/sample-policy.txt', import.meta.url));
+
+    try {
+      const { exitCode, stderr } = await execa(
+        'node',
+        [cliPath, 'import-sbx-network-policy', fixturePath],
+        { cwd: dir },
+      );
+
+      expect(exitCode).toBe(0);
+      expect(stderr).toContain('foo*.bar.com:443');
+      const written = readFileSync(join(dir, 'current-allow-list.txt'), 'utf8');
+      expect(written).toContain('*.chatgpt.com:443');
+      expect(written).not.toContain('foo*.bar.com');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

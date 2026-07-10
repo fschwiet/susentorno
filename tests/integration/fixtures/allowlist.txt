@@ -1,7 +1,7 @@
 # passthrough
 pypi.org:443
 archive.ubuntu.com:80
-**.ubuntu.com:80
+*.ubuntu.com:80
 
 # terminate
 api.anthropic.com:443

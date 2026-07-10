@@ -2,6 +2,7 @@ PROVENANCE   APPLIES_TO      POLICY/RULE                    TYPE               D
 local        all             default-ai-services            network            allow      **.chatgpt.com:443
                                                                                           api.anthropic.com:443
                                                                                           claude.com:443
+                                                                                          foo*.bar.com:443
 
 local        all             default-os-packages            network            allow      archive.ubuntu.com:80
 
