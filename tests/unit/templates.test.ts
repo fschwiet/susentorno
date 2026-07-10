@@ -39,10 +39,7 @@ describe('templates', () => {
   });
 
   it('suppresses DHCP-supplied DNS on both renderers so the stub is the only resolver', () => {
-    const netplan = readFileSync(
-      join(templatesDir(), 'vm-shared', '60-dns-override.yaml'),
-      'utf8',
-    );
+    const netplan = readFileSync(join(templatesDir(), 'vm-shared', '60-dns-override.yaml'), 'utf8');
     // networkd honors use-dns; NetworkManager needs the keyfile passthrough.
     // Without both, VMware's host-only DHCP adds the (dead) VMnet host IP as a
     // second resolver and lookups stall intermittently.
