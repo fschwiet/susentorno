@@ -11,6 +11,7 @@ const expectedTemplateFiles = [
   'vm-shared/05-github-auth.sh',
   'vm-shared/06-trust-ca.sh',
   'vm-shared/07-setup-persistence.sh',
+  'vm-shared/08-claude-config.sh',
   'vm-shared/dnsmasq-stub.conf',
   'vm-shared/60-dns-override.yaml',
   'vm-shared/iptables-rules@.service',
