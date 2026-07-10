@@ -177,7 +177,7 @@ section 'Placeholder credential'
 
 cred="$HOME/.claude/.credentials.json"
 if [ ! -f "$cred" ]; then
-  bad 'placeholder credential in place' "missing $cred -- copy vm-shared/credentials.json to it"
+  bad 'placeholder credential in place' "missing $cred -- run 08-claude-config.sh to link vm-shared/credentials.json"
 elif grep -q "$PLACEHOLDER" "$cred"; then
   ok 'credentials.json is the placeholder'
 else

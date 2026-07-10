@@ -83,11 +83,7 @@ Run the scripts from the shared folder in number order. Run them without `sudo` 
 5. `05-github-auth.sh`
 6. `06-trust-ca.sh` — trusts the proxy CA. Defaults to the `cert.pem` sitting next to the script.
 7. `07-setup-persistence.sh <host-ip>` — `<host-ip>` is printed by proxy setup step 6. Installs and starts dnsmasq (local DNS stub) and the `iptables-rules@<host-ip>.service` DNAT rules, and points the VM's resolver at the local stub via a netplan override. Both units start automatically on every future VM boot.
-8. Put the placeholder credential where the Claude Code CLI expects it:
-
-   ```
-   cp /mnt/hgfs/vm-shared/credentials.json ~/.claude/.credentials.json
-   ```
+8. `08-claude-config.sh` — sets `hasCompletedOnboarding` in `~/.claude.json` (the CLI refuses to run otherwise) and symlinks `~/.claude/.credentials.json` to the shared `credentials.json`, replacing the old manual copy.
 
 ### Isolate and verify
 
