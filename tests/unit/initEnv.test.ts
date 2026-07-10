@@ -38,7 +38,7 @@ describe('initEnvironment', () => {
       'vm-shared/01-apt-packages.sh',
       'vm-shared/06-trust-ca.sh',
       'vm-shared/07-setup-persistence.sh',
-      'vm-shared/iptables-rules@.service',
+      'vm-shared/configamatron-egress.service',
       'vm-shared/credentials.json',
       'proxy/docker-compose.yml',
       'proxy/gate.lua',

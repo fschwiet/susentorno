@@ -14,7 +14,7 @@ const expectedTemplateFiles = [
   'vm-shared/08-claude-config.sh',
   'vm-shared/dnsmasq-stub.conf',
   'vm-shared/60-dns-override.yaml',
-  'vm-shared/iptables-rules@.service',
+  'vm-shared/configamatron-egress.service',
   'vm-shared/verify-config.sh',
   'proxy/docker-compose.yml',
   'proxy/gate.lua',
