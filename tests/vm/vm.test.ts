@@ -108,6 +108,48 @@ describe('S1: setup during NAT phase', () => {
   });
 });
 
+describe('S1b: claude config (08) and firefox policy merge (06), offline', () => {
+  it('08 sets hasCompletedOnboarding on a fresh ~/.claude.json', async () => {
+    await guest('g1', 'rm -f "$HOME/.claude.json" && bash /mnt/vm-shared/08-claude-config.sh');
+    const { stdout } = await guest(
+      'g1',
+      `python3 -c "import json,os;print(json.load(open(os.path.expanduser('~/.claude.json')))['hasCompletedOnboarding'])"`,
+    );
+    expect(stdout.trim()).toBe('True');
+  });
+
+  it('08 merges into an existing ~/.claude.json without clobbering, idempotently', async () => {
+    await guest(
+      'g1',
+      `printf '%s' '{"someExisting": 123}' > "$HOME/.claude.json" && bash /mnt/vm-shared/08-claude-config.sh && bash /mnt/vm-shared/08-claude-config.sh`,
+    );
+    const { stdout } = await guest(
+      'g1',
+      `python3 -c "import json,os;d=json.load(open(os.path.expanduser('~/.claude.json')));print(d['hasCompletedOnboarding'], d['someExisting'])"`,
+    );
+    expect(stdout.trim()).toBe('True 123');
+  });
+
+  it('08 symlinks the placeholder credential into place', async () => {
+    const link = await guest('g1', 'readlink "$HOME/.claude/.credentials.json"');
+    expect(link.stdout.trim()).toBe('/mnt/vm-shared/credentials.json');
+    const body = await guest('g1', 'cat "$HOME/.claude/.credentials.json"');
+    expect(body.stdout).toContain('sk-ant-oat-SANDBOX-PLACEHOLDER');
+  });
+
+  it('06 merges the CA into an existing firefox policies.json, preserving other keys', async () => {
+    await guest(
+      'g1',
+      `printf '#!/bin/sh\\n' | sudo tee /usr/local/bin/firefox >/dev/null && sudo chmod +x /usr/local/bin/firefox && sudo mkdir -p /etc/firefox/policies && printf '%s' '{"policies":{"SomeOther":true,"Certificates":{"Install":["/usr/local/share/ca-certificates/configamatron-proxy-certificate-authority.crt"]}}}' | sudo tee /etc/firefox/policies/policies.json >/dev/null && bash /mnt/vm-shared/06-trust-ca.sh`,
+    );
+    const { stdout } = await guest(
+      'g1',
+      `python3 -c "import json;d=json.load(open('/etc/firefox/policies/policies.json'));i=d['policies']['Certificates']['Install'];print(d['policies']['SomeOther'], '/etc/firefox/policies/configamatron-proxy-certificate-authority.pem' in i, '/usr/local/share/ca-certificates/configamatron-proxy-certificate-authority.crt' in i)"`,
+    );
+    expect(stdout.trim()).toBe('True True False');
+  });
+});
+
 describe('S2: switch to host-only and reboot', () => {
   it('reboots into host-only mode with both units active', async () => {
     await harness('net.sh', 'dhcp', 'hostonly');
