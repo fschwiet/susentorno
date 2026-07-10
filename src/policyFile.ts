@@ -1,4 +1,5 @@
 import type { Allowlist } from './allowlist';
+import { WILDCARD_HOST_PATTERN } from './allowlist';
 
 const TERMINATE_HOSTS = new Set([
   'api.anthropic.com',
@@ -9,9 +10,14 @@ const TERMINATE_HOSTS = new Set([
   'downloads.claude.ai',
 ]);
 
+function normalizeWildcardHost(host: string): string {
+  return host.startsWith('**.') ? `*.${host.slice(3)}` : host;
+}
+
 export function parsePolicyFile(content: string): Allowlist {
   const passthrough = new Set<string>();
   const terminate = new Set<string>();
+  const invalid = new Set<string>();
   let currentType: string | null = null;
   let currentDecision: string | null = null;
 
@@ -19,6 +25,15 @@ export function parsePolicyFile(content: string): Allowlist {
     if (!resource) return;
     if (currentType !== 'network' || currentDecision !== 'allow') return;
     const host = resource.split(':')[0];
+    if (host.includes('*')) {
+      const normalizedHost = normalizeWildcardHost(host);
+      if (!WILDCARD_HOST_PATTERN.test(normalizedHost)) {
+        invalid.add(resource);
+        return;
+      }
+      passthrough.add(`${normalizedHost}${resource.slice(host.length)}`);
+      return;
+    }
     if (TERMINATE_HOSTS.has(host)) terminate.add(resource);
     else passthrough.add(resource);
   };
@@ -41,6 +56,6 @@ export function parsePolicyFile(content: string): Allowlist {
   return {
     passthrough: [...passthrough].sort(),
     terminate: [...terminate].sort(),
-    invalid: [],
+    invalid: [...invalid].sort(),
   };
 }

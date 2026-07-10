@@ -17,9 +17,25 @@ describe('parsePolicyFile', () => {
     ].join('\n');
 
     expect(parsePolicyFile(content)).toEqual({
-      passthrough: ['**.chatgpt.com:443', 'archive.ubuntu.com:80'],
+      passthrough: ['*.chatgpt.com:443', 'archive.ubuntu.com:80'],
       terminate: ['api.anthropic.com:443', 'claude.com:443'],
       invalid: [],
+    });
+  });
+
+  it('normalizes **.host and skips unsupported wildcard patterns', () => {
+    const content = [
+      'PROVENANCE   APPLIES_TO   POLICY/RULE   TYPE      DECISION   RESOURCES',
+      'local        all          svc           network   allow      **.chatgpt.com:443',
+      '                                                             *.already.com:443',
+      '                                                             foo*.bar.com:443',
+      '                                                             api.anthropic.com:443',
+    ].join('\n');
+
+    expect(parsePolicyFile(content)).toEqual({
+      passthrough: ['*.already.com:443', '*.chatgpt.com:443'],
+      terminate: ['api.anthropic.com:443'],
+      invalid: ['foo*.bar.com:443'],
     });
   });
 
