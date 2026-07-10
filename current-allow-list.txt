@@ -11,6 +11,8 @@ github.githubassets.com:443
 assets-proxy.anthropic.com:443
 a-cdn.anthropic.com:443
 s-cdn.anthropic.com:443
+a-cdn.claude.ai:443
+s-cdn.claude.ai:443
 assets.claude.ai:443
 
 ## needed for claude login attempt
