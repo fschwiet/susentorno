@@ -13,6 +13,9 @@ a-cdn.anthropic.com:443
 s-cdn.anthropic.com:443
 assets.claude.ai:443
 
+## needed for claude login attempt
+*.hcaptcha.com:443
+
 
 ## original passthrough entries
 
