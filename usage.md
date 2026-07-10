@@ -84,23 +84,14 @@ Run the scripts from the shared folder in number order. Run them without `sudo` 
 6. `06-trust-ca.sh` — trusts the proxy CA. Defaults to the `cert.pem` sitting next to the script.
 7. `07-setup-persistence.sh <host-ip>` — `<host-ip>` is printed by proxy setup step 6. Installs and starts dnsmasq (local DNS stub) and the `configamatron-egress.service` DNAT rules, and points the VM's resolver at the local stub via a netplan override. Both units start automatically on every future VM boot.
 8. `08-claude-config.sh` — sets `hasCompletedOnboarding` in `~/.claude.json` (the CLI refuses to run otherwise) and symlinks `~/.claude/.credentials.json` to the shared `credentials.json`, replacing the old manual copy.
-
-### Isolate and verify
-
-- Switch the VM's network from NAT to host-only, then **reboot the VM** so the boot-time rules unit installs the host-only default route (host-only mode has no DHCP gateway). `sudo systemctl restart configamatron-egress.service` is an alternative to a reboot.
-- Verify from inside the VM:
-  - `curl` to an allow-listed domain succeeds; a non-allow-listed domain fails/resets.
-  - The coding agent works against `api.anthropic.com` using only the placeholder credential.
-  - `apt-get update` succeeds (validates port 80 handling).
+9. Switch the VM's network from NAT to host-only then reboot the VM so boot-time rules and take affect.
 
 ### Verifying an environment
 
 Two read-only diagnostic scripts report whether the proxy and the VM are set up correctly. Neither changes any state; each prints a `PASS`/`FAIL`/`WARN` line per check and exits non-zero if anything failed.
 
-- **Host (proxy):** from the environment directory, with the proxy up, run `powershell -ExecutionPolicy Bypass -File .configamatron\proxy\verify-proxy.ps1`. It checks Docker and the Envoy container, that ports 80/443 are listening, that the injected credential secret matches your current host credential, and that live allow/block behavior is correct. It never spends a real token — the credential path is proven by a wrong-`Authorization` request the proxy rejects locally with `403`.
-- **VM (configuration):** inside the VM, run `bash /mnt/hgfs/vm-shared/verify-config.sh [host-ip]`. It checks CA trust, the dnsmasq stub and resolver, the DNAT rules and default route, the placeholder credential, and live allow/block egress. Pass the `<host-ip>` from proxy setup to assert the rules point at it; omit it to have the script discover and report the IP from the installed rules.
-
-Both make real requests to allow-listed hosts (`archive.ubuntu.com`, `pypi.org`) and never make the billable call to `api.anthropic.com`.
+- **Host (proxy):** from the environment directory, with the proxy up, run `.configamatron\proxy\verify-proxy.ps1`.
+- **VM (configuration):** inside the VM, run `./mnt/hgfs/vm-shared/verify-config.sh [host-ip]`. Pass the `<host-ip>` from proxy setup to assert the rules point at it; omit it to have the script discover and report the IP from the installed rules.
 
 ### Watching proxy traffic
 
