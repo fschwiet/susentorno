@@ -1,8 +1,8 @@
 # passthrough
 
 ## ubunto unblocked specifically for connectivity-check.ubuntu.com
-**.ubuntu.com:443
-**.ubuntu.com:80
+*.ubuntu.com:443
+*.ubuntu.com:80
 ubuntu.com:443
 ubuntu.com:80
 
@@ -21,43 +21,43 @@ assets.claude.ai:443
 
 ## original passthrough entries
 
-**.amazonaws.com:443
-**.amazontrust.com:443
-**.amazontrust.com:80
-**.bun.sh:443
-**.chatgpt.com:443
-**.cursor.sh:443
-**.data.mcr.microsoft.com:443
-**.debian.org:443
-**.docker.com:443
-**.docker.io:443
-**.factory.ai:443
-**.gcr.io:443
-**.github.com:443
-**.githubcopilot.com:443
-**.githubusercontent.com:443
-**.gitlab.com:443
-**.googleapis.com:443
-**.googleusercontent.com:443
-**.gradle.org:443
-**.gstatic.com:443
-**.gvt1.com:443
-**.hashicorp.com:443
-**.lencr.org:443
-**.lencr.org:80
-**.oaistatic.com:443
-**.oaiusercontent.com:443
-**.openai.com:443
-**.packagist.org:443
-**.pki.goog:443
-**.pki.goog:80
-**.pki.microsoft.com:443
-**.pki.microsoft.com:80
-**.production.cloudflare.docker.com:443
-**.production.cloudfront.docker.com:443
-**.public.blob.vercel-storage.com:443
-**.visualstudio.com:443
-**.yarnpkg.com:443
+*.amazonaws.com:443
+*.amazontrust.com:443
+*.amazontrust.com:80
+*.bun.sh:443
+*.chatgpt.com:443
+*.cursor.sh:443
+*.data.mcr.microsoft.com:443
+*.debian.org:443
+*.docker.com:443
+*.docker.io:443
+*.factory.ai:443
+*.gcr.io:443
+*.github.com:443
+*.githubcopilot.com:443
+*.githubusercontent.com:443
+*.gitlab.com:443
+*.googleapis.com:443
+*.googleusercontent.com:443
+*.gradle.org:443
+*.gstatic.com:443
+*.gvt1.com:443
+*.hashicorp.com:443
+*.lencr.org:443
+*.lencr.org:80
+*.oaistatic.com:443
+*.oaiusercontent.com:443
+*.openai.com:443
+*.packagist.org:443
+*.pki.goog:443
+*.pki.goog:80
+*.pki.microsoft.com:443
+*.pki.microsoft.com:80
+*.production.cloudflare.docker.com:443
+*.production.cloudfront.docker.com:443
+*.public.blob.vercel-storage.com:443
+*.visualstudio.com:443
+*.yarnpkg.com:443
 *.one.au.digicert.com:80
 *.one.ch.digicert.com:80
 *.one.digicert.co.jp:80
