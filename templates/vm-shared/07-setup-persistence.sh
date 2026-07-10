@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Safe to re-run: every step is an idempotent overwrite or a no-op. The egress
+# unit has a fixed filename (configamatron-egress.service), so a rerun rewrites
+# that one file and restarts one unit -- re-running with a different host IP
+# never leaves a second unit behind. (A live IP change leaves the old DNAT rules
+# in the table until the next reboot, which clears them.)
+
 host_ip="${1:?usage: 07-setup-persistence.sh <host-ip>}"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,7 +15,8 @@ sudo apt-get install -y dnsmasq
 
 sudo cp "${script_dir}/dnsmasq-stub.conf" /etc/dnsmasq.d/sandbox-stub.conf
 
-sudo cp "${script_dir}/iptables-rules@.service" /etc/systemd/system/iptables-rules@.service
+sed "s|__HOST_IP__|${host_ip}|g" "${script_dir}/configamatron-egress.service" \
+  | sudo tee /etc/systemd/system/configamatron-egress.service > /dev/null
 
 # Discover the primary network interface. The netplan DNS override must bind to
 # the same ethernet id the installer used (the physical NIC name, e.g. ens33) so
@@ -36,6 +43,7 @@ sudo netplan apply
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now dnsmasq
-sudo systemctl enable --now "iptables-rules@${host_ip}.service"
+sudo systemctl enable configamatron-egress.service
+sudo systemctl restart configamatron-egress.service
 
-echo "07-setup-persistence: dnsmasq and iptables-rules@${host_ip}.service enabled and started; netplan DNS override applied"
+echo "07-setup-persistence: dnsmasq and configamatron-egress.service enabled and started; netplan DNS override applied"
