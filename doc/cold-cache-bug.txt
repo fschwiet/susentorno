@@ -45,6 +45,38 @@ looks like plain real-network unreliability in this environment (nested
 WSL2 + QEMU + Docker Desktop + real internet), not related to the cache
 issue above.
 
+UPDATE 2026-07-11: working theory tested and REFUTED as the cause
+-----------------------------------------------------------------
+
+The theory above conflates two variables that the original observation
+never separated: container age (fresh-recreate vs. long-warm) and host
+freshness (un-resolved vs. already-cached). Every post-restart failure was
+also a first-ever resolution of pypi.org, and every later success was also
+an already-cached pypi.org — so "cold cache" and "just restarted" were
+indistinguishable in the data.
+
+The tests/vm/vm.test.ts "S2c" block probes the cell that disentangles them:
+three hosts (files.pythonhosted.org, github.com, www.google.com) allow-listed
+from startup but contacted by nothing until a single, un-retried curl fired
+while the Envoy container had been up since beforeAll with no recent restart.
+Envoy resolves passthrough DNS lazily, so each host's DNS cache entry was
+genuinely empty at first contact.
+
+Result (2/2 runs, all three hosts): first contact SUCCEEDED cleanly —
+http=200, curl exit=0, and the proxy logged ALLOW PASS for each. No exit 35,
+no exit 28.
+
+Conclusion: a cold DNS cache is NOT sufficient to reproduce the exit-35
+failure. On a warm container, a never-before-resolved host pauses-and-resolves
+exactly as Envoy's dynamic-forward-proxy design intends (pending-request
+queue on cache miss), then connects. The failure is specific to the
+freshly-recreated-container window, i.e. a restart/warmup race (Docker Desktop
+/ WSL2 port-forward re-establishment during --force-recreate, or an Envoy
+worker/listener not yet truly serving the passthrough path despite /ready
+returning) — not the DNS cache. This means preresolve_clusters (listed below)
+would NOT fix it; a passthrough-path-specific readiness gate after a restart
+would.
+
 Workaround applied
 -------------------
 
@@ -57,18 +89,23 @@ pipeline, envoyConfig.ts, or any other production code.
 What's NOT done / possible follow-ups
 ---------------------------------------
 
-- Never confirmed the DNS-cache theory against Envoy's actual behavior/logs
-  (e.g. by inspecting the dynamic_forward_proxy DNS cache stats via the
-  admin endpoint immediately after a restart, or Envoy debug-level logs for
-  the failed handshake). Worth doing if this resurfaces elsewhere.
+- DONE (see UPDATE above): the DNS-cache theory was tested via the S2c probe
+  and refuted — a cold cache alone does not fail; the trigger is the
+  restart/warmup window. Still not done: capturing Envoy debug-level logs or
+  dynamic_forward_proxy DNS cache stats *at the moment of* a real post-restart
+  exit-35 failure, to pin down exactly which layer drops the handshake.
 - If this needs to be fixed for real (not just retried around in tests),
-  candidates to investigate:
-    - Envoy's dns_cache_config supports `preresolve_clusters` — could
-      pre-warm well-known passthrough hosts on cluster init.
-    - A readiness check specific to the passthrough path (not just
-      `/ready`) before the VM test proceeds after a restart.
-    - Confirm whether this is Envoy-side at all vs. a Docker Desktop /
-      WSL2 port-forwarding blip during force-recreate.
+  candidates to investigate — reprioritized by the S2c finding:
+    - A readiness check specific to the passthrough path (not just `/ready`)
+      after a restart before the VM test proceeds. NOW THE LEADING CANDIDATE:
+      the failure is restart-scoped, so gating on genuine passthrough
+      readiness targets the actual root cause.
+    - Confirm whether the drop is Envoy-side (worker/listener not serving yet)
+      vs. a Docker Desktop / WSL2 port-forwarding blip during force-recreate.
+      The S2c result rules the DNS cache out but not these two.
+    - Envoy's dns_cache_config `preresolve_clusters` — DEPRIORITIZED: S2c
+      showed the cold cache is not the cause, so pre-warming hosts would not
+      address the restart-window failure.
 - The exit-28 (timeout) flakiness on the pre-existing S2 test was only
   observed intermittently (not on every run) and might be entirely separate
   from the exit-35 issue — worth keeping an eye on whether guestRetry alone

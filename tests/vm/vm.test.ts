@@ -39,8 +39,9 @@ function guest(name: string, cmd: string) {
 /**
  * Retry a guest command a few times with a short delay. Real passthrough
  * traffic to pypi.org over the internet from this nested VM is occasionally
- * unreliable — both a cold Envoy DNS cache right after a restart and general
- * network flakiness. See doc/cold-cache-bug.txt.
+ * unreliable — the restart/warmup window right after a proxy recreate (exit
+ * 35) and general real-network flakiness (exit 28). A cold DNS cache alone is
+ * NOT a cause; see doc/cold-cache-bug.txt (S2c refuted that theory).
  */
 async function guestRetry(name: string, cmd: string, attempts = 5, delayMs = 2000) {
   let lastError: unknown;
@@ -53,6 +54,24 @@ async function guestRetry(name: string, cmd: string, attempts = 5, delayMs = 200
     }
   }
   throw lastError;
+}
+
+/**
+ * Single passthrough-:443 curl from the guest, capturing both the HTTP status
+ * and curl's own exit code (via `; echo exit=$?`, so guest.sh exec itself
+ * always succeeds and we parse curl's result out of stdout). Deliberately
+ * unretried: the S2c cold-cache probe must observe the FIRST contact to a
+ * host — a retry would warm the DNS cache and erase the signal.
+ */
+async function guestProbe(name: string, host: string): Promise<{ http: string; exit: string }> {
+  const { stdout } = await guest(
+    name,
+    `curl -s -o /dev/null -w 'http=%{http_code} ' --max-time 30 https://${host}/ ; echo exit=$?`,
+  );
+  return {
+    http: /http=(\d+)/.exec(stdout)?.[1] ?? '?',
+    exit: /exit=(\d+)/.exec(stdout)?.[1] ?? '?',
+  };
 }
 
 beforeAll(async () => {
@@ -257,6 +276,42 @@ describe('S2: switch to host-only and reboot', () => {
     const { stdout } = await guest('g1', `bash -lc 'echo $NODE_EXTRA_CA_CERTS'`);
     expect(stdout).toContain('configamatron-proxy-certificate-authority.crt');
   });
+});
+
+describe('S2c: cold DNS cache vs. restart-warmup discrimination (doc/cold-cache-bug.txt)', () => {
+  // The doc's deterministic exit-35 failures were only ever seen immediately
+  // after a container restart, always coinciding with pypi.org being
+  // un-resolved. That conflates two variables: container age (fresh-restart
+  // vs. long-warm) and host freshness (un-resolved vs. already-cached). This
+  // probes the cell that disentangles them — hosts allow-listed since startup
+  // but never contacted, hit now while the Envoy container has been up since
+  // beforeAll with no recent restart (S2b's restarts run *after* this block).
+  //
+  //   - restart-warmup theory   → first contact SUCCEEDS (exit 0): the cold
+  //     "DNS cache" framing is a red herring; a fresh restart is required to
+  //     reproduce, so the fix belongs in post-restart readiness, not the cache.
+  //   - first-resolution theory → first contact fails with exit 35 (SSL
+  //     connect error) even on a long-warm container: any un-resolved host is
+  //     vulnerable, so pre-resolving well-known hosts is the real fix.
+  //
+  // Envoy resolves passthrough DNS lazily, so these hosts stay un-resolved
+  // until the single curl below. Each host is curled exactly once — no retry —
+  // since a retry would warm the cache and destroy the measurement.
+  it('first contact to warm-but-never-resolved passthrough hosts does not hit exit 35', async () => {
+    const freshHosts = ['files.pythonhosted.org', 'github.com', 'www.google.com'];
+    const results: Record<string, { http: string; exit: string }> = {};
+    for (const host of freshHosts) results[host] = await guestProbe('g1', host);
+    console.log('S2c cold-cache probe (long-warm container, first contact):', results);
+
+    // Exit 28 (timeout) is the doc's separate, orthogonal real-network
+    // flakiness — it neither confirms nor refutes the cache theory, so we
+    // tolerate it. Exit 35 is the signature under test: its ABSENCE on a
+    // long-warm container refutes the first-resolution theory (the cache being
+    // cold is not sufficient to fail) and points at restart-specific warmup.
+    for (const host of freshHosts) {
+      expect(results[host].exit, `${host} => ${JSON.stringify(results[host])}`).not.toBe('35');
+    }
+  }, 120_000);
 });
 
 describe('S2b: run-proxy inline logging', () => {
