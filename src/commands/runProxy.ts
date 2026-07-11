@@ -8,7 +8,11 @@ import { recreateContainer } from '../runProxy/recreateContainer';
 import { nudgeRefresh } from '../runProxy/nudgeRefresh';
 import { watchFile } from '../runProxy/watchFile';
 import { runProxyLoop, type RunProxyDeps } from '../runProxy/runProxyLoop';
+import { writeEnvoyConfig } from '../runProxy/buildConfig';
+import { startLogStream, type LogStreamHandle } from '../runProxy/logStream';
+import { ensureLeaf } from '../leaf';
 import { requireEnvPathsOrExit } from '../envPaths';
+import type { UpstreamOverride } from '../envoyConfig';
 import {
   planForwarder,
   resolveForwardListenAddress,
@@ -27,15 +31,23 @@ interface RunProxyOptions {
   forward: boolean;
   forwardListen?: string;
   forwardPorts?: string;
+  upstreamOverride: UpstreamOverride[];
+}
+
+function collectOverride(value: string, previous: UpstreamOverride[]): UpstreamOverride[] {
+  const [sniHost, target] = value.split('=');
+  return [...previous, { sniHost, target }];
 }
 
 export function registerRunProxy(program: Command): void {
   program
     .command('run-proxy')
     .description(
-      'Own the Envoy proxy lifecycle: write the SDS secret, recreate the container so ' +
-        'Envoy reads the current Claude token, then watch credentials.json and keep the ' +
-        'token fresh. Foreground process; Ctrl-C to stop (leaves the container running).',
+      'Own the Envoy proxy end to end: build envoy.yaml from the allowlist, write the SDS ' +
+        'secret, recreate the container, then watch allowlist.txt and credentials.json — ' +
+        'rebuilding the config, reissuing the leaf certificate, and restarting the proxy as ' +
+        "they change — while streaming the proxy's tagged access log (each host+handling " +
+        'once). Foreground process; Ctrl-C to stop (leaves the container running).',
     )
     .option(
       '--credentials <path>',
@@ -60,45 +72,57 @@ export function registerRunProxy(program: Command): void {
       '--forward-ports <http,https>',
       'ports to forward (default: ENVOY_HTTP_PORT,ENVOY_HTTPS_PORT or 80,443)',
     )
+    .option(
+      '--upstream-override <sniHost=host:port>',
+      'redirect a terminate cluster to a different upstream (test use only)',
+      collectOverride,
+      [] as UpstreamOverride[],
+    )
     .action(async (options: RunProxyOptions) => {
       const paths = requireEnvPathsOrExit('run-proxy');
       if (!paths) return;
-      if (!existsSync(paths.envoyConfig)) {
+      // run-proxy reissues the leaf itself but never the root: the root must
+      // already exist (and be trusted in the guest) via generate-ca.
+      if (!existsSync(paths.caCert) || !existsSync(paths.caKey)) {
         console.error(
-          `run-proxy: ${paths.envoyConfig} not found — run 'configamatron build-envoy-config' first`,
-        );
-        process.exitCode = 1;
-        return;
-      }
-      if (!existsSync(paths.caCert)) {
-        console.error(
-          `run-proxy: ${paths.caCert} not found — run 'configamatron generate-ca' first`,
-        );
-        process.exitCode = 1;
-        return;
-      }
-      // The generated Envoy config references leaf-cert.pem only when it terminates TLS.
-      // If it does, the leaf must be present — a stale allowlist edit without a re-run of
-      // generate-ca would otherwise fail deep inside Envoy startup.
-      if (
-        readFileSync(paths.envoyConfig, 'utf8').includes('leaf-cert.pem') &&
-        !existsSync(paths.caLeafCert)
-      ) {
-        console.error(
-          `run-proxy: ${paths.caLeafCert} not found — the Envoy config terminates TLS; ` +
-            "run 'configamatron generate-ca' after updating the allowlist",
+          `run-proxy: proxy CA not found in ${paths.caDir} — run 'configamatron generate-ca' first`,
         );
         process.exitCode = 1;
         return;
       }
       const secretPath = options.secret ?? paths.sdsSecret;
 
+      let logHandle: LogStreamHandle | null = null;
       const deps: RunProxyDeps = {
         readCredentials,
+        readAllowlist: (path) => {
+          try {
+            return readFileSync(path, 'utf8');
+          } catch {
+            return null;
+          }
+        },
         writeSecret,
+        buildConfig: (allowlist) =>
+          writeEnvoyConfig(allowlist, paths.envoyConfig, options.upstreamOverride),
+        ensureLeaf: (sans) =>
+          ensureLeaf(
+            paths,
+            readFileSync(paths.caCert, 'utf8'),
+            readFileSync(paths.caKey, 'utf8'),
+            sans,
+          ),
         recreateContainer: (serviceName) => recreateContainer(serviceName, paths.proxy),
         nudgeRefresh,
         watch: watchFile,
+        startLogStream: (onLine) => {
+          logHandle = startLogStream(options.service, paths.proxy, onLine);
+        },
+        stopLogStream: async () => {
+          const handle = logHandle;
+          logHandle = null;
+          await handle?.stop();
+        },
         onSigint: (handler) => process.on('SIGINT', handler),
         log: (message) => console.log(message),
         error: (message) => console.error(message),
@@ -146,6 +170,7 @@ export function registerRunProxy(program: Command): void {
         const exitCode = await runProxyLoop(
           {
             credentialsPath: options.credentials,
+            allowlistPath: paths.allowlist,
             secretPath,
             serviceName: options.service,
             refreshWindowMs: Number(options.refreshWindow) * 60_000,

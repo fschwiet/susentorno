@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { execa, type ResultPromise } from 'execa';
 import { request as httpRequest } from 'node:http';
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, copyFileSync } from 'node:fs';
+import { killProcessTree } from '../../src/runProxy/killProcessTree';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -93,24 +94,25 @@ beforeAll(async () => {
 
   rmSync(envRoot, { recursive: true, force: true });
   await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: repoRoot });
+  // Stage the test allowlist as the environment's own; run-proxy builds
+  // envoy.yaml from it on startup.
+  copyFileSync(allowlistFixture, join(proxyDir, 'allowlist.txt'));
   await execa('node', [cliPath, 'generate-ca'], { cwd: repoRoot });
-  await execa(
-    'node',
-    [
-      cliPath,
-      'build-envoy-config',
-      allowlistFixture,
-      '--upstream-override',
-      `api.anthropic.com=host.docker.internal:${mockUpstream.port}`,
-    ],
-    { cwd: repoRoot },
-  );
 
   // Start run-proxy in the background with refresh disabled (no real auth/network).
   // No --secret flag: exercises the environment default secret path.
   proxyProc = execa(
     'node',
-    [cliPath, 'run-proxy', '--no-refresh', '--no-forward', '--credentials', credentialsPath],
+    [
+      cliPath,
+      'run-proxy',
+      '--no-refresh',
+      '--no-forward',
+      '--credentials',
+      credentialsPath,
+      '--upstream-override',
+      `api.anthropic.com=host.docker.internal:${mockUpstream.port}`,
+    ],
     { cwd: repoRoot, env: { ...process.env, ...envoyEnv }, reject: false },
   );
 
@@ -123,7 +125,9 @@ beforeAll(async () => {
 }, 120000);
 
 afterAll(async () => {
-  proxyProc?.kill('SIGINT');
+  if (proxyProc?.pid !== undefined) {
+    await killProcessTree(proxyProc.pid, 'SIGINT');
+  }
   try {
     await proxyProc;
   } catch {
