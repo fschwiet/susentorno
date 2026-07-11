@@ -6,7 +6,7 @@ import { readCredentials } from '../runProxy/readCredentials';
 import { writeSecret } from '../runProxy/writeSecret';
 import { recreateContainer } from '../runProxy/recreateContainer';
 import { nudgeRefresh } from '../runProxy/nudgeRefresh';
-import { watchCredentials } from '../runProxy/watchCredentials';
+import { watchFile } from '../runProxy/watchFile';
 import { runProxyLoop, type RunProxyDeps } from '../runProxy/runProxyLoop';
 import { requireEnvPathsOrExit } from '../envPaths';
 import {
@@ -98,7 +98,7 @@ export function registerRunProxy(program: Command): void {
         writeSecret,
         recreateContainer: (serviceName) => recreateContainer(serviceName, paths.proxy),
         nudgeRefresh,
-        watch: watchCredentials,
+        watch: watchFile,
         onSigint: (handler) => process.on('SIGINT', handler),
         log: (message) => console.log(message),
         error: (message) => console.error(message),
