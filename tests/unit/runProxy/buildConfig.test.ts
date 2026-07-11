@@ -6,7 +6,14 @@ import { parse } from 'yaml';
 import { writeEnvoyConfig } from '../../../src/runProxy/buildConfig';
 import { parseAllowlist } from '../../../src/allowlist';
 
-const ALLOWLIST = ['# passthrough', 'pypi.org:443', '', '# terminate', 'api.anthropic.com:443', ''].join('\n');
+const ALLOWLIST = [
+  '# passthrough',
+  'pypi.org:443',
+  '',
+  '# terminate',
+  'api.anthropic.com:443',
+  '',
+].join('\n');
 
 describe('writeEnvoyConfig', () => {
   it('writes envoy.yaml with upstream overrides applied', () => {

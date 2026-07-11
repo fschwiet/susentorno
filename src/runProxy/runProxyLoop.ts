@@ -328,9 +328,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
 
       // Arm both watchers before the (slow) startup recreate: a change landing
       // mid-startup coalesces into one follow-up restart instead of being dropped.
-      credentialsWatcher = deps.watch(config.credentialsPath, () =>
-        requestRestart('credentials'),
-      );
+      credentialsWatcher = deps.watch(config.credentialsPath, () => requestRestart('credentials'));
       allowlistWatcher = deps.watch(config.allowlistPath, () => requestRestart('allowlist'));
       deps.onSigint(onSigintOnce);
 

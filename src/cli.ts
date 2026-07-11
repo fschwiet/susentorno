@@ -4,7 +4,6 @@ import packageJson from '../package.json';
 import { registerInit } from './commands/init';
 import { registerGenerateCa } from './commands/generateCa';
 import { registerImportSbxNetworkPolicy } from './commands/importSbxNetworkPolicy';
-import { registerBuildEnvoyConfig } from './commands/buildEnvoyConfig';
 import { registerWriteGithubConfig } from './commands/writeGithubConfig';
 import { registerRunProxy } from './commands/runProxy';
 
@@ -18,7 +17,6 @@ program
 registerInit(program);
 registerGenerateCa(program);
 registerImportSbxNetworkPolicy(program);
-registerBuildEnvoyConfig(program);
 registerWriteGithubConfig(program);
 registerRunProxy(program);
 

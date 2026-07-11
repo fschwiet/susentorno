@@ -33,9 +33,8 @@ export function registerInit(program: Command): void {
       }
       console.log(`init: created ${ENV_DIR_NAME}. Next steps:`);
       console.log('  1. configamatron generate-ca');
-      console.log('  2. configamatron build-envoy-config');
-      console.log('  3. configamatron write-github-config');
-      console.log('  4. configamatron run-proxy');
+      console.log('  2. configamatron write-github-config');
+      console.log('  3. configamatron run-proxy');
       console.log(
         `  (Windows) admin PowerShell: powershell -File ${ENV_DIR_NAME}/proxy/host-allow-vm-inbound.ps1`,
       );

@@ -59,7 +59,10 @@ interface Harness {
   };
 }
 
-function makeHarness(initial: Credentials, initialAllowlist: string | null = VALID_ALLOWLIST): Harness {
+function makeHarness(
+  initial: Credentials,
+  initialAllowlist: string | null = VALID_ALLOWLIST,
+): Harness {
   const creds = { value: initial };
   const allowlist = { value: initialAllowlist };
   let credentialsCb: (() => void) | null = null;
@@ -226,10 +229,7 @@ describe('runProxyLoop allowlist changes', () => {
     h.mocks.recreateContainer.mockClear();
     h.mocks.log.mockClear();
 
-    h.allowlist.value = VALID_ALLOWLIST.replace(
-      'pypi.org:443',
-      'pypi.org:443\nexample.org:443',
-    );
+    h.allowlist.value = VALID_ALLOWLIST.replace('pypi.org:443', 'pypi.org:443\nexample.org:443');
     h.fireAllowlist();
     await flush();
 
@@ -259,9 +259,7 @@ describe('runProxyLoop allowlist changes', () => {
     await flush();
 
     expect(h.mocks.error).toHaveBeenCalledWith(
-      expect.stringContaining(
-        'allowlist has unsupported wildcard syntax, keeping previous config',
-      ),
+      expect.stringContaining('allowlist has unsupported wildcard syntax, keeping previous config'),
     );
     expect(h.mocks.error).toHaveBeenCalledWith(expect.stringContaining('*.bad.example.com:443'));
     expect(h.mocks.buildConfig).not.toHaveBeenCalled();
@@ -383,7 +381,10 @@ describe('runProxyLoop coalescing', () => {
     // …and BOTH change while it is in flight.
     h.creds.value = { accessToken: 'C', expiresAt: 60 * MIN };
     h.fireCredentials();
-    h.allowlist.value = VALID_ALLOWLIST.replace('pypi.org:443', 'pypi.org:443\nboth.example.com:443');
+    h.allowlist.value = VALID_ALLOWLIST.replace(
+      'pypi.org:443',
+      'pypi.org:443\nboth.example.com:443',
+    );
     h.fireAllowlist();
     await flush();
 

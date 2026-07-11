@@ -1,10 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { execa } from 'execa';
 import { fileURLToPath } from 'node:url';
-import { readFileSync, mkdtempSync, rmSync, writeFileSync, existsSync, copyFileSync } from 'node:fs';
+import {
+  readFileSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  existsSync,
+  copyFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parse } from 'yaml';
 
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
@@ -111,85 +117,6 @@ describe('configamatron CLI', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-
-  it('generates envoy.yaml into the environment by default with build-envoy-config', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
-    const fixturePath = fileURLToPath(new URL('../fixtures/sample-allowlist.txt', import.meta.url));
-
-    try {
-      await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: dir });
-      const { exitCode } = await execa(
-        'node',
-        [
-          cliPath,
-          'build-envoy-config',
-          fixturePath,
-          '--upstream-override',
-          'api.anthropic.com=127.0.0.1:9443',
-        ],
-        { cwd: dir },
-      );
-
-      expect(exitCode).toBe(0);
-      const outputPath = join(dir, '.configamatron', 'proxy', 'envoy.yaml');
-      const config = parse(readFileSync(outputPath, 'utf8')) as any;
-
-      const matchingClusters = config.static_resources.clusters.filter(
-        (c: any) => c.name === 'cluster_terminate_api_anthropic_com',
-      );
-      expect(matchingClusters).toHaveLength(1);
-      const cluster = matchingClusters[0];
-      expect(
-        cluster.load_assignment.endpoints[0].lb_endpoints[0].endpoint.address.socket_address,
-      ).toEqual({ address: '127.0.0.1', port_value: 9443 });
-
-      const listener443 = config.static_resources.listeners.find(
-        (l: any) => l.name === 'listener_443',
-      );
-      const matchingFilterChains = listener443.filter_chains.filter((fc: any) =>
-        fc.filter_chain_match?.server_names?.includes('api.anthropic.com'),
-      );
-      expect(matchingFilterChains).toHaveLength(1);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('build-envoy-config rejects an allowlist with unsupported wildcard syntax', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
-    const fixturePath = fileURLToPath(
-      new URL('../fixtures/invalid-allowlist.txt', import.meta.url),
-    );
-
-    try {
-      await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: dir });
-      const { exitCode, stderr } = await execa(
-        'node',
-        [cliPath, 'build-envoy-config', fixturePath],
-        { cwd: dir, reject: false },
-      );
-
-      expect(exitCode).toBe(1);
-      expect(stderr).toContain('crl*.digicert.com:80');
-      expect(existsSync(join(dir, '.configamatron', 'proxy', 'envoy.yaml'))).toBe(false);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('build-envoy-config exits 1 without an environment', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
-    try {
-      const { exitCode, stderr } = await execa('node', [cliPath, 'build-envoy-config'], {
-        cwd: dir,
-        reject: false,
-      });
-      expect(exitCode).toBe(1);
-      expect(stderr).toContain("run 'configamatron init' first");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
 });
 
 describe('write-github-config', () => {
@@ -277,5 +204,4 @@ describe('write-github-config', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-
 });
