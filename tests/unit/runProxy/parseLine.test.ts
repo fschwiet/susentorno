@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseLine } from '../../../src/proxyLogs/parseLine';
+import { parseLine } from '../../../src/runProxy/parseLine';
 
 describe('parseLine', () => {
   it('parses a well-formed CFGM line', () => {
