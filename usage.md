@@ -26,11 +26,10 @@ Only one proxy container can exist on the host (it binds ports 80/443). Starting
 Usually done once per environment. Run every command from the environment directory (the folder that owns the environment, e.g. `e:\repo`):
 
 1. `configamatron init` — creates `.configamatron/` scaffolding needed to manage the environment. Do not commit to source control, includes credentials that the isolating proxy may inject.
-2. `configamatron generate-ca` — writes certificates used by the proxy for https.
-3. `configamatron build-envoy-config` — builds `proxy/envoy.yaml` from `proxy/allowlist.txt`. Edit this environment's allow list and re-run to change what the VM may reach.
-4. `configamatron write-github-config` — prompts for a GitHub fine-grained personal access token and writes `vm-shared/github-config.txt` (username/email come from your global git config). Create the token at https://github.com/settings/personal-access-tokens/new, scoped to the repositories the agent should use, with read/write permission to 'Contents'.
-5. `configamatron run-proxy` — Launches the proxy in a docker container with latest Claude credentials. Makes an effort to keep those credentials updated. It also forwards the VMware host-only interface's `:80`/`:443` to Envoy on loopback, so it must stay running for the VM to reach the proxy (Envoy is published on `127.0.0.1` only). Pass `--no-forward` to disable this, or `--forward-listen <ip>` to override the bind address.
-6. **Windows hosts only:** in an **Administrator** PowerShell, run `powershell -File cd `. This opens inbound TCP 80/443 (Envoy) from the VM's host-only network adapter, and _prints the host IP you need to use in VM-side setup_.
+2. `configamatron generate-ca` — writes the root certificate authority the proxy's https certificates chain to. Run once per environment; `run-proxy` reissues the per-host leaf certificate automatically as the allow list changes.
+3. `configamatron write-github-config` — prompts for a GitHub fine-grained personal access token and writes `vm-shared/github-config.txt` (username/email come from your global git config). Create the token at https://github.com/settings/personal-access-tokens/new, scoped to the repositories the agent should use, with read/write permission to 'Contents'.
+4. `configamatron run-proxy` — builds `proxy/envoy.yaml` from `proxy/allowlist.txt` and launches the proxy in a docker container with the latest Claude credentials. While it runs it watches both files: editing the allow list takes effect live (config rebuilt, leaf certificate reissued if the terminate hosts changed, proxy restarted), and credential rotations propagate automatically. It also streams the proxy's access log inline (see "Watching proxy traffic" below) and forwards the VMware host-only interface's `:80`/`:443` to Envoy on loopback, so it must stay running for the VM to reach the proxy (Envoy is published on `127.0.0.1` only). Pass `--no-forward` to disable forwarding, or `--forward-listen <ip>` to override the bind address.
+5. **Windows hosts only:** in an **Administrator** PowerShell, run `powershell -File .configamatron\proxy\host-allow-vm-inbound.ps1`. This opens inbound TCP 80/443 (Envoy) from the VM's host-only network adapter, and _prints the host IP you need to use in VM-side setup_.
 
 - It defaults to the `VMware Network Adapter VMnet1` interface; pass `-AdapterAlias` if your host-only network uses a different adapter (`Get-NetIPConfiguration` lists them). Safe to re-run if the host's IP on that network changes.
 
@@ -95,17 +94,10 @@ Two read-only diagnostic scripts report whether the proxy and the VM are set up 
 
 ### Watching proxy traffic
 
-`configamatron proxy-logs` (run from the environment directory, while the proxy is up) streams how the proxy handled each host:
+`configamatron run-proxy` streams how the proxy handled each host, inline with its own status lines. Each host/handling pair is printed once; the tracking resets when an allow-list edit restarts the proxy (so you can immediately see how the edited entries are handled) and survives credential-rotation restarts.
 
 - `ALLOW CRED` — :443, TLS-terminated, real token injected
 - `ALLOW PASS` — :443, SNI passthrough (VM's own TLS)
 - `ALLOW HTTP` — :80, allowed
 - `BLOCK TLS` — :443, no allow-list match (connection dropped)
 - `BLOCK HTTP` — :80, not allow-listed (403)
-
-Flags:
-
-- `--blocked` — only show blocked hosts.
-- `--unique` — show each host/handling once for the session.
-- `--debounce <seconds>` — collapse repeats of a host/handling within a window; the reprint notes how many were collapsed.
-- `--no-follow` — print recent history and exit instead of streaming.

@@ -10,7 +10,7 @@ Maintainer and background material. Day-to-day setup lives in [usage.md](usage.m
 configamatron import-sbx-network-policy <policy-file>
 ```
 
-It writes `current-allow-list.txt` in the current directory by default (`-o` to override). Run it in a checkout of this repository and commit the result. It is a maintenance command — not part of environment setup — and it never touches an environment's own `proxy/allowlist.txt` (edit that file directly for per-environment changes and re-run `configamatron build-envoy-config`).
+It writes `current-allow-list.txt` in the current directory by default (`-o` to override). Run it in a checkout of this repository and commit the result. It is a maintenance command — not part of environment setup — and it never touches an environment's own `proxy/allowlist.txt` (edit that file directly for per-environment changes — a running `configamatron run-proxy` picks the edit up live).
 
 ## Environment model
 
@@ -21,7 +21,7 @@ It writes `current-allow-list.txt` in the current directory by default (`-o` to 
 
 ## How the proxy works
 
-Envoy runs in Docker on the host and is the VM's only network path. Allow-listed hosts are either passed through by SNI (TLS) / Host header (port 80), or TLS-terminated for credential injection: requests presenting the placeholder Authorization header get the real bearer token injected from a file-based SDS secret; anything else is rejected before reaching the upstream. `run-proxy` owns the secret lifecycle: it writes the SDS secret from the host credential and force-recreates the container whenever the token rotates.
+Envoy runs in Docker on the host and is the VM's only network path. Allow-listed hosts are either passed through by SNI (TLS) / Host header (port 80), or TLS-terminated for credential injection: requests presenting the placeholder Authorization header get the real bearer token injected from a file-based SDS secret; anything else is rejected before reaching the upstream. `run-proxy` owns the proxy end to end: it builds `envoy.yaml` from the allowlist, writes the SDS secret from the host credential, and force-recreates the container whenever the token rotates or the allowlist changes (reissuing the leaf certificate when the terminate-host set changes — the root CA from `generate-ca` is never touched).
 
 Design history (reference only, not updated):
 
@@ -31,7 +31,7 @@ Design history (reference only, not updated):
 
 ### Access logging
 
-Every Envoy path writes a machine-parseable access-log line to the container's stdout: `CFGM|<path-id>|<start-time>|<server-name>|<authority>|<response-code-details>`, where `path-id` is `term`, `pass`, `http`, or `deny443`. Blocked `:443` connections are caught by `listener_443`'s `default_filter_chain`, which routes to the endpoint-less `blackhole` cluster (dropping the connection) after logging the rejected SNI as `deny443`. The `proxy-logs` command parses these lines and maps them to friendly tags; port-80 allow-vs-block is disambiguated by response-code details (`direct_response` = the default-deny 403). The access-log format never includes the `Authorization` header, so injected tokens never reach the logs.
+Every Envoy path writes a machine-parseable access-log line to the container's stdout: `CFGM|<path-id>|<start-time>|<server-name>|<authority>|<response-code-details>`, where `path-id` is `term`, `pass`, `http`, or `deny443`. Blocked `:443` connections are caught by `listener_443`'s `default_filter_chain`, which routes to the endpoint-less `blackhole` cluster (dropping the connection) after logging the rejected SNI as `deny443`. `run-proxy` parses these lines and maps them to friendly tags in its inline log stream (each host+handling printed once); port-80 allow-vs-block is disambiguated by response-code details (`direct_response` = the default-deny 403). The access-log format never includes the `Authorization` header, so injected tokens never reach the logs.
 
 ## VM networking details
 
