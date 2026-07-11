@@ -1,11 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { mkdirSync } from 'node:fs';
+import { appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { harness, wslExec, wslPath } from './wsl';
 import {
   startProxyStack,
   stopProxyStack,
+  waitForAdminReady,
+  waitForProxyLine,
+  countProxyLines,
+  writeStackCredentials,
   HTTP_PORT,
   HTTPS_PORT,
   PLACEHOLDER_AUTH,
@@ -30,6 +34,25 @@ let shareDir: string;
 
 function guest(name: string, cmd: string) {
   return harness('guest.sh', 'exec', name, cmd);
+}
+
+/**
+ * Retry a guest command a few times with a short delay. Real passthrough
+ * traffic to pypi.org over the internet from this nested VM is occasionally
+ * unreliable — both a cold Envoy DNS cache right after a restart and general
+ * network flakiness. See doc/cold-cache-bug.txt.
+ */
+async function guestRetry(name: string, cmd: string, attempts = 5, delayMs = 2000) {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await guest(name, cmd);
+    } catch (err) {
+      lastError = err;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastError;
 }
 
 beforeAll(async () => {
@@ -195,7 +218,10 @@ describe('S2: switch to host-only and reboot', () => {
   });
 
   it('passthrough :443 host works end-to-end', async () => {
-    const { stdout } = await guest(
+    // Real internet connectivity to pypi.org from this nested VM is
+    // occasionally slow/unreliable independent of the proxy itself; see
+    // doc/cold-cache-bug.txt.
+    const { stdout } = await guestRetry(
       'g1',
       `curl -s -o /dev/null -w '%{http_code}' --max-time 30 https://pypi.org/simple/`,
     );
@@ -231,6 +257,61 @@ describe('S2: switch to host-only and reboot', () => {
     const { stdout } = await guest('g1', `bash -lc 'echo $NODE_EXTRA_CA_CERTS'`);
     expect(stdout).toContain('configamatron-proxy-certificate-authority.crt');
   });
+});
+
+describe('S2b: run-proxy inline logging', () => {
+  it('streamed unique tagged lines for the traffic S2 generated', async () => {
+    await waitForProxyLine(stack, 'ALLOW CRED  api.anthropic.com', 30_000);
+    await waitForProxyLine(stack, 'ALLOW PASS  pypi.org', 30_000);
+    await waitForProxyLine(stack, 'ALLOW HTTP  archive.ubuntu.com', 30_000);
+    await waitForProxyLine(stack, 'BLOCK HTTP  blocked.example.com', 30_000);
+  });
+
+  it('an allowlist edit restarts the proxy, re-attaches the follow, and resets unique tracking', async () => {
+    const pypiBefore = countProxyLines(stack, 'ALLOW PASS  pypi.org');
+    expect(pypiBefore).toBeGreaterThan(0);
+    const mark = stack.stdoutLines.length;
+
+    // The staged fixture ends with the '# terminate' section, so appending
+    // adds a terminate host — the terminate-host set changes and the
+    // leaf-reissue path runs too, not just the config rebuild.
+    appendFileSync(stack.allowlistPath, 'example.org:443\n');
+
+    await waitForProxyLine(stack, 'restarting proxy — allowlist changed', 120_000, mark);
+    await waitForAdminReady(60_000);
+
+    await guestRetry('g1', `curl -s -o /dev/null --max-time 30 https://pypi.org/simple/`);
+
+    // The same host+handling prints again only because unique tracking was
+    // cleared — and the line only reaches us because the follow re-attached
+    // to the freshly recreated container.
+    await waitForProxyLine(stack, 'ALLOW PASS  pypi.org', 60_000, mark);
+    expect(countProxyLines(stack, 'ALLOW PASS  pypi.org')).toBe(pypiBefore + 1);
+  }, 300_000);
+
+  it('a credential rotation restarts the proxy and preserves unique tracking', async () => {
+    const mark = stack.stdoutLines.length;
+    writeStackCredentials(stack, 'rotated-vm-test-token');
+
+    await waitForProxyLine(stack, 'restarting proxy — credentials changed', 120_000, mark);
+    await waitForAdminReady(60_000);
+    const pypiBefore = countProxyLines(stack, 'ALLOW PASS  pypi.org');
+
+    // pypi.org was re-logged after the allowlist restart above, so it is in
+    // the preserved unique map: this request must NOT produce a new line.
+    await guestRetry('g1', `curl -s -o /dev/null --max-time 30 https://pypi.org/simple/`);
+    // api.anthropic.com has NOT been logged since that allowlist reset, so it
+    // does print — proving the follow re-attached after this restart too.
+    await guest(
+      'g1',
+      `curl -s -o /dev/null --max-time 30 -H 'Authorization: ${PLACEHOLDER_AUTH}' https://api.anthropic.com/`,
+    );
+
+    await waitForProxyLine(stack, 'ALLOW CRED  api.anthropic.com', 60_000, mark);
+    // Envoy logs in request order: the api.anthropic.com line arriving means
+    // any pypi line would already be here. It is not: unique was preserved.
+    expect(countProxyLines(stack, 'ALLOW PASS  pypi.org')).toBe(pypiBefore);
+  }, 300_000);
 });
 
 describe('S3: fresh setup with no default route', () => {

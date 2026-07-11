@@ -1,0 +1,76 @@
+Cold Envoy DNS cache / flaky real-network passthrough in VM tests
+===================================================================
+
+Observed while adding tests/vm/vm.test.ts's "S2b: run-proxy inline logging"
+suite (docs/superpowers/plans/2026-07-10-run-proxy-merge-config-and-logging.md,
+Task 9).
+
+Symptom
+-------
+
+`curl` to a real internet passthrough host (pypi.org, SNI passthrough — the
+only kind of traffic this proxy setup can't mock) sometimes fails from the
+guest VM with either:
+
+  - curl exit 35 (CURLE_SSL_CONNECT_ERROR) — consistently and reproducibly
+    (3/3 runs) when the curl fires immediately after a live run-proxy
+    restart (waitForAdminReady() returning does not guarantee the freshly
+    recreated Envoy container's passthrough path is warm), or
+  - curl exit 28 (CURLE_OPERATION_TIMEDOUT) — intermittently, even on an
+    unmodified, pre-existing test unrelated to this plan's changes
+    (S2 "passthrough :443 host works end-to-end"), suggesting some baseline
+    flakiness reaching the real pypi.org from this nested WSL2/QEMU VM
+    setup that is independent of run-proxy's restart logic.
+
+Root cause (working theory, not confirmed against Envoy source/docs)
+----------------------------------------------------------------------
+
+The passthrough :443 listener uses Envoy's SNI dynamic-forward-proxy filter
+(src/envoyConfig.ts, `sni_dynamic_forward_proxy` + `dynamic_forward_proxy_cluster`),
+which resolves the upstream host's DNS lazily per-cluster, with an in-memory
+DNS cache scoped to the container's lifetime. On a freshly recreated
+container (`docker compose up --force-recreate`), that cache is empty. The
+admin `/ready` endpoint (used by waitForAdminReady) reports readiness once
+Envoy's own initialization completes, but that doesn't appear to guarantee
+the dynamic-forward-proxy DNS cache is warm for a specific host — so the
+very first passthrough connection to a not-yet-cached host can fail at the
+TLS layer (client sees a dropped/reset connection mid-handshake) before the
+cache populates. This reproduced deterministically (3/3 runs) for pypi.org
+curl'd immediately after a restart, but never for pypi.org curl'd later in
+the same test run once it had already been resolved once.
+
+Separately, the exit-28 timeout on the pre-existing S2 test (which curls
+pypi.org well after the guest has been up, not immediately post-restart)
+looks like plain real-network unreliability in this environment (nested
+WSL2 + QEMU + Docker Desktop + real internet), not related to the cache
+issue above.
+
+Workaround applied
+-------------------
+
+tests/vm/vm.test.ts now has a `guestRetry()` helper (retries a guest exec
+up to 5 times with a 2s delay) wrapping the passthrough-to-pypi.org curl
+calls: the two new S2b restart tests, and the pre-existing S2 passthrough
+test. This is a test-only mitigation; it does not touch run-proxy's restart
+pipeline, envoyConfig.ts, or any other production code.
+
+What's NOT done / possible follow-ups
+---------------------------------------
+
+- Never confirmed the DNS-cache theory against Envoy's actual behavior/logs
+  (e.g. by inspecting the dynamic_forward_proxy DNS cache stats via the
+  admin endpoint immediately after a restart, or Envoy debug-level logs for
+  the failed handshake). Worth doing if this resurfaces elsewhere.
+- If this needs to be fixed for real (not just retried around in tests),
+  candidates to investigate:
+    - Envoy's dns_cache_config supports `preresolve_clusters` — could
+      pre-warm well-known passthrough hosts on cluster init.
+    - A readiness check specific to the passthrough path (not just
+      `/ready`) before the VM test proceeds after a restart.
+    - Confirm whether this is Envoy-side at all vs. a Docker Desktop /
+      WSL2 port-forwarding blip during force-recreate.
+- The exit-28 (timeout) flakiness on the pre-existing S2 test was only
+  observed intermittently (not on every run) and might be entirely separate
+  from the exit-35 issue — worth keeping an eye on whether guestRetry alone
+  is a durable enough fix or whether it just papers over a real latency
+  problem in this test environment.
