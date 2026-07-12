@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import type { Command } from 'commander';
 import { readCredentials } from '../runProxy/readCredentials';
 import { writeSecret } from '../runProxy/writeSecret';
-import { recreateContainer } from '../runProxy/recreateContainer';
 import { nudgeRefresh } from '../runProxy/nudgeRefresh';
 import { watchFile } from '../runProxy/watchFile';
 import { runProxyLoop, type RunProxyDeps } from '../runProxy/runProxyLoop';
@@ -13,17 +12,16 @@ import { startLogStream, type LogStreamHandle } from '../runProxy/logStream';
 import { ensureLeaf } from '../leaf';
 import { requireEnvPathsOrExit } from '../envPaths';
 import type { UpstreamOverride } from '../envoyConfig';
-import {
-  planForwarder,
-  resolveForwardListenAddress,
-  startForwarder,
-  type ForwarderHandle,
-} from '../runProxy/forwarder';
+import { resolveForwardListenAddress } from '../runProxy/forwarder';
+import { startGateway, type GatewayHandle } from '../runProxy/gateway';
+import { allocateColorPorts } from '../runProxy/allocateColorPorts';
+import { bringUpColor, stopColor } from '../runProxy/colorContainer';
+import { waitColorReady } from '../runProxy/waitColorReady';
+import type { Color, ColorPorts } from '../runProxy/types';
 
 interface RunProxyOptions {
   credentials: string;
   secret?: string;
-  service: string;
   refreshWindow: string;
   retryInterval: string;
   maxAttempts: string;
@@ -58,7 +56,6 @@ export function registerRunProxy(program: Command): void {
       '--secret <path>',
       'SDS secret output path (default: .configamatron/proxy/secrets/sds-secret.yaml)',
     )
-    .option('--service <name>', 'docker compose service to recreate', 'envoy')
     .option('--refresh-window <minutes>', 'nudge this many minutes before expiry', '3')
     .option('--retry-interval <minutes>', 'wait this many minutes for a nudge to take', '2')
     .option('--max-attempts <n>', 'consecutive failed refreshes before exiting', '3')
@@ -93,6 +90,44 @@ export function registerRunProxy(program: Command): void {
       const secretPath = options.secret ?? paths.sdsSecret;
 
       let logHandle: LogStreamHandle | null = null;
+
+      const [httpPort, httpsPort] = options.forwardPorts
+        ? options.forwardPorts.split(',').map((p) => Number(p.trim()))
+        : [Number(process.env.ENVOY_HTTP_PORT ?? 80), Number(process.env.ENVOY_HTTPS_PORT ?? 443)];
+
+      // The gateway always owns the public ports on loopback; when forwarding is
+      // enabled it also listens on the VMware host-only adapter. Both point at the
+      // active color's backend ports.
+      const listenAddresses = ['127.0.0.1'];
+      if (options.forward) {
+        const vmnet = options.forwardListen ?? resolveForwardListenAddress();
+        if (!vmnet) {
+          console.error(
+            'run-proxy: could not find the VMware host-only adapter IP to forward from. ' +
+              'Pass --forward-listen <ip>, or --no-forward to disable forwarding.',
+          );
+          process.exitCode = 1;
+          return;
+        }
+        listenAddresses.push(vmnet);
+      }
+
+      let gateway: GatewayHandle;
+      try {
+        gateway = await startGateway({
+          listenAddresses,
+          httpsListenPort: httpsPort,
+          httpListenPort: httpPort,
+        });
+      } catch (err) {
+        console.error(`run-proxy: failed to start the gateway forwarder: ${String(err)}`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log(
+        `run-proxy: gateway listening on ${listenAddresses.join(', ')} :${httpPort}/${httpsPort}`,
+      );
+
       const deps: RunProxyDeps = {
         readCredentials,
         readAllowlist: (path) => {
@@ -112,11 +147,19 @@ export function registerRunProxy(program: Command): void {
             readFileSync(paths.caKey, 'utf8'),
             sans,
           ),
-        recreateContainer: (serviceName) => recreateContainer(serviceName, paths.proxy),
+        allocatePorts: allocateColorPorts,
+        bringUpColor: (color: Color, ports: ColorPorts) => bringUpColor(color, ports, paths.proxy),
+        waitColorReady: (ports: ColorPorts, timeoutMs: number) =>
+          waitColorReady(ports.adminPort, timeoutMs),
+        setActiveBackend: (ports: ColorPorts) =>
+          gateway.setTarget({ httpsPort: ports.httpsPort, httpPort: ports.httpPort }),
+        drainBackend: (ports: ColorPorts, timeoutMs: number) =>
+          gateway.drain({ httpsPort: ports.httpsPort, httpPort: ports.httpPort }, timeoutMs),
+        stopColor: (color: Color) => stopColor(color, paths.proxy),
         nudgeRefresh,
         watch: watchFile,
-        startLogStream: (onLine) => {
-          logHandle = startLogStream(options.service, paths.proxy, onLine);
+        startLogStream: (color: Color, onLine) => {
+          logHandle = startLogStream(`envoy_${color}`, paths.proxy, onLine);
         },
         stopLogStream: async () => {
           const handle = logHandle;
@@ -129,50 +172,14 @@ export function registerRunProxy(program: Command): void {
         now: () => Date.now(),
       };
 
-      const [httpPort, httpsPort] = options.forwardPorts
-        ? options.forwardPorts.split(',').map((p) => Number(p.trim()))
-        : [Number(process.env.ENVOY_HTTP_PORT ?? 80), Number(process.env.ENVOY_HTTPS_PORT ?? 443)];
-
-      let forwarder: ForwarderHandle | null = null;
-      const plan = planForwarder(
-        {
-          noForward: !options.forward,
-          forwardListen: options.forwardListen,
-          httpPort,
-          httpsPort,
-        },
-        () => resolveForwardListenAddress(),
-      );
-      if (plan.kind === 'error') {
-        console.error(`run-proxy: ${plan.message}`);
-        process.exitCode = 1;
-        return;
-      }
-      if (plan.kind === 'start') {
-        try {
-          forwarder = await startForwarder({
-            listenAddress: plan.listenAddress,
-            rules: plan.rules,
-          });
-          console.log(
-            `run-proxy: forwarding ${plan.listenAddress}:${httpPort}/${httpsPort} -> 127.0.0.1`,
-          );
-        } catch (err) {
-          console.error(
-            `run-proxy: failed to start forwarder on ${plan.listenAddress}: ${String(err)}`,
-          );
-          process.exitCode = 1;
-          return;
-        }
-      }
-
       try {
         const exitCode = await runProxyLoop(
           {
             credentialsPath: options.credentials,
             allowlistPath: paths.allowlist,
             secretPath,
-            serviceName: options.service,
+            readyTimeoutMs: 60_000,
+            drainTimeoutMs: 30_000,
             refreshWindowMs: Number(options.refreshWindow) * 60_000,
             retryIntervalMs: Number(options.retryInterval) * 60_000,
             maxAttempts: Number(options.maxAttempts),
@@ -182,7 +189,7 @@ export function registerRunProxy(program: Command): void {
         );
         process.exitCode = exitCode;
       } finally {
-        await forwarder?.close();
+        await gateway.close();
       }
     });
 }

@@ -72,10 +72,9 @@ else { Add-Fail 'docker daemon reachable' 'docker info exited non-zero -- is Doc
 
 $envoy = & docker ps `
     --filter 'label=com.docker.compose.project=configamatron' `
-    --filter 'label=com.docker.compose.service=envoy' `
-    --format '{{.Names}} {{.Status}}' 2>$null
-if ($envoy -match 'Up') { Add-Pass "envoy container running ($($envoy.Trim()))" }
-else { Add-Fail 'envoy container running' "no running configamatron_envoy container ('$envoy') -- run 'configamatron run-proxy'" }
+    --format '{{.Names}} {{.Status}}' 2>$null | Where-Object { $_ -match 'envoy' }
+if ($envoy -match 'Up') { Add-Pass "envoy container running ($(($envoy | Select-Object -First 1).Trim()))" }
+else { Add-Fail 'envoy container running' "no running configamatron envoy container ('$envoy') -- run 'configamatron run-proxy'" }
 
 foreach ($port in 80, 443) {
     $listen = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
