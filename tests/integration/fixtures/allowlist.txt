@@ -4,7 +4,8 @@ archive.ubuntu.com:80
 *.ubuntu.com:80
 
 # Allow-listed from startup but never contacted by any test except the S2c
-# cold-cache discrimination probe (tests/vm/vm.test.ts, doc/cold-cache-bug.txt).
+# cold-cache discrimination probe (tests/vm/vm.test.ts,
+# docs/investigations/2026-07-11-proxy-restart-swap-window-race.txt).
 # Their whole purpose is to stay un-resolved until that probe hits them once.
 files.pythonhosted.org:443
 github.com:443

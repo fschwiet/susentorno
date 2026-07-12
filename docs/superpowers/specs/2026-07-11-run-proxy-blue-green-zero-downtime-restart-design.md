@@ -9,7 +9,8 @@
 `allowlist.txt` edit — by force-recreating its single Envoy container in place.
 During that swap the old container keeps answering `/ready`=200 until the instant
 it is destroyed, so any request that lands in the swap window has its TLS
-handshake dropped (curl exit 35; see `doc/cold-cache-bug.txt`). The test harness
+handshake dropped (curl exit 35; see
+`docs/investigations/2026-07-11-proxy-restart-swap-window-race.txt`). The test harness
 was hardened against this, but the production `run-proxy` was not: a real
 sandboxed workload hitting the proxy mid-swap would still fail.
 

@@ -78,7 +78,8 @@ export async function getEnvoyContainerId(stack: ProxyStack): Promise<string> {
  * run-proxy restart: during `docker compose up -d --force-recreate` the OLD
  * container keeps answering /ready=200 until the instant it is replaced, so a
  * probe fired right after can land in the swap window and have its TLS
- * handshake dropped (curl exit 35 — see doc/cold-cache-bug.txt). Capture the
+ * handshake dropped (curl exit 35 — see
+ * docs/investigations/2026-07-11-proxy-restart-swap-window-race.txt). Capture the
  * container id BEFORE triggering the restart, then wait here until the id has
  * actually changed (new container exists) AND that new container answers /ready.
  */

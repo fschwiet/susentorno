@@ -221,7 +221,8 @@ describe('S2: switch to host-only and reboot', () => {
     // HEAD, not GET: pypi.org/simple/ is a ~44 MB index whose full download can
     // exceed the timeout over this nested VM link (the doc's exit-28 flakiness).
     // A HEAD proves the passthrough TLS handshake to real pypi.org succeeds and
-    // returns 200 without transferring the body. See doc/cold-cache-bug.txt.
+    // returns 200 without transferring the body. See
+    // docs/investigations/2026-07-11-proxy-restart-swap-window-race.txt.
     const { stdout } = await guest(
       'g1',
       `curl -sI -o /dev/null -w '%{http_code}' --max-time 30 https://pypi.org/simple/`,
@@ -260,7 +261,7 @@ describe('S2: switch to host-only and reboot', () => {
   });
 });
 
-describe('S2c: cold DNS cache vs. restart-warmup discrimination (doc/cold-cache-bug.txt)', () => {
+describe('S2c: cold DNS cache vs. restart-warmup discrimination (docs/investigations/2026-07-11-proxy-restart-swap-window-race.txt)', () => {
   // The doc's deterministic exit-35 failures were only ever seen immediately
   // after a container restart, always coinciding with pypi.org being
   // un-resolved. That conflates two variables: container age (fresh-restart
