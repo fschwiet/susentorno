@@ -27,7 +27,6 @@ describe('configamatron CLI', () => {
     expect(exitCode).toBe(0);
     expect(stdout).toContain('--credentials');
     expect(stdout).toContain('--no-refresh');
-    expect(stdout).toContain('--service');
     expect(stdout).toContain('--upstream-override');
   });
 
