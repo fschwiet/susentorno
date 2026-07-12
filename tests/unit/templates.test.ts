@@ -47,10 +47,14 @@ describe('templates', () => {
     expect(netplan).toContain('ipv4.ignore-auto-dns: "true"');
   });
 
-  it('publishes Envoy on loopback only so the run-proxy forwarder owns the host-only interface', () => {
+  it('defines both blue and green Envoy services publishing on loopback', () => {
     const compose = readFileSync(join(templatesDir(), 'proxy', 'docker-compose.yml'), 'utf8');
-    expect(compose).toContain('127.0.0.1:${ENVOY_HTTPS_PORT:-443}:443');
-    expect(compose).toContain('127.0.0.1:${ENVOY_HTTP_PORT:-80}:80');
-    expect(compose).toContain('127.0.0.1:${ENVOY_ADMIN_PORT:-9901}:9901');
+    expect(compose).toContain('container_name: configamatron-envoy-blue');
+    expect(compose).toContain('container_name: configamatron-envoy-green');
+    // Host ports are injected per-color by run-proxy; unset -> ephemeral.
+    expect(compose).toContain('127.0.0.1:${ENVOY_BLUE_HTTPS_PORT:-}:443');
+    expect(compose).toContain('127.0.0.1:${ENVOY_GREEN_HTTPS_PORT:-}:443');
+    expect(compose).toContain('127.0.0.1:${ENVOY_BLUE_ADMIN_PORT:-}:9901');
+    expect(compose).toContain('127.0.0.1:${ENVOY_GREEN_ADMIN_PORT:-}:9901');
   });
 });
