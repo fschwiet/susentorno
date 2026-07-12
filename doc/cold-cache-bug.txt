@@ -177,14 +177,36 @@ new container-id drove the failure rate to 0 (0/480 through the socat path
 across three real recreates), so a new-container readiness gate is a verified
 fix direction.
 
-Workaround applied
--------------------
+Workaround applied (interim — now REPLACED by the fix below)
+------------------------------------------------------------
 
-tests/vm/vm.test.ts now has a `guestRetry()` helper (retries a guest exec
-up to 5 times with a 2s delay) wrapping the passthrough-to-pypi.org curl
-calls: the two new S2b restart tests, and the pre-existing S2 passthrough
-test. This is a test-only mitigation; it does not touch run-proxy's restart
-pipeline, envoyConfig.ts, or any other production code.
+tests/vm/vm.test.ts had a `guestRetry()` helper (retried a guest exec up to 5
+times with a 2s delay) wrapping the passthrough-to-pypi.org curl calls. This
+was a test-only mitigation that papered over both symptoms without addressing
+the race. It has been removed in favour of the real fix.
+
+Fix applied 2026-07-11 (test-harness, root-cause gate)
+------------------------------------------------------
+
+Per UPDATE (c), the two symptoms were addressed at their actual causes:
+
+  - exit 35 (restart/warmup race): added `waitForEnvoyRestart(stack, oldId,
+    timeoutMs)` + `getEnvoyContainerId(stack)` to tests/proxyStack.ts. The S2/S2b
+    restart tests now capture the envoy container id BEFORE triggering the
+    restart and wait until the id actually changes (new container exists) AND
+    that new container answers /ready — instead of plain waitForAdminReady, which
+    the old container answers during the swap. This is the verified 0/480 gate.
+  - exit 28 (real-network body timeout): the passthrough probes now use `curl -sI`
+    (HEAD) instead of GET. pypi.org/simple/ is a ~44 MB index whose full download
+    can exceed the timeout over the nested VM link; a HEAD still proves the
+    passthrough TLS handshake reaches real pypi.org (200) and still triggers the
+    proxy's ALLOW PASS log, without transferring the body.
+
+With both in place, the guest probes are single and un-retried. Verified: the
+full VM suite passed 23/23 on three consecutive runs (before the fix, the same
+un-retried probe reproduced exit 35 at 16/18). Still test-only — run-proxy's
+restart pipeline and envoyConfig.ts are untouched (see the production follow-up
+below).
 
 What's NOT done / possible follow-ups
 ---------------------------------------
@@ -198,12 +220,9 @@ What's NOT done / possible follow-ups
   answered by the old container during the --force-recreate swap. The fix is a
   new-container readiness gate; id-gating drove the failure to 0/480. Two places
   it could live:
-    - Test harness (fixes the test flakiness, would let guestRetry be removed):
-      make waitForAdminReady wait for the NEW container before checking /ready —
-      e.g. capture `docker compose ps -q envoy` before the restart and poll
-      until the id changes, THEN poll /ready; or probe the real passthrough data
-      path (a TLS handshake to an allow-listed passthrough host) instead of
-      /ready. VERIFIED FIX DIRECTION: gating on the new container-id gave 0/480.
+    - Test harness — DONE (see "Fix applied" above): waitForEnvoyRestart gates on
+      the new container id + /ready; guestRetry removed; passthrough probes use
+      HEAD. Verified 23/23 across three consecutive VM runs.
     - Production run-proxy (fixes it for a real workload curling right after a
       restart): recreateContainer returns without waiting for readiness, so a
       sandbox process hitting the proxy in the swap window would see the same
