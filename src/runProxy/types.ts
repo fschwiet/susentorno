@@ -40,3 +40,15 @@ export interface NudgeResult {
   /** Captured stderr when the process errored; empty string otherwise. */
   stderr: string;
 }
+
+export type Color = 'blue' | 'green';
+
+export interface ColorPorts {
+  httpsPort: number;
+  httpPort: number;
+  adminPort: number;
+}
+
+export function otherColor(color: Color): Color {
+  return color === 'blue' ? 'green' : 'blue';
+}
