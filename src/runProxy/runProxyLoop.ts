@@ -4,13 +4,17 @@ import { parseLine } from './parseLine';
 import { classify } from './classify';
 import { formatOutput } from './formatOutput';
 import { UniqueTracker } from './uniqueTracker';
-import type { Credentials, NudgeResult, RefreshState } from './types';
+import type { Credentials, NudgeResult, RefreshState, Color, ColorPorts } from './types';
+import { otherColor } from './types';
 
 export interface RunProxyConfig {
   credentialsPath: string;
   allowlistPath: string;
   secretPath: string;
-  serviceName: string;
+  /** How long to wait for a freshly-started color's admin /ready before giving up. */
+  readyTimeoutMs: number;
+  /** How long to let the old color's connections finish before force-closing them. */
+  drainTimeoutMs: number;
   refreshWindowMs: number;
   retryIntervalMs: number;
   maxAttempts: number;
@@ -26,11 +30,22 @@ export interface RunProxyDeps {
   buildConfig: (allowlist: Allowlist) => void;
   /** Ensure the leaf covers `sans` (reissue if needed); returns a status line. */
   ensureLeaf: (sans: string[]) => string;
-  recreateContainer: (serviceName: string) => Promise<void>;
+  /** Allocate three distinct free loopback ports for the next color to bring up. */
+  allocatePorts: () => Promise<ColorPorts>;
+  /** Force-recreate the given color's container, published on `ports`. */
+  bringUpColor: (color: Color, ports: ColorPorts) => Promise<void>;
+  /** Poll the color's own admin /ready; true once it serves, false on timeout. */
+  waitColorReady: (ports: ColorPorts, timeoutMs: number) => Promise<boolean>;
+  /** Point the gateway forwarder at this color's backend ports (the flip). */
+  setActiveBackend: (ports: ColorPorts) => void;
+  /** Wait for the old color's connections to drain, force-closing at timeout. */
+  drainBackend: (ports: ColorPorts, timeoutMs: number) => Promise<void>;
+  /** Stop the given color's container. */
+  stopColor: (color: Color) => Promise<void>;
   nudgeRefresh: () => Promise<NudgeResult>;
   /** File watcher; used for both the credentials file and the allowlist. */
   watch: (path: string, onEvent: () => void) => { close: () => void };
-  startLogStream: (onLine: (raw: string) => void) => void;
+  startLogStream: (color: Color, onLine: (raw: string) => void) => void;
   /** Resolves once the current log-follow child is fully gone; no-op when none. */
   stopLogStream: () => Promise<void>;
   onSigint: (handler: () => void) => void;
@@ -62,6 +77,8 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
     let pendingCredentials = false;
     let pendingAllowlist = false;
     let sigintSeen = false;
+    let activeColor: Color = 'blue';
+    let activePorts: ColorPorts | null = null;
     const unique = new UniqueTracker();
 
     const planConfig = {
@@ -109,20 +126,6 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
       timer = setTimeout(() => {
         void onTimer();
       }, delay);
-    };
-
-    const recreateWithOneRetry = async (): Promise<boolean> => {
-      try {
-        await deps.recreateContainer(config.serviceName);
-        return true;
-      } catch {
-        try {
-          await deps.recreateContainer(config.serviceName);
-          return true;
-        } catch {
-          return false;
-        }
-      }
     };
 
     const handleFailedAttempt = (): void => {
@@ -267,18 +270,47 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
             }
           }
 
-          if (restartNeeded) {
+          if (restartNeeded && activePorts !== null) {
             deps.log(`run-proxy: restarting proxy — ${reasons.join(', ')}`);
-            await deps.stopLogStream();
-            const ok = await recreateWithOneRetry();
-            if (settled) return;
-            if (!ok) {
-              fatal('docker failed to recreate the container');
-              return;
+            const idle = otherColor(activeColor);
+            const oldColor = activeColor;
+            const oldPorts = activePorts;
+
+            const idlePorts = await deps.allocatePorts();
+            let broughtUp = true;
+            try {
+              await deps.bringUpColor(idle, idlePorts);
+            } catch (err) {
+              broughtUp = false;
+              deps.error(
+                `run-proxy: could not start the new proxy (${idle}) — keeping the current proxy: ${String(err)}`,
+              );
             }
-            if (tokenToApply !== null) lastAppliedToken = tokenToApply;
-            if (clearUnique) unique.clear();
-            deps.startLogStream(onLogLine);
+            if (settled) return;
+
+            if (broughtUp) {
+              const ready = await deps.waitColorReady(idlePorts, config.readyTimeoutMs);
+              if (settled) return;
+              if (!ready) {
+                deps.error(
+                  `run-proxy: new proxy (${idle}) did not become ready — keeping the current proxy`,
+                );
+                await deps.stopColor(idle).catch(() => {});
+              } else {
+                // Flip: new connections now go to the freshly-ready color.
+                await deps.stopLogStream();
+                deps.setActiveBackend(idlePorts);
+                activeColor = idle;
+                activePorts = idlePorts;
+                if (tokenToApply !== null) lastAppliedToken = tokenToApply;
+                if (clearUnique) unique.clear();
+                deps.startLogStream(idle, onLogLine);
+                // Retire the old color once its connections drain (bounded).
+                await deps.drainBackend(oldPorts, config.drainTimeoutMs);
+                await deps.stopColor(oldColor).catch(() => {});
+                deps.log(`run-proxy: swap complete — now serving ${activeColor}`);
+              }
+            }
           }
 
           if (latestCreds !== null && !settled) {
@@ -332,7 +364,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
       allowlistWatcher = deps.watch(config.allowlistPath, () => requestRestart('allowlist'));
       deps.onSigint(onSigintOnce);
 
-      restarting = true; // hold watcher events as pending until the startup recreate is done
+      restarting = true; // hold watcher events as pending until the startup bring-up is done
       try {
         try {
           applyAllowlist(allowlist);
@@ -341,16 +373,26 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
           return;
         }
         deps.writeSecret(creds.accessToken, config.secretPath);
+        const ports = await deps.allocatePorts();
         try {
-          await deps.recreateContainer(config.serviceName);
+          await deps.bringUpColor('blue', ports);
         } catch {
-          fatal('docker failed to recreate the container on startup');
+          fatal('docker failed to start the proxy on startup');
           return;
         }
         if (settled) return;
+        const ready = await deps.waitColorReady(ports, config.readyTimeoutMs);
+        if (settled) return;
+        if (!ready) {
+          fatal('proxy did not become ready on startup');
+          return;
+        }
+        activeColor = 'blue';
+        activePorts = ports;
+        deps.setActiveBackend(ports);
         lastAppliedToken = creds.accessToken;
         lastSeenExpiresAt = creds.expiresAt;
-        deps.startLogStream(onLogLine);
+        deps.startLogStream('blue', onLogLine);
       } finally {
         restarting = false;
       }
@@ -363,7 +405,9 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
         refresh: refreshState(),
       });
       armTimer(plan.nudgeAt);
-      deps.log('run-proxy: watching credentials and allowlist; proxy is serving the current token');
+      deps.log(
+        `run-proxy: watching credentials and allowlist; proxy is serving the current token (${activeColor})`,
+      );
 
       // Apply anything that landed during the startup recreate.
       if (pendingCredentials || pendingAllowlist) void drainRestarts();

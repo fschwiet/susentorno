@@ -4,7 +4,7 @@ import {
   type RunProxyConfig,
   type RunProxyDeps,
 } from '../../../src/runProxy/runProxyLoop';
-import type { Credentials } from '../../../src/runProxy/types';
+import type { Credentials, ColorPorts } from '../../../src/runProxy/types';
 
 const MIN = 60_000;
 
@@ -28,7 +28,8 @@ function baseConfig(overrides: Partial<RunProxyConfig> = {}): RunProxyConfig {
     credentialsPath: '/fake/.credentials.json',
     allowlistPath: '/fake/allowlist.txt',
     secretPath: '/fake/sds-secret.yaml',
-    serviceName: 'envoy',
+    readyTimeoutMs: 30_000,
+    drainTimeoutMs: 30_000,
     refreshWindowMs: 3 * MIN,
     retryIntervalMs: 2 * MIN,
     maxAttempts: 3,
@@ -47,7 +48,12 @@ interface Harness {
   feedLogLine: (raw: string) => void;
   mocks: {
     writeSecret: ReturnType<typeof vi.fn>;
-    recreateContainer: ReturnType<typeof vi.fn>;
+    allocatePorts: ReturnType<typeof vi.fn>;
+    bringUpColor: ReturnType<typeof vi.fn>;
+    waitColorReady: ReturnType<typeof vi.fn>;
+    setActiveBackend: ReturnType<typeof vi.fn>;
+    drainBackend: ReturnType<typeof vi.fn>;
+    stopColor: ReturnType<typeof vi.fn>;
     nudgeRefresh: ReturnType<typeof vi.fn>;
     buildConfig: ReturnType<typeof vi.fn>;
     ensureLeaf: ReturnType<typeof vi.fn>;
@@ -70,13 +76,25 @@ function makeHarness(
   let sigintCb: (() => void) | null = null;
   let onLine: ((raw: string) => void) | null = null;
   const watchClose = vi.fn();
+
+  let portSeq = 0;
+  const nextPorts = (): ColorPorts => {
+    portSeq += 1;
+    return { httpsPort: 20000 + portSeq, httpPort: 21000 + portSeq, adminPort: 22000 + portSeq };
+  };
+
   const mocks = {
     writeSecret: vi.fn(),
-    recreateContainer: vi.fn().mockResolvedValue(undefined),
+    allocatePorts: vi.fn(async () => nextPorts()),
+    bringUpColor: vi.fn().mockResolvedValue(undefined),
+    waitColorReady: vi.fn().mockResolvedValue(true),
+    setActiveBackend: vi.fn(),
+    drainBackend: vi.fn().mockResolvedValue(undefined),
+    stopColor: vi.fn().mockResolvedValue(undefined),
     nudgeRefresh: vi.fn().mockResolvedValue({ ok: true, stderr: '' }),
     buildConfig: vi.fn(),
     ensureLeaf: vi.fn().mockReturnValue('reused leaf for 1 host(s)'),
-    startLogStream: vi.fn((cb: (raw: string) => void) => {
+    startLogStream: vi.fn((_color: string, cb: (raw: string) => void) => {
       onLine = cb;
     }),
     stopLogStream: vi.fn().mockResolvedValue(undefined),
@@ -90,7 +108,12 @@ function makeHarness(
     writeSecret: mocks.writeSecret,
     buildConfig: mocks.buildConfig,
     ensureLeaf: mocks.ensureLeaf,
-    recreateContainer: mocks.recreateContainer,
+    allocatePorts: mocks.allocatePorts,
+    bringUpColor: mocks.bringUpColor,
+    waitColorReady: mocks.waitColorReady,
+    setActiveBackend: mocks.setActiveBackend,
+    drainBackend: mocks.drainBackend,
+    stopColor: mocks.stopColor,
     nudgeRefresh: mocks.nudgeRefresh,
     watch: (path, onEvent) => {
       if (path.endsWith('.credentials.json')) credentialsCb = onEvent;
@@ -118,10 +141,9 @@ function makeHarness(
   };
 }
 
-/** Flush pending microtasks + zero-delay timers so async startup/handlers settle. */
+/** Flush microtasks + zero-delay timers so the multi-await swap chain settles. */
 async function flush(): Promise<void> {
-  await vi.advanceTimersByTimeAsync(0);
-  await vi.advanceTimersByTimeAsync(0);
+  for (let i = 0; i < 12; i++) await vi.advanceTimersByTimeAsync(0);
 }
 
 beforeEach(() => {
@@ -134,7 +156,7 @@ afterEach(() => {
 });
 
 describe('runProxyLoop startup', () => {
-  it('builds config, ensures leaf, writes secret, recreates, starts the log stream', async () => {
+  it('builds config, ensures leaf, writes secret, brings up blue, sets backend, logs', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
     void runProxyLoop(baseConfig(), h.deps);
     await flush();
@@ -143,8 +165,12 @@ describe('runProxyLoop startup', () => {
     expect(h.mocks.buildConfig).toHaveBeenCalledTimes(1);
     expect(h.mocks.buildConfig.mock.calls[0][0].terminate).toEqual(['api.anthropic.com:443']);
     expect(h.mocks.writeSecret).toHaveBeenCalledWith('A', '/fake/sds-secret.yaml');
-    expect(h.mocks.recreateContainer).toHaveBeenCalledTimes(1);
+    expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1);
+    expect(h.mocks.bringUpColor.mock.calls[0][0]).toBe('blue');
+    expect(h.mocks.waitColorReady).toHaveBeenCalledTimes(1);
+    expect(h.mocks.setActiveBackend).toHaveBeenCalledTimes(1);
     expect(h.mocks.startLogStream).toHaveBeenCalledTimes(1);
+    expect(h.mocks.startLogStream.mock.calls[0][0]).toBe('blue');
   });
 
   it('exits 1 on an invalid allowlist without touching docker', async () => {
@@ -158,7 +184,7 @@ describe('runProxyLoop startup', () => {
     );
     expect(h.mocks.error).toHaveBeenCalledWith(expect.stringContaining('*.bad.example.com:443'));
     expect(h.mocks.buildConfig).not.toHaveBeenCalled();
-    expect(h.mocks.recreateContainer).not.toHaveBeenCalled();
+    expect(h.mocks.bringUpColor).not.toHaveBeenCalled();
   });
 
   it('exits 1 when the allowlist is unreadable', async () => {
@@ -170,17 +196,30 @@ describe('runProxyLoop startup', () => {
     expect(h.mocks.error).toHaveBeenCalledWith(expect.stringContaining('could not read allowlist'));
   });
 
-  it('applies an allowlist change that lands during the startup recreate right after start', async () => {
+  it('exits 1 when blue never becomes ready on startup', async () => {
+    const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+    h.mocks.waitColorReady.mockResolvedValue(false);
+    const exit = runProxyLoop(baseConfig(), h.deps);
+    await flush();
+
+    await expect(exit).resolves.toBe(1);
+    expect(h.mocks.error).toHaveBeenCalledWith(
+      expect.stringContaining('did not become ready on startup'),
+    );
+    expect(h.mocks.setActiveBackend).not.toHaveBeenCalled();
+  });
+
+  it('applies an allowlist change that lands during the startup bring-up', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
     let release!: () => void;
-    h.mocks.recreateContainer.mockImplementationOnce(
+    h.mocks.bringUpColor.mockImplementationOnce(
       () =>
         new Promise<void>((resolve) => {
           release = resolve;
         }),
     );
     void runProxyLoop(baseConfig(), h.deps);
-    await flush(); // startup recreate in flight; both watchers already armed
+    await flush(); // startup bring-up in flight; both watchers already armed
 
     h.allowlist.value = VALID_ALLOWLIST.replace(
       'pypi.org:443',
@@ -188,12 +227,12 @@ describe('runProxyLoop startup', () => {
     );
     h.fireAllowlist();
     await flush();
-    expect(h.mocks.recreateContainer).toHaveBeenCalledTimes(1); // still just the startup one
+    expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1); // still just the startup one
 
     release();
     await flush();
 
-    expect(h.mocks.recreateContainer).toHaveBeenCalledTimes(2); // startup + coalesced follow-up
+    expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(2); // startup + coalesced swap
     expect(h.mocks.buildConfig).toHaveBeenCalledTimes(2);
     expect(h.mocks.buildConfig.mock.calls[1][0].passthrough).toContain('late.example.com:443');
   });
@@ -219,14 +258,14 @@ describe('runProxyLoop inline logging', () => {
 });
 
 describe('runProxyLoop allowlist changes', () => {
-  it('rebuilds config, reissues leaf, restarts, and clears unique tracking', async () => {
+  it('rebuilds config, reissues leaf, swaps to green, and clears unique tracking', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
     void runProxyLoop(baseConfig(), h.deps);
     await flush();
     h.feedLogLine(PASS_LINE); // pypi.org now tracked as seen
     h.mocks.buildConfig.mockClear();
     h.mocks.ensureLeaf.mockClear();
-    h.mocks.recreateContainer.mockClear();
+    h.mocks.bringUpColor.mockClear();
     h.mocks.log.mockClear();
 
     h.allowlist.value = VALID_ALLOWLIST.replace('pypi.org:443', 'pypi.org:443\nexample.org:443');
@@ -237,9 +276,14 @@ describe('runProxyLoop allowlist changes', () => {
     expect(h.mocks.buildConfig).toHaveBeenCalledTimes(1);
     expect(h.mocks.buildConfig.mock.calls[0][0].passthrough).toContain('example.org:443');
     expect(h.mocks.log).toHaveBeenCalledWith('run-proxy: restarting proxy — allowlist changed');
+    expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1);
+    expect(h.mocks.bringUpColor.mock.calls[0][0]).toBe('green');
     expect(h.mocks.stopLogStream).toHaveBeenCalledTimes(1);
-    expect(h.mocks.recreateContainer).toHaveBeenCalledTimes(1);
-    expect(h.mocks.startLogStream).toHaveBeenCalledTimes(2); // startup + after restart
+    expect(h.mocks.drainBackend).toHaveBeenCalledTimes(1);
+    expect(h.mocks.stopColor).toHaveBeenCalledWith('blue');
+    expect(h.mocks.log).toHaveBeenCalledWith('run-proxy: swap complete — now serving green');
+    expect(h.mocks.startLogStream).toHaveBeenCalledTimes(2); // startup(blue) + swap(green)
+    expect(h.mocks.startLogStream.mock.calls[1][0]).toBe('green');
 
     // Unique tracking was cleared: the same host+handling prints again.
     h.mocks.log.mockClear();
@@ -252,7 +296,7 @@ describe('runProxyLoop allowlist changes', () => {
     void runProxyLoop(baseConfig(), h.deps);
     await flush();
     h.mocks.buildConfig.mockClear();
-    h.mocks.recreateContainer.mockClear();
+    h.mocks.bringUpColor.mockClear();
 
     h.allowlist.value = INVALID_ALLOWLIST;
     h.fireAllowlist();
@@ -261,27 +305,26 @@ describe('runProxyLoop allowlist changes', () => {
     expect(h.mocks.error).toHaveBeenCalledWith(
       expect.stringContaining('allowlist has unsupported wildcard syntax, keeping previous config'),
     );
-    expect(h.mocks.error).toHaveBeenCalledWith(expect.stringContaining('*.bad.example.com:443'));
     expect(h.mocks.buildConfig).not.toHaveBeenCalled();
-    expect(h.mocks.recreateContainer).not.toHaveBeenCalled();
+    expect(h.mocks.bringUpColor).not.toHaveBeenCalled();
 
-    // The watcher stayed live: fixing the file triggers a fresh attempt.
+    // The watcher stayed live: fixing the file triggers a fresh swap.
     h.allowlist.value = VALID_ALLOWLIST;
     h.fireAllowlist();
     await flush();
     expect(h.mocks.buildConfig).toHaveBeenCalledTimes(1);
-    expect(h.mocks.recreateContainer).toHaveBeenCalledTimes(1);
+    expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('runProxyLoop credential changes', () => {
-  it('propagates a changed token: writeSecret + restart, preserving unique tracking', async () => {
+  it('propagates a changed token via a swap, preserving unique tracking', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
     void runProxyLoop(baseConfig(), h.deps);
     await flush();
     h.feedLogLine(PASS_LINE); // pypi.org tracked as seen
     h.mocks.writeSecret.mockClear();
-    h.mocks.recreateContainer.mockClear();
+    h.mocks.bringUpColor.mockClear();
     h.mocks.log.mockClear();
 
     h.creds.value = { accessToken: 'B', expiresAt: 60 * MIN };
@@ -289,10 +332,11 @@ describe('runProxyLoop credential changes', () => {
     await flush();
 
     expect(h.mocks.writeSecret).toHaveBeenCalledWith('B', '/fake/sds-secret.yaml');
-    expect(h.mocks.recreateContainer).toHaveBeenCalledTimes(1);
+    expect(h.mocks.bringUpColor).toHaveBeenCalledWith('green', expect.anything());
     expect(h.mocks.log).toHaveBeenCalledWith('run-proxy: restarting proxy — credentials changed');
+    expect(h.mocks.log).toHaveBeenCalledWith('run-proxy: swap complete — now serving green');
 
-    // Unique tracking survived the credential restart.
+    // Unique tracking survived the credential swap.
     h.mocks.log.mockClear();
     h.feedLogLine(PASS_LINE);
     expect(h.mocks.log).not.toHaveBeenCalled();
@@ -300,74 +344,123 @@ describe('runProxyLoop credential changes', () => {
     expect(h.mocks.log).toHaveBeenCalledWith('12:00:01  ALLOW CRED  api.anthropic.com');
   });
 
-  it('does not restart when the token is unchanged', async () => {
+  it('alternates the active color across successive swaps', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
     void runProxyLoop(baseConfig(), h.deps);
     await flush();
-    h.mocks.recreateContainer.mockClear();
+
+    h.creds.value = { accessToken: 'B', expiresAt: 60 * MIN };
+    h.fireCredentials();
+    await flush();
+    expect(h.mocks.log).toHaveBeenCalledWith('run-proxy: swap complete — now serving green');
+
+    h.creds.value = { accessToken: 'C', expiresAt: 60 * MIN };
+    h.fireCredentials();
+    await flush();
+    expect(h.mocks.log).toHaveBeenCalledWith('run-proxy: swap complete — now serving blue');
+    expect(h.mocks.stopColor.mock.calls.map((c) => c[0])).toEqual(['blue', 'green']);
+  });
+
+  it('does not swap when the token is unchanged', async () => {
+    const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+    void runProxyLoop(baseConfig(), h.deps);
+    await flush();
+    h.mocks.bringUpColor.mockClear();
 
     h.creds.value = { accessToken: 'A', expiresAt: 61 * MIN }; // only expiry moved
     h.fireCredentials();
     await flush();
 
-    expect(h.mocks.recreateContainer).not.toHaveBeenCalled();
+    expect(h.mocks.bringUpColor).not.toHaveBeenCalled();
   });
 
-  it('retries a docker failure once during a restart, then exits non-zero', async () => {
+  it('keeps the old color serving (non-fatal) when the new color never becomes ready', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
     const exit = runProxyLoop(baseConfig(), h.deps);
     await flush();
+    h.mocks.setActiveBackend.mockClear();
 
-    h.mocks.recreateContainer.mockRejectedValue(new Error('docker boom'));
-    h.mocks.recreateContainer.mockClear();
+    h.mocks.waitColorReady.mockResolvedValueOnce(false); // the swap's green fails to serve
     h.creds.value = { accessToken: 'B', expiresAt: 60 * MIN };
     h.fireCredentials();
     await flush();
 
-    expect(h.mocks.recreateContainer).toHaveBeenCalledTimes(2); // initial + one retry
-    await expect(exit).resolves.toBe(1);
+    expect(h.mocks.error).toHaveBeenCalledWith(
+      expect.stringContaining('did not become ready — keeping the current proxy'),
+    );
+    expect(h.mocks.stopColor).toHaveBeenCalledWith('green'); // failed green torn down
+    expect(h.mocks.setActiveBackend).not.toHaveBeenCalled(); // no flip
+    // The loop is still running (not settled): a later SIGINT would resolve it.
+    let settled = false;
+    void exit.then(() => {
+      settled = true;
+    });
+    await flush();
+    expect(settled).toBe(false);
+  });
+
+  it('keeps the old color serving when docker fails to bring up the new color', async () => {
+    const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+    const exit = runProxyLoop(baseConfig(), h.deps);
+    await flush();
+    h.mocks.setActiveBackend.mockClear();
+
+    h.mocks.bringUpColor.mockRejectedValueOnce(new Error('docker boom'));
+    h.creds.value = { accessToken: 'B', expiresAt: 60 * MIN };
+    h.fireCredentials();
+    await flush();
+
+    expect(h.mocks.error).toHaveBeenCalledWith(
+      expect.stringContaining('could not start the new proxy'),
+    );
+    expect(h.mocks.setActiveBackend).not.toHaveBeenCalled();
+    let settled = false;
+    void exit.then(() => {
+      settled = true;
+    });
+    await flush();
+    expect(settled).toBe(false);
   });
 });
 
 describe('runProxyLoop coalescing', () => {
-  it('collapses events during an in-flight restart into exactly one follow-up restart', async () => {
+  it('collapses events during an in-flight swap into exactly one follow-up swap', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
     void runProxyLoop(baseConfig(), h.deps);
     await flush();
-    h.mocks.recreateContainer.mockClear();
+    h.mocks.bringUpColor.mockClear();
 
     let release!: () => void;
-    h.mocks.recreateContainer.mockImplementationOnce(
+    h.mocks.bringUpColor.mockImplementationOnce(
       () =>
         new Promise<void>((resolve) => {
           release = resolve;
         }),
     );
 
-    h.fireAllowlist(); // restart 1 begins; its recreate is blocked
+    h.fireAllowlist(); // swap 1 begins; its bring-up is blocked
     await flush();
-    expect(h.mocks.recreateContainer).toHaveBeenCalledTimes(1);
+    expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1);
 
-    h.fireAllowlist(); // two more edits land mid-restart
+    h.fireAllowlist(); // two more edits land mid-swap
     h.fireAllowlist();
     await flush();
-    expect(h.mocks.recreateContainer).toHaveBeenCalledTimes(1); // nothing new while in flight
+    expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1); // nothing new while in flight
 
     release();
     await flush();
-    expect(h.mocks.recreateContainer).toHaveBeenCalledTimes(2); // exactly one follow-up
+    expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(2); // exactly one follow-up
   });
 
-  it('clears unique tracking when both sources changed during an in-flight restart', async () => {
+  it('clears unique tracking when both sources changed during an in-flight swap', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
     void runProxyLoop(baseConfig(), h.deps);
     await flush();
     h.feedLogLine(PASS_LINE); // tracked
-    h.mocks.recreateContainer.mockClear();
+    h.mocks.bringUpColor.mockClear();
 
-    // A credentials-only restart starts (unique would be preserved by itself)…
     let release!: () => void;
-    h.mocks.recreateContainer.mockImplementationOnce(
+    h.mocks.bringUpColor.mockImplementationOnce(
       () =>
         new Promise<void>((resolve) => {
           release = resolve;
@@ -376,9 +469,9 @@ describe('runProxyLoop coalescing', () => {
     h.creds.value = { accessToken: 'B', expiresAt: 60 * MIN };
     h.fireCredentials();
     await flush();
-    expect(h.mocks.recreateContainer).toHaveBeenCalledTimes(1);
+    expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1);
 
-    // …and BOTH change while it is in flight.
+    // BOTH change while the first swap is in flight.
     h.creds.value = { accessToken: 'C', expiresAt: 60 * MIN };
     h.fireCredentials();
     h.allowlist.value = VALID_ALLOWLIST.replace(
@@ -390,7 +483,7 @@ describe('runProxyLoop coalescing', () => {
 
     release();
     await flush();
-    expect(h.mocks.recreateContainer).toHaveBeenCalledTimes(2); // one follow-up for both
+    expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(2); // one follow-up for both
 
     // The follow-up included the allowlist change, so unique was cleared.
     h.mocks.log.mockClear();
@@ -401,14 +494,13 @@ describe('runProxyLoop coalescing', () => {
 
 describe('runProxyLoop refresh nudging', () => {
   it('exits non-zero after maxAttempts consecutive no-advance nudges', async () => {
-    // expiresAt within the refresh window so the nudge fires immediately at startup.
     const h = makeHarness({ accessToken: 'A', expiresAt: 1 * MIN });
     const exit = runProxyLoop(baseConfig({ maxAttempts: 3 }), h.deps);
-    await flush(); // startup arms nudge at now -> fires -> doNudge #1
+    await flush();
 
-    await vi.advanceTimersByTimeAsync(2 * MIN); // deadline -> fail #1 -> doNudge #2
-    await vi.advanceTimersByTimeAsync(2 * MIN); // deadline -> fail #2 -> doNudge #3
-    await vi.advanceTimersByTimeAsync(2 * MIN); // deadline -> fail #3 -> exit
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+    await vi.advanceTimersByTimeAsync(2 * MIN);
 
     await expect(exit).resolves.toBe(1);
     expect(h.mocks.nudgeRefresh).toHaveBeenCalledTimes(3);
@@ -420,15 +512,13 @@ describe('runProxyLoop refresh nudging', () => {
   it('resets the failure counter when a refresh succeeds mid-sequence', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 1 * MIN });
     const exit = runProxyLoop(baseConfig({ maxAttempts: 3 }), h.deps);
-    await flush(); // doNudge #1
-    await vi.advanceTimersByTimeAsync(2 * MIN); // fail #1 -> doNudge #2
+    await flush();
+    await vi.advanceTimersByTimeAsync(2 * MIN);
 
-    // Simulate the refresh landing: expiresAt advances far out.
     h.creds.value = { accessToken: 'A', expiresAt: 60 * MIN };
     h.fireCredentials();
     await flush();
 
-    // Two more no-advance intervals would have exited if the counter had not reset.
     await vi.advanceTimersByTimeAsync(60 * MIN);
     await Promise.resolve();
 
@@ -447,7 +537,7 @@ describe('runProxyLoop shutdown', () => {
     const exit = runProxyLoop(baseConfig(), h.deps);
     await flush();
     h.mocks.log.mockClear();
-    h.mocks.recreateContainer.mockClear();
+    h.mocks.bringUpColor.mockClear();
 
     h.fireSigint();
     h.fireSigint();
@@ -456,8 +546,8 @@ describe('runProxyLoop shutdown', () => {
     await expect(exit).resolves.toBe(0);
     const sigintLogs = h.mocks.log.mock.calls.filter((c) => String(c[0]).includes('SIGINT'));
     expect(sigintLogs).toHaveLength(1);
-    expect(h.mocks.watchClose).toHaveBeenCalledTimes(2); // credentials + allowlist watchers
+    expect(h.mocks.watchClose).toHaveBeenCalledTimes(2);
     expect(h.mocks.stopLogStream).toHaveBeenCalled();
-    expect(h.mocks.recreateContainer).not.toHaveBeenCalled();
+    expect(h.mocks.bringUpColor).not.toHaveBeenCalled();
   });
 });
