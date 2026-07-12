@@ -77,6 +77,56 @@ returning) — not the DNS cache. This means preresolve_clusters (listed below)
 would NOT fix it; a passthrough-path-specific readiness gate after a restart
 would.
 
+UPDATE 2026-07-11 (b): boundary-isolation probes REFUTE both standing candidates
+--------------------------------------------------------------------------------
+
+The two candidates the S2c update left standing were (a) Envoy worker/listener
+not serving the passthrough path despite /ready, and (b) a Docker Desktop / WSL2
+port-forward re-establishment blip during --force-recreate. Both were probed
+directly by replaying the production restart (docker compose up -d
+--force-recreate) and firing un-retried passthrough TLS probes to pypi.org at
+each component boundary, WITHOUT the QEMU guest. Container replacement was
+verified by container-id change each iteration (not just /ready), because the
+OLD container keeps answering /ready during a recreate — gating on /ready alone
+lets a probe hit the warm old container and hide the post-recreate window.
+
+  1. Host loopback -> Docker(Windows republish) :18443 -> Envoy passthrough,
+     container-id-gated, probe fired the instant the NEW container's /ready hit
+     200: 24 probes, 0 exit-35. (The only failures were exit-28 body-transfer
+     timeouts on the multi-MB https://pypi.org/simple/ page — TLS handshake
+     already complete, http=200 received — i.e. the doc's separate real-network
+     flakiness, reproduced and explained as a slow large-body download, not a
+     TLS drop.)
+
+  2. WSL socat(fork) :19443 -> WSL-republished :18443 -> Envoy — the guest's
+     EXACT failing hop minus QEMU (same forward.sh-style socat forwarder) —
+     while THREE real Windows-driven --force-recreates (container id changed
+     2ccc59->59e839->44c89->3162a7) landed inside a 16s window with four
+     concurrent probers: 480 probes, 0 failures. /ready (WSL side) never dropped
+     across any of the three recreates.
+
+Conclusion: a real --force-recreate produces NO observable gap at Envoy's
+passthrough listener, at the Docker published port (Windows OR WSL republish),
+or through the socat forwarder. Docker Desktop's port proxy holds the published
+sockets continuously across the container swap. Candidate (a) is refuted (a
+host-side TLS probe succeeds within ~80ms of /ready=200 on the freshly
+recreated container); candidate (b) is refuted (480/480 through the socat path
+across three real recreates, no /ready drop).
+
+That leaves exactly one component the reproduction does NOT exercise: the QEMU
+guest itself and the tap/bridge between it and the WSL socat LISTEN side
+(BRIDGE_IP:443). The exit-35 is therefore either specific to that guest/tap
+layer, or the original 3/3 observation was a transient environmental condition
+that no longer reproduces. Confirming which requires the full VM harness
+(~20 min beforeAll) to instrument the guest side — not yet done.
+
+Caveat learned the hard way: `docker compose up -d --force-recreate` issued from
+WSL against this project does NOT recreate the container — Docker Desktop's
+Windows daemon can't resolve the relative bind-mounts (./envoy.yaml, ...) from a
+/mnt/c cwd, so the up silently no-ops and leaves the old container running. All
+recreates in these experiments were therefore driven from the Windows (git-bash)
+side; only the probes ran WSL-side.
+
 Workaround applied
 -------------------
 
@@ -95,17 +145,20 @@ What's NOT done / possible follow-ups
   dynamic_forward_proxy DNS cache stats *at the moment of* a real post-restart
   exit-35 failure, to pin down exactly which layer drops the handshake.
 - If this needs to be fixed for real (not just retried around in tests),
-  candidates to investigate — reprioritized by the S2c finding:
-    - A readiness check specific to the passthrough path (not just `/ready`)
-      after a restart before the VM test proceeds. NOW THE LEADING CANDIDATE:
-      the failure is restart-scoped, so gating on genuine passthrough
-      readiness targets the actual root cause.
-    - Confirm whether the drop is Envoy-side (worker/listener not serving yet)
-      vs. a Docker Desktop / WSL2 port-forwarding blip during force-recreate.
-      The S2c result rules the DNS cache out but not these two.
-    - Envoy's dns_cache_config `preresolve_clusters` — DEPRIORITIZED: S2c
-      showed the cold cache is not the cause, so pre-warming hosts would not
-      address the restart-window failure.
+  candidates to investigate — reprioritized by the UPDATE (b) boundary probes:
+    - Guest/tap-bridge readiness: instrument the QEMU guest side in the full VM
+      harness during a real post-restart exit-35 to confirm the drop is at the
+      guest curl / tap device / BRIDGE_IP socat LISTEN side. NOW THE ONLY
+      STANDING CANDIDATE — every layer from the socat forwarder inward was
+      proven clean across three real recreates (480/480).
+    - An Envoy passthrough-path-specific readiness gate — REFUTED by UPDATE (b):
+      a host-side TLS probe succeeds within ~80ms of /ready=200 on the freshly
+      recreated container, so Envoy is already serving passthrough at /ready.
+    - Docker Desktop / WSL2 port-forward re-establishment blip — REFUTED by
+      UPDATE (b): no /ready drop and no socat-path failure across three real
+      --force-recreates; Docker's port proxy holds the sockets across the swap.
+    - Envoy's dns_cache_config `preresolve_clusters` — REFUTED (S2c): the cold
+      cache is not the cause, so pre-warming hosts would not help.
 - The exit-28 (timeout) flakiness on the pre-existing S2 test was only
   observed intermittently (not on every run) and might be entirely separate
   from the exit-35 issue — worth keeping an eye on whether guestRetry alone
