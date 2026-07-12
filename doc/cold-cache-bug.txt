@@ -127,6 +127,56 @@ Windows daemon can't resolve the relative bind-mounts (./envoy.yaml, ...) from a
 recreates in these experiments were therefore driven from the Windows (git-bash)
 side; only the probes ran WSL-side.
 
+UPDATE 2026-07-11 (c): guest-side instrumentation CONFIRMS the root cause
+-------------------------------------------------------------------------
+
+The full VM harness was run with a temporary probe block (S2d) that fired
+un-retried `curl -v` from the guest immediately after each of six real run-proxy
+restarts (credential rotation), capturing curl's exit code and the verbose TLS
+trace. Result: 16 of 18 probes exit 35, one exit 56, one exit 0 — the exit-35
+reproduces deterministically guest-side. Every exit-35 trace is identical:
+
+    * IPv4: 203.0.113.1               (stub DNS -> guest DNAT -> socat -> Envoy)
+    *   Trying 203.0.113.1:443...
+    * TLSv1.3 (OUT), TLS handshake, Client hello (1):        (1563 bytes sent)
+    * TLS connect error: ...unexpected eof while reading
+    CODE=000 TCP=0.0008 TLS=0.000000 GUEST_EXIT=35
+
+TCP connects in <1 ms (local socat accept); the ClientHello goes out; the peer
+returns an immediate EOF before any ServerHello. The lone exit-56 got further —
+a full handshake to the REAL pypi.org certificate, HTTP/2 GET sent, then the
+same "unexpected eof" mid-response — i.e. a connection that reached a fully
+serving Envoy and was then cut, consistent with the old container being killed
+mid-response.
+
+The decisive datum: waitForAdminReady returned in 1-2 ms on every iteration.
+run-proxy logs "restarting proxy — credentials changed" and THEN (asynchronously)
+runs `docker compose up -d --force-recreate`. The test waits for that log line,
+then waitForAdminReady, then curls — with no gap. Because the OLD container keeps
+answering /ready=200 throughout the swap, waitForAdminReady returns instantly
+against the dying old container, and the guest curl fires straight into the
+container-swap window; its ClientHello reaches a backend that is being torn down
+/ not yet serving and gets an EOF.
+
+ROOT CAUSE (confirmed): a restart/warmup race. /ready is not a valid
+post-restart readiness signal, because during `docker compose up -d
+--force-recreate` the OLD container answers /ready=200 until the moment it is
+replaced. Any request fired between "restart requested" and "new container
+actually serving" can have its TLS handshake dropped -> curl exit 35 (or exit 56
+when the drop lands mid-response). Nothing to do with DNS caching, and not
+guest-specific — the guest only fails because the test sequences
+waitForProxyLine -> waitForAdminReady -> curl with no new-container gate.
+
+This reconciles and CORRECTS UPDATE (b). The boundary probes there did not fail
+only because they gated on the NEW container-id (waiting ~1.3 s PAST the swap)
+before probing — which the real test does not. UPDATE (b)'s "candidate (a)
+refuted" was an over-claim: the new container does serve passthrough within
+~80 ms of ITS OWN /ready, but the real failure is that the gate never waits for
+the new container in the first place. In the boundary experiments, gating on the
+new container-id drove the failure rate to 0 (0/480 through the socat path
+across three real recreates), so a new-container readiness gate is a verified
+fix direction.
+
 Workaround applied
 -------------------
 
@@ -144,21 +194,29 @@ What's NOT done / possible follow-ups
   restart/warmup window. Still not done: capturing Envoy debug-level logs or
   dynamic_forward_proxy DNS cache stats *at the moment of* a real post-restart
   exit-35 failure, to pin down exactly which layer drops the handshake.
-- If this needs to be fixed for real (not just retried around in tests),
-  candidates to investigate — reprioritized by the UPDATE (b) boundary probes:
-    - Guest/tap-bridge readiness: instrument the QEMU guest side in the full VM
-      harness during a real post-restart exit-35 to confirm the drop is at the
-      guest curl / tap device / BRIDGE_IP socat LISTEN side. NOW THE ONLY
-      STANDING CANDIDATE — every layer from the socat forwarder inward was
-      proven clean across three real recreates (480/480).
-    - An Envoy passthrough-path-specific readiness gate — REFUTED by UPDATE (b):
-      a host-side TLS probe succeeds within ~80ms of /ready=200 on the freshly
-      recreated container, so Envoy is already serving passthrough at /ready.
-    - Docker Desktop / WSL2 port-forward re-establishment blip — REFUTED by
-      UPDATE (b): no /ready drop and no socat-path failure across three real
-      --force-recreates; Docker's port proxy holds the sockets across the swap.
-    - Envoy's dns_cache_config `preresolve_clusters` — REFUTED (S2c): the cold
-      cache is not the cause, so pre-warming hosts would not help.
+- Root cause is CONFIRMED (UPDATE c): a restart/warmup race where /ready is
+  answered by the old container during the --force-recreate swap. The fix is a
+  new-container readiness gate; id-gating drove the failure to 0/480. Two places
+  it could live:
+    - Test harness (fixes the test flakiness, would let guestRetry be removed):
+      make waitForAdminReady wait for the NEW container before checking /ready —
+      e.g. capture `docker compose ps -q envoy` before the restart and poll
+      until the id changes, THEN poll /ready; or probe the real passthrough data
+      path (a TLS handshake to an allow-listed passthrough host) instead of
+      /ready. VERIFIED FIX DIRECTION: gating on the new container-id gave 0/480.
+    - Production run-proxy (fixes it for a real workload curling right after a
+      restart): recreateContainer returns without waiting for readiness, so a
+      sandbox process hitting the proxy in the swap window would see the same
+      exit 35. A genuine post-recreate readiness gate inside run-proxy (wait for
+      the new container to actually serve) would close that window in production.
+  Ruled out along the way:
+    - An Envoy-internal change (worker/listener config) — not needed: the new
+      container serves passthrough within ~80 ms of ITS OWN /ready (UPDATE b).
+    - Docker Desktop / WSL2 port-forward re-establishment blip — not the cause:
+      no /ready drop and no socat-path failure across three real recreates once
+      gated on the new container (UPDATE b); Docker's port proxy holds sockets.
+    - Envoy's dns_cache_config `preresolve_clusters` — not the cause (S2c): a
+      cold DNS cache alone does not fail.
 - The exit-28 (timeout) flakiness on the pre-existing S2 test was only
   observed intermittently (not on every run) and might be entirely separate
   from the exit-35 issue — worth keeping an eye on whether guestRetry alone
