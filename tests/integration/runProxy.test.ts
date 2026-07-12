@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { execa, type ResultPromise } from 'execa';
-import { request as httpRequest } from 'node:http';
+import { createInterface } from 'node:readline';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, copyFileSync } from 'node:fs';
 import { killProcessTree } from '../../src/runProxy/killProcessTree';
 import { fileURLToPath } from 'node:url';
@@ -17,17 +17,16 @@ const proxyDir = join(envRoot, 'proxy');
 
 const HTTPS_PORT = 18543;
 const HTTP_PORT = 18180;
-const ADMIN_PORT = 19902;
 
 let mockUpstream: MockUpstream;
 let tempDir: string;
 let credentialsPath: string;
 let proxyProc: ResultPromise | null = null;
+const stdoutLines: string[] = [];
 
 const envoyEnv = {
   ENVOY_HTTPS_PORT: String(HTTPS_PORT),
   ENVOY_HTTP_PORT: String(HTTP_PORT),
-  ENVOY_ADMIN_PORT: String(ADMIN_PORT),
 };
 
 function writeCredentials(token: string): void {
@@ -39,51 +38,20 @@ function writeCredentials(token: string): void {
   );
 }
 
-function adminConfigDump(): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const req = httpRequest(
-      { host: '127.0.0.1', port: ADMIN_PORT, path: '/config_dump', timeout: 5000 },
-      (res) => {
-        let body = '';
-        res.on('data', (chunk) => (body += chunk));
-        res.on('end', () => resolve(body));
-      },
-    );
-    req.on('error', reject);
-    req.end();
-  });
-}
-
-/** Return the `last_updated` timestamp for the sandbox_bearer_token secret, or null. */
-function secretLastUpdated(dump: string): string | null {
-  const parsed = JSON.parse(dump) as {
-    configs?: Array<{ dynamic_active_secrets?: Array<{ name: string; last_updated?: string }> }>;
-  };
-  for (const config of parsed.configs ?? []) {
-    for (const secret of config.dynamic_active_secrets ?? []) {
-      if (secret.name === 'sandbox_bearer_token') return secret.last_updated ?? null;
-    }
-  }
-  return null;
-}
-
-async function waitFor<T>(
-  fn: () => Promise<T>,
-  predicate: (value: T) => boolean,
-  timeoutMs: number,
-): Promise<T> {
+async function waitForLine(needle: string, timeoutMs: number, fromIndex = 0): Promise<number> {
   const deadline = Date.now() + timeoutMs;
-  let last: T;
-  while (Date.now() < deadline) {
-    try {
-      last = await fn();
-      if (predicate(last)) return last;
-    } catch {
-      // not ready yet
+  for (;;) {
+    for (let i = fromIndex; i < stdoutLines.length; i++) {
+      if (stdoutLines[i].includes(needle)) return i;
     }
-    await new Promise((r) => setTimeout(r, 500));
+    if (Date.now() > deadline) {
+      throw new Error(
+        `timed out waiting for run-proxy output containing '${needle}'\n` +
+          `--- run-proxy output ---\n${stdoutLines.join('\n')}`,
+      );
+    }
+    await new Promise((r) => setTimeout(r, 250));
   }
-  throw new Error('waitFor timed out');
 }
 
 beforeAll(async () => {
@@ -94,13 +62,9 @@ beforeAll(async () => {
 
   rmSync(envRoot, { recursive: true, force: true });
   await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: repoRoot });
-  // Stage the test allowlist as the environment's own; run-proxy builds
-  // envoy.yaml from it on startup.
   copyFileSync(allowlistFixture, join(proxyDir, 'allowlist.txt'));
   await execa('node', [cliPath, 'generate-ca'], { cwd: repoRoot });
 
-  // Start run-proxy in the background with refresh disabled (no real auth/network).
-  // No --secret flag: exercises the environment default secret path.
   proxyProc = execa(
     'node',
     [
@@ -113,15 +77,14 @@ beforeAll(async () => {
       '--upstream-override',
       `api.anthropic.com=host.docker.internal:${mockUpstream.port}`,
     ],
-    { cwd: repoRoot, env: { ...process.env, ...envoyEnv }, reject: false },
+    { cwd: repoRoot, env: { ...process.env, ...envoyEnv }, buffer: false, reject: false },
   );
+  for (const stream of [proxyProc.stdout, proxyProc.stderr]) {
+    if (!stream) continue;
+    createInterface({ input: stream }).on('line', (line) => stdoutLines.push(line));
+  }
 
-  // run-proxy performs the startup writeSecret + force-recreate; wait for admin readiness.
-  await waitFor(
-    () => adminConfigDump(),
-    (dump) => secretLastUpdated(dump) !== null,
-    60000,
-  );
+  await waitForLine('serving the current token (blue)', 60000);
 }, 120000);
 
 afterAll(async () => {
@@ -141,25 +104,20 @@ afterAll(async () => {
   rmSync(tempDir, { recursive: true, force: true });
 }, 60000);
 
-describe('run-proxy propagates credential changes to the running proxy', () => {
-  it('recreates Envoy so the secret last_updated advances when the token changes', async () => {
-    const before = secretLastUpdated(await adminConfigDump());
-    expect(before).not.toBeNull();
-
+describe('run-proxy applies credential rotations with a blue-green swap', () => {
+  it('swaps blue->green->blue across rotations and serves the new token each time', async () => {
+    const mark1 = stdoutLines.length;
     writeCredentials('token-rotated');
-
-    const after = await waitFor(
-      () => adminConfigDump(),
-      (dump) => {
-        const now = secretLastUpdated(dump);
-        return now !== null && now !== before;
-      },
-      60000,
-    );
-
-    expect(secretLastUpdated(after)).not.toBe(before);
+    await waitForLine('swap complete — now serving green', 90000, mark1);
     expect(readFileSync(join(proxyDir, 'secrets', 'sds-secret.yaml'), 'utf8')).toContain(
       'Bearer token-rotated',
     );
-  }, 90000);
+
+    const mark2 = stdoutLines.length;
+    writeCredentials('token-again');
+    await waitForLine('swap complete — now serving blue', 90000, mark2);
+    expect(readFileSync(join(proxyDir, 'secrets', 'sds-secret.yaml'), 'utf8')).toContain(
+      'Bearer token-again',
+    );
+  }, 200000);
 });
