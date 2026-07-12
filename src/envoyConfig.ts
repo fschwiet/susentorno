@@ -71,7 +71,17 @@ function buildTerminateEntry(entry: string, overrides: UpstreamOverride[]) {
               {
                 name: 'terminate',
                 domains: ['*'],
-                routes: [{ match: { prefix: '/' }, route: { cluster: clusterName } }],
+                routes: [
+                  {
+                    match: { prefix: '/' },
+                    // timeout: 0 disables Envoy's default 15s route timeout, which
+                    // otherwise caps the *entire* response and severs long streaming
+                    // (SSE) replies from api.anthropic.com mid-response once they run
+                    // past 15s. stream_idle_timeout (5m default) still reaps genuinely
+                    // dead streams; Anthropic's periodic SSE pings keep live ones fresh.
+                    route: { cluster: clusterName, timeout: '0s' },
+                  },
+                ],
               },
             ],
           },

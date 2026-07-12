@@ -26,6 +26,10 @@ describe('generateEnvoyConfig', () => {
     expect(hcm.route_config.virtual_hosts[0].routes[0].route.cluster).toBe(
       'cluster_terminate_api_anthropic_com',
     );
+    // timeout '0s' disables Envoy's default 15s route timeout so long streaming
+    // (SSE) responses are not severed mid-response. See
+    // docs/investigations/2026-07-12-streaming-response-cut-by-envoy-route-timeout.md
+    expect(hcm.route_config.virtual_hosts[0].routes[0].route.timeout).toBe('0s');
     expect(hcm.http_filters.map((f: any) => f.name)).toEqual([
       'envoy.filters.http.lua',
       'envoy.filters.http.credential_injector',
