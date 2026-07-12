@@ -6,8 +6,6 @@ import { harness, wslExec, wslPath } from './wsl';
 import {
   startProxyStack,
   stopProxyStack,
-  getEnvoyContainerId,
-  waitForEnvoyRestart,
   waitForProxyLine,
   countProxyLines,
   writeStackCredentials,
@@ -309,7 +307,6 @@ describe('S2b: run-proxy inline logging', () => {
     const pypiBefore = countProxyLines(stack, 'ALLOW PASS  pypi.org');
     expect(pypiBefore).toBeGreaterThan(0);
     const mark = stack.stdoutLines.length;
-    const oldId = await getEnvoyContainerId(stack);
 
     // The staged fixture ends with the '# terminate' section, so appending
     // adds a terminate host — the terminate-host set changes and the
@@ -317,7 +314,7 @@ describe('S2b: run-proxy inline logging', () => {
     appendFileSync(stack.allowlistPath, 'example.org:443\n');
 
     await waitForProxyLine(stack, 'restarting proxy — allowlist changed', 120_000, mark);
-    await waitForEnvoyRestart(stack, oldId, 60_000);
+    await waitForProxyLine(stack, 'swap complete', 120_000, mark);
 
     // HEAD, and no retry: the new-container gate above makes the passthrough
     // path reliably serving, so a single un-retried request suffices.
@@ -332,11 +329,10 @@ describe('S2b: run-proxy inline logging', () => {
 
   it('a credential rotation restarts the proxy and preserves unique tracking', async () => {
     const mark = stack.stdoutLines.length;
-    const oldId = await getEnvoyContainerId(stack);
     writeStackCredentials(stack, 'rotated-vm-test-token');
 
     await waitForProxyLine(stack, 'restarting proxy — credentials changed', 120_000, mark);
-    await waitForEnvoyRestart(stack, oldId, 60_000);
+    await waitForProxyLine(stack, 'swap complete', 120_000, mark);
     const pypiBefore = countProxyLines(stack, 'ALLOW PASS  pypi.org');
 
     // pypi.org was re-logged after the allowlist restart above, so it is in

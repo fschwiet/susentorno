@@ -190,7 +190,9 @@ describe('Envoy sandbox proxy stack', () => {
 
 describe('Envoy access logging', () => {
   async function readEnvoyLogs(): Promise<string> {
-    const { stdout } = await execa('docker', ['compose', 'logs', '--no-color', 'envoy'], {
+    // The stack never rotates credentials or the allowlist in this suite, so
+    // it stays on the color run-proxy always starts with.
+    const { stdout } = await execa('docker', ['compose', 'logs', '--no-color', 'envoy_blue'], {
       cwd: stack.proxyDir,
       env: stack.composeEnv,
     });

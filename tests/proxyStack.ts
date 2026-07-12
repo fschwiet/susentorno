@@ -1,6 +1,5 @@
 import { execa, type ResultPromise } from 'execa';
 import { createInterface } from 'node:readline';
-import { request as httpRequest } from 'node:http';
 import { copyFileSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -9,7 +8,6 @@ import { killProcessTree } from '../src/runProxy/killProcessTree';
 
 export const HTTPS_PORT = 18443;
 export const HTTP_PORT = 18080;
-export const ADMIN_PORT = 19901;
 export const PLACEHOLDER_AUTH = 'Bearer sk-ant-oat-SANDBOX-PLACEHOLDER';
 export const REAL_TOKEN = 'sandbox-test-real-token-12345';
 export const REAL_AUTH = `Bearer ${REAL_TOKEN}`;
@@ -35,73 +33,6 @@ export interface ProxyStack {
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/** One shot: does Envoy's admin /ready answer 200 right now? */
-async function adminReadyOnce(): Promise<boolean> {
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const req = httpRequest(
-        { host: '127.0.0.1', port: ADMIN_PORT, path: '/ready', timeout: 1000 },
-        (res) =>
-          res.statusCode === 200 ? resolve() : reject(new Error(`status ${res.statusCode}`)),
-      );
-      req.on('error', reject);
-      req.end();
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export async function waitForAdminReady(timeoutMs: number): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await adminReadyOnce()) return;
-    await sleep(500);
-  }
-  throw new Error('Envoy admin endpoint never became ready');
-}
-
-/** Current envoy container id (empty string when none), per docker compose. */
-export async function getEnvoyContainerId(stack: ProxyStack): Promise<string> {
-  const { stdout } = await execa('docker', ['compose', 'ps', '-q', 'envoy'], {
-    cwd: stack.proxyDir,
-    env: stack.composeEnv,
-    reject: false,
-  });
-  return stdout.trim();
-}
-
-/**
- * Restart-safe readiness gate. Plain waitForAdminReady is NOT safe after a
- * run-proxy restart: during `docker compose up -d --force-recreate` the OLD
- * container keeps answering /ready=200 until the instant it is replaced, so a
- * probe fired right after can land in the swap window and have its TLS
- * handshake dropped (curl exit 35 — see
- * docs/investigations/2026-07-11-proxy-restart-swap-window-race.txt). Capture the
- * container id BEFORE triggering the restart, then wait here until the id has
- * actually changed (new container exists) AND that new container answers /ready.
- */
-export async function waitForEnvoyRestart(
-  stack: ProxyStack,
-  oldId: string,
-  timeoutMs: number,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  // 1) wait until the container id actually changes (past the recreate swap).
-  while (Date.now() < deadline) {
-    const id = await getEnvoyContainerId(stack);
-    if (id && id !== oldId) break;
-    await sleep(200);
-  }
-  // 2) then wait until that new container answers /ready.
-  while (Date.now() < deadline) {
-    if (await adminReadyOnce()) return;
-    await sleep(200);
-  }
-  throw new Error('Envoy did not recreate and become ready in time');
-}
 
 function writeCredentialsFile(path: string, token: string): void {
   writeFileSync(
@@ -146,6 +77,21 @@ export async function waitForProxyLine(
   }
 }
 
+async function waitForStartupLine(
+  lines: string[],
+  needle: string,
+  timeoutMs: number,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (lines.some((l) => l.includes(needle))) return;
+    await sleep(250);
+  }
+  throw new Error(
+    `run-proxy never logged '${needle}'\n--- run-proxy output ---\n${lines.join('\n')}`,
+  );
+}
+
 export async function startProxyStack(): Promise<ProxyStack> {
   const mockUpstream = await startMockUpstream();
   const proxyDir = join(envRoot, 'proxy');
@@ -153,7 +99,6 @@ export async function startProxyStack(): Promise<ProxyStack> {
     ...process.env,
     ENVOY_HTTPS_PORT: String(HTTPS_PORT),
     ENVOY_HTTP_PORT: String(HTTP_PORT),
-    ENVOY_ADMIN_PORT: String(ADMIN_PORT),
   };
 
   // Fresh environment per run: environments are rebuilt from scratch, never migrated.
@@ -197,7 +142,7 @@ export async function startProxyStack(): Promise<ProxyStack> {
 
   // run-proxy builds envoy.yaml, writes the secret, and force-recreates; ready
   // means the whole startup sequence completed.
-  await waitForAdminReady(60000);
+  await waitForStartupLine(stdoutLines, 'serving the current token', 60000);
   const caCertPem = readFileSync(join(proxyDir, 'ca', 'cert.pem'), 'utf8');
   return {
     mockUpstream,
