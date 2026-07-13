@@ -23,6 +23,22 @@ describe('envPaths', () => {
     expect(paths.vmCert).toBe(join(root, 'vm-shared', 'cert.pem'));
     expect(paths.vmCredentials).toBe(join(root, 'vm-shared', 'credentials.json'));
     expect(paths.githubConfig).toBe(join(root, 'vm-shared', 'github-config.txt'));
+
+    // Windows guest shared folder + the both-folders target list.
+    expect(paths.vmSharedWindows).toBe(join(root, 'vm-shared-windows'));
+    expect(paths.vmSharedTargets).toHaveLength(2);
+    expect(paths.vmSharedTargets[0]).toEqual({
+      dir: join(root, 'vm-shared'),
+      cert: join(root, 'vm-shared', 'cert.pem'),
+      credentials: join(root, 'vm-shared', 'credentials.json'),
+      githubConfig: join(root, 'vm-shared', 'github-config.txt'),
+    });
+    expect(paths.vmSharedTargets[1]).toEqual({
+      dir: join(root, 'vm-shared-windows'),
+      cert: join(root, 'vm-shared-windows', 'cert.pem'),
+      credentials: join(root, 'vm-shared-windows', 'credentials.json'),
+      githubConfig: join(root, 'vm-shared-windows', 'github-config.txt'),
+    });
   });
 
   it('hasEnvironment reflects whether .configamatron exists', () => {

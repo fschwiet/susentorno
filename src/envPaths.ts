@@ -3,9 +3,18 @@ import { join } from 'node:path';
 
 export const ENV_DIR_NAME = '.configamatron';
 
+export interface VmSharedPaths {
+  dir: string;
+  cert: string;
+  credentials: string;
+  githubConfig: string;
+}
+
 export interface EnvPaths {
   root: string;
   vmShared: string;
+  vmSharedWindows: string;
+  vmSharedTargets: VmSharedPaths[];
   proxy: string;
   allowlist: string;
   envoyConfig: string;
@@ -24,10 +33,20 @@ export interface EnvPaths {
 export function envPaths(cwd: string): EnvPaths {
   const root = join(cwd, ENV_DIR_NAME);
   const vmShared = join(root, 'vm-shared');
+  const vmSharedWindows = join(root, 'vm-shared-windows');
   const proxy = join(root, 'proxy');
+  const target = (dir: string): VmSharedPaths => ({
+    dir,
+    cert: join(dir, 'cert.pem'),
+    credentials: join(dir, 'credentials.json'),
+    githubConfig: join(dir, 'github-config.txt'),
+  });
+  const vmSharedTargets = [target(vmShared), target(vmSharedWindows)];
   return {
     root,
     vmShared,
+    vmSharedWindows,
+    vmSharedTargets,
     proxy,
     allowlist: join(proxy, 'allowlist.txt'),
     envoyConfig: join(proxy, 'envoy.yaml'),
@@ -38,9 +57,9 @@ export function envPaths(cwd: string): EnvPaths {
     caLeafKey: join(proxy, 'ca', 'leaf-key.pem'),
     secretsDir: join(proxy, 'secrets'),
     sdsSecret: join(proxy, 'secrets', 'sds-secret.yaml'),
-    vmCert: join(vmShared, 'cert.pem'),
-    vmCredentials: join(vmShared, 'credentials.json'),
-    githubConfig: join(vmShared, 'github-config.txt'),
+    vmCert: vmSharedTargets[0].cert,
+    vmCredentials: vmSharedTargets[0].credentials,
+    githubConfig: vmSharedTargets[0].githubConfig,
   };
 }
 
