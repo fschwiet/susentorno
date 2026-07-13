@@ -101,7 +101,7 @@ describe('templates', () => {
     expect(net).toContain('Register-ScheduledTask');
     expect(net).toContain('ConfigamatronDnsResponder');
     expect(net).toContain('responder-config.txt'); // host IP written for the responder
-    expect(net).toContain("Set-DnsClientServerAddress");
+    expect(net).toContain('Set-DnsClientServerAddress');
     expect(net).toContain("'127.0.0.1'");
 
     const prog = readFileSync(
