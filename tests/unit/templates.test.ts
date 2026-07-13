@@ -27,6 +27,9 @@ const expectedTemplateFiles = [
   'vm-shared-windows/05-github-auth.ps1',
   'vm-shared-windows/06-trust-ca.ps1',
   'vm-shared-windows/08-claude-config.ps1',
+  'vm-shared-windows/07-setup-network.ps1',
+  'vm-shared-windows/dns-responder/ConfigamatronDnsResponder.csproj',
+  'vm-shared-windows/dns-responder/Program.cs',
 ];
 
 describe('templates', () => {
@@ -87,5 +90,24 @@ describe('templates', () => {
     );
     expect(claude).toContain('hasCompletedOnboarding');
     expect(claude).toContain('.credentials.json');
+  });
+
+  it('windows DNS redirect wires responder to the host IP and adapter DNS', () => {
+    const net = readFileSync(
+      join(templatesDir(), 'vm-shared-windows', '07-setup-network.ps1'),
+      'utf8',
+    );
+    expect(net).toContain('Register-ScheduledTask');
+    expect(net).toContain('ConfigamatronDnsResponder');
+    expect(net).toContain('responder-config.txt'); // host IP written for the responder
+    expect(net).toContain("Set-DnsClientServerAddress");
+    expect(net).toContain("'127.0.0.1'");
+
+    const prog = readFileSync(
+      join(templatesDir(), 'vm-shared-windows', 'dns-responder', 'Program.cs'),
+      'utf8',
+    );
+    expect(prog).toContain('responder-config.txt'); // reads the target IP
+    expect(prog).toContain('53'); // binds DNS port
   });
 });
