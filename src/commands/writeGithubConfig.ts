@@ -46,9 +46,13 @@ export function registerWriteGithubConfig(program: Command): void {
         return;
       }
 
-      mkdirSync(dirname(paths.githubConfig), { recursive: true });
-      writeFileSync(paths.githubConfig, formatGithubConfig({ username, email, token }));
+      for (const target of paths.vmSharedTargets) {
+        mkdirSync(dirname(target.githubConfig), { recursive: true });
+        writeFileSync(target.githubConfig, formatGithubConfig({ username, email, token }));
+      }
 
-      console.log(`write-github-config: wrote ${paths.githubConfig} for ${username} <${email}>`);
+      console.log(
+        `write-github-config: wrote github-config.txt to vm-shared and vm-shared-windows for ${username} <${email}>`,
+      );
     });
 }

@@ -61,7 +61,11 @@ export function registerGenerateCa(program: Command): void {
       }
 
       const leafStatus = ensureLeaf(paths, caCertPem, caKeyPem, sans);
-      copyFileSync(paths.caCert, paths.vmCert);
-      console.log(`generate-ca: ${caStatus}; ${leafStatus}; copied cert.pem to vm-shared`);
+      for (const target of paths.vmSharedTargets) {
+        copyFileSync(paths.caCert, target.cert);
+      }
+      console.log(
+        `generate-ca: ${caStatus}; ${leafStatus}; copied cert.pem to vm-shared and vm-shared-windows`,
+      );
     });
 }

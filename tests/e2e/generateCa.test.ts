@@ -15,6 +15,7 @@ const caKey = () => join(dir, '.configamatron', 'proxy', 'ca', 'key.pem');
 const caLeafCert = () => join(dir, '.configamatron', 'proxy', 'ca', 'leaf-cert.pem');
 const caLeafKey = () => join(dir, '.configamatron', 'proxy', 'ca', 'leaf-key.pem');
 const vmCert = () => join(dir, '.configamatron', 'vm-shared', 'cert.pem');
+const vmWindowsCert = () => join(dir, '.configamatron', 'vm-shared-windows', 'cert.pem');
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'configamatron-ca-'));
@@ -35,6 +36,9 @@ describe('configamatron generate-ca', () => {
 
     // vm-shared gets the ROOT, not the leaf
     expect(readFileSync(vmCert(), 'utf8')).toBe(readFileSync(caCert(), 'utf8'));
+
+    // The Windows shared folder gets the same root cert.pem.
+    expect(readFileSync(vmWindowsCert(), 'utf8')).toBe(readFileSync(caCert(), 'utf8'));
 
     const root = new X509Certificate(readFileSync(caCert(), 'utf8'));
     expect(root.subject).toContain('configamatron-proxy-certificate-authority');
