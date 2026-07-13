@@ -142,7 +142,9 @@ describe('write-github-config', () => {
       });
 
       expect(exitCode).toBe(0);
-      expect(stdout).toContain('github-config.txt for Test User <test@example.com>');
+      expect(stdout).toContain(
+        'wrote github-config.txt to vm-shared and vm-shared-windows for Test User <test@example.com>',
+      );
       expect(
         readFileSync(join(dir, '.configamatron', 'vm-shared', 'github-config.txt'), 'utf8'),
       ).toBe(
