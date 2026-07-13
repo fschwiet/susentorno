@@ -42,7 +42,12 @@ export function initEnvironment(options: InitOptions): void {
   }
 
   cpSync(join(options.templatesDir, 'vm-shared'), paths.vmShared, { recursive: true });
+  cpSync(join(options.templatesDir, 'vm-shared-windows'), paths.vmSharedWindows, {
+    recursive: true,
+  });
   cpSync(join(options.templatesDir, 'proxy'), paths.proxy, { recursive: true });
   copyFileSync(options.allowlistSource, paths.allowlist);
-  writeFileSync(paths.vmCredentials, sanitized);
+  for (const target of paths.vmSharedTargets) {
+    writeFileSync(target.credentials, sanitized);
+  }
 }

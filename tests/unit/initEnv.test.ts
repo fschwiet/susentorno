@@ -44,6 +44,11 @@ describe('initEnvironment', () => {
       'proxy/gate.lua',
       'proxy/host-allow-vm-inbound.ps1',
       'proxy/allowlist.txt',
+      'vm-shared-windows/01-install-packages.ps1',
+      'vm-shared-windows/07-setup-network.ps1',
+      'vm-shared-windows/verify-config.ps1',
+      'vm-shared-windows/dns-responder/Program.cs',
+      'vm-shared-windows/credentials.json',
     ]) {
       expect(existsSync(join(root, file)), file).toBe(true);
     }
@@ -54,6 +59,17 @@ describe('initEnvironment', () => {
     expect(JSON.parse(credentials).claudeAiOauth.accessToken).toBe(
       'sk-ant-oat-SANDBOX-PLACEHOLDER',
     );
+  });
+
+  it('writes the sanitized placeholder credential into both shared folders', () => {
+    initEnvironment(options());
+    const root = join(dir, ENV_DIR_NAME);
+    for (const folder of ['vm-shared', 'vm-shared-windows']) {
+      const credentials = readFileSync(join(root, folder, 'credentials.json'), 'utf8');
+      expect(JSON.parse(credentials).claudeAiOauth.accessToken, folder).toBe(
+        'sk-ant-oat-SANDBOX-PLACEHOLDER',
+      );
+    }
   });
 
   it('refuses to run when .configamatron already exists', () => {
