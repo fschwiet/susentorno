@@ -30,6 +30,7 @@ const expectedTemplateFiles = [
   'vm-shared-windows/07-setup-network.ps1',
   'vm-shared-windows/dns-responder/ConfigamatronDnsResponder.csproj',
   'vm-shared-windows/dns-responder/Program.cs',
+  'vm-shared-windows/verify-config.ps1',
 ];
 
 describe('templates', () => {
@@ -109,5 +110,12 @@ describe('templates', () => {
     );
     expect(prog).toContain('responder-config.txt'); // reads the target IP
     expect(prog).toContain('53'); // binds DNS port
+  });
+
+  it('windows verify-config checks the placeholder invariant and gate', () => {
+    const v = readFileSync(join(templatesDir(), 'vm-shared-windows', 'verify-config.ps1'), 'utf8');
+    expect(v).toContain('sk-ant-oat-SANDBOX-PLACEHOLDER'); // no real token may live in the guest
+    expect(v).toContain('api.anthropic.com'); // credential-gate check
+    expect(v).toContain('curl.exe'); // live egress via bundled curl
   });
 });
