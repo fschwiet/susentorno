@@ -63,13 +63,19 @@ Shut the VM down, then in VM -> Settings -> Options:
 - "Shared Folders": enable only the environment's `.configamatron\vm-shared` folder, read-only.
 - "Guest Isolation": consider disabling drag'n'drop and copy'n'paste sharing.
 
-Start the VM and verify the share appears under `/mnt/hgfs/`. If it doesn't, stop and restart folder sharing. If `/mnt/hgfs` stays empty, add this line to `/etc/fstab` and reboot:
+### Fix Shared Folders
+
+#### The Inevitable Fix
+
+Add the following line to '/etc/fstab' and restart the VM.
 
 ```
 vmhgfs-fuse   /mnt/hgfs    fuse    defaults,allow_other    0    0
 ```
 
-Note: I've had to edit /etc/fstab every single time eventually. You may just want to edit it now, or reboot and check if the drive is mounted to be super sure you don't need to.
+#### Not Sure The Inevitable Fix Is Right For You?
+
+Maybe someday the fix above won't make sense. Is today that day? Start the VM and verify the share appears under `/mnt/hgfs/`. If there is no `/mnt/hgfs`, stop and restart folder sharing. If `/mnt/hgfs` doesn't contain your shared drive then do The Inevitable Fix above.
 
 ### Run the numbered scripts from the VM
 
