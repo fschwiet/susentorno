@@ -39,6 +39,9 @@ Usually done once per environment. Run every command from the environment direct
 
 May be repeated for any number of VMs; each VM pairs with one environment via its shared folder.
 
+> For a **Windows** guest instead of Ubuntu, follow `usage-windows-vm.md` and share the
+> `.configamatron\vm-shared-windows` folder. The steps below cover the Ubuntu guest.
+
 ### Create the VM and install the OS
 
 - In VMware Workstation, create a new virtual machine:

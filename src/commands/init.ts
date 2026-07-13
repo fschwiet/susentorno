@@ -38,6 +38,9 @@ export function registerInit(program: Command): void {
       console.log(
         `  (Windows) admin PowerShell: powershell -File ${ENV_DIR_NAME}/proxy/host-allow-vm-inbound.ps1`,
       );
-      console.log(`  Then share ${ENV_DIR_NAME}/vm-shared into the VM — see usage.md`);
+      console.log(
+        `  Then share ${ENV_DIR_NAME}/vm-shared (Ubuntu, see README.md) or ` +
+          `${ENV_DIR_NAME}/vm-shared-windows (Windows, see usage-windows-vm.md) into the VM`,
+      );
     });
 }
