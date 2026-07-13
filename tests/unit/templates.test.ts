@@ -25,6 +25,8 @@ const expectedTemplateFiles = [
   'vm-shared-windows/03-install-tools.ps1',
   'vm-shared-windows/04-configure-tools.ps1',
   'vm-shared-windows/05-github-auth.ps1',
+  'vm-shared-windows/06-trust-ca.ps1',
+  'vm-shared-windows/08-claude-config.ps1',
 ];
 
 describe('templates', () => {
@@ -71,5 +73,19 @@ describe('templates', () => {
     // The config file is GITHUB_USERNAME="..." etc; the parser must strip quotes.
     expect(script).toContain('GITHUB_USERNAME');
     expect(script).toContain("Trim('\"')");
+  });
+
+  it('windows CA + claude scripts cover all trust surfaces and the placeholder', () => {
+    const ca = readFileSync(join(templatesDir(), 'vm-shared-windows', '06-trust-ca.ps1'), 'utf8');
+    expect(ca).toContain('certutil'); // Windows machine Root store
+    expect(ca).toContain('NODE_EXTRA_CA_CERTS'); // Node tools
+    expect(ca).toContain('http.sslBackend schannel'); // git
+
+    const claude = readFileSync(
+      join(templatesDir(), 'vm-shared-windows', '08-claude-config.ps1'),
+      'utf8',
+    );
+    expect(claude).toContain('hasCompletedOnboarding');
+    expect(claude).toContain('.credentials.json');
   });
 });
