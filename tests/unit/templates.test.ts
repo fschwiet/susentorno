@@ -20,6 +20,11 @@ const expectedTemplateFiles = [
   'proxy/gate.lua',
   'proxy/host-allow-vm-inbound.ps1',
   'proxy/verify-proxy.ps1',
+  'vm-shared-windows/01-install-packages.ps1',
+  'vm-shared-windows/02-install-pnpm.ps1',
+  'vm-shared-windows/03-install-tools.ps1',
+  'vm-shared-windows/04-configure-tools.ps1',
+  'vm-shared-windows/05-github-auth.ps1',
 ];
 
 describe('templates', () => {
@@ -56,5 +61,15 @@ describe('templates', () => {
     expect(compose).toContain('127.0.0.1:${ENVOY_GREEN_HTTPS_PORT:-}:443');
     expect(compose).toContain('127.0.0.1:${ENVOY_BLUE_ADMIN_PORT:-}:9901');
     expect(compose).toContain('127.0.0.1:${ENVOY_GREEN_ADMIN_PORT:-}:9901');
+  });
+
+  it('windows 05-github-auth parses the double-quoted github-config format', () => {
+    const script = readFileSync(
+      join(templatesDir(), 'vm-shared-windows', '05-github-auth.ps1'),
+      'utf8',
+    );
+    // The config file is GITHUB_USERNAME="..." etc; the parser must strip quotes.
+    expect(script).toContain('GITHUB_USERNAME');
+    expect(script).toContain("Trim('\"')");
   });
 });
