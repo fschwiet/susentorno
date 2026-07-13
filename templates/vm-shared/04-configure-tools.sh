@@ -9,11 +9,6 @@ gsettings set org.gnome.desktop.screensaver lock-enabled false
 # Set the screen blanking inactivity timeout to "Never" (0)
 gsettings set org.gnome.desktop.session idle-delay 0
 
-## Playwright dependencies
-
-pnpm exec playwright install-deps
-pnpm exec playwright install
-
 ## Agent configurations
 
 claude mcp add --transport http context7 https://mcp.context7.com/mcp
