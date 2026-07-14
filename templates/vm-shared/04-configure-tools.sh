@@ -9,12 +9,6 @@ gsettings set org.gnome.desktop.screensaver lock-enabled false
 # Set the screen blanking inactivity timeout to "Never" (0)
 gsettings set org.gnome.desktop.session idle-delay 0
 
-## Agent configurations
-
-claude mcp add --transport http context7 https://mcp.context7.com/mcp
-codex mcp add context7 --url https://mcp.context7.com/mcp
-codex mcp add context7 --command "npx" --args "-y,@upstash/context7-mcp"
-
 ## VS Code
 
 code --install-extension esbenp.prettier-vscode
@@ -46,3 +40,9 @@ with open(path, "w") as f:
     json.dump(data, f, indent=2)
     f.write("\n")
 PY
+
+## Agent configurations
+## Call codex last because it blocks on login request we aren't going to respond to.
+
+claude mcp add --transport http context7 https://mcp.context7.com/mcp
+codex mcp add context7 --url https://mcp.context7.com/mcp
