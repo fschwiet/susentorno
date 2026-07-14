@@ -22,6 +22,8 @@ assets.claude.ai:443
 cdn.fwupd.org:443
 cdn.playwright.dev:443
 *.datadoghq.com:443
+playwright.download.prss.microsoft.com:443
+api.snapcraft.io:443
 
 ## original passthrough entries
 
