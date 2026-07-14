@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 $packages = @(
   'Git.Git',
   'Microsoft.PowerShell',      # PowerShell 7 (pwsh)
-  'Microsoft.DotNet.SDK.9',    # .NET SDK
+  'Microsoft.DotNet.SDK.10',   # .NET SDK
   'GitHub.cli'                 # gh
 )
 foreach ($id in $packages) {

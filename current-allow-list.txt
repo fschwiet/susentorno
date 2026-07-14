@@ -15,8 +15,14 @@ a-cdn.claude.ai:443
 s-cdn.claude.ai:443
 assets.claude.ai:443
 
-## needed for claude login attempt
-*.hcaptcha.com:443
+mcp.context7.com:443
+learn.microsoft.com:443
+
+api.nuget.org:443
+*.vscode-cdn.net:443
+*.gallerycdn.vsassets.io:443
+*.gallery.vsassets.io:443
+*.core.windows.net:443
 
 ## misc
 cdn.fwupd.org:443
