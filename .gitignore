@@ -2,3 +2,7 @@ node_modules/
 dist/
 test-results/
 .configamatron/
+
+# .NET project builds
+bin/
+obj/
