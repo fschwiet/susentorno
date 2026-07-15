@@ -7,14 +7,18 @@ curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh
 
 curl -fsSL https://claude.ai/install.sh | bash
 
-sudo snap install code --classic
+if ! snap list code > /dev/null 2>&1; then
+  sudo snap install code --classic
+fi
 
 ## dotnet tools
 
-cat << \EOF >> ~/.bashrc
+if ! grep -qxF 'export PATH="$PATH:/home/username/.dotnet/tools"' ~/.bashrc 2>/dev/null; then
+  cat << \EOF >> ~/.bashrc
 # Add .NET Core SDK tools
 export PATH="$PATH:/home/username/.dotnet/tools"
 EOF
+fi
 
 dotnet tool install --global dotnet-outdated-tool
 dotnet tool install --global csharpier
