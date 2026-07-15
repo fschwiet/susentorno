@@ -3,6 +3,6 @@ set -euo pipefail
 
 sudo apt update
 sudo apt upgrade -y
-sudo apt install -y curl git build-essential okular
+sudo apt install -y curl git build-essential okular jq
 
 echo "01-apt-packages: system packages installed"

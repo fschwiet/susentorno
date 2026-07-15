@@ -123,4 +123,9 @@ describe('templates', () => {
     expect(v).toContain('api.anthropic.com'); // credential-gate check
     expect(v).toContain('curl.exe'); // live egress via bundled curl
   });
+
+  it('ubuntu 01-apt-packages installs jq for JSON edits', () => {
+    const s = readFileSync(join(templatesDir(), 'vm-shared', '01-apt-packages.sh'), 'utf8');
+    expect(s).toContain('jq');
+  });
 });
