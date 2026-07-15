@@ -128,4 +128,11 @@ describe('templates', () => {
     const s = readFileSync(join(templatesDir(), 'vm-shared', '01-apt-packages.sh'), 'utf8');
     expect(s).toContain('jq');
   });
+
+  it('ubuntu 08-claude-config writes .claude.json with jq, not python3', () => {
+    const s = readFileSync(join(templatesDir(), 'vm-shared', '08-claude-config.sh'), 'utf8');
+    expect(s).toContain('jq . "$claude_json"');
+    expect(s).toContain('.hasCompletedOnboarding = true');
+    expect(s).not.toContain('python3');
+  });
 });

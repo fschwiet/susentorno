@@ -6,28 +6,14 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "$HOME/.claude"
 
 # The claude CLI refuses to run until ~/.claude.json records that onboarding
-# completed. Merge the single flag into any existing file rather than clobbering
-# it (starting fresh only if the file is unparsable), mirroring 06-trust-ca.sh.
-# python3 is part of the Ubuntu base system, so this adds no package dependency.
+# completed. Merge the single flag into any existing file with jq rather than
+# clobbering it, starting fresh only if the file is missing or unparsable. Write
+# to a temp file and move it into place so a failure never truncates the target.
 claude_json="$HOME/.claude.json"
-python3 - "$claude_json" <<'PY'
-import json, os, sys
-
-path = sys.argv[1]
-data = {}
-if os.path.exists(path):
-    with open(path) as f:
-        try:
-            data = json.load(f)
-        except json.JSONDecodeError:
-            data = {}  # unparsable file: start fresh rather than fail provisioning
-
-data["hasCompletedOnboarding"] = True
-
-with open(path, "w") as f:
-    json.dump(data, f, indent=2)
-    f.write("\n")
-PY
+base=$(jq . "$claude_json" 2> /dev/null || echo '{}')
+tmp=$(mktemp)
+printf '%s' "$base" | jq '.hasCompletedOnboarding = true' > "$tmp"
+mv "$tmp" "$claude_json"
 
 # Symlink the placeholder credential into place instead of copying it, so it
 # tracks the shared credentials.json (regenerated whenever the environment is
