@@ -159,4 +159,13 @@ describe('templates', () => {
     expect(s).toContain('.hasCompletedOnboarding = true');
     expect(s).not.toContain('ConvertTo-Json');
   });
+
+  it('windows 04-configure-tools writes settings.json with jq', () => {
+    const s = readFileSync(
+      join(templatesDir(), 'vm-shared-windows', '04-configure-tools.ps1'),
+      'utf8',
+    );
+    expect(s).toContain('jq . $vscodeSettings');
+    expect(s).not.toContain('ConvertTo-Json');
+  });
 });

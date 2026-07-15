@@ -18,18 +18,14 @@ $vscodeUserDir = Join-Path $env:APPDATA 'Code\User'
 New-Item -ItemType Directory -Force -Path $vscodeUserDir | Out-Null
 $vscodeSettings = Join-Path $vscodeUserDir 'settings.json'
 
-# Merge our required settings into any existing file; start fresh if missing/unparsable
-# (mirrors 08-claude-config.ps1's .claude.json merge).
-$settingsData = [ordered]@{}
-if (Test-Path $vscodeSettings) {
-  try { $settingsData = Get-Content $vscodeSettings -Raw | ConvertFrom-Json -AsHashtable } catch { $settingsData = @{} }
-}
-if ($null -eq $settingsData) { $settingsData = @{} }
-$settingsData['files.autoSave'] = 'afterDelay'
-$settingsData['editor.formatOnSave'] = $true
-$settingsData['editor.defaultFormatter'] = 'esbenp.prettier-vscode'
-$settingsData['[csharp]'] = @{ 'editor.defaultFormatter' = 'csharpier.csharpier-vscode' }
-$settingsData | ConvertTo-Json -Depth 100 | Set-Content -Path $vscodeSettings -Encoding utf8
+# Merge our required settings into any existing file with jq; start fresh if
+# missing or unparsable. Write to a temp file and move it into place so a failure
+# never truncates the target.
+$base = jq . $vscodeSettings 2>$null
+if ($LASTEXITCODE -ne 0) { $base = '{}' }
+$tmp = [System.IO.Path]::GetTempFileName()
+$base | jq '.["files.autoSave"]="afterDelay" | .["editor.formatOnSave"]=true | .["editor.defaultFormatter"]="esbenp.prettier-vscode" | .["[csharp]"]={"editor.defaultFormatter":"csharpier.csharpier-vscode"}' | Set-Content -Path $tmp -Encoding utf8
+Move-Item -Force $tmp $vscodeSettings
 
 
 # codebase-memory-mcp
