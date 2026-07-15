@@ -6,9 +6,13 @@ powercfg /change standby-timeout-dc 0
 powercfg /change monitor-timeout-ac 0
 powercfg /change monitor-timeout-dc 0
 
-# VS Code: install Prettier extension and merge user settings (mirrors Ubuntu 04).
+# VS Code extensions
+
 code --install-extension esbenp.prettier-vscode
 code --install-extension csharpier.csharpier-vscode
+code --install-extension JakubKozera.csharp-dev-tools
+
+# VS Code configuration
 
 $vscodeUserDir = Join-Path $env:APPDATA 'Code\User'
 New-Item -ItemType Directory -Force -Path $vscodeUserDir | Out-Null
@@ -28,7 +32,9 @@ $settingsData['[csharp]'] = @{ 'editor.defaultFormatter' = 'csharpier.csharpier-
 $settingsData | ConvertTo-Json -Depth 100 | Set-Content -Path $vscodeSettings -Encoding utf8
 
 
-# codebase-memory-mcp install is idempotent, must install after coding agents
+# codebase-memory-mcp
+# - install is idempotent, must install after coding agents for it to be configured
+
 Invoke-WebRequest -Uri https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.ps1 -OutFile codebase-memory-mcp-install.ps1
 Unblock-File .\codebase-memory-mcp-install.ps1
 .\codebase-memory-mcp-install.ps1

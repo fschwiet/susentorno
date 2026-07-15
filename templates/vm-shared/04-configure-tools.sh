@@ -9,10 +9,13 @@ gsettings set org.gnome.desktop.screensaver lock-enabled false
 # Set the screen blanking inactivity timeout to "Never" (0)
 gsettings set org.gnome.desktop.session idle-delay 0
 
-## VS Code
+# VS Code extensions
 
 code --install-extension esbenp.prettier-vscode
 code --install-extension csharpier.csharpier-vscode
+code --install-extension JakubKozera.csharp-dev-tools
+
+# VS Code configuration
 
 vscode_settings_dir="$HOME/.config/Code/User"
 mkdir -p "$vscode_settings_dir"
@@ -43,7 +46,9 @@ with open(path, "w") as f:
     f.write("\n")
 PY
 
-# codebase-memory-mcp install is idempotent, must install after coding agents
+# codebase-memory-mcp
+# - install is idempotent, must install after coding agents for it to be configured
+
 curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash
 
 ## Agent configurations
