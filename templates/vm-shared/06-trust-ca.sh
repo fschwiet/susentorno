@@ -38,32 +38,21 @@ if command -v firefox > /dev/null 2>&1 || snap list firefox > /dev/null 2>&1; th
   sudo cp "$cert_path" "$ca_for_firefox"
   sudo chmod 644 "$ca_for_firefox"
 
-  # Merge our CA into any existing policy rather than clobbering it, and drop
-  # the snap-unreadable /usr/local path earlier revisions of this script wrote.
-  # python3 is part of the Ubuntu base system, so this adds no package dependency.
-  sudo python3 - "$policy_file" "$ca_for_firefox" "$ca_stale" <<'PY'
-import json, os, sys
-
-policy_file, ca, stale = sys.argv[1], sys.argv[2], sys.argv[3]
-data = {}
-if os.path.exists(policy_file):
-    with open(policy_file) as f:
-        try:
-            data = json.load(f)
-        except json.JSONDecodeError:
-            data = {}  # unparsable file: start fresh rather than fail provisioning
-
-certs = data.setdefault("policies", {}).setdefault("Certificates", {})
-installs = certs.setdefault("Install", [])
-if stale in installs:
-    installs.remove(stale)
-if ca not in installs:
-    installs.append(ca)
-
-with open(policy_file, "w") as f:
-    json.dump(data, f, indent=2)
-    f.write("\n")
-PY
+  # Merge our CA into any existing policy with jq rather than clobbering it, and
+  # drop the snap-unreadable /usr/local path earlier revisions of this script
+  # wrote. The policy file is root-owned, so read and write it under sudo; jq's
+  # merge itself runs as the normal user (it only reads stdin). Removing then
+  # re-appending the CA keeps it present exactly once and makes the update
+  # idempotent. Start fresh only if the file is missing or unparsable.
+  base=$(sudo jq . "$policy_file" 2> /dev/null || echo '{}')
+  tmp=$(mktemp)
+  printf '%s' "$base" | jq \
+    --arg ca "$ca_for_firefox" \
+    --arg stale "$ca_stale" \
+    '.policies.Certificates.Install = ((.policies.Certificates.Install // []) - [$stale, $ca] + [$ca])' \
+    > "$tmp"
+  sudo cp "$tmp" "$policy_file"
+  rm -f "$tmp"
   sudo chmod 644 "$policy_file"
   echo "06-trust-ca: registered CA with Firefox via $policy_file"
 else

@@ -142,4 +142,11 @@ describe('templates', () => {
     expect(s).toContain('.["editor.defaultFormatter"] = "esbenp.prettier-vscode"');
     expect(s).not.toContain('python3');
   });
+
+  it('ubuntu 06-trust-ca merges the Firefox CA with jq, not python3', () => {
+    const s = readFileSync(join(templatesDir(), 'vm-shared', '06-trust-ca.sh'), 'utf8');
+    expect(s).toContain('sudo jq . "$policy_file"');
+    expect(s).toContain('.policies.Certificates.Install');
+    expect(s).not.toContain('python3');
+  });
 });
