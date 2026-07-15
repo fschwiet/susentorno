@@ -16,9 +16,19 @@ if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
 }
 
 # 1) Publish the shipped C# catch-all DNS responder to a stable location.
+#    dotnet publish writes obj/ intermediates into the *source* project dir, but this
+#    script runs from the read-only VMware share. Copy the source to a writable build
+#    dir first and publish from there, so nothing writes back to the share.
 $installDir = 'C:\ProgramData\configamatron\dns-responder'
+$buildDir = 'C:\ProgramData\configamatron\dns-responder-build'
+if (Test-Path $buildDir) { Remove-Item -Recurse -Force $buildDir }
+New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
+Copy-Item -Recurse -Force -Path (Join-Path (Join-Path $scriptDir 'dns-responder') '*') -Destination $buildDir
+# Defense in depth: drop any bin/obj that slipped onto the share (initEnv filters these).
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue `
+  (Join-Path $buildDir 'bin'), (Join-Path $buildDir 'obj')
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
-dotnet publish (Join-Path $scriptDir 'dns-responder') -c Release -o $installDir
+dotnet publish $buildDir -c Release -o $installDir
 
 # 2) Write the host IP where the responder reads it (analog of dnsmasq-stub.conf).
 Set-Content -Path (Join-Path $installDir 'responder-config.txt') -Value $HostIp -NoNewline

@@ -104,6 +104,11 @@ describe('templates', () => {
     expect(net).toContain('Set-DnsClientServerAddress');
     expect(net).toContain("'127.0.0.1'");
 
+    // The responder is built from a writable scratch dir, not published directly from
+    // the read-only share (which cannot hold dotnet's obj/ intermediates).
+    expect(net).toContain('dns-responder-build');
+    expect(net).toContain('Copy-Item');
+
     const prog = readFileSync(
       join(templatesDir(), 'vm-shared-windows', 'dns-responder', 'Program.cs'),
       'utf8',
