@@ -135,4 +135,11 @@ describe('templates', () => {
     expect(s).toContain('.hasCompletedOnboarding = true');
     expect(s).not.toContain('python3');
   });
+
+  it('ubuntu 04-configure-tools writes settings.json with jq, not python3', () => {
+    const s = readFileSync(join(templatesDir(), 'vm-shared', '04-configure-tools.sh'), 'utf8');
+    expect(s).toContain('jq . "$vscode_settings"');
+    expect(s).toContain('.["editor.defaultFormatter"] = "esbenp.prettier-vscode"');
+    expect(s).not.toContain('python3');
+  });
 });

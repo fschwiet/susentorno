@@ -21,30 +21,18 @@ vscode_settings_dir="$HOME/.config/Code/User"
 mkdir -p "$vscode_settings_dir"
 vscode_settings="$vscode_settings_dir/settings.json"
 
-# Merge our required settings into any existing file rather than clobbering it
-# (starting fresh only if the file is unparsable), mirroring 06-trust-ca.sh /
-# 08-claude-config.sh. python3 is part of the Ubuntu base system.
-python3 - "$vscode_settings" <<'PY'
-import json, os, sys
-
-path = sys.argv[1]
-data = {}
-if os.path.exists(path):
-    with open(path) as f:
-        try:
-            data = json.load(f)
-        except json.JSONDecodeError:
-            data = {}  # unparsable file: start fresh rather than fail provisioning
-
-data["files.autoSave"] = "afterDelay"
-data["editor.formatOnSave"] = True
-data["editor.defaultFormatter"] = "esbenp.prettier-vscode"
-data["[csharp]"] = {"editor.defaultFormatter": "csharpier.csharpier-vscode"}
-
-with open(path, "w") as f:
-    json.dump(data, f, indent=2)
-    f.write("\n")
-PY
+# Merge our required settings into any existing file with jq rather than
+# clobbering it, starting fresh only if the file is missing or unparsable. Write
+# to a temp file and move it into place so a failure never truncates the target.
+base=$(jq . "$vscode_settings" 2> /dev/null || echo '{}')
+tmp=$(mktemp)
+printf '%s' "$base" | jq '
+  .["files.autoSave"] = "afterDelay"
+  | .["editor.formatOnSave"] = true
+  | .["editor.defaultFormatter"] = "esbenp.prettier-vscode"
+  | .["[csharp]"] = {"editor.defaultFormatter": "csharpier.csharpier-vscode"}
+' > "$tmp"
+mv "$tmp" "$vscode_settings"
 
 # codebase-memory-mcp
 # - install is idempotent, must install after coding agents for it to be configured
