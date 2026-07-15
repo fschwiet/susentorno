@@ -35,10 +35,11 @@ $settingsData | ConvertTo-Json -Depth 100 | Set-Content -Path $vscodeSettings -E
 # codebase-memory-mcp
 # - install is idempotent, must install after coding agents for it to be configured
 
-Invoke-WebRequest -Uri https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.ps1 -OutFile codebase-memory-mcp-install.ps1
-Unblock-File .\codebase-memory-mcp-install.ps1
-.\codebase-memory-mcp-install.ps1
-Remove-Item .\codebase-memory-mcp-install.ps1
+$codebaseMemoryInstaller = Join-Path $env:TEMP 'codebase-memory-mcp-install.ps1'
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.ps1 -OutFile $codebaseMemoryInstaller
+Unblock-File $codebaseMemoryInstaller
+& $codebaseMemoryInstaller
+Remove-Item $codebaseMemoryInstaller
 
 # Register the context7 MCP server for both agents (mirrors Ubuntu 04).
 ## Call codex last because it blocks on login request we aren't going to respond to.

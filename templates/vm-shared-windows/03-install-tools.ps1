@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 pnpm runtime set node latest -g
 
 # Claude Code CLI — native Windows installer.
-Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression
+winget install Anthropic.ClaudeCode
 
 # Codex CLI — cross-platform npm package via pnpm.
 pnpm add -g @openai/codex
