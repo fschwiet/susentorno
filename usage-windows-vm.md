@@ -5,6 +5,7 @@ Provision a Windows guest that runs the claude/codex agents against Windows-spec
 ## Create the VM
 
 - In VMware Workstation, create a Windows 11 VM. Leave the network as **NAT** for initial setup (pre-isolation).
+  - A 90-day evaluation ISO can be downloaded from https://info.microsoft.com/ww-landing-windows-11-enterprise.html
 - In network settings, disable "Connect at power on" to avoid needing a Windows account.
 - Install Windows, then install **VMware Tools** (enables Shared Folders).
 
@@ -15,6 +16,10 @@ Shut the VM down, then in VM → Settings → Options → Shared Folders: enable
 ## Run the numbered scripts
 
 Open an **elevated (Administrator) PowerShell**, `cd` to the shared folder, and run the scripts in order. Open a **new terminal** where noted so PATH changes take effect.
+
+> cd "\\vmware-host\Shared Folders\vm-shared-windows\"
+
+> Set-ExecutionPolicy RemoteSigned
 
 1. `.\01-install-packages.ps1`
 2. `.\02-install-pnpm.ps1`
