@@ -19,8 +19,12 @@ New-Item -ItemType Directory -Force -Path $vscodeUserDir | Out-Null
 $vscodeSettings = Join-Path $vscodeUserDir 'settings.json'
 
 # Merge our required settings into any existing file with jq; start fresh if
-# missing or unparsable. Write to a temp file and move it into place so a failure
-# never truncates the target.
+# missing or unparsable. Seed a `{}` file when missing so jq always reads a real
+# file: under `$ErrorActionPreference = 'Stop'`, Windows PowerShell 5.1 turns
+# jq's "could not open file" stderr into a terminating error, killing the script
+# before the exit-code check. Write to a temp file and move it into place so a
+# failure never truncates the target.
+if (-not (Test-Path -LiteralPath $vscodeSettings)) { Set-Content -Path $vscodeSettings -Value '{}' -Encoding utf8 }
 $base = jq . $vscodeSettings 2>$null
 if ($LASTEXITCODE -ne 0) { $base = '{}' }
 $tmp = [System.IO.Path]::GetTempFileName()
