@@ -12,6 +12,7 @@ gsettings set org.gnome.desktop.session idle-delay 0
 ## VS Code
 
 code --install-extension esbenp.prettier-vscode
+code --install-extension csharpier.csharpier-vscode
 
 vscode_settings_dir="$HOME/.config/Code/User"
 mkdir -p "$vscode_settings_dir"
@@ -35,6 +36,7 @@ if os.path.exists(path):
 data["files.autoSave"] = "afterDelay"
 data["editor.formatOnSave"] = True
 data["editor.defaultFormatter"] = "esbenp.prettier-vscode"
+data["[csharp]"] = {"editor.defaultFormatter": "csharpier.csharpier-vscode"}
 
 with open(path, "w") as f:
     json.dump(data, f, indent=2)
