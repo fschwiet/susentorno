@@ -12,7 +12,8 @@ pnpm add -g @openai/codex
 # VS Code — winget (mirrors 01-install-packages.ps1's winget usage).
 winget install --id Microsoft.VisualStudioCode --exact --silent --accept-source-agreements --accept-package-agreements
 
-## dotnet tools
+# dotnet tools
+## dotnet tool install --global was confirmed to be idempotent
 
 dotnet tool install --global dotnet-outdated-tool
 dotnet tool install --global csharpier
