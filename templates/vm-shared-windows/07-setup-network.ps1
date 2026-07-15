@@ -3,6 +3,18 @@ param([Parameter(Mandatory = $true)][string]$HostIp)
 $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+# Stop any already-running responder first: Windows locks a running exe, so a
+# rerun's `dotnet publish` below would fail to overwrite it otherwise. Safe on
+# a first-ever run, where the task doesn't exist yet.
+$taskName = 'ConfigamatronDnsResponder'
+if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
+  Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+  $deadline = (Get-Date).AddSeconds(10)
+  while ((Get-Process -Name $taskName -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) {
+    Start-Sleep -Milliseconds 200
+  }
+}
+
 # 1) Publish the shipped C# catch-all DNS responder to a stable location.
 $installDir = 'C:\ProgramData\configamatron\dns-responder'
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
