@@ -149,4 +149,14 @@ describe('templates', () => {
     expect(s).toContain('.policies.Certificates.Install');
     expect(s).not.toContain('python3');
   });
+
+  it('windows 08-claude-config writes .claude.json with jq', () => {
+    const s = readFileSync(
+      join(templatesDir(), 'vm-shared-windows', '08-claude-config.ps1'),
+      'utf8',
+    );
+    expect(s).toContain('jq . $claudeJson');
+    expect(s).toContain('.hasCompletedOnboarding = true');
+    expect(s).not.toContain('ConvertTo-Json');
+  });
 });
