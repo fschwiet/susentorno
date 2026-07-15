@@ -22,7 +22,7 @@ fi
 
 # dotnet tools
 ## dotnet tool install --global was confirmed to be idempotent
-
+  
 dotnet tool install --global dotnet-outdated-tool
 dotnet tool install --global csharpier
 
