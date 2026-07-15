@@ -3,6 +3,7 @@ import { execa, type ResultPromise } from 'execa';
 import { createInterface } from 'node:readline';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, copyFileSync } from 'node:fs';
 import { killProcessTree } from '../../src/runProxy/killProcessTree';
+import { rmEnvRoot } from '../rmEnvRoot';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -60,7 +61,7 @@ beforeAll(async () => {
   credentialsPath = join(tempDir, '.credentials.json');
   writeCredentials('token-initial');
 
-  rmSync(envRoot, { recursive: true, force: true });
+  await rmEnvRoot(envRoot);
   await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: repoRoot });
   copyFileSync(allowlistFixture, join(proxyDir, 'allowlist.txt'));
   await execa('node', [cliPath, 'generate-ca'], { cwd: repoRoot });

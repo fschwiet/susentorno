@@ -1,10 +1,11 @@
 import { execa, type ResultPromise } from 'execa';
 import { createInterface } from 'node:readline';
-import { copyFileSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { startMockUpstream, stopMockUpstream, type MockUpstream } from './integration/mockUpstream';
 import { killProcessTree } from '../src/runProxy/killProcessTree';
+import { rmEnvRoot } from './rmEnvRoot';
 
 export const HTTPS_PORT = 18443;
 export const HTTP_PORT = 18080;
@@ -102,7 +103,7 @@ export async function startProxyStack(): Promise<ProxyStack> {
   };
 
   // Fresh environment per run: environments are rebuilt from scratch, never migrated.
-  rmSync(envRoot, { recursive: true, force: true });
+  await rmEnvRoot(envRoot);
   await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: repoRoot });
 
   // Stage the test allowlist as the environment's own before generate-ca so
