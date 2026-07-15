@@ -1,6 +1,8 @@
 #Requires -RunAsAdministrator
 $ErrorActionPreference = 'Stop'
 
+wsl --update
+
 try {
   winget settings --enable BypassCertificatePinningForMicrosoftStore
   winget upgrade Microsoft.AppInstaller --accept-source-agreements --accept-package-agreements
@@ -21,8 +23,8 @@ $packages = @(
   'GitHub.cli',                # gh
   'Microsoft.WindowsTerminal',
   'Microsoft.VisualStudioCode'
-
 )
+
 foreach ($id in $packages) {
   Write-Host "01-install-packages: installing $id"
   winget install --id $id --exact --silent --accept-source-agreements --accept-package-agreements --source winget
