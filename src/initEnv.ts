@@ -11,6 +11,18 @@ export interface InitOptions {
 }
 
 /**
+ * Reject dns-responder build artifacts (bin/obj) so a developer's local build output
+ * never gets copied onto the read-only VM share. cpSync copies straight off disk and
+ * ignores gitignore, so the filter is the only guard.
+ */
+export function isDnsResponderBuildArtifact(source: string): boolean {
+  const segments = source.split(/[\\/]/);
+  const dnsIdx = segments.indexOf('dns-responder');
+  if (dnsIdx === -1) return false;
+  return segments.slice(dnsIdx + 1).some((s) => s === 'bin' || s === 'obj');
+}
+
+/**
  * Scaffold <cwd>/.configamatron. Validates all inputs before writing anything so a
  * failed init leaves no partial environment behind. Throws on any failure.
  */
@@ -44,6 +56,7 @@ export function initEnvironment(options: InitOptions): void {
   cpSync(join(options.templatesDir, 'vm-shared'), paths.vmShared, { recursive: true });
   cpSync(join(options.templatesDir, 'vm-shared-windows'), paths.vmSharedWindows, {
     recursive: true,
+    filter: (source) => !isDnsResponderBuildArtifact(source),
   });
   cpSync(join(options.templatesDir, 'proxy'), paths.proxy, { recursive: true });
   copyFileSync(options.allowlistSource, paths.allowlist);

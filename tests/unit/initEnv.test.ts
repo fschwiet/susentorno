@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -69,6 +69,29 @@ describe('initEnvironment', () => {
       expect(JSON.parse(credentials).claudeAiOauth.accessToken, folder).toBe(
         'sk-ant-oat-SANDBOX-PLACEHOLDER',
       );
+    }
+  });
+
+  it('does not copy dns-responder bin/obj build artifacts into vm-shared-windows', () => {
+    const templateDnsDir = join(templatesDir(), 'vm-shared-windows', 'dns-responder');
+    const binFixture = join(templateDnsDir, 'bin');
+    const objFixture = join(templateDnsDir, 'obj');
+    // bin/ and obj/ are gitignored, so creating them here does not dirty the repo.
+    mkdirSync(binFixture, { recursive: true });
+    mkdirSync(objFixture, { recursive: true });
+    writeFileSync(join(binFixture, 'stale.dll'), 'x');
+    writeFileSync(join(objFixture, 'stale.json'), 'x');
+    try {
+      initEnvironment(options());
+      const copiedDns = join(dir, ENV_DIR_NAME, 'vm-shared-windows', 'dns-responder');
+      expect(existsSync(join(copiedDns, 'bin')), 'bin should not be copied').toBe(false);
+      expect(existsSync(join(copiedDns, 'obj')), 'obj should not be copied').toBe(false);
+      // The source files must still be copied.
+      expect(existsSync(join(copiedDns, 'Program.cs'))).toBe(true);
+      expect(existsSync(join(copiedDns, 'ConfigamatronDnsResponder.csproj'))).toBe(true);
+    } finally {
+      rmSync(binFixture, { recursive: true, force: true });
+      rmSync(objFixture, { recursive: true, force: true });
     }
   });
 
