@@ -27,6 +27,13 @@ $settingsData['editor.defaultFormatter'] = 'esbenp.prettier-vscode'
 $settingsData['[csharp]'] = @{ 'editor.defaultFormatter' = 'csharpier.csharpier-vscode' }
 $settingsData | ConvertTo-Json -Depth 100 | Set-Content -Path $vscodeSettings -Encoding utf8
 
+
+# codebase-memory-mcp install is idempotent, must install after coding agents
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.ps1 -OutFile codebase-memory-mcp-install.ps1
+Unblock-File .\codebase-memory-mcp-install.ps1
+.\codebase-memory-mcp-install.ps1
+Remove-Item .\codebase-memory-mcp-install.ps1
+
 # Register the context7 MCP server for both agents (mirrors Ubuntu 04).
 ## Call codex last because it blocks on login request we aren't going to respond to.
 

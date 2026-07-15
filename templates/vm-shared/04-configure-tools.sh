@@ -43,6 +43,9 @@ with open(path, "w") as f:
     f.write("\n")
 PY
 
+# codebase-memory-mcp install is idempotent, must install after coding agents
+curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash
+
 ## Agent configurations
 ## Call codex last because it blocks on login request we aren't going to respond to.
 
