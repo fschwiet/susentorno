@@ -24,6 +24,10 @@ api.nuget.org:443
 *.gallery.vsassets.io:443
 *.core.windows.net:443
 
+# Windows
+cdn.winget.microsoft.com:443
+storeedgefd.dsx.mp.microsoft.com:443
+
 ## misc
 cdn.fwupd.org:443
 cdn.playwright.dev:443
