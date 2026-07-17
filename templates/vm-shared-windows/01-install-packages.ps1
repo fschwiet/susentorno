@@ -7,7 +7,7 @@ try {
   winget settings --enable BypassCertificatePinningForMicrosoftStore
   winget upgrade Microsoft.AppInstaller --accept-source-agreements --accept-package-agreements
 } finally {
-  winget settings --DISABLE BypassCertificatePinningForMicrosoftStore
+  winget settings --disable BypassCertificatePinningForMicrosoftStore
 }
 
 winget upgrade --all --include-unknown --accept-source-agreements --accept-package-agreements
@@ -22,7 +22,8 @@ $packages = @(
   'Microsoft.DotNet.SDK.10',   # .NET SDK
   'GitHub.cli',                # gh
   'Microsoft.WindowsTerminal',
-  'Microsoft.VisualStudioCode'
+  'Microsoft.VisualStudioCode',
+  'Docker.DockerDesktop'
 )
 
 foreach ($id in $packages) {
