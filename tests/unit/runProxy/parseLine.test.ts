@@ -30,4 +30,25 @@ describe('parseLine', () => {
   it('returns null when the field count is wrong', () => {
     expect(parseLine('CFGM|term|2026-07-06T12:04:31|only-four')).toBeNull();
   });
+
+  it('parses an 11-field cand line into authHeaders', () => {
+    const line =
+      'CFGM|cand|2026-07-18T09:00:00|partner.example.com|partner.example.com|via_upstream|Bearer abc12|-|sk-ant-key01|-|-';
+    expect(parseLine(line)).toEqual({
+      pathId: 'cand',
+      time: '2026-07-18T09:00:00',
+      serverName: 'partner.example.com',
+      authority: 'partner.example.com',
+      codeDetails: 'via_upstream',
+      authHeaders: ['Bearer abc12', '-', 'sk-ant-key01', '-', '-'],
+    });
+  });
+
+  it('returns null for a cand line without 11 fields', () => {
+    expect(parseLine('CFGM|cand|2026-07-18T09:00:00|partner.example.com|partner.example.com|via_upstream')).toBeNull();
+  });
+
+  it('returns null for a non-cand line with 11 fields', () => {
+    expect(parseLine('CFGM|term|t|s|a|d|x|x|x|x|x')).toBeNull();
+  });
 });
