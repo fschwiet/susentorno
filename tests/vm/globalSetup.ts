@@ -1,6 +1,7 @@
-import { harness } from './wsl';
+import { checkWslDistro, harness } from './wsl';
 
 export default async function setup() {
+  await checkWslDistro();
   try {
     await harness('preflight.sh');
   } catch (error) {

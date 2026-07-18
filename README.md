@@ -119,6 +119,7 @@ Two read-only diagnostic scripts report whether the proxy and the VM are set up 
 ### Prequisites
 
 - all host prereuisites except VMWare
+- A real Ubuntu (or other Debian-based) WSL2 distro must be installed and set as the **default** distro (`wsl --install -d Ubuntu`, then `wsl --set-default Ubuntu` if needed). `wsl.exe` is invoked without `-d` throughout the harness, so it runs whatever distro is default — if Docker Desktop's own minimal `docker-desktop` distro ends up default (e.g. on a fresh machine with no other distro registered), `wsl.exe -u root -e bash ...` fails with `execvpe(bash) failed: No such file or directory`, since that distro is BusyBox-based with no bash or apt. Check with `wsl -l -v`.
 - wsl2 is used to spin up a vm for testing purposes. The ~/.wslconfig must contain:
 
 ```ini
