@@ -282,8 +282,9 @@ describe('generateEnvoyConfig auth candidate', () => {
     const chain = listener443.filter_chains.find((fc: any) =>
       fc.filter_chain_match?.server_names?.includes('partner.example.com'),
     );
-    const log = chain.filters[0].typed_config.access_log[0].typed_config.log_format
-      .text_format_source.inline_string;
+    const log =
+      chain.filters[0].typed_config.access_log[0].typed_config.log_format.text_format_source
+        .inline_string;
     expect(log).toMatch(/^CFGM\|cand\|/);
     expect(log).toContain('%REQ(AUTHORIZATION):12%');
     expect(log).toContain('%REQ(COOKIE):12%');

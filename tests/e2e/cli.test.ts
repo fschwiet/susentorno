@@ -17,9 +17,15 @@ const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json',
 
 describe('configamatron CLI', () => {
   it('warns in help that import-sbx-network-policy regeneration drops comments', async () => {
-    const { stdout, exitCode } = await execa('node', [cliPath, 'import-sbx-network-policy', '--help']);
+    const { stdout, exitCode } = await execa('node', [
+      cliPath,
+      'import-sbx-network-policy',
+      '--help',
+    ]);
     expect(exitCode).toBe(0);
-    expect(stdout).toContain('does not preserve customizations since last import, including hand-added comments');
+    expect(stdout).toContain(
+      'does not preserve customizations since last import, including hand-added comments',
+    );
   });
 
   it('prints the version with --version', async () => {

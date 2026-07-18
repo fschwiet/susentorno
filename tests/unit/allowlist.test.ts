@@ -398,9 +398,14 @@ describe('parseAllowlist auth candidate', () => {
       invalid: [],
     };
     expect(formatAllowlist(allowlist)).toBe(
-      ['#pragma passthrough', 'pypi.org:443', '', '#pragma claude authenticated', 'api.anthropic.com:443', ''].join(
-        '\n',
-      ),
+      [
+        '#pragma passthrough',
+        'pypi.org:443',
+        '',
+        '#pragma claude authenticated',
+        'api.anthropic.com:443',
+        '',
+      ].join('\n'),
     );
   });
 

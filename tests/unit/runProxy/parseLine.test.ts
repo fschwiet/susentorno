@@ -45,7 +45,11 @@ describe('parseLine', () => {
   });
 
   it('returns null for a cand line without 11 fields', () => {
-    expect(parseLine('CFGM|cand|2026-07-18T09:00:00|partner.example.com|partner.example.com|via_upstream')).toBeNull();
+    expect(
+      parseLine(
+        'CFGM|cand|2026-07-18T09:00:00|partner.example.com|partner.example.com|via_upstream',
+      ),
+    ).toBeNull();
   });
 
   it('returns null for a non-cand line with 11 fields', () => {

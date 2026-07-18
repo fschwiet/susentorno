@@ -51,9 +51,7 @@ function requestThroughTerminate(
   });
 }
 
-function requestThroughAuthCandidate(
-  authorization: string,
-): Promise<{ statusCode?: number }> {
+function requestThroughAuthCandidate(authorization: string): Promise<{ statusCode?: number }> {
   return new Promise((resolve, reject) => {
     const req = httpsRequest(
       {
@@ -313,7 +311,9 @@ describe('Envoy access logging', () => {
         .split('\n')
         .find(
           (l) =>
-            l.includes('CFGM|cand|') && l.includes('auth-candidate.test') && l.includes('Bearer trunc'),
+            l.includes('CFGM|cand|') &&
+            l.includes('auth-candidate.test') &&
+            l.includes('Bearer trunc'),
         );
       if (!candLine) await new Promise((r) => setTimeout(r, 500));
     }

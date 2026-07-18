@@ -76,7 +76,13 @@ describe('classify', () => {
 
   it('emits no entries for a cand line with all headers absent', () => {
     expect(
-      classify(line({ pathId: 'cand', serverName: 'partner.example.com', authHeaders: ['-', '-', '-', '-', '-'] })),
+      classify(
+        line({
+          pathId: 'cand',
+          serverName: 'partner.example.com',
+          authHeaders: ['-', '-', '-', '-', '-'],
+        }),
+      ),
     ).toEqual([]);
   });
 });

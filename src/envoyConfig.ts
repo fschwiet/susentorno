@@ -38,7 +38,9 @@ function buildTlsUpstreamCluster(
   portStr: string,
   override: UpstreamOverride | undefined,
 ) {
-  const [upstreamHost, upstreamPortStr] = override ? override.target.split(':') : [sniHost, portStr];
+  const [upstreamHost, upstreamPortStr] = override
+    ? override.target.split(':')
+    : [sniHost, portStr];
   return {
     name: clusterName,
     type: 'STRICT_DNS',
@@ -132,7 +134,9 @@ function buildAuthCandidateEntry(entry: string, overrides: UpstreamOverride[]) {
                 domains: ['*'],
                 // timeout '0s' matches the terminate path: don't sever long
                 // streaming responses at Envoy's default 15s route timeout.
-                routes: [{ match: { prefix: '/' }, route: { cluster: clusterName, timeout: '0s' } }],
+                routes: [
+                  { match: { prefix: '/' }, route: { cluster: clusterName, timeout: '0s' } },
+                ],
               },
             ],
           },
