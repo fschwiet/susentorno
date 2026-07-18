@@ -82,10 +82,10 @@ export async function checkWslDhcpPortIgnored(): Promise<void> {
   if (!/exit=(124|0)\b/.test(probe.stdout)) {
     throw new Error(
       `WSL cannot bind UDP 0.0.0.0:67, so dnsmasq's DHCP bind will fail (got: ${probe.all}). ` +
-      `In %USERPROFILE%\\.wslconfig using powershell run\n ` +
-      `  echo "\`n[experimental]\`nignoredPorts=67\`n" >> .wslconfig\n ` +
-      `  wsl --shutdown\n` +  
-      `(Docker will be forced to restart since it runs in WSL).`,
+        `In %USERPROFILE%\\.wslconfig using powershell run\n ` +
+        `  echo "\`n[experimental]\`nignoredPorts=67\`n" >> .wslconfig\n ` +
+        `  wsl --shutdown\n` +
+        `(Docker will be forced to restart since it runs in WSL).`,
     );
   }
 }
