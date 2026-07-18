@@ -44,14 +44,20 @@ Register-ScheduledTask -TaskName 'ConfigamatronDnsResponder' -Action $action -Tr
   -Principal $principal -Settings $settings -Force | Out-Null
 Start-ScheduledTask -TaskName 'ConfigamatronDnsResponder'
 
-# 4) Point the active adapter's DNS at the local responder; suppress DHCP DNS.
-#    Prefer the default-gateway interface; fall back to the first up physical NIC.
-$iface = (Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway } | Select-Object -First 1).InterfaceAlias
-if (-not $iface) {
-  $iface = (Get-NetAdapter -Physical | Where-Object Status -eq 'Up' | Select-Object -First 1).Name
+# 4) Point every up adapter's DNS at the local responder; suppress DHCP DNS.
+#    A single-NIC guest (VMware NAT -> host-only) has one adapter here. A two-NIC
+#    guest (Hyper-V: a permanent Internal-switch NIC plus a temporary Default-Switch
+#    NIC that supplies setup-time internet) has two -- and the Default-Switch NIC,
+#    the only one carrying a default gateway, is REMOVED at isolation. Targeting just
+#    the gateway NIC would put the setting on that temporary adapter and lose it on
+#    isolation; setting every up NIC guarantees the surviving adapter still points at
+#    the responder. Harmless on VMware, where there is only the one adapter.
+$ifaces = Get-NetIPConfiguration | Where-Object { $_.IPv4Address -and $_.NetAdapter.Status -eq 'Up' } |
+  Select-Object -ExpandProperty InterfaceAlias
+if (-not $ifaces) { Write-Error "07-setup-network: could not determine the VM's network interface."; exit 1 }
+foreach ($iface in $ifaces) {
+  Set-DnsClientServerAddress -InterfaceAlias $iface -ServerAddresses '127.0.0.1'
 }
-if (-not $iface) { Write-Error "07-setup-network: could not determine the VM's network interface."; exit 1 }
-Set-DnsClientServerAddress -InterfaceAlias $iface -ServerAddresses '127.0.0.1'
 Clear-DnsClientCache
 
-Write-Host "07-setup-network: DNS responder installed (-> $HostIp), scheduled at startup; adapter '$iface' DNS set to 127.0.0.1"
+Write-Host "07-setup-network: DNS responder installed (-> $HostIp), scheduled at startup; DNS set to 127.0.0.1 on: $($ifaces -join ', ')"

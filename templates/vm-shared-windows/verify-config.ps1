@@ -66,7 +66,12 @@ if ($c -and [int]$c -lt 400) { Ok "allow-listed :443 pypi.org -> $c" } else { Ba
 if ($LASTEXITCODE -ne 0) { Ok "blocked :443 connection dropped (curlExit=$LASTEXITCODE)" } else { Bad 'blocked :443 connection dropped' 'curl succeeded; expected a connection failure' }
 $c = HttpCode 'http://blocked.example.com/' 20
 if ($c -eq '403') { Ok 'blocked :80 -> 403 (default deny)' } else { Bad 'blocked :80 default deny' "expected 403, got $c" }
-$c = & curl.exe -s -o NUL -w '%{http_code}' --max-time 20 -H 'Authorization: Bearer not-the-placeholder' https://api.anthropic.com/
+# --ssl-no-revoke: api.anthropic.com is MITM'd with the proxy's leaf cert, which has
+# no CRL/OCSP endpoint. schannel (Windows curl) does a revocation check by default and
+# fails closed when it finds none, aborting the handshake before gate.lua can answer
+# (curl returns 000). Real agent traffic uses OpenSSL, which doesn't do this. Mirrors
+# the host-side verify-proxy.ps1 gate check.
+$c = & curl.exe -s -o NUL -w '%{http_code}' --ssl-no-revoke --max-time 20 -H 'Authorization: Bearer not-the-placeholder' https://api.anthropic.com/
 if ($c -eq '403') { Ok 'credential gate: wrong Authorization -> 403 (no token spent)' } else { Bad 'credential gate wrong-auth' "expected 403 from gate.lua, got $c" }
 
 Write-Host "`n$script:pass passed, $script:fail failed, $script:warn warnings"
