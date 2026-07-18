@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+HARNESS_DIR="$(dirname "${BASH_SOURCE[0]}")"
+source "$HARNESS_DIR/lib.sh"
 
 fail() {
   echo "preflight: $1" >&2
@@ -18,7 +19,7 @@ fail() {
 
 for cmd in qemu-system-x86_64 qemu-img cloud-localds dnsmasq socat curl ssh ssh-keygen iptables; do
   command -v "$cmd" > /dev/null || fail "$cmd not installed in WSL" \
-    "run once: wsl.exe -u root bash <repo>/tests/vm/harness/setup-wsl.sh"
+    "run once: wsl.exe -u root bash $HARNESS_DIR/setup-wsl.sh"
 done
 
 echo "preflight: ok"

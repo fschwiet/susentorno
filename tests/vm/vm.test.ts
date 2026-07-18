@@ -56,36 +56,8 @@ async function guestProbe(name: string, host: string): Promise<{ http: string; e
 beforeAll(async () => {
   await harness('cleanup.sh'); // stale bridges/guests from a killed run
 
-  // Guard: mirrored networking is required. Under NAT mode WSL cannot reach
-  // run-proxy's gateway at all — it is a plain Windows process on loopback,
-  // and only mirrored mode shares the Windows localhost with WSL. See
-  // docs/superpowers/specs/2026-07-12-vm-test-wsl-mirrored-networking-design.md.
-  const mode = await wslExec('wslinfo --networking-mode', { reject: false });
-  if (mode.stdout.trim() !== 'mirrored') {
-    throw new Error(
-      `WSL networking mode is '${mode.stdout.trim()}', not 'mirrored'. ` +
-        `In %USERPROFILE%\\.wslconfig set [wsl2] networkingMode=mirrored, ` +
-        `then run 'wsl --shutdown' (Docker Desktop will need to restart).`,
-    );
-  }
-
-  // Guard: mirrored mode pools WSL's ports with Windows', and Windows' own
-  // Hyper-V Default Switch DHCP holds port 67 — dnsmasq's wildcard DHCP bind
-  // fails unless .wslconfig exempts the port from sharing. Probe the actual
-  // bind instead of parsing .wslconfig: that also catches the setting being
-  // present but not applied yet, or dropped by a future WSL update.
-  // exit=124: bind ok, timeout expired waiting for a packet (the normal case).
-  // exit=0: bind ok, a stray packet arrived within the second.
-  const probe = await wslExec('timeout 1 socat -u UDP4-RECVFROM:67 /dev/null 2>&1; echo exit=$?', {
-    reject: false,
-  });
-  if (!/exit=(124|0)\b/.test(probe.stdout)) {
-    throw new Error(
-      `WSL cannot bind UDP 0.0.0.0:67, so dnsmasq's DHCP bind will fail (got: ${probe.all}). ` +
-        `In %USERPROFILE%\\.wslconfig add:\n[experimental]\nignoredPorts=67\n` +
-        `then run 'wsl --shutdown' (Docker Desktop will need to restart).`,
-    );
-  }
+  // WSL distro/networking-mode/DHCP-port guards already ran in globalSetup.ts,
+  // before the slow golden-image build.
 
   stack = await startProxyStack();
 
