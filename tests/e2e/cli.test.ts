@@ -16,6 +16,12 @@ const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
 
 describe('configamatron CLI', () => {
+  it('warns in help that import-sbx-network-policy regeneration drops comments', async () => {
+    const { stdout, exitCode } = await execa('node', [cliPath, 'import-sbx-network-policy', '--help']);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain('does not preserve customizations since last import, including hand-added comments');
+  });
+
   it('prints the version with --version', async () => {
     const { stdout, exitCode } = await execa('node', [cliPath, '--version']);
     expect(stdout.trim()).toBe('0.0.1');
