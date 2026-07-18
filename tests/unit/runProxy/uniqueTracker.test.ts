@@ -23,4 +23,22 @@ describe('UniqueTracker', () => {
     t.clear();
     expect(t.shouldPrint(e('github.com'))).toBe(true);
   });
+
+  it('dedups AUTH CANDIDATE per domain+header+value but reprints a new value', () => {
+    const t = new UniqueTracker();
+    const cand = (header: string, value: string): Entry => ({
+      time: '2026-07-18T09:00:00',
+      tag: 'AUTH CANDIDATE',
+      domain: 'partner.example.com',
+      protocol: 'https',
+      header,
+      value,
+    });
+    expect(t.shouldPrint(cand('Authorization', 'Bearer abc12'))).toBe(true);
+    expect(t.shouldPrint(cand('Authorization', 'Bearer abc12'))).toBe(false);
+    // a rotated value prints again
+    expect(t.shouldPrint(cand('Authorization', 'Bearer xyz99'))).toBe(true);
+    // a different header prints again
+    expect(t.shouldPrint(cand('X-API-Key', 'Bearer abc12'))).toBe(true);
+  });
 });

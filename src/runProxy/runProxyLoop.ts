@@ -167,9 +167,10 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
       if (settled) return;
       const access = parseLine(raw);
       if (!access) return;
-      const entry = classify(access);
-      if (!unique.shouldPrint(entry)) return;
-      deps.log(formatOutput(entry));
+      for (const entry of classify(access)) {
+        if (!unique.shouldPrint(entry)) continue;
+        deps.log(formatOutput(entry));
+      }
     };
 
     /** Read+parse the allowlist; null (with a logged reason) when unreadable or invalid. */

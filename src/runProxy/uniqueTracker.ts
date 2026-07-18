@@ -11,7 +11,7 @@ export class UniqueTracker {
 
   /** True the first time a given tag+domain is seen (and records it). */
   shouldPrint(entry: Entry): boolean {
-    const key = `${entry.tag} ${entry.domain}`;
+    const key = `${entry.tag} ${entry.domain} ${entry.protocol ?? ''} ${entry.header ?? ''} ${entry.value ?? ''}`;
     if (this.seen.has(key)) return false;
     this.seen.add(key);
     return true;
