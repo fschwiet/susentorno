@@ -1,8 +1,8 @@
 # configamatron
 
-configamatron sets up isolated environments for coding agents. An Ubuntu VM is isolated behind an Envoy proxy running in Docker on the host; the proxy restricts network access to an allow list and injects credentials so the VM never holds them. Each environment lives in a `.configamatron` folder inside whatever working directory you find appropriate.
+configamatron sets up isolated environments for coding agents. A Windows and/or Ubuntu VM is isolated behind an Envoy proxy running in Docker on the host; the proxy restricts network access to an allow list and injects credentials so the VM never holds them. Each environment lives in a `.configamatron` folder inside whatever working directory you find appropriate.
 
-Only one proxy container can exist on the host (it binds ports 80/443). Starting any environment's proxy — or running this repo's test suite — replaces whichever proxy container was running. Run one environment at a time; re-run `configamatron run-proxy` in an environment's directory to restore its proxy.
+Only one proxy container can run on the host at a time (it binds ports 80/443). Starting any environment's proxy — or running this repo's test suite — replaces whichever proxy container was running. Run one environment at a time; running `configamatron run-proxy` in an environment's directory restores its proxy.
 
 ## Host prerequisites
 
