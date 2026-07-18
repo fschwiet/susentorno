@@ -32,12 +32,132 @@ function accessLog(pathId: string): Record<string, unknown>[] {
   ];
 }
 
+function buildTlsUpstreamCluster(
+  clusterName: string,
+  sniHost: string,
+  portStr: string,
+  override: UpstreamOverride | undefined,
+) {
+  const [upstreamHost, upstreamPortStr] = override ? override.target.split(':') : [sniHost, portStr];
+  return {
+    name: clusterName,
+    type: 'STRICT_DNS',
+    dns_lookup_family: 'V4_ONLY',
+    lb_policy: 'ROUND_ROBIN',
+    load_assignment: {
+      cluster_name: clusterName,
+      endpoints: [
+        {
+          lb_endpoints: [
+            {
+              endpoint: {
+                address: {
+                  socket_address: { address: upstreamHost, port_value: Number(upstreamPortStr) },
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+    transport_socket: {
+      name: 'envoy.transport_sockets.tls',
+      typed_config: {
+        '@type': 'type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext',
+        sni: sniHost,
+        common_tls_context: override
+          ? { validation_context: { trust_chain_verification: 'ACCEPT_UNTRUSTED' } }
+          : {},
+      },
+    },
+  };
+}
+
+function authCandidateAccessLog(): Record<string, unknown>[] {
+  return [
+    {
+      name: 'envoy.access_loggers.file',
+      typed_config: {
+        '@type': 'type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog',
+        path: '/dev/stdout',
+        log_format: {
+          text_format_source: {
+            inline_string:
+              'CFGM|cand|%START_TIME(%Y-%m-%dT%H:%M:%S)%|%REQUESTED_SERVER_NAME%|' +
+              '%REQ(:AUTHORITY)%|%RESPONSE_CODE_DETAILS%|%REQ(AUTHORIZATION):12%|' +
+              '%REQ(COOKIE):12%|%REQ(X-API-KEY):12%|%REQ(X-AUTH-TOKEN):12%|' +
+              '%REQ(PROXY-AUTHORIZATION):12%\n',
+          },
+        },
+      },
+    },
+  ];
+}
+
+function buildAuthCandidateEntry(entry: string, overrides: UpstreamOverride[]) {
+  const [sniHost, portStr] = entry.split(':');
+  const override = overrides.find((o) => o.sniHost === sniHost);
+  const clusterName = `cluster_authcandidate_${sanitizeName(sniHost)}`;
+
+  const filterChain = {
+    filter_chain_match: { server_names: [sniHost] },
+    transport_socket: {
+      name: 'envoy.transport_sockets.tls',
+      typed_config: {
+        '@type':
+          'type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext',
+        common_tls_context: {
+          tls_certificates: [
+            {
+              certificate_chain: { filename: '/etc/envoy/ca/leaf-cert.pem' },
+              private_key: { filename: '/etc/envoy/ca/leaf-key.pem' },
+            },
+          ],
+        },
+      },
+    },
+    filters: [
+      {
+        name: 'envoy.filters.network.http_connection_manager',
+        typed_config: {
+          '@type':
+            'type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager',
+          stat_prefix: `authcandidate_${sanitizeName(sniHost)}`,
+          access_log: authCandidateAccessLog(),
+          route_config: {
+            name: 'local_route',
+            virtual_hosts: [
+              {
+                name: 'authcandidate',
+                domains: ['*'],
+                // timeout '0s' matches the terminate path: don't sever long
+                // streaming responses at Envoy's default 15s route timeout.
+                routes: [{ match: { prefix: '/' }, route: { cluster: clusterName, timeout: '0s' } }],
+              },
+            ],
+          },
+          // No lua gate and no credential_injector: the point is to observe the
+          // client's own auth untouched, not to reject or replace it.
+          http_filters: [
+            {
+              name: 'envoy.filters.http.router',
+              typed_config: {
+                '@type': 'type.googleapis.com/envoy.extensions.filters.http.router.v3.Router',
+              },
+            },
+          ],
+        },
+      },
+    ],
+  };
+
+  const cluster = buildTlsUpstreamCluster(clusterName, sniHost, portStr, override);
+  return { filterChain, cluster };
+}
+
 function buildTerminateEntry(entry: string, overrides: UpstreamOverride[]) {
   const [sniHost, portStr] = entry.split(':');
   const override = overrides.find((o) => o.sniHost === sniHost);
-  const [upstreamHost, upstreamPortStr] = override
-    ? override.target.split(':')
-    : [sniHost, portStr];
   const clusterName = `cluster_terminate_${sanitizeName(sniHost)}`;
 
   const filterChain = {
@@ -131,38 +251,7 @@ function buildTerminateEntry(entry: string, overrides: UpstreamOverride[]) {
     ],
   };
 
-  const cluster = {
-    name: clusterName,
-    type: 'STRICT_DNS',
-    dns_lookup_family: 'V4_ONLY',
-    lb_policy: 'ROUND_ROBIN',
-    load_assignment: {
-      cluster_name: clusterName,
-      endpoints: [
-        {
-          lb_endpoints: [
-            {
-              endpoint: {
-                address: {
-                  socket_address: { address: upstreamHost, port_value: Number(upstreamPortStr) },
-                },
-              },
-            },
-          ],
-        },
-      ],
-    },
-    transport_socket: {
-      name: 'envoy.transport_sockets.tls',
-      typed_config: {
-        '@type': 'type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext',
-        sni: sniHost,
-        common_tls_context: override
-          ? { validation_context: { trust_chain_verification: 'ACCEPT_UNTRUSTED' } }
-          : {},
-      },
-    },
-  };
+  const cluster = buildTlsUpstreamCluster(clusterName, sniHost, portStr, override);
 
   return { filterChain, cluster };
 }
@@ -252,6 +341,9 @@ export function generateEnvoyConfig(
   const terminateBuilt = allowlist.terminate
     .filter((e) => e.endsWith(':443'))
     .map((e) => buildTerminateEntry(e, overrides));
+  const authCandidateBuilt = allowlist.authCandidate
+    .filter((e) => e.endsWith(':443'))
+    .map((e) => buildAuthCandidateEntry(e, overrides));
   const passthroughServerNames = allowlist.passthrough
     .filter((e) => e.endsWith(':443'))
     .map((e) => e.split(':')[0]);
@@ -283,6 +375,7 @@ export function generateEnvoyConfig(
           ],
           filter_chains: [
             ...terminateBuilt.map((b) => b.filterChain),
+            ...authCandidateBuilt.map((b) => b.filterChain),
             {
               filter_chain_match: { server_names: passthroughServerNames },
               filters: [
@@ -380,6 +473,7 @@ export function generateEnvoyConfig(
       ],
       clusters: [
         ...terminateBuilt.map((b) => b.cluster),
+        ...authCandidateBuilt.map((b) => b.cluster),
         ...http80ExactBuilt.map((b) => b.cluster),
         ...(hasWildcardHttp80 ? [buildDynamicForwardProxyHttpCluster()] : []),
         {

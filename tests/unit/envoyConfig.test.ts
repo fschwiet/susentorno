@@ -224,3 +224,71 @@ describe('generateEnvoyConfig', () => {
     expect(blackhole.load_assignment.endpoints).toEqual([]);
   });
 });
+
+describe('generateEnvoyConfig auth candidate', () => {
+  const candAllowlist: Allowlist = {
+    passthrough: [],
+    terminate: ['api.anthropic.com:443'],
+    authCandidate: ['partner.example.com:443'],
+    invalid: [],
+  };
+
+  it('builds an auth-candidate chain with only the router http filter', () => {
+    const config = generateEnvoyConfig(candAllowlist) as any;
+    const listener443 = config.static_resources.listeners.find(
+      (l: any) => l.name === 'listener_443',
+    );
+    const chain = listener443.filter_chains.find((fc: any) =>
+      fc.filter_chain_match?.server_names?.includes('partner.example.com'),
+    );
+    expect(chain).toBeDefined();
+    const hcm = chain.filters[0].typed_config;
+    expect(hcm.http_filters.map((f: any) => f.name)).toEqual(['envoy.filters.http.router']);
+    expect(hcm.route_config.virtual_hosts[0].routes[0].route.cluster).toBe(
+      'cluster_authcandidate_partner_example_com',
+    );
+  });
+
+  it('serves the leaf cert and builds an override-aware cluster', () => {
+    const config = generateEnvoyConfig(candAllowlist, {
+      overrides: [{ sniHost: 'partner.example.com', target: '127.0.0.1:9443' }],
+    }) as any;
+    const listener443 = config.static_resources.listeners.find(
+      (l: any) => l.name === 'listener_443',
+    );
+    const chain = listener443.filter_chains.find((fc: any) =>
+      fc.filter_chain_match?.server_names?.includes('partner.example.com'),
+    );
+    const tls = chain.transport_socket.typed_config.common_tls_context.tls_certificates[0];
+    expect(tls.certificate_chain.filename).toBe('/etc/envoy/ca/leaf-cert.pem');
+
+    const cluster = config.static_resources.clusters.find(
+      (c: any) => c.name === 'cluster_authcandidate_partner_example_com',
+    );
+    expect(
+      cluster.load_assignment.endpoints[0].lb_endpoints[0].endpoint.address.socket_address,
+    ).toEqual({ address: '127.0.0.1', port_value: 9443 });
+    expect(
+      cluster.transport_socket.typed_config.common_tls_context.validation_context
+        .trust_chain_verification,
+    ).toBe('ACCEPT_UNTRUSTED');
+  });
+
+  it('logs the five auth headers truncated to 12 chars via a cand access log', () => {
+    const config = generateEnvoyConfig(candAllowlist) as any;
+    const listener443 = config.static_resources.listeners.find(
+      (l: any) => l.name === 'listener_443',
+    );
+    const chain = listener443.filter_chains.find((fc: any) =>
+      fc.filter_chain_match?.server_names?.includes('partner.example.com'),
+    );
+    const log = chain.filters[0].typed_config.access_log[0].typed_config.log_format
+      .text_format_source.inline_string;
+    expect(log).toMatch(/^CFGM\|cand\|/);
+    expect(log).toContain('%REQ(AUTHORIZATION):12%');
+    expect(log).toContain('%REQ(COOKIE):12%');
+    expect(log).toContain('%REQ(X-API-KEY):12%');
+    expect(log).toContain('%REQ(X-AUTH-TOKEN):12%');
+    expect(log).toContain('%REQ(PROXY-AUTHORIZATION):12%');
+  });
+});
