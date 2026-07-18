@@ -198,9 +198,9 @@ Then isolate the VM: in VM → Settings, **remove the temporary Default Switch a
 
 ## 8. Verify
 
-Unchanged from the VMware flow, just from the new mount path:
+Unchanged from the VMware flow, just from the new mount path — except the host check needs `-AdapterAlias` so its VM-path probes hit the Internal-switch adapter instead of the (still-present, unused) VMware one:
 
-- **Host (proxy):** with the proxy up, run `.configamatron\proxy\verify-proxy.ps1`.
+- **Host (proxy):** with the proxy up, run `.configamatron\proxy\verify-proxy.ps1 -AdapterAlias "vEthernet (configamatron-internal)"`.
 - **Ubuntu guest:** `/mnt/vm-shared/verify-config.sh 192.168.67.1`.
 - **Windows guest:** `.\verify-config.ps1 192.168.67.1` from the mounted `vm-shared-windows` share.
 

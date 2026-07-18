@@ -12,10 +12,17 @@ Makes real outbound requests to allow-listed hosts (archive.ubuntu.com, pypi.org
 but never spends a real credential: the injection path is checked structurally
 (SDS secret freshness) and via a wrong-Authorization request that gate.lua
 rejects locally with 403.
+
+The VM-path checks probe the host-only adapter the forwarder listens on.
+-AdapterAlias defaults to the VMware host-only NIC; on a Hyper-V host pass the
+Internal-switch adapter instead, matching host-allow-vm-inbound.ps1, e.g.:
+
+    ... -File .configamatron\proxy\verify-proxy.ps1 -AdapterAlias "vEthernet (configamatron-internal)"
 #>
 [CmdletBinding()]
 param(
-    [string]$EnvDir = (Get-Location).Path
+    [string]$EnvDir = (Get-Location).Path,
+    [string]$AdapterAlias = 'VMware Network Adapter VMnet1'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -133,10 +140,10 @@ else { Add-Fail 'credential gate wrong-auth' "expected 403 from gate.lua, got co
 
 Write-Section 'VM-path (forwarder -> loopback)'
 
-$vmIpCfg = Get-NetIPConfiguration -InterfaceAlias 'VMware Network Adapter VMnet1' -ErrorAction SilentlyContinue
+$vmIpCfg = Get-NetIPConfiguration -InterfaceAlias $AdapterAlias -ErrorAction SilentlyContinue
 $vmIp = ($vmIpCfg.IPv4Address | Select-Object -First 1).IPAddress
 if (-not $vmIp) {
-    Add-Warn 'VM-path checks' 'no IPv4 on VMware Network Adapter VMnet1 -- skipping (is the host-only adapter up?)'
+    Add-Warn 'VM-path checks' "no IPv4 on '$AdapterAlias' -- skipping (is the host-only adapter up?)"
 }
 else {
     foreach ($port in 80, 443) {
@@ -160,10 +167,10 @@ $rule = Get-NetFirewallRule -DisplayName 'Envoy Sandbox Proxy (VM inbound)' -Err
 if ($rule) { Add-Pass 'host-only inbound firewall rule present' }
 else { Add-Warn 'host-only inbound firewall rule present' "not found -- run host-allow-vm-inbound.ps1 (as admin) once the VM is host-only" }
 
-$cfg = Get-NetIPConfiguration -InterfaceAlias 'VMware Network Adapter VMnet1' -ErrorAction SilentlyContinue
+$cfg = Get-NetIPConfiguration -InterfaceAlias $AdapterAlias -ErrorAction SilentlyContinue
 $hostIp = ($cfg.IPv4Address | Select-Object -First 1).IPAddress
-if ($hostIp) { Add-Pass "VMnet1 host IP: $hostIp (use as <host-ip> in VM setup)" }
-else { Add-Warn 'VMnet1 host IP' 'no IPv4 on VMware Network Adapter VMnet1 -- is the host-only adapter up?' }
+if ($hostIp) { Add-Pass "$AdapterAlias host IP: $hostIp (use as <host-ip> in VM setup)" }
+else { Add-Warn 'host-only adapter IP' "no IPv4 on '$AdapterAlias' -- is the host-only adapter up?" }
 
 Write-Host ''
 Write-Host "$($script:pass) passed, $($script:fail) failed, $($script:warn) warnings"
