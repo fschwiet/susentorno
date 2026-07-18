@@ -128,6 +128,8 @@ export async function startProxyStack(): Promise<ProxyStack> {
       credentialsPath,
       '--upstream-override',
       `api.anthropic.com=host.docker.internal:${mockUpstream.port}`,
+      '--upstream-override',
+      `auth-candidate.test=host.docker.internal:${mockUpstream.port}`,
     ],
     { cwd: repoRoot, env: composeEnv, buffer: false, reject: false },
   );

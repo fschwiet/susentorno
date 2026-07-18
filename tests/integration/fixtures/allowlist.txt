@@ -13,3 +13,6 @@ www.google.com:443
 
 #pragma claude authenticated
 api.anthropic.com:443
+
+#pragma auth candidate
+auth-candidate.test:443

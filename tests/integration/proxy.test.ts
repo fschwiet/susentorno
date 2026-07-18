@@ -51,6 +51,29 @@ function requestThroughTerminate(
   });
 }
 
+function requestThroughAuthCandidate(
+  authorization: string,
+): Promise<{ statusCode?: number }> {
+  return new Promise((resolve, reject) => {
+    const req = httpsRequest(
+      {
+        host: '127.0.0.1',
+        port: HTTPS_PORT,
+        servername: 'auth-candidate.test',
+        ca: caCertPem,
+        path: '/',
+        headers: { authorization },
+      },
+      (res) => {
+        res.resume();
+        res.on('end', () => resolve({ statusCode: res.statusCode }));
+      },
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 describe('Envoy sandbox proxy stack', () => {
   it('injects the real credential when the placeholder Authorization header is presented', async () => {
     const before = mockUpstream.receivedAuthorizationHeaders.length;
@@ -186,6 +209,17 @@ describe('Envoy sandbox proxy stack', () => {
 
     expect(statusCode).toBe(403);
   });
+
+  it('passes a non-placeholder auth header straight through an auth-candidate host (no gate, no injection)', async () => {
+    const before = mockUpstream.receivedAuthorizationHeaders.length;
+    const original = 'Bearer candidate-original-secret-value';
+    const { statusCode } = await requestThroughAuthCandidate(original);
+
+    // No lua gate: a non-placeholder credential is NOT 403'd (contrast the terminate host).
+    expect(statusCode).toBe(200);
+    // No credential_injector: the upstream sees the client's own header, unmodified.
+    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([original]);
+  });
 });
 
 describe('Envoy access logging', () => {
@@ -265,4 +299,28 @@ describe('Envoy access logging', () => {
     expect(logs).toContain('CFGM|deny443|2026'.slice(0, 12)); // deny443 line present
     expect(logs).toMatch(/CFGM\|deny443\|[^|]*\|blocked\.example\.com\|/);
   });
+
+  it('truncates auth-candidate header values to 12 chars in the cand access log', async () => {
+    await requestThroughAuthCandidate('Bearer truncation-probe-0123456789');
+
+    // Give Envoy a moment to flush the access log, then read it. An earlier
+    // test in this file also hits auth-candidate.test, so match on this
+    // request's own truncated prefix rather than the first line for the host.
+    let candLine: string | undefined;
+    for (let attempt = 0; attempt < 20 && !candLine; attempt++) {
+      const logs = await readEnvoyLogs();
+      candLine = logs
+        .split('\n')
+        .find(
+          (l) =>
+            l.includes('CFGM|cand|') && l.includes('auth-candidate.test') && l.includes('Bearer trunc'),
+        );
+      if (!candLine) await new Promise((r) => setTimeout(r, 500));
+    }
+    expect(candLine, 'expected a CFGM|cand| line for auth-candidate.test').toBeDefined();
+
+    const fields = candLine!.slice(candLine!.indexOf('CFGM|')).trim().split('|');
+    // Field 6 (0-indexed) is %REQ(AUTHORIZATION):12% — exactly the first 12 chars.
+    expect(fields[6]).toBe('Bearer trunc');
+  }, 30000);
 });
