@@ -1,6 +1,7 @@
 export interface Allowlist {
   passthrough: string[];
   terminate: string[];
+  authCandidate: string[];
   invalid: string[];
 }
 
@@ -33,8 +34,9 @@ function prunePassthrough(entries: string[]): string[] {
 export function parseAllowlist(content: string): Allowlist {
   const passthrough = new Set<string>();
   const terminate = new Set<string>();
+  const authCandidate = new Set<string>();
   const invalid = new Set<string>();
-  let section: 'passthrough' | 'terminate' | null = null;
+  let section: 'passthrough' | 'terminate' | 'authCandidate' | null = null;
 
   for (const rawLine of content.split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -45,6 +47,10 @@ export function parseAllowlist(content: string): Allowlist {
     }
     if (line === '#pragma claude authenticated') {
       section = 'terminate';
+      continue;
+    }
+    if (line === '#pragma auth candidate') {
+      section = 'authCandidate';
       continue;
     }
     if (line === '# passthrough' || line === '# terminate') {
@@ -60,26 +66,41 @@ export function parseAllowlist(content: string): Allowlist {
 
     const { host } = splitHostPort(line);
     const hasWildcard = host.includes('*');
+    const noWildcards = section === 'terminate' || section === 'authCandidate';
 
-    if (hasWildcard && (section === 'terminate' || !WILDCARD_HOST_PATTERN.test(host))) {
+    if (hasWildcard && (noWildcards || !WILDCARD_HOST_PATTERN.test(host))) {
       invalid.add(line);
       continue;
     }
 
     if (section === 'passthrough') passthrough.add(line);
-    else terminate.add(line);
+    else if (section === 'terminate') terminate.add(line);
+    else authCandidate.add(line);
+  }
+
+  // A host in both terminate and authCandidate would emit two :443 filter
+  // chains with the same SNI, which Envoy rejects at load. Pull the conflict
+  // out of both sections and mark it invalid so run-proxy keeps the prior
+  // config instead of building a config Envoy refuses.
+  for (const entry of [...terminate]) {
+    if (authCandidate.has(entry)) {
+      terminate.delete(entry);
+      authCandidate.delete(entry);
+      invalid.add(entry);
+    }
   }
 
   return {
     passthrough: prunePassthrough([...passthrough]),
     terminate: [...terminate],
+    authCandidate: [...authCandidate],
     invalid: [...invalid],
   };
 }
 
-/** Hosts the proxy terminates TLS for (the leaf's SANs): terminate entries on :443, port stripped. */
+/** Hosts the proxy terminates TLS for (the leaf's SANs): terminate + authCandidate entries on :443, port stripped. */
 export function terminateTlsHosts(allowlist: Allowlist): string[] {
-  return allowlist.terminate
+  return [...allowlist.terminate, ...allowlist.authCandidate]
     .filter((entry) => entry.endsWith(':443'))
     .map((entry) => entry.slice(0, entry.lastIndexOf(':')));
 }
@@ -89,6 +110,10 @@ export function formatAllowlist(allowlist: Allowlist): string {
   for (const entry of [...allowlist.passthrough].sort()) lines.push(entry);
   lines.push('', '#pragma claude authenticated');
   for (const entry of [...allowlist.terminate].sort()) lines.push(entry);
+  if (allowlist.authCandidate.length > 0) {
+    lines.push('', '#pragma auth candidate');
+    for (const entry of [...allowlist.authCandidate].sort()) lines.push(entry);
+  }
   lines.push('');
   return lines.join('\n');
 }

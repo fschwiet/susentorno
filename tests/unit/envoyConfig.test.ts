@@ -5,6 +5,7 @@ import type { Allowlist } from '../../src/allowlist';
 const allowlist: Allowlist = {
   passthrough: ['*.chatgpt.com:443', 'archive.ubuntu.com:80'],
   terminate: ['api.anthropic.com:443'],
+  authCandidate: [],
   invalid: [],
 };
 
@@ -147,6 +148,7 @@ describe('generateEnvoyConfig', () => {
     const wildcardAllowlist: Allowlist = {
       passthrough: ['*.ubuntu.com:80', 'security.ubuntu.com:80'],
       terminate: ['api.anthropic.com:443'],
+      authCandidate: [],
       invalid: [],
     };
     const config = generateEnvoyConfig(wildcardAllowlist) as any;
