@@ -43,8 +43,7 @@ export async function checkWslDistro(): Promise<void> {
         "'docker-desktop' distro (BusyBox-based) is the WSL default. Check with: wsl -l -v\n" +
         'Fix:\n' +
         '  wsl --install -d Ubuntu\n' +
-        '  wsl --set-default Ubuntu   (if it did not become the default automatically)\n' +
-        'Then start a new console. If you see this message again, try the next line again:\n' +
+        "(then 'exit' if it left you in wsl)\n" +
         '  wsl --set-default Ubuntu\n',
     );
   }
@@ -60,8 +59,10 @@ export async function checkWslMirroredNetworking(): Promise<void> {
   if (mode.stdout.trim() !== 'mirrored') {
     throw new Error(
       `WSL networking mode is '${mode.stdout.trim()}', not 'mirrored'. ` +
-        `In %USERPROFILE%\\.wslconfig set [wsl2] networkingMode=mirrored, ` +
-        `then run 'wsl --shutdown' (Docker Desktop will need to restart).`,
+        `In %USERPROFILE%\\.wslconfig using powershell run\n ` +
+        `  echo "\`n[wsl2]\`nnetworkingMode=mirrored\`n" >> .wslconfig\n ` +
+        `  wsl --shutdown\n` +
+        `(Docker will be forced to restart since it runs in WSL).`,
     );
   }
 }
@@ -81,8 +82,10 @@ export async function checkWslDhcpPortIgnored(): Promise<void> {
   if (!/exit=(124|0)\b/.test(probe.stdout)) {
     throw new Error(
       `WSL cannot bind UDP 0.0.0.0:67, so dnsmasq's DHCP bind will fail (got: ${probe.all}). ` +
-        `In %USERPROFILE%\\.wslconfig add:\n[experimental]\nignoredPorts=67\n` +
-        `then run 'wsl --shutdown' (Docker Desktop will need to restart).`,
+      `In %USERPROFILE%\\.wslconfig using powershell run\n ` +
+      `  echo "\`n[experimental]\`nignoredPorts=67\`n" >> .wslconfig\n ` +
+      `  wsl --shutdown\n` +  
+      `(Docker will be forced to restart since it runs in WSL).`,
     );
   }
 }
