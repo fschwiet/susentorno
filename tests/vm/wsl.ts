@@ -44,7 +44,8 @@ export async function checkWslDistro(): Promise<void> {
         'Fix:\n' +
         '  wsl --install -d Ubuntu\n' +
         '  wsl --set-default Ubuntu   (if it did not become the default automatically)\n' +
-        '  wsl.exe -u root bash <repo>/tests/vm/harness/setup-wsl.sh   (one-time harness deps)',
+        'Then start a new console. If you see this message again, try the next line again:\n' +
+        '  wsl --set-default Ubuntu\n',
     );
   }
 }
