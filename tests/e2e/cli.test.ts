@@ -81,11 +81,11 @@ describe('configamatron CLI', () => {
       expect(exitCode).toBe(0);
       expect(readFileSync(join(dir, 'current-allow-list.txt'), 'utf8')).toBe(
         [
-          '# passthrough',
+          '#pragma passthrough',
           '*.chatgpt.com:443',
           'archive.ubuntu.com:80',
           '',
-          '# terminate',
+          '#pragma claude authenticated',
           'api.anthropic.com:443',
           'claude.com:443',
           '',

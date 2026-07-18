@@ -7,10 +7,10 @@ import { writeEnvoyConfig } from '../../../src/runProxy/buildConfig';
 import { parseAllowlist } from '../../../src/allowlist';
 
 const ALLOWLIST = [
-  '# passthrough',
+  '#pragma passthrough',
   'pypi.org:443',
   '',
-  '# terminate',
+  '#pragma claude authenticated',
   'api.anthropic.com:443',
   '',
 ].join('\n');

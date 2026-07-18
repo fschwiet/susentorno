@@ -1,4 +1,4 @@
-# passthrough
+#pragma passthrough
 
 ## ubunto unblocked specifically for connectivity-check.ubuntu.com
 *.ubuntu.com:443
@@ -219,7 +219,7 @@ www.google.com:443
 yarnpkg.com:443
 ziglang.org:443
 
-# terminate
+#pragma claude authenticated
 api.anthropic.com:443
 claude.com:443
 downloads.claude.ai:443

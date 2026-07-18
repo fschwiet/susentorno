@@ -1,5 +1,5 @@
-# passthrough
+#pragma passthrough
 crl*.digicert.com:80
 
-# terminate
+#pragma claude authenticated
 api.anthropic.com:443

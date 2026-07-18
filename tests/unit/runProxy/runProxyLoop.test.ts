@@ -9,15 +9,15 @@ import type { Credentials, ColorPorts } from '../../../src/runProxy/types';
 const MIN = 60_000;
 
 const VALID_ALLOWLIST = [
-  '# passthrough',
+  '#pragma passthrough',
   'pypi.org:443',
   '',
-  '# terminate',
+  '#pragma claude authenticated',
   'api.anthropic.com:443',
   '',
 ].join('\n');
 
-const INVALID_ALLOWLIST = ['# terminate', '*.bad.example.com:443', ''].join('\n');
+const INVALID_ALLOWLIST = ['#pragma claude authenticated', '*.bad.example.com:443', ''].join('\n');
 
 const PASS_LINE = 'envoy-1  | CFGM|pass|2026-07-10T12:00:00|pypi.org|-|-';
 const CRED_LINE =

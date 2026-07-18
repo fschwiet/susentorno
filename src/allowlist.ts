@@ -39,13 +39,21 @@ export function parseAllowlist(content: string): Allowlist {
   for (const rawLine of content.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (line === '') continue;
-    if (line === '# passthrough') {
+    if (line === '#pragma passthrough') {
       section = 'passthrough';
       continue;
     }
-    if (line === '# terminate') {
+    if (line === '#pragma claude authenticated') {
       section = 'terminate';
       continue;
+    }
+    if (line === '# passthrough' || line === '# terminate') {
+      const replacement =
+        line === '# passthrough' ? '#pragma passthrough' : '#pragma claude authenticated';
+      throw new Error(`Legacy allowlist header "${line}"; use "${replacement}"`);
+    }
+    if (line.startsWith('#pragma ')) {
+      throw new Error(`Invalid pragma: "${line}"`);
     }
     if (line.startsWith('#')) continue;
     if (section === null) continue;
@@ -77,9 +85,9 @@ export function terminateTlsHosts(allowlist: Allowlist): string[] {
 }
 
 export function formatAllowlist(allowlist: Allowlist): string {
-  const lines: string[] = ['# passthrough'];
+  const lines: string[] = ['#pragma passthrough'];
   for (const entry of [...allowlist.passthrough].sort()) lines.push(entry);
-  lines.push('', '# terminate');
+  lines.push('', '#pragma claude authenticated');
   for (const entry of [...allowlist.terminate].sort()) lines.push(entry);
   lines.push('');
   return lines.join('\n');

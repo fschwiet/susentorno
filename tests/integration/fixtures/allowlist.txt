@@ -1,4 +1,4 @@
-# passthrough
+#pragma passthrough
 pypi.org:443
 archive.ubuntu.com:80
 *.ubuntu.com:80
@@ -11,5 +11,5 @@ files.pythonhosted.org:443
 github.com:443
 www.google.com:443
 
-# terminate
+#pragma claude authenticated
 api.anthropic.com:443
