@@ -25,11 +25,11 @@ Open an **elevated (Administrator) PowerShell**, `cd` to the shared folder, and 
 2. `.\02-install-pnpm.ps1`
 3. New terminal, then `.\03-install-tools.ps1`
 4. New terminal, then `.\04-configure-tools.ps1`
-5. `.\05-github-auth.ps1`
-6. `.\06-trust-ca.ps1` — trusts the proxy CA (defaults to the `cert.pem` beside the script).
-7. `.\07-setup-network.ps1 <host-ip>` — `<host-ip>` is printed by proxy setup step 5. Publishes the DNS responder, registers it as a startup task, and points the VM's DNS at it.
-8. `.\08-claude-config.ps1` — sets the onboarding flag and installs the placeholder credential.
-9. Switch the VM's network from NAT to **host-only**, then reboot so the isolation takes effect.
+5. `.\06-trust-ca.ps1` — trusts the proxy CA (defaults to the `cert.pem` beside the script).
+6. `.\07-setup-network.ps1 <host-ip>` — `<host-ip>` is printed by proxy setup step 5. Publishes the DNS responder, registers it as a startup task, and points the VM's DNS at it.
+7. `.\08-claude-config.ps1` — sets the onboarding flag and installs the placeholder credential.
+8. Switch the VM's network from NAT to **host-only**, then reboot so the isolation takes effect.
+9. `.\05-github-auth.ps1` — run **after** isolation + reboot: it configures git/gh from the placeholder PAT and validates the token against api.github.com, which only succeeds once the proxy is injecting the real credential on the wire.
 
 ## Verify
 

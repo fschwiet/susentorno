@@ -91,11 +91,11 @@ Run the scripts from the shared folder in number order. Run them without `sudo` 
 2. `02-install-pnpm.sh`
 3. Open a new terminal, then `03-install-tools.sh`
 4. Open a new terminal, then `04-configure-tools.sh` — a browser opens for context7 login; close it and cancel the script if you don't want to use credentials.
-5. `05-github-auth.sh`
-6. `06-trust-ca.sh` — trusts the proxy CA. Defaults to the `cert.pem` sitting next to the script.
-7. `07-setup-persistence.sh <host-ip>` — `<host-ip>` is printed by proxy setup step 6. Installs and starts dnsmasq (local DNS stub) and the `configamatron-egress.service` DNAT rules, and points the VM's resolver at the local stub via a netplan override. Both units start automatically on every future VM boot.
-8. `08-claude-config.sh` — sets `hasCompletedOnboarding` in `~/.claude.json` (the CLI refuses to run otherwise) and symlinks `~/.claude/.credentials.json` to the shared `credentials.json`, replacing the old manual copy.
-9. Switch the VM's network from NAT to host-only then reboot the VM so boot-time rules and take affect.
+5. `06-trust-ca.sh` — trusts the proxy CA. Defaults to the `cert.pem` sitting next to the script.
+6. `07-setup-persistence.sh <host-ip>` — `<host-ip>` is printed by proxy setup step 6. Installs and starts dnsmasq (local DNS stub) and the `configamatron-egress.service` DNAT rules, and points the VM's resolver at the local stub via a netplan override. Both units start automatically on every future VM boot.
+7. `08-claude-config.sh` — sets `hasCompletedOnboarding` in `~/.claude.json` (the CLI refuses to run otherwise) and symlinks `~/.claude/.credentials.json` to the shared `credentials.json`, replacing the old manual copy.
+8. Switch the VM's network from NAT to host-only then reboot the VM so boot-time rules and take affect.
+9. `05-github-auth.sh` (run last, after network isolation + reboot — it validates the token against api.github.com through the proxy)
 
 ## Verifying an environment
 

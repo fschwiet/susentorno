@@ -133,7 +133,6 @@ gcr.io:443
 gemini.google.com:443
 generativelanguage.googleapis.com:443
 ghcr.io:443
-github.com:443
 gitlab.com:443
 golang.org:443
 goproxy.io:443
@@ -218,6 +217,10 @@ visualstudio.com:443
 www.google.com:443
 yarnpkg.com:443
 ziglang.org:443
+
+#pragma github authenticated
+api.github.com:443
+github.com:443
 
 #pragma claude authenticated
 api.anthropic.com:443
