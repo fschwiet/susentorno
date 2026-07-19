@@ -24,7 +24,12 @@ export async function isColorRunning(color: Color, composeDir: string): Promise<
   try {
     const { stdout } = await execa(
       'docker',
-      ['inspect', '--format', '{{.State.Status}} {{.RestartCount}}', `configamatron-envoy-${color}`],
+      [
+        'inspect',
+        '--format',
+        '{{.State.Status}} {{.RestartCount}}',
+        `configamatron-envoy-${color}`,
+      ],
       { cwd: composeDir },
     );
     const [status, restarts] = stdout.trim().split(/\s+/);

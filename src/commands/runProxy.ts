@@ -167,7 +167,11 @@ export function registerRunProxy(program: Command): void {
         setActiveBackend: (ports: ColorPorts) =>
           gateway.setTarget({ httpsPort: ports.httpsPort, httpPort: ports.httpPort }),
         drainBackend: (ports: ColorPorts, timeoutMs: number, signal: AbortSignal) =>
-          gateway.drain({ httpsPort: ports.httpsPort, httpPort: ports.httpPort }, timeoutMs, signal),
+          gateway.drain(
+            { httpsPort: ports.httpsPort, httpPort: ports.httpPort },
+            timeoutMs,
+            signal,
+          ),
         stopColor: (color: Color) => stopColor(color, paths.proxy),
         nudgeRefresh,
         watch: watchFile,
