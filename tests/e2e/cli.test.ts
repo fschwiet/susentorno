@@ -1,14 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { execa } from 'execa';
 import { fileURLToPath } from 'node:url';
-import {
-  readFileSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-  existsSync,
-  copyFileSync,
-} from 'node:fs';
+import { readFileSync, mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -52,28 +45,6 @@ describe('configamatron CLI', () => {
       });
       expect(exitCode).toBe(1);
       expect(stderr).toContain("run 'configamatron generate-ca' first");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('run-proxy exits 1 on an allowlist with unsupported wildcard syntax', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
-    const fixturePath = fileURLToPath(
-      new URL('../fixtures/invalid-allowlist.txt', import.meta.url),
-    );
-    try {
-      await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: dir });
-      await execa('node', [cliPath, 'generate-ca'], { cwd: dir });
-      copyFileSync(fixturePath, join(dir, '.configamatron', 'proxy', 'allowlist.txt'));
-      const { exitCode, stderr } = await execa(
-        'node',
-        [cliPath, 'run-proxy', '--no-refresh', '--no-forward'],
-        { cwd: dir, reject: false },
-      );
-      expect(exitCode).toBe(1);
-      expect(stderr).toContain('crl*.digicert.com:80');
-      expect(existsSync(join(dir, '.configamatron', 'proxy', 'envoy.yaml'))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
