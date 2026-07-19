@@ -20,24 +20,27 @@ export function adminReadyOnce(adminPort: number): Promise<boolean> {
   });
 }
 
+export type WaitResult = { ready: true } | { ready: false; reason: 'exited' | 'timeout' };
+
 /**
- * Poll a color's OWN admin /ready until it answers 200 (returns true) or the
- * timeout elapses (returns false). The signal short-circuits the wait: when it
- * aborts, the next check returns false immediately and the abortable sleep
- * resolves at once, so a Ctrl+C during startup is never blocked for the full
- * timeout.
+ * Poll a color's OWN admin /ready until it answers 200 (`{ ready: true }`), the
+ * container exits (`reason: 'exited'` — reported fast, no need to wait out the
+ * timeout), the signal aborts, or the deadline passes (`reason: 'timeout'`).
+ * `isAlive` is injected so this stays unit-testable without docker.
  */
 export async function waitColorReady(
   adminPort: number,
   timeoutMs: number,
   signal: AbortSignal,
+  isAlive: () => Promise<boolean>,
   sleepMs = 250,
-): Promise<boolean> {
+): Promise<WaitResult> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    if (await adminReadyOnce(adminPort)) return true;
-    if (signal.aborted) return false;
-    if (Date.now() >= deadline) return false;
+    if (await adminReadyOnce(adminPort)) return { ready: true };
+    if (signal.aborted) return { ready: false, reason: 'timeout' };
+    if (!(await isAlive())) return { ready: false, reason: 'exited' };
+    if (Date.now() >= deadline) return { ready: false, reason: 'timeout' };
     await sleep(sleepMs, signal);
   }
 }

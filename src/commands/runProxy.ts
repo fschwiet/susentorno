@@ -17,6 +17,7 @@ import { startGateway, type GatewayHandle } from '../runProxy/gateway';
 import { allocateColorPorts } from '../runProxy/allocateColorPorts';
 import { bringUpColor, stopColor } from '../runProxy/colorContainer';
 import { waitColorReady } from '../runProxy/waitColorReady';
+import { isColorRunning } from '../runProxy/isColorRunning';
 import type { Color, ColorPorts } from '../runProxy/types';
 
 interface RunProxyOptions {
@@ -149,8 +150,10 @@ export function registerRunProxy(program: Command): void {
           ),
         allocatePorts: allocateColorPorts,
         bringUpColor: (color: Color, ports: ColorPorts) => bringUpColor(color, ports, paths.proxy),
-        waitColorReady: (ports: ColorPorts, timeoutMs: number, signal: AbortSignal) =>
-          waitColorReady(ports.adminPort, timeoutMs, signal),
+        waitColorReady: (color: Color, ports: ColorPorts, timeoutMs: number, signal: AbortSignal) =>
+          waitColorReady(ports.adminPort, timeoutMs, signal, () =>
+            isColorRunning(color, paths.proxy),
+          ),
         setActiveBackend: (ports: ColorPorts) =>
           gateway.setTarget({ httpsPort: ports.httpsPort, httpPort: ports.httpPort }),
         drainBackend: (ports: ColorPorts, timeoutMs: number, signal: AbortSignal) =>

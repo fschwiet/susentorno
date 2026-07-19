@@ -6,6 +6,7 @@ import { formatOutput } from './formatOutput';
 import { UniqueTracker } from './uniqueTracker';
 import type { Credentials, NudgeResult, RefreshState, Color, ColorPorts } from './types';
 import { otherColor } from './types';
+import type { WaitResult } from './waitColorReady';
 
 export interface RunProxyConfig {
   credentialsPath: string;
@@ -34,8 +35,13 @@ export interface RunProxyDeps {
   allocatePorts: () => Promise<ColorPorts>;
   /** Force-recreate the given color's container, published on `ports`. */
   bringUpColor: (color: Color, ports: ColorPorts) => Promise<void>;
-  /** Poll the color's own admin /ready; true once it serves, false on timeout/abort. */
-  waitColorReady: (ports: ColorPorts, timeoutMs: number, signal: AbortSignal) => Promise<boolean>;
+  /** Poll the color's own admin /ready; ready once it serves, else exited/timeout. */
+  waitColorReady: (
+    color: Color,
+    ports: ColorPorts,
+    timeoutMs: number,
+    signal: AbortSignal,
+  ) => Promise<WaitResult>;
   /** Point the gateway forwarder at this color's backend ports (the flip). */
   setActiveBackend: (ports: ColorPorts) => void;
   /** Wait for the old color's connections to drain, force-closing at timeout. */
@@ -292,15 +298,18 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
             if (settled) return;
 
             if (broughtUp) {
-              const ready = await deps.waitColorReady(
+              const result = await deps.waitColorReady(
+                idle,
                 idlePorts,
                 config.readyTimeoutMs,
                 shutdownAbort.signal,
               );
               if (settled) return;
-              if (!ready) {
+              if (!result.ready) {
                 deps.error(
-                  `run-proxy: new proxy (${idle}) did not become ready — keeping the current proxy`,
+                  result.reason === 'exited'
+                    ? `run-proxy: new proxy (${idle}) exited during startup — likely config issue, check the logs`
+                    : `run-proxy: new proxy (${idle}) did not become ready — keeping the current proxy`,
                 );
                 await deps.stopColor(idle).catch(() => {});
               } else {
@@ -388,10 +397,19 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
           return;
         }
         if (settled) return;
-        const ready = await deps.waitColorReady(ports, config.readyTimeoutMs, shutdownAbort.signal);
+        const result = await deps.waitColorReady(
+          'blue',
+          ports,
+          config.readyTimeoutMs,
+          shutdownAbort.signal,
+        );
         if (settled) return;
-        if (!ready) {
-          fatal('proxy did not become ready on startup');
+        if (!result.ready) {
+          fatal(
+            result.reason === 'exited'
+              ? 'proxy exited during startup — likely config issue, check the logs'
+              : 'proxy did not become ready on startup',
+          );
           return;
         }
         activeColor = 'blue';

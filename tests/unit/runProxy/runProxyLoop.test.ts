@@ -4,7 +4,7 @@ import {
   type RunProxyConfig,
   type RunProxyDeps,
 } from '../../../src/runProxy/runProxyLoop';
-import type { Credentials, ColorPorts } from '../../../src/runProxy/types';
+import type { Credentials, ColorPorts, Color } from '../../../src/runProxy/types';
 
 const MIN = 60_000;
 
@@ -87,7 +87,7 @@ function makeHarness(
     writeSecret: vi.fn(),
     allocatePorts: vi.fn(async () => nextPorts()),
     bringUpColor: vi.fn().mockResolvedValue(undefined),
-    waitColorReady: vi.fn().mockResolvedValue(true),
+    waitColorReady: vi.fn().mockResolvedValue({ ready: true }),
     setActiveBackend: vi.fn(),
     drainBackend: vi.fn().mockResolvedValue(undefined),
     stopColor: vi.fn().mockResolvedValue(undefined),
@@ -198,7 +198,7 @@ describe('runProxyLoop startup', () => {
 
   it('exits 1 when blue never becomes ready on startup', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-    h.mocks.waitColorReady.mockResolvedValue(false);
+    h.mocks.waitColorReady.mockResolvedValue({ ready: false, reason: 'timeout' });
     const exit = runProxyLoop(baseConfig(), h.deps);
     await flush();
 
@@ -206,6 +206,17 @@ describe('runProxyLoop startup', () => {
     expect(h.mocks.error).toHaveBeenCalledWith(
       expect.stringContaining('did not become ready on startup'),
     );
+    expect(h.mocks.setActiveBackend).not.toHaveBeenCalled();
+  });
+
+  it('exits 1 with the exit hint when blue exits during startup', async () => {
+    const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+    h.mocks.waitColorReady.mockResolvedValue({ ready: false, reason: 'exited' });
+    const exit = runProxyLoop(baseConfig(), h.deps);
+    await flush();
+
+    await expect(exit).resolves.toBe(1);
+    expect(h.mocks.error).toHaveBeenCalledWith(expect.stringContaining('exited during startup'));
     expect(h.mocks.setActiveBackend).not.toHaveBeenCalled();
   });
 
@@ -380,7 +391,7 @@ describe('runProxyLoop credential changes', () => {
     await flush();
     h.mocks.setActiveBackend.mockClear();
 
-    h.mocks.waitColorReady.mockResolvedValueOnce(false); // the swap's green fails to serve
+    h.mocks.waitColorReady.mockResolvedValueOnce({ ready: false, reason: 'timeout' }); // the swap's green fails to serve
     h.creds.value = { accessToken: 'B', expiresAt: 60 * MIN };
     h.fireCredentials();
     await flush();
@@ -397,6 +408,26 @@ describe('runProxyLoop credential changes', () => {
     });
     await flush();
     expect(settled).toBe(false);
+  });
+
+  it('keeps the previous proxy and logs the exit hint when a swap color exits during startup', async () => {
+    const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+    const exit = runProxyLoop(baseConfig(), h.deps);
+    await flush();
+
+    h.mocks.waitColorReady.mockResolvedValueOnce({ ready: false, reason: 'exited' });
+    h.creds.value = { accessToken: 'B', expiresAt: 60 * MIN };
+    h.fireCredentials();
+    await flush();
+
+    expect(h.mocks.error).toHaveBeenCalledWith(expect.stringContaining('exited during startup'));
+    expect(h.mocks.stopColor).toHaveBeenCalledWith('green');
+    let settled = false;
+    void exit.then(() => {
+      settled = true;
+    });
+    await flush();
+    expect(settled).toBe(false); // non-fatal on a restart
   });
 
   it('keeps the old color serving when docker fails to bring up the new color', async () => {
@@ -554,9 +585,11 @@ describe('runProxyLoop shutdown', () => {
   it('SIGINT while waiting for a color to become ready aborts the wait and exits 0', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
     h.mocks.waitColorReady.mockImplementationOnce(
-      (_ports: ColorPorts, _timeoutMs: number, signal: AbortSignal) =>
-        new Promise<boolean>((resolve) => {
-          signal.addEventListener('abort', () => resolve(false), { once: true });
+      (_color: Color, _ports: ColorPorts, _timeoutMs: number, signal: AbortSignal) =>
+        new Promise((resolve) => {
+          signal.addEventListener('abort', () => resolve({ ready: false, reason: 'timeout' }), {
+            once: true,
+          });
         }),
     );
     const exit = runProxyLoop(baseConfig(), h.deps);

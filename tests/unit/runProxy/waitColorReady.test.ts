@@ -3,6 +3,7 @@ import { createServer, type Server } from 'node:http';
 import { waitColorReady } from '../../../src/runProxy/waitColorReady';
 
 let server: Server | undefined;
+const alive = async (): Promise<boolean> => true;
 
 afterEach(async () => {
   if (server) await new Promise<void>((r) => server!.close(() => r()));
@@ -24,24 +25,42 @@ function listen(handler: (n: number) => number): Promise<number> {
 }
 
 describe('waitColorReady', () => {
-  it('resolves true once /ready returns 200 (after a few 503s)', async () => {
+  it('resolves ready once /ready returns 200 (after a few 503s)', async () => {
     const port = await listen((hits) => (hits >= 3 ? 200 : 503));
     const ac = new AbortController();
-    expect(await waitColorReady(port, 5000, ac.signal, 20)).toBe(true);
+    expect(await waitColorReady(port, 5000, ac.signal, alive, 20)).toEqual({ ready: true });
   });
 
-  it('resolves false when readiness never arrives before the timeout', async () => {
+  it('resolves timeout when readiness never arrives (container stays alive)', async () => {
     const port = await listen(() => 503);
     const ac = new AbortController();
-    expect(await waitColorReady(port, 300, ac.signal, 20)).toBe(false);
+    expect(await waitColorReady(port, 300, ac.signal, alive, 20)).toEqual({
+      ready: false,
+      reason: 'timeout',
+    });
   });
 
-  it('resolves false promptly when the signal is already aborted', async () => {
+  it('resolves timeout promptly when the signal is already aborted', async () => {
     const port = await listen(() => 503);
     const ac = new AbortController();
     ac.abort();
     const start = Date.now();
-    expect(await waitColorReady(port, 10_000, ac.signal, 20)).toBe(false);
+    expect(await waitColorReady(port, 10_000, ac.signal, alive, 20)).toEqual({
+      ready: false,
+      reason: 'timeout',
+    });
+    expect(Date.now() - start).toBeLessThan(1000);
+  });
+
+  it('resolves exited promptly when the container is not running', async () => {
+    const port = await listen(() => 503);
+    const ac = new AbortController();
+    const dead = async (): Promise<boolean> => false;
+    const start = Date.now();
+    expect(await waitColorReady(port, 10_000, ac.signal, dead, 20)).toEqual({
+      ready: false,
+      reason: 'exited',
+    });
     expect(Date.now() - start).toBeLessThan(1000);
   });
 });
