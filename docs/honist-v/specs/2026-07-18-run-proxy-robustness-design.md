@@ -134,6 +134,9 @@ image or entrypoint changes are needed, and the mutation is independent of allow
   constraint error and exits non-zero **before binding any listener** — deterministically, on every
   platform, independent of the allowlist. It is a single-field mutation of the admin block we
   already emit (`envoyConfig.ts:363-364`). Container reaches `exited` → exercises the §2 fast-fail.
+  Verified against `envoyproxy/envoy:v1.31-latest` (the image the compose file pins): both a real
+  start and `--mode validate` exit 1 immediately with
+  `SocketAddressValidationError.PortValue: value must be less than or equal to 65535`.
 - **`never-ready`** — render an otherwise-valid config but move admin off container port 9901 (the
   port the compose file maps the host admin port to). Envoy runs healthy, but the admin probe is
   refused forever → container stays alive → the classic "up but wedged" case. This is also the
