@@ -5,8 +5,17 @@ export interface UpstreamOverride {
   target: string;
 }
 
+/** Test-only config faults, applied as render-time mutations of envoy.yaml. */
+export type InjectFault = 'crash-config' | 'never-ready';
+
 export interface BuildEnvoyConfigOptions {
   overrides?: UpstreamOverride[];
+  /**
+   * Test-only. `crash-config` sets the admin port out of range so Envoy rejects
+   * the bootstrap and exits; `never-ready` moves admin off container port 9901
+   * so Envoy stays healthy but the admin probe is refused forever.
+   */
+  fault?: InjectFault;
 }
 
 function sanitizeName(host: string): string {
@@ -341,6 +350,8 @@ export function generateEnvoyConfig(
   options: BuildEnvoyConfigOptions = {},
 ): Record<string, unknown> {
   const overrides = options.overrides ?? [];
+  const adminPortValue =
+    options.fault === 'crash-config' ? 70000 : options.fault === 'never-ready' ? 9902 : 9901;
 
   const terminateBuilt = allowlist.terminate
     .filter((e) => e.endsWith(':443'))
@@ -361,7 +372,7 @@ export function generateEnvoyConfig(
   return {
     node: { id: 'sandbox-proxy', cluster: 'sandbox-proxy' },
     admin: {
-      address: { socket_address: { address: '0.0.0.0', port_value: 9901 } },
+      address: { socket_address: { address: '0.0.0.0', port_value: adminPortValue } },
     },
     static_resources: {
       listeners: [

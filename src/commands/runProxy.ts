@@ -11,7 +11,7 @@ import { writeEnvoyConfig } from '../runProxy/buildConfig';
 import { startLogStream, type LogStreamHandle } from '../runProxy/logStream';
 import { ensureLeaf } from '../leaf';
 import { requireEnvPathsOrExit } from '../envPaths';
-import type { UpstreamOverride } from '../envoyConfig';
+import type { UpstreamOverride, InjectFault } from '../envoyConfig';
 import { resolveForwardListenAddress } from '../runProxy/forwarder';
 import { startGateway, type GatewayHandle } from '../runProxy/gateway';
 import { allocateColorPorts } from '../runProxy/allocateColorPorts';
@@ -31,6 +31,7 @@ interface RunProxyOptions {
   forwardListen?: string;
   forwardPorts?: string;
   upstreamOverride: UpstreamOverride[];
+  injectFault?: InjectFault;
 }
 
 function collectOverride(value: string, previous: UpstreamOverride[]): UpstreamOverride[] {
@@ -75,6 +76,10 @@ export function registerRunProxy(program: Command): void {
       'redirect a terminate cluster to a different upstream (test use only)',
       collectOverride,
       [] as UpstreamOverride[],
+    )
+    .option(
+      '--inject-fault <crash-config|never-ready>',
+      'render a deliberately broken envoy.yaml to exercise proxy robustness (test use only)',
     )
     .action(async (options: RunProxyOptions) => {
       const paths = requireEnvPathsOrExit('run-proxy');
@@ -140,7 +145,12 @@ export function registerRunProxy(program: Command): void {
         },
         writeSecret,
         buildConfig: (allowlist) =>
-          writeEnvoyConfig(allowlist, paths.envoyConfig, options.upstreamOverride),
+          writeEnvoyConfig(
+            allowlist,
+            paths.envoyConfig,
+            options.upstreamOverride,
+            options.injectFault,
+          ),
         ensureLeaf: (sans) =>
           ensureLeaf(
             paths,

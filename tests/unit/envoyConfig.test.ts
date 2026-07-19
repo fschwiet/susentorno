@@ -111,6 +111,21 @@ describe('generateEnvoyConfig', () => {
     expect(config.admin.address.socket_address.port_value).toBe(9901);
   });
 
+  it('leaves the admin port at 9901 with no fault', () => {
+    const config = generateEnvoyConfig(allowlist) as any;
+    expect(config.admin.address.socket_address.port_value).toBe(9901);
+  });
+
+  it('crash-config sets the admin port out of range (70000)', () => {
+    const config = generateEnvoyConfig(allowlist, { fault: 'crash-config' }) as any;
+    expect(config.admin.address.socket_address.port_value).toBe(70000);
+  });
+
+  it('never-ready moves the admin port off 9901 (to 9902)', () => {
+    const config = generateEnvoyConfig(allowlist, { fault: 'never-ready' }) as any;
+    expect(config.admin.address.socket_address.port_value).toBe(9902);
+  });
+
   it('tags every path with a CFGM access log to stdout', () => {
     const config = generateEnvoyConfig(allowlist) as any;
     const listener443 = config.static_resources.listeners.find(
