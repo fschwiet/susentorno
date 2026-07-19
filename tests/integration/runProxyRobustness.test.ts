@@ -61,6 +61,20 @@ function spawnProxy(fault: 'crash-config' | 'never-ready'): ResultPromise {
   return proc;
 }
 
+function spawnProxyPlain(): ResultPromise {
+  lines = [];
+  const proc = execa(
+    'node',
+    [cliPath, 'run-proxy', '--no-refresh', '--no-forward', '--credentials', credentialsPath],
+    { cwd: repoRoot, env: { ...process.env, ...envoyEnv }, buffer: false, reject: false },
+  );
+  for (const stream of [proc.stdout, proc.stderr]) {
+    if (!stream) continue;
+    createInterface({ input: stream }).on('line', (line) => lines.push(line));
+  }
+  return proc;
+}
+
 async function waitForLine(needle: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -110,6 +124,7 @@ afterEach(async () => {
     env: { ...process.env, ...envoyEnv },
     reject: false,
   });
+  copyFileSync(allowlistFixture, join(proxyDir, 'allowlist.txt'));
 });
 
 afterAll(async () => {
@@ -135,5 +150,26 @@ describe('run-proxy robustness', () => {
     await proxyProc; // reject:false -> resolves on exit
     proxyProc = null;
     expect(Date.now() - t0).toBeLessThan(10000); // a regression would hang ~60s
+  }, 120000);
+
+  it('starts cleanly on a passthrough+terminate collision (single filter chain per SNI)', async () => {
+    writeFileSync(
+      join(proxyDir, 'allowlist.txt'),
+      [
+        '#pragma passthrough',
+        'shared.example.com:443',
+        '',
+        '#pragma claude authenticated',
+        'api.anthropic.com:443',
+        'shared.example.com:443',
+        '',
+      ].join('\n'),
+    );
+
+    proxyProc = spawnProxyPlain();
+    // The collision warning appears, and Envoy accepts the resolved config and
+    // becomes ready — a regression would leave Envoy refusing the config.
+    await waitForLine("collision: 'shared.example.com:443'", 30000);
+    await waitForLine('proxy is serving the current token', 60000);
   }, 120000);
 });
