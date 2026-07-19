@@ -34,6 +34,7 @@ cdn.playwright.dev:443
 *.datadoghq.com:443
 playwright.download.prss.microsoft.com:443
 api.snapcraft.io:443
+unofficial-builds.nodejs.org:443
 
 ## original passthrough entries
 
