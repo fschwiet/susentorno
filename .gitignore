@@ -6,3 +6,6 @@ test-results/
 # .NET project builds
 bin/
 obj/
+
+# GitHub proxy credential (real PAT); belt-and-suspenders on top of .configamatron/
+github-secret.yaml

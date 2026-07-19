@@ -42,7 +42,14 @@ describe('configamatron write-github-config', () => {
       const cfg = readFileSync(join(dir, '.configamatron', folder, 'github-config.txt'), 'utf8');
       expect(cfg, folder).toContain('GITHUB_USERNAME="octo"');
       expect(cfg, folder).toContain('GITHUB_EMAIL="octo@example.com"');
-      expect(cfg, folder).toContain(`GITHUB_TOKEN="${token}"`);
+      expect(cfg, folder).toContain('GITHUB_TOKEN="ghp-SANDBOX-PLACEHOLDER"');
+      expect(cfg, folder).not.toContain(token);
     }
+
+    const secret = readFileSync(
+      join(dir, '.configamatron', 'proxy', 'secrets', 'github-secret.yaml'),
+      'utf8',
+    );
+    expect(secret).toContain(`inline_string: "Bearer ${token}"`);
   });
 });

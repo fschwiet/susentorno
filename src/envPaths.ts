@@ -25,6 +25,7 @@ export interface EnvPaths {
   caLeafKey: string;
   secretsDir: string;
   sdsSecret: string;
+  githubSecret: string;
   vmCert: string;
   vmCredentials: string;
   githubConfig: string;
@@ -57,6 +58,7 @@ export function envPaths(cwd: string): EnvPaths {
     caLeafKey: join(proxy, 'ca', 'leaf-key.pem'),
     secretsDir: join(proxy, 'secrets'),
     sdsSecret: join(proxy, 'secrets', 'sds-secret.yaml'),
+    githubSecret: join(proxy, 'secrets', 'github-secret.yaml'),
     vmCert: vmSharedTargets[0].cert,
     vmCredentials: vmSharedTargets[0].credentials,
     githubConfig: vmSharedTargets[0].githubConfig,

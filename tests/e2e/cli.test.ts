@@ -137,13 +137,10 @@ describe('write-github-config', () => {
     writeFileSync(path, contents);
   }
 
-  it('writes vm-shared/github-config.txt from a valid token and host git identity', async () => {
+  it('writes a placeholder VM config and the real credential to github-secret.yaml', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
     const gitConfigPath = join(dir, 'gitconfig');
-    writeFixtureGitConfig(
-      gitConfigPath,
-      '[user]\n\tname = Test User\n\temail = test@example.com\n',
-    );
+    writeFixtureGitConfig(gitConfigPath, '[user]\n\tname = Test User\n\temail = test@example.com\n');
 
     try {
       await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: dir });
@@ -154,31 +151,43 @@ describe('write-github-config', () => {
       });
 
       expect(exitCode).toBe(0);
-      expect(stdout).toContain(
-        'wrote github-config.txt to vm-shared and vm-shared-windows for Test User <test@example.com>',
+      // The real token is never printed.
+      expect(stdout).not.toContain(validToken);
+
+      // VM share gets identity + the placeholder PAT, never the real token.
+      const vmConfig = readFileSync(
+        join(dir, '.configamatron', 'vm-shared', 'github-config.txt'),
+        'utf8',
       );
-      expect(
-        readFileSync(join(dir, '.configamatron', 'vm-shared', 'github-config.txt'), 'utf8'),
-      ).toBe(
+      expect(vmConfig).toBe(
         [
           'GITHUB_USERNAME="Test User"',
           'GITHUB_EMAIL="test@example.com"',
-          `GITHUB_TOKEN="${validToken}"`,
+          'GITHUB_TOKEN="ghp-SANDBOX-PLACEHOLDER"',
           '',
         ].join('\n'),
       );
+      expect(vmConfig).not.toContain(validToken);
+
+      // The real credential lands only in the proxy secret.
+      const secret = readFileSync(
+        join(dir, '.configamatron', 'proxy', 'secrets', 'github-secret.yaml'),
+        'utf8',
+      );
+      expect(secret).toContain('name: github_basic_auth');
+      expect(secret).toContain('name: github_api_token');
+      expect(secret).toContain(`inline_string: "Bearer ${validToken}"`);
+      const expectedBasic = 'Basic ' + Buffer.from(`Test User:${validToken}`).toString('base64');
+      expect(secret).toContain(`inline_string: "${expectedBasic}"`);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it('rejects a malformed token without writing the file', async () => {
+  it('rejects a malformed token without writing either output', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
     const gitConfigPath = join(dir, 'gitconfig');
-    writeFixtureGitConfig(
-      gitConfigPath,
-      '[user]\n\tname = Test User\n\temail = test@example.com\n',
-    );
+    writeFixtureGitConfig(gitConfigPath, '[user]\n\tname = Test User\n\temail = test@example.com\n');
 
     try {
       await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: dir });
@@ -192,6 +201,9 @@ describe('write-github-config', () => {
       expect(exitCode).toBe(1);
       expect(stderr).toContain('invalid token');
       expect(existsSync(join(dir, '.configamatron', 'vm-shared', 'github-config.txt'))).toBe(false);
+      expect(
+        existsSync(join(dir, '.configamatron', 'proxy', 'secrets', 'github-secret.yaml')),
+      ).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
