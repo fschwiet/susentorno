@@ -206,6 +206,16 @@ Unchanged from the VMware flow, just from the new mount path — except the host
 
 Each prints a `PASS`/`FAIL`/`WARN` line per check and exits non-zero if anything failed. Omit the host IP to have the script discover and report it from the installed config.
 
+## 9. Enable Nested Virtualization
+
+ref: https://learn.microsoft.com/en-us/windows-server/virtualization/hyper-v/enable-nested-virtualization#enable-nested-virtualization
+
+Run the following to enable nested virtualization. This requires turning on a thing in BIOS. You will be prompted for the VM name.
+
+```powershell
+Set-VMProcessor -ExposeVirtualizationExtensions $true
+```
+
 ## Security note: the share account
 
 The isolation boundary configamatron enforces is **code running in the VM vs. the host**, not merely a human operator. Because the SMB credential must be stored where the guest can read it at boot, code inside the VM can read it too. That is why `configamatron-share` is scoped to read-only access on the two shared folders and denied interactive logon: even if VM-resident code exfiltrates the credential, all it grants is the folder read the VM already had.
