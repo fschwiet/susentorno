@@ -4,7 +4,8 @@ import type { Allowlist } from '../../src/allowlist';
 
 const allowlist: Allowlist = {
   passthrough: ['*.chatgpt.com:443', 'archive.ubuntu.com:80'],
-  terminate: ['api.anthropic.com:443'],
+  claudeAuthenticated: ['api.anthropic.com:443'],
+  githubAuthenticated: [],
   authCandidate: [],
   warnings: [],
 };
@@ -162,7 +163,8 @@ describe('generateEnvoyConfig', () => {
   it('routes wildcard :80 hosts through a shared dynamic_forward_proxy_cluster_http', () => {
     const wildcardAllowlist: Allowlist = {
       passthrough: ['*.ubuntu.com:80', 'security.ubuntu.com:80'],
-      terminate: ['api.anthropic.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [],
     };
@@ -243,7 +245,8 @@ describe('generateEnvoyConfig', () => {
 describe('generateEnvoyConfig auth candidate', () => {
   const candAllowlist: Allowlist = {
     passthrough: [],
-    terminate: ['api.anthropic.com:443'],
+    claudeAuthenticated: ['api.anthropic.com:443'],
+    githubAuthenticated: [],
     authCandidate: ['partner.example.com:443'],
     warnings: [],
   };

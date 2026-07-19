@@ -18,7 +18,8 @@ describe('parsePolicyFile', () => {
 
     expect(parsePolicyFile(content)).toEqual({
       passthrough: ['*.chatgpt.com:443', 'archive.ubuntu.com:80'],
-      terminate: ['api.anthropic.com:443', 'claude.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443', 'claude.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [],
     });
@@ -35,7 +36,8 @@ describe('parsePolicyFile', () => {
 
     expect(parsePolicyFile(content)).toEqual({
       passthrough: ['*.already.com:443', '*.chatgpt.com:443'],
-      terminate: ['api.anthropic.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: ["unsupported wildcard syntax, excluded: 'foo*.bar.com:443'"],
     });
@@ -49,7 +51,8 @@ describe('parsePolicyFile', () => {
 
     expect(parsePolicyFile(content)).toEqual({
       passthrough: [],
-      terminate: [],
+      claudeAuthenticated: [],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [],
     });

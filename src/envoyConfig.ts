@@ -353,7 +353,7 @@ export function generateEnvoyConfig(
   const adminPortValue =
     options.fault === 'crash-config' ? 70000 : options.fault === 'never-ready' ? 9902 : 9901;
 
-  const terminateBuilt = allowlist.terminate
+  const terminateBuilt = allowlist.claudeAuthenticated
     .filter((e) => e.endsWith(':443'))
     .map((e) => buildTerminateEntry(e, overrides));
   const authCandidateBuilt = allowlist.authCandidate

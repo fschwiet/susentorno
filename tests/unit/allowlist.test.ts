@@ -10,7 +10,8 @@ describe('formatAllowlist', () => {
   it('writes sorted passthrough and terminate sections', () => {
     const allowlist: Allowlist = {
       passthrough: ['archive.ubuntu.com:80', '*.chatgpt.com:443'],
-      terminate: ['claude.com:443', 'api.anthropic.com:443'],
+      claudeAuthenticated: ['claude.com:443', 'api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [],
     };
@@ -45,7 +46,8 @@ describe('parseAllowlist', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: ['*.chatgpt.com:443', 'archive.ubuntu.com:80'],
-      terminate: ['api.anthropic.com:443', 'claude.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443', 'claude.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [],
     });
@@ -63,7 +65,8 @@ describe('parseAllowlist', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: ['*.chatgpt.com:443'],
-      terminate: ['api.anthropic.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [],
     });
@@ -98,7 +101,8 @@ describe('parseAllowlist', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: ['pypi.org:443'],
-      terminate: ['api.anthropic.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [],
     });
@@ -107,14 +111,16 @@ describe('parseAllowlist', () => {
   it('round-trips through formatAllowlist', () => {
     const allowlist: Allowlist = {
       passthrough: ['archive.ubuntu.com:80', '*.chatgpt.com:443'],
-      terminate: ['claude.com:443', 'api.anthropic.com:443'],
+      claudeAuthenticated: ['claude.com:443', 'api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [],
     };
 
     expect(parseAllowlist(formatAllowlist(allowlist))).toEqual({
       passthrough: ['*.chatgpt.com:443', 'archive.ubuntu.com:80'],
-      terminate: ['api.anthropic.com:443', 'claude.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443', 'claude.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [],
     });
@@ -136,7 +142,8 @@ describe('parseAllowlist', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: ['archive.ubuntu.com:80', '*.chatgpt.com:443'],
-      terminate: ['api.anthropic.com:443', 'claude.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443', 'claude.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [],
     });
@@ -154,10 +161,11 @@ describe('parseAllowlist', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: [],
-      terminate: ['shared.example.com:443'],
+      claudeAuthenticated: ['shared.example.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [
-        "collision: 'shared.example.com:443' listed in passthrough and terminate; using terminate",
+        "collision: 'shared.example.com:443' listed in passthrough and claudeAuthenticated; using claudeAuthenticated",
       ],
     });
   });
@@ -175,7 +183,8 @@ describe('parseAllowlist', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: ['archive.ubuntu.com:80'],
-      terminate: ['api.anthropic.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: ["unsupported wildcard syntax, excluded: '**.ubuntu.com:80'"],
     });
@@ -194,7 +203,8 @@ describe('parseAllowlist', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: ['*.ubuntu.com:80'],
-      terminate: ['api.anthropic.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: ["unsupported wildcard syntax, excluded: '**.ubuntu.com:80'"],
     });
@@ -213,7 +223,8 @@ describe('parseAllowlist', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: ['*.ubuntu.com:80'],
-      terminate: ['api.anthropic.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [],
     });
@@ -232,7 +243,8 @@ describe('parseAllowlist', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: ['*.ubuntu.com:80', 'archive.ubuntu.com:443'],
-      terminate: ['api.anthropic.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [],
     });
@@ -251,7 +263,8 @@ describe('parseAllowlist', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: ['*.ubuntu.com:80', 'ubuntu.com:80'],
-      terminate: ['api.anthropic.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [],
     });
@@ -269,7 +282,8 @@ describe('parseAllowlist', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: ['*.ubuntu.com:80'],
-      terminate: ['archive.ubuntu.com:80'],
+      claudeAuthenticated: ['archive.ubuntu.com:80'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [],
     });
@@ -288,7 +302,8 @@ describe('parseAllowlist', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: ['archive.ubuntu.com:80'],
-      terminate: ['api.anthropic.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: ["unsupported wildcard syntax, excluded: 'crl*.digicert.com:80'"],
     });
@@ -307,7 +322,8 @@ describe('parseAllowlist', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: ['archive.ubuntu.com:80'],
-      terminate: ['api.anthropic.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: ["unsupported wildcard syntax, excluded: '*.anthropic.com:443'"],
     });
@@ -326,7 +342,8 @@ describe('parseAllowlist', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: [],
-      terminate: ['api.anthropic.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: ["unsupported wildcard syntax, excluded: 'crl*.digicert.com:80'"],
     });
@@ -349,7 +366,8 @@ describe('parseAllowlist auth candidate', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: ['pypi.org:443'],
-      terminate: ['api.anthropic.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: ['partner.example.com:443'],
       warnings: [],
     });
@@ -368,7 +386,8 @@ describe('parseAllowlist auth candidate', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: [],
-      terminate: ['api.anthropic.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: ['partner.example.com:443'],
       warnings: ["unsupported wildcard syntax, excluded: '*.partner.example.com:443'"],
     });
@@ -386,10 +405,11 @@ describe('parseAllowlist auth candidate', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: [],
-      terminate: [],
+      claudeAuthenticated: [],
+      githubAuthenticated: [],
       authCandidate: ['shared.example.com:443'],
       warnings: [
-        "collision: 'shared.example.com:443' listed in terminate and authCandidate; using authCandidate",
+        "collision: 'shared.example.com:443' listed in claudeAuthenticated and authCandidate; using authCandidate",
       ],
     });
   });
@@ -406,7 +426,8 @@ describe('parseAllowlist auth candidate', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: [],
-      terminate: [],
+      claudeAuthenticated: [],
+      githubAuthenticated: [],
       authCandidate: ['shared.example.com:443'],
       warnings: [
         "collision: 'shared.example.com:443' listed in passthrough and authCandidate; using authCandidate",
@@ -429,10 +450,11 @@ describe('parseAllowlist auth candidate', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: [],
-      terminate: [],
+      claudeAuthenticated: [],
+      githubAuthenticated: [],
       authCandidate: ['shared.example.com:443'],
       warnings: [
-        "collision: 'shared.example.com:443' listed in passthrough and terminate and authCandidate; using authCandidate",
+        "collision: 'shared.example.com:443' listed in passthrough and claudeAuthenticated and authCandidate; using authCandidate",
       ],
     });
   });
@@ -450,11 +472,12 @@ describe('parseAllowlist auth candidate', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: [],
-      terminate: ['shared.example.com:443'],
+      claudeAuthenticated: ['shared.example.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [
         "unsupported wildcard syntax, excluded: 'crl*.digicert.com:80'",
-        "collision: 'shared.example.com:443' listed in passthrough and terminate; using terminate",
+        "collision: 'shared.example.com:443' listed in passthrough and claudeAuthenticated; using claudeAuthenticated",
       ],
     });
   });
@@ -471,7 +494,8 @@ describe('parseAllowlist auth candidate', () => {
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: ['*.example.com:443'],
-      terminate: ['foo.example.com:443'],
+      claudeAuthenticated: ['foo.example.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [],
     });
@@ -480,7 +504,8 @@ describe('parseAllowlist auth candidate', () => {
   it('omits the auth candidate section from formatAllowlist when empty', () => {
     const allowlist: Allowlist = {
       passthrough: ['pypi.org:443'],
-      terminate: ['api.anthropic.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [],
     };
@@ -499,7 +524,8 @@ describe('parseAllowlist auth candidate', () => {
   it('writes and round-trips the auth candidate section when present', () => {
     const allowlist: Allowlist = {
       passthrough: [],
-      terminate: ['api.anthropic.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: ['b.example.com:443', 'a.example.com:443'],
       warnings: [],
     };
@@ -519,7 +545,8 @@ describe('parseAllowlist auth candidate', () => {
     );
     expect(parseAllowlist(formatted)).toEqual({
       passthrough: [],
-      terminate: ['api.anthropic.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: ['a.example.com:443', 'b.example.com:443'],
       warnings: [],
     });
@@ -530,7 +557,8 @@ describe('terminateTlsHosts', () => {
   it('returns terminate :443 hosts without the port and excludes passthrough', () => {
     const allowlist: Allowlist = {
       passthrough: ['pypi.org:443', 'archive.ubuntu.com:80'],
-      terminate: ['api.anthropic.com:443', 'claude.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443', 'claude.com:443'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [],
     };
@@ -540,7 +568,8 @@ describe('terminateTlsHosts', () => {
   it('ignores non-:443 terminate entries', () => {
     const allowlist: Allowlist = {
       passthrough: [],
-      terminate: ['example.com:80'],
+      claudeAuthenticated: ['example.com:80'],
+      githubAuthenticated: [],
       authCandidate: [],
       warnings: [],
     };
@@ -550,10 +579,120 @@ describe('terminateTlsHosts', () => {
   it('includes auth candidate :443 hosts alongside terminate hosts', () => {
     const allowlist: Allowlist = {
       passthrough: [],
-      terminate: ['api.anthropic.com:443'],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: [],
       authCandidate: ['partner.example.com:443', 'plain.example.com:80'],
       warnings: [],
     };
     expect(terminateTlsHosts(allowlist)).toEqual(['api.anthropic.com', 'partner.example.com']);
+  });
+});
+
+describe('parseAllowlist github authenticated', () => {
+  it('parses the #pragma github authenticated section as its own field', () => {
+    const content = [
+      '#pragma passthrough',
+      'pypi.org:443',
+      '',
+      '#pragma claude authenticated',
+      'api.anthropic.com:443',
+      '',
+      '#pragma github authenticated',
+      'github.com:443',
+      'api.github.com:443',
+      '',
+    ].join('\n');
+
+    expect(parseAllowlist(content)).toEqual({
+      passthrough: ['pypi.org:443'],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: ['github.com:443', 'api.github.com:443'],
+      authCandidate: [],
+      warnings: [],
+    });
+  });
+
+  it('flags a wildcard in the github section as invalid', () => {
+    const content = [
+      '#pragma github authenticated',
+      '*.github.com:443',
+      'github.com:443',
+      '',
+    ].join('\n');
+
+    expect(parseAllowlist(content)).toEqual({
+      passthrough: [],
+      claudeAuthenticated: [],
+      githubAuthenticated: ['github.com:443'],
+      authCandidate: [],
+      warnings: ["unsupported wildcard syntax, excluded: '*.github.com:443'"],
+    });
+  });
+
+  it('resolves a claude+github collision to github with a warning', () => {
+    const content = [
+      '#pragma claude authenticated',
+      'shared.example.com:443',
+      '',
+      '#pragma github authenticated',
+      'shared.example.com:443',
+      '',
+    ].join('\n');
+
+    expect(parseAllowlist(content)).toEqual({
+      passthrough: [],
+      claudeAuthenticated: [],
+      githubAuthenticated: ['shared.example.com:443'],
+      authCandidate: [],
+      warnings: [
+        "collision: 'shared.example.com:443' listed in claudeAuthenticated and githubAuthenticated; using githubAuthenticated",
+      ],
+    });
+  });
+
+  it('round-trips the github section through formatAllowlist', () => {
+    const allowlist: Allowlist = {
+      passthrough: [],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: ['github.com:443', 'api.github.com:443'],
+      authCandidate: [],
+      warnings: [],
+    };
+    const formatted = formatAllowlist(allowlist);
+    expect(formatted).toBe(
+      [
+        '#pragma passthrough',
+        '',
+        '#pragma claude authenticated',
+        'api.anthropic.com:443',
+        '',
+        '#pragma github authenticated',
+        'api.github.com:443',
+        'github.com:443',
+        '',
+      ].join('\n'),
+    );
+    expect(parseAllowlist(formatted)).toEqual({
+      passthrough: [],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: ['api.github.com:443', 'github.com:443'],
+      authCandidate: [],
+      warnings: [],
+    });
+  });
+
+  it('includes github :443 hosts in terminateTlsHosts', () => {
+    const allowlist: Allowlist = {
+      passthrough: [],
+      claudeAuthenticated: ['api.anthropic.com:443'],
+      githubAuthenticated: ['github.com:443', 'api.github.com:443'],
+      authCandidate: [],
+      warnings: [],
+    };
+    expect(terminateTlsHosts(allowlist)).toEqual([
+      'api.anthropic.com',
+      'github.com',
+      'api.github.com',
+    ]);
   });
 });

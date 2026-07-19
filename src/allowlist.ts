@@ -1,6 +1,7 @@
 export interface Allowlist {
   passthrough: string[];
-  terminate: string[];
+  claudeAuthenticated: string[];
+  githubAuthenticated: string[];
   authCandidate: string[];
   warnings: string[];
 }
@@ -31,12 +32,15 @@ function prunePassthrough(entries: string[]): string[] {
   });
 }
 
+type Section = 'passthrough' | 'claudeAuthenticated' | 'githubAuthenticated' | 'authCandidate';
+
 export function parseAllowlist(content: string): Allowlist {
   const passthrough = new Set<string>();
-  const terminate = new Set<string>();
+  const claudeAuthenticated = new Set<string>();
+  const githubAuthenticated = new Set<string>();
   const authCandidate = new Set<string>();
   const warnings = new Set<string>();
-  let section: 'passthrough' | 'terminate' | 'authCandidate' | null = null;
+  let section: Section | null = null;
 
   for (const rawLine of content.split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -46,7 +50,11 @@ export function parseAllowlist(content: string): Allowlist {
       continue;
     }
     if (line === '#pragma claude authenticated') {
-      section = 'terminate';
+      section = 'claudeAuthenticated';
+      continue;
+    }
+    if (line === '#pragma github authenticated') {
+      section = 'githubAuthenticated';
       continue;
     }
     if (line === '#pragma auth candidate') {
@@ -66,7 +74,7 @@ export function parseAllowlist(content: string): Allowlist {
 
     const { host } = splitHostPort(line);
     const hasWildcard = host.includes('*');
-    const noWildcards = section === 'terminate' || section === 'authCandidate';
+    const noWildcards = section !== 'passthrough'; // terminated sections take exact hosts only
 
     if (hasWildcard && (noWildcards || !WILDCARD_HOST_PATTERN.test(host))) {
       warnings.add(`unsupported wildcard syntax, excluded: '${line}'`);
@@ -74,23 +82,36 @@ export function parseAllowlist(content: string): Allowlist {
     }
 
     if (section === 'passthrough') passthrough.add(line);
-    else if (section === 'terminate') terminate.add(line);
+    else if (section === 'claudeAuthenticated') claudeAuthenticated.add(line);
+    else if (section === 'githubAuthenticated') githubAuthenticated.add(line);
     else authCandidate.add(line);
   }
 
   const passthroughSet = new Set(prunePassthrough([...passthrough]));
 
   // Resolve exact host:port strings present in more than one section. Priority:
-  // authCandidate > terminate > passthrough. Losing copies are dropped so Envoy
-  // emits exactly one filter chain per SNI, and each drop is reported as a warning.
+  // authCandidate > githubAuthenticated > claudeAuthenticated > passthrough. Losing
+  // copies are dropped so Envoy emits exactly one filter chain per SNI, and each
+  // drop is reported as a warning.
   const byPriority: Array<{ name: string; set: Set<string> }> = [
     { name: 'authCandidate', set: authCandidate },
-    { name: 'terminate', set: terminate },
+    { name: 'githubAuthenticated', set: githubAuthenticated },
+    { name: 'claudeAuthenticated', set: claudeAuthenticated },
     { name: 'passthrough', set: passthroughSet },
   ];
-  const displayOrder = ['passthrough', 'terminate', 'authCandidate'];
+  const displayOrder = [
+    'passthrough',
+    'claudeAuthenticated',
+    'githubAuthenticated',
+    'authCandidate',
+  ];
 
-  for (const entry of new Set([...passthroughSet, ...terminate, ...authCandidate])) {
+  for (const entry of new Set([
+    ...passthroughSet,
+    ...claudeAuthenticated,
+    ...githubAuthenticated,
+    ...authCandidate,
+  ])) {
     const present = byPriority.filter((s) => s.set.has(entry));
     if (present.length < 2) continue;
     const [winner, ...losers] = present; // byPriority is priority-ordered
@@ -101,15 +122,20 @@ export function parseAllowlist(content: string): Allowlist {
 
   return {
     passthrough: [...passthroughSet],
-    terminate: [...terminate],
+    claudeAuthenticated: [...claudeAuthenticated],
+    githubAuthenticated: [...githubAuthenticated],
     authCandidate: [...authCandidate],
     warnings: [...warnings],
   };
 }
 
-/** Hosts the proxy terminates TLS for (the leaf's SANs): terminate + authCandidate entries on :443, port stripped. */
+/** Hosts the proxy terminates TLS for (the leaf's SANs): claude + github + authCandidate entries on :443, port stripped. */
 export function terminateTlsHosts(allowlist: Allowlist): string[] {
-  return [...allowlist.terminate, ...allowlist.authCandidate]
+  return [
+    ...allowlist.claudeAuthenticated,
+    ...allowlist.githubAuthenticated,
+    ...allowlist.authCandidate,
+  ]
     .filter((entry) => entry.endsWith(':443'))
     .map((entry) => entry.slice(0, entry.lastIndexOf(':')));
 }
@@ -118,7 +144,11 @@ export function formatAllowlist(allowlist: Allowlist): string {
   const lines: string[] = ['#pragma passthrough'];
   for (const entry of [...allowlist.passthrough].sort()) lines.push(entry);
   lines.push('', '#pragma claude authenticated');
-  for (const entry of [...allowlist.terminate].sort()) lines.push(entry);
+  for (const entry of [...allowlist.claudeAuthenticated].sort()) lines.push(entry);
+  if (allowlist.githubAuthenticated.length > 0) {
+    lines.push('', '#pragma github authenticated');
+    for (const entry of [...allowlist.githubAuthenticated].sort()) lines.push(entry);
+  }
   if (allowlist.authCandidate.length > 0) {
     lines.push('', '#pragma auth candidate');
     for (const entry of [...allowlist.authCandidate].sort()) lines.push(entry);
