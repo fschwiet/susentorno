@@ -1,4 +1,5 @@
 import net from 'node:net';
+import { sleep } from './abortableSleep';
 
 export interface GatewayTarget {
   httpsPort: number;
@@ -18,8 +19,8 @@ export interface GatewayOptions {
 
 export interface GatewayHandle {
   setTarget(target: GatewayTarget): void;
-  /** Resolve once no connections remain on `target`'s ports, or force-close at timeout. */
-  drain(target: GatewayTarget, timeoutMs: number): Promise<void>;
+  /** Resolve once no connections remain on `target`'s ports, or force-close at timeout. On abort, stop waiting and return (teardown is left to close()). */
+  drain(target: GatewayTarget, timeoutMs: number, signal: AbortSignal): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -92,11 +93,13 @@ export function startGateway(opts: GatewayOptions): Promise<GatewayHandle> {
       setTarget: (t: GatewayTarget): void => {
         target = t;
       },
-      drain: async (t: GatewayTarget, timeoutMs: number): Promise<void> => {
+      drain: async (t: GatewayTarget, timeoutMs: number, signal: AbortSignal): Promise<void> => {
         const deadline = Date.now() + timeoutMs;
         while (onTarget(t).length > 0 && Date.now() < deadline) {
-          await new Promise((r) => setTimeout(r, 100));
+          if (signal.aborted) return; // stop waiting; close() will destroy what remains
+          await sleep(100, signal);
         }
+        if (signal.aborted) return;
         await Promise.all(
           onTarget(t).map(
             (c) =>

@@ -149,12 +149,12 @@ export function registerRunProxy(program: Command): void {
           ),
         allocatePorts: allocateColorPorts,
         bringUpColor: (color: Color, ports: ColorPorts) => bringUpColor(color, ports, paths.proxy),
-        waitColorReady: (ports: ColorPorts, timeoutMs: number) =>
-          waitColorReady(ports.adminPort, timeoutMs),
+        waitColorReady: (ports: ColorPorts, timeoutMs: number, signal: AbortSignal) =>
+          waitColorReady(ports.adminPort, timeoutMs, signal),
         setActiveBackend: (ports: ColorPorts) =>
           gateway.setTarget({ httpsPort: ports.httpsPort, httpPort: ports.httpPort }),
-        drainBackend: (ports: ColorPorts, timeoutMs: number) =>
-          gateway.drain({ httpsPort: ports.httpsPort, httpPort: ports.httpPort }, timeoutMs),
+        drainBackend: (ports: ColorPorts, timeoutMs: number, signal: AbortSignal) =>
+          gateway.drain({ httpsPort: ports.httpsPort, httpPort: ports.httpPort }, timeoutMs, signal),
         stopColor: (color: Color) => stopColor(color, paths.proxy),
         nudgeRefresh,
         watch: watchFile,

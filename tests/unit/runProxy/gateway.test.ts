@@ -91,9 +91,11 @@ describe('startGateway', () => {
 
     // Draining echo1 does not resolve while the old socket is open.
     let drained = false;
-    const dp = gw.drain({ httpsPort: echo1.port, httpPort: 1 }, 2000).then(() => {
-      drained = true;
-    });
+    const dp = gw
+      .drain({ httpsPort: echo1.port, httpPort: 1 }, 2000, new AbortController().signal)
+      .then(() => {
+        drained = true;
+      });
     await delay(200);
     expect(drained).toBe(false);
 
@@ -125,8 +127,33 @@ describe('startGateway', () => {
       closed = true;
     });
 
-    await gw.drain({ httpsPort: echo.port, httpPort: 1 }, 300);
+    await gw.drain({ httpsPort: echo.port, httpPort: 1 }, 300, new AbortController().signal);
     expect(closed).toBe(true);
+
+    await gw.close();
+    await echo.close();
+  });
+
+  it('drain returns promptly on abort and does not force-close the lingering connection', async () => {
+    const echo = await startTaggedEcho('one');
+    const httpsListen = await freePort();
+    const gw = await startGateway({
+      listenAddresses: ['127.0.0.1'],
+      httpsListenPort: httpsListen,
+      httpListenPort: await freePort(),
+      initialTarget: { httpsPort: echo.port, httpPort: 1 },
+    });
+
+    const sock = net.connect(httpsListen, '127.0.0.1');
+    await new Promise<void>((r) => sock.once('connect', () => r()));
+    await send(sock, 'x');
+
+    const ac = new AbortController();
+    ac.abort();
+    const start = Date.now();
+    await gw.drain({ httpsPort: echo.port, httpPort: 1 }, 30_000, ac.signal);
+    expect(Date.now() - start).toBeLessThan(1000);
+    expect(sock.destroyed).toBe(false); // teardown deferred to close()
 
     await gw.close();
     await echo.close();

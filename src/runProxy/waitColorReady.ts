@@ -1,4 +1,5 @@
 import { request } from 'node:http';
+import { sleep } from './abortableSleep';
 
 /** One probe of a color's admin /ready; true iff it answers HTTP 200. */
 export function adminReadyOnce(adminPort: number): Promise<boolean> {
@@ -19,23 +20,24 @@ export function adminReadyOnce(adminPort: number): Promise<boolean> {
   });
 }
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
-
 /**
  * Poll a color's OWN admin /ready until it answers 200 (returns true) or the
- * timeout elapses (returns false). Because each color has its own admin port,
- * a 200 here means THAT container is serving — unlike the in-place-recreate
- * case where the dying container answered /ready during the swap.
+ * timeout elapses (returns false). The signal short-circuits the wait: when it
+ * aborts, the next check returns false immediately and the abortable sleep
+ * resolves at once, so a Ctrl+C during startup is never blocked for the full
+ * timeout.
  */
 export async function waitColorReady(
   adminPort: number,
   timeoutMs: number,
+  signal: AbortSignal,
   sleepMs = 250,
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     if (await adminReadyOnce(adminPort)) return true;
+    if (signal.aborted) return false;
     if (Date.now() >= deadline) return false;
-    await sleep(sleepMs);
+    await sleep(sleepMs, signal);
   }
 }

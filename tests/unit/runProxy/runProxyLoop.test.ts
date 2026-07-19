@@ -550,4 +550,22 @@ describe('runProxyLoop shutdown', () => {
     expect(h.mocks.stopLogStream).toHaveBeenCalled();
     expect(h.mocks.bringUpColor).not.toHaveBeenCalled();
   });
+
+  it('SIGINT while waiting for a color to become ready aborts the wait and exits 0', async () => {
+    const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+    h.mocks.waitColorReady.mockImplementationOnce(
+      (_ports: ColorPorts, _timeoutMs: number, signal: AbortSignal) =>
+        new Promise<boolean>((resolve) => {
+          signal.addEventListener('abort', () => resolve(false), { once: true });
+        }),
+    );
+    const exit = runProxyLoop(baseConfig(), h.deps);
+    await flush(); // parked in the startup waitColorReady
+
+    h.fireSigint();
+    await flush();
+
+    await expect(exit).resolves.toBe(0);
+    expect(h.mocks.setActiveBackend).not.toHaveBeenCalled();
+  });
 });

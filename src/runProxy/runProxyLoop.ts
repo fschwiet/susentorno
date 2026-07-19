@@ -34,12 +34,12 @@ export interface RunProxyDeps {
   allocatePorts: () => Promise<ColorPorts>;
   /** Force-recreate the given color's container, published on `ports`. */
   bringUpColor: (color: Color, ports: ColorPorts) => Promise<void>;
-  /** Poll the color's own admin /ready; true once it serves, false on timeout. */
-  waitColorReady: (ports: ColorPorts, timeoutMs: number) => Promise<boolean>;
+  /** Poll the color's own admin /ready; true once it serves, false on timeout/abort. */
+  waitColorReady: (ports: ColorPorts, timeoutMs: number, signal: AbortSignal) => Promise<boolean>;
   /** Point the gateway forwarder at this color's backend ports (the flip). */
   setActiveBackend: (ports: ColorPorts) => void;
   /** Wait for the old color's connections to drain, force-closing at timeout. */
-  drainBackend: (ports: ColorPorts, timeoutMs: number) => Promise<void>;
+  drainBackend: (ports: ColorPorts, timeoutMs: number, signal: AbortSignal) => Promise<void>;
   /** Stop the given color's container. */
   stopColor: (color: Color) => Promise<void>;
   nudgeRefresh: () => Promise<NudgeResult>;
@@ -80,6 +80,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
     let activeColor: Color = 'blue';
     let activePorts: ColorPorts | null = null;
     const unique = new UniqueTracker();
+    const shutdownAbort = new AbortController();
 
     const planConfig = {
       refreshWindowMs: config.refreshWindowMs,
@@ -101,6 +102,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
     const shutdown = (code: number): void => {
       if (settled) return;
       settled = true;
+      shutdownAbort.abort();
       clearTimer();
       credentialsWatcher?.close();
       allowlistWatcher?.close();
@@ -290,7 +292,11 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
             if (settled) return;
 
             if (broughtUp) {
-              const ready = await deps.waitColorReady(idlePorts, config.readyTimeoutMs);
+              const ready = await deps.waitColorReady(
+                idlePorts,
+                config.readyTimeoutMs,
+                shutdownAbort.signal,
+              );
               if (settled) return;
               if (!ready) {
                 deps.error(
@@ -307,7 +313,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
                 if (clearUnique) unique.clear();
                 deps.startLogStream(idle, onLogLine);
                 // Retire the old color once its connections drain (bounded).
-                await deps.drainBackend(oldPorts, config.drainTimeoutMs);
+                await deps.drainBackend(oldPorts, config.drainTimeoutMs, shutdownAbort.signal);
                 await deps.stopColor(oldColor).catch(() => {});
                 deps.log(`run-proxy: swap complete — now serving ${activeColor}`);
               }
@@ -382,7 +388,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
           return;
         }
         if (settled) return;
-        const ready = await deps.waitColorReady(ports, config.readyTimeoutMs);
+        const ready = await deps.waitColorReady(ports, config.readyTimeoutMs, shutdownAbort.signal);
         if (settled) return;
         if (!ready) {
           fatal('proxy did not become ready on startup');
