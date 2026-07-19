@@ -5,7 +5,7 @@ import type { Allowlist } from '../allowlist';
 
 /**
  * Render envoy.yaml for an already-parsed (and already-validated) allowlist and
- * write it to outputPath. Validation of `allowlist.invalid` is the caller's job.
+ * write it to outputPath. Surfacing `allowlist.warnings` is the caller's job.
  * `fault` is a test-only render mutation; when omitted the output is unchanged.
  */
 export function writeEnvoyConfig(

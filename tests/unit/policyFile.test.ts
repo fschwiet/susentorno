@@ -20,7 +20,7 @@ describe('parsePolicyFile', () => {
       passthrough: ['*.chatgpt.com:443', 'archive.ubuntu.com:80'],
       terminate: ['api.anthropic.com:443', 'claude.com:443'],
       authCandidate: [],
-      invalid: [],
+      warnings: [],
     });
   });
 
@@ -37,7 +37,7 @@ describe('parsePolicyFile', () => {
       passthrough: ['*.already.com:443', '*.chatgpt.com:443'],
       terminate: ['api.anthropic.com:443'],
       authCandidate: [],
-      invalid: ['foo*.bar.com:443'],
+      warnings: ["unsupported wildcard syntax, excluded: 'foo*.bar.com:443'"],
     });
   });
 
@@ -51,7 +51,7 @@ describe('parsePolicyFile', () => {
       passthrough: [],
       terminate: [],
       authCandidate: [],
-      invalid: [],
+      warnings: [],
     });
   });
 });

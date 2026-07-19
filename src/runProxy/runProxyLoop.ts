@@ -191,10 +191,10 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
         return null;
       }
       const allowlist = parseAllowlist(content);
-      if (allowlist.invalid.length > 0) {
+      if (allowlist.warnings.length > 0) {
         deps.error(
           'run-proxy: allowlist has unsupported wildcard syntax, keeping previous config:\n' +
-            allowlist.invalid.map((entry) => `  - ${entry}`).join('\n'),
+            allowlist.warnings.map((entry) => `  - ${entry}`).join('\n'),
         );
         return null;
       }
@@ -366,10 +366,10 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
         return;
       }
       const allowlist = parseAllowlist(content);
-      if (allowlist.invalid.length > 0) {
+      if (allowlist.warnings.length > 0) {
         fatal(
           `unsupported wildcard syntax in ${config.allowlistPath}:\n` +
-            allowlist.invalid.map((entry) => `  - ${entry}`).join('\n'),
+            allowlist.warnings.map((entry) => `  - ${entry}`).join('\n'),
         );
         return;
       }

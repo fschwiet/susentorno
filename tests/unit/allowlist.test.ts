@@ -12,7 +12,7 @@ describe('formatAllowlist', () => {
       passthrough: ['archive.ubuntu.com:80', '*.chatgpt.com:443'],
       terminate: ['claude.com:443', 'api.anthropic.com:443'],
       authCandidate: [],
-      invalid: [],
+      warnings: [],
     };
 
     expect(formatAllowlist(allowlist)).toBe(
@@ -47,7 +47,7 @@ describe('parseAllowlist', () => {
       passthrough: ['*.chatgpt.com:443', 'archive.ubuntu.com:80'],
       terminate: ['api.anthropic.com:443', 'claude.com:443'],
       authCandidate: [],
-      invalid: [],
+      warnings: [],
     });
   });
 
@@ -65,7 +65,7 @@ describe('parseAllowlist', () => {
       passthrough: ['*.chatgpt.com:443'],
       terminate: ['api.anthropic.com:443'],
       authCandidate: [],
-      invalid: [],
+      warnings: [],
     });
   });
 
@@ -100,7 +100,7 @@ describe('parseAllowlist', () => {
       passthrough: ['pypi.org:443'],
       terminate: ['api.anthropic.com:443'],
       authCandidate: [],
-      invalid: [],
+      warnings: [],
     });
   });
 
@@ -109,14 +109,14 @@ describe('parseAllowlist', () => {
       passthrough: ['archive.ubuntu.com:80', '*.chatgpt.com:443'],
       terminate: ['claude.com:443', 'api.anthropic.com:443'],
       authCandidate: [],
-      invalid: [],
+      warnings: [],
     };
 
     expect(parseAllowlist(formatAllowlist(allowlist))).toEqual({
       passthrough: ['*.chatgpt.com:443', 'archive.ubuntu.com:80'],
       terminate: ['api.anthropic.com:443', 'claude.com:443'],
       authCandidate: [],
-      invalid: [],
+      warnings: [],
     });
   });
 
@@ -138,11 +138,11 @@ describe('parseAllowlist', () => {
       passthrough: ['archive.ubuntu.com:80', '*.chatgpt.com:443'],
       terminate: ['api.anthropic.com:443', 'claude.com:443'],
       authCandidate: [],
-      invalid: [],
+      warnings: [],
     });
   });
 
-  it('keeps the same host in both passthrough and terminate independently', () => {
+  it('resolves a passthrough+terminate collision to terminate with a warning', () => {
     const content = [
       '#pragma passthrough',
       'shared.example.com:443',
@@ -153,10 +153,12 @@ describe('parseAllowlist', () => {
     ].join('\n');
 
     expect(parseAllowlist(content)).toEqual({
-      passthrough: ['shared.example.com:443'],
+      passthrough: [],
       terminate: ['shared.example.com:443'],
       authCandidate: [],
-      invalid: [],
+      warnings: [
+        "collision: 'shared.example.com:443' listed in passthrough and terminate; using terminate",
+      ],
     });
   });
 
@@ -175,7 +177,7 @@ describe('parseAllowlist', () => {
       passthrough: ['archive.ubuntu.com:80'],
       terminate: ['api.anthropic.com:443'],
       authCandidate: [],
-      invalid: ['**.ubuntu.com:80'],
+      warnings: ["unsupported wildcard syntax, excluded: '**.ubuntu.com:80'"],
     });
   });
 
@@ -194,7 +196,7 @@ describe('parseAllowlist', () => {
       passthrough: ['*.ubuntu.com:80'],
       terminate: ['api.anthropic.com:443'],
       authCandidate: [],
-      invalid: ['**.ubuntu.com:80'],
+      warnings: ["unsupported wildcard syntax, excluded: '**.ubuntu.com:80'"],
     });
   });
 
@@ -213,7 +215,7 @@ describe('parseAllowlist', () => {
       passthrough: ['*.ubuntu.com:80'],
       terminate: ['api.anthropic.com:443'],
       authCandidate: [],
-      invalid: [],
+      warnings: [],
     });
   });
 
@@ -232,7 +234,7 @@ describe('parseAllowlist', () => {
       passthrough: ['*.ubuntu.com:80', 'archive.ubuntu.com:443'],
       terminate: ['api.anthropic.com:443'],
       authCandidate: [],
-      invalid: [],
+      warnings: [],
     });
   });
 
@@ -251,7 +253,7 @@ describe('parseAllowlist', () => {
       passthrough: ['*.ubuntu.com:80', 'ubuntu.com:80'],
       terminate: ['api.anthropic.com:443'],
       authCandidate: [],
-      invalid: [],
+      warnings: [],
     });
   });
 
@@ -269,7 +271,7 @@ describe('parseAllowlist', () => {
       passthrough: ['*.ubuntu.com:80'],
       terminate: ['archive.ubuntu.com:80'],
       authCandidate: [],
-      invalid: [],
+      warnings: [],
     });
   });
 
@@ -288,7 +290,7 @@ describe('parseAllowlist', () => {
       passthrough: ['archive.ubuntu.com:80'],
       terminate: ['api.anthropic.com:443'],
       authCandidate: [],
-      invalid: ['crl*.digicert.com:80'],
+      warnings: ["unsupported wildcard syntax, excluded: 'crl*.digicert.com:80'"],
     });
   });
 
@@ -307,7 +309,7 @@ describe('parseAllowlist', () => {
       passthrough: ['archive.ubuntu.com:80'],
       terminate: ['api.anthropic.com:443'],
       authCandidate: [],
-      invalid: ['*.anthropic.com:443'],
+      warnings: ["unsupported wildcard syntax, excluded: '*.anthropic.com:443'"],
     });
   });
 
@@ -326,7 +328,7 @@ describe('parseAllowlist', () => {
       passthrough: [],
       terminate: ['api.anthropic.com:443'],
       authCandidate: [],
-      invalid: ['crl*.digicert.com:80'],
+      warnings: ["unsupported wildcard syntax, excluded: 'crl*.digicert.com:80'"],
     });
   });
 });
@@ -349,7 +351,7 @@ describe('parseAllowlist auth candidate', () => {
       passthrough: ['pypi.org:443'],
       terminate: ['api.anthropic.com:443'],
       authCandidate: ['partner.example.com:443'],
-      invalid: [],
+      warnings: [],
     });
   });
 
@@ -368,11 +370,11 @@ describe('parseAllowlist auth candidate', () => {
       passthrough: [],
       terminate: ['api.anthropic.com:443'],
       authCandidate: ['partner.example.com:443'],
-      invalid: ['*.partner.example.com:443'],
+      warnings: ["unsupported wildcard syntax, excluded: '*.partner.example.com:443'"],
     });
   });
 
-  it('moves a host present in both terminate and auth candidate to invalid', () => {
+  it('resolves a terminate+authCandidate collision to authCandidate with a warning', () => {
     const content = [
       '#pragma claude authenticated',
       'shared.example.com:443',
@@ -385,8 +387,93 @@ describe('parseAllowlist auth candidate', () => {
     expect(parseAllowlist(content)).toEqual({
       passthrough: [],
       terminate: [],
+      authCandidate: ['shared.example.com:443'],
+      warnings: [
+        "collision: 'shared.example.com:443' listed in terminate and authCandidate; using authCandidate",
+      ],
+    });
+  });
+
+  it('resolves a passthrough+authCandidate collision to authCandidate with a warning', () => {
+    const content = [
+      '#pragma passthrough',
+      'shared.example.com:443',
+      '',
+      '#pragma auth candidate',
+      'shared.example.com:443',
+      '',
+    ].join('\n');
+
+    expect(parseAllowlist(content)).toEqual({
+      passthrough: [],
+      terminate: [],
+      authCandidate: ['shared.example.com:443'],
+      warnings: [
+        "collision: 'shared.example.com:443' listed in passthrough and authCandidate; using authCandidate",
+      ],
+    });
+  });
+
+  it('resolves a host present in all three sections to authCandidate, naming all three', () => {
+    const content = [
+      '#pragma passthrough',
+      'shared.example.com:443',
+      '',
+      '#pragma claude authenticated',
+      'shared.example.com:443',
+      '',
+      '#pragma auth candidate',
+      'shared.example.com:443',
+      '',
+    ].join('\n');
+
+    expect(parseAllowlist(content)).toEqual({
+      passthrough: [],
+      terminate: [],
+      authCandidate: ['shared.example.com:443'],
+      warnings: [
+        "collision: 'shared.example.com:443' listed in passthrough and terminate and authCandidate; using authCandidate",
+      ],
+    });
+  });
+
+  it('emits an invalid-syntax warning and a collision warning together, syntax first', () => {
+    const content = [
+      '#pragma passthrough',
+      'crl*.digicert.com:80',
+      'shared.example.com:443',
+      '',
+      '#pragma claude authenticated',
+      'shared.example.com:443',
+      '',
+    ].join('\n');
+
+    expect(parseAllowlist(content)).toEqual({
+      passthrough: [],
+      terminate: ['shared.example.com:443'],
       authCandidate: [],
-      invalid: ['shared.example.com:443'],
+      warnings: [
+        "unsupported wildcard syntax, excluded: 'crl*.digicert.com:80'",
+        "collision: 'shared.example.com:443' listed in passthrough and terminate; using terminate",
+      ],
+    });
+  });
+
+  it('does not treat a wildcard-covered terminate host as a collision', () => {
+    const content = [
+      '#pragma passthrough',
+      '*.example.com:443',
+      '',
+      '#pragma claude authenticated',
+      'foo.example.com:443',
+      '',
+    ].join('\n');
+
+    expect(parseAllowlist(content)).toEqual({
+      passthrough: ['*.example.com:443'],
+      terminate: ['foo.example.com:443'],
+      authCandidate: [],
+      warnings: [],
     });
   });
 
@@ -395,7 +482,7 @@ describe('parseAllowlist auth candidate', () => {
       passthrough: ['pypi.org:443'],
       terminate: ['api.anthropic.com:443'],
       authCandidate: [],
-      invalid: [],
+      warnings: [],
     };
     expect(formatAllowlist(allowlist)).toBe(
       [
@@ -414,7 +501,7 @@ describe('parseAllowlist auth candidate', () => {
       passthrough: [],
       terminate: ['api.anthropic.com:443'],
       authCandidate: ['b.example.com:443', 'a.example.com:443'],
-      invalid: [],
+      warnings: [],
     };
     const formatted = formatAllowlist(allowlist);
     expect(formatted).toBe(
@@ -434,7 +521,7 @@ describe('parseAllowlist auth candidate', () => {
       passthrough: [],
       terminate: ['api.anthropic.com:443'],
       authCandidate: ['a.example.com:443', 'b.example.com:443'],
-      invalid: [],
+      warnings: [],
     });
   });
 });
@@ -445,7 +532,7 @@ describe('terminateTlsHosts', () => {
       passthrough: ['pypi.org:443', 'archive.ubuntu.com:80'],
       terminate: ['api.anthropic.com:443', 'claude.com:443'],
       authCandidate: [],
-      invalid: [],
+      warnings: [],
     };
     expect(terminateTlsHosts(allowlist)).toEqual(['api.anthropic.com', 'claude.com']);
   });
@@ -455,7 +542,7 @@ describe('terminateTlsHosts', () => {
       passthrough: [],
       terminate: ['example.com:80'],
       authCandidate: [],
-      invalid: [],
+      warnings: [],
     };
     expect(terminateTlsHosts(allowlist)).toEqual([]);
   });
@@ -465,7 +552,7 @@ describe('terminateTlsHosts', () => {
       passthrough: [],
       terminate: ['api.anthropic.com:443'],
       authCandidate: ['partner.example.com:443', 'plain.example.com:80'],
-      invalid: [],
+      warnings: [],
     };
     expect(terminateTlsHosts(allowlist)).toEqual(['api.anthropic.com', 'partner.example.com']);
   });

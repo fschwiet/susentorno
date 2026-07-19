@@ -6,7 +6,7 @@ const allowlist: Allowlist = {
   passthrough: ['*.chatgpt.com:443', 'archive.ubuntu.com:80'],
   terminate: ['api.anthropic.com:443'],
   authCandidate: [],
-  invalid: [],
+  warnings: [],
 };
 
 describe('generateEnvoyConfig', () => {
@@ -164,7 +164,7 @@ describe('generateEnvoyConfig', () => {
       passthrough: ['*.ubuntu.com:80', 'security.ubuntu.com:80'],
       terminate: ['api.anthropic.com:443'],
       authCandidate: [],
-      invalid: [],
+      warnings: [],
     };
     const config = generateEnvoyConfig(wildcardAllowlist) as any;
     const listener80 = config.static_resources.listeners.find((l: any) => l.name === 'listener_80');
@@ -245,7 +245,7 @@ describe('generateEnvoyConfig auth candidate', () => {
     passthrough: [],
     terminate: ['api.anthropic.com:443'],
     authCandidate: ['partner.example.com:443'],
-    invalid: [],
+    warnings: [],
   };
 
   it('builds an auth-candidate chain with only the router http filter', () => {

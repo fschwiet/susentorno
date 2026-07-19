@@ -17,7 +17,7 @@ function normalizeWildcardHost(host: string): string {
 export function parsePolicyFile(content: string): Allowlist {
   const passthrough = new Set<string>();
   const terminate = new Set<string>();
-  const invalid = new Set<string>();
+  const warnings = new Set<string>();
   let currentType: string | null = null;
   let currentDecision: string | null = null;
 
@@ -28,7 +28,7 @@ export function parsePolicyFile(content: string): Allowlist {
     if (host.includes('*')) {
       const normalizedHost = normalizeWildcardHost(host);
       if (!WILDCARD_HOST_PATTERN.test(normalizedHost)) {
-        invalid.add(resource);
+        warnings.add(`unsupported wildcard syntax, excluded: '${resource}'`);
         return;
       }
       passthrough.add(`${normalizedHost}${resource.slice(host.length)}`);
@@ -57,6 +57,6 @@ export function parsePolicyFile(content: string): Allowlist {
     passthrough: [...passthrough].sort(),
     terminate: [...terminate].sort(),
     authCandidate: [],
-    invalid: [...invalid].sort(),
+    warnings: [...warnings].sort(),
   };
 }

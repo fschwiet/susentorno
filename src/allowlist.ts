@@ -2,7 +2,7 @@ export interface Allowlist {
   passthrough: string[];
   terminate: string[];
   authCandidate: string[];
-  invalid: string[];
+  warnings: string[];
 }
 
 export const WILDCARD_HOST_PATTERN = /^\*\.[^*]+$/;
@@ -35,7 +35,7 @@ export function parseAllowlist(content: string): Allowlist {
   const passthrough = new Set<string>();
   const terminate = new Set<string>();
   const authCandidate = new Set<string>();
-  const invalid = new Set<string>();
+  const warnings = new Set<string>();
   let section: 'passthrough' | 'terminate' | 'authCandidate' | null = null;
 
   for (const rawLine of content.split(/\r?\n/)) {
@@ -69,7 +69,7 @@ export function parseAllowlist(content: string): Allowlist {
     const noWildcards = section === 'terminate' || section === 'authCandidate';
 
     if (hasWildcard && (noWildcards || !WILDCARD_HOST_PATTERN.test(host))) {
-      invalid.add(line);
+      warnings.add(`unsupported wildcard syntax, excluded: '${line}'`);
       continue;
     }
 
@@ -78,23 +78,32 @@ export function parseAllowlist(content: string): Allowlist {
     else authCandidate.add(line);
   }
 
-  // A host in both terminate and authCandidate would emit two :443 filter
-  // chains with the same SNI, which Envoy rejects at load. Pull the conflict
-  // out of both sections and mark it invalid so run-proxy keeps the prior
-  // config instead of building a config Envoy refuses.
-  for (const entry of [...terminate]) {
-    if (authCandidate.has(entry)) {
-      terminate.delete(entry);
-      authCandidate.delete(entry);
-      invalid.add(entry);
-    }
+  const passthroughSet = new Set(prunePassthrough([...passthrough]));
+
+  // Resolve exact host:port strings present in more than one section. Priority:
+  // authCandidate > terminate > passthrough. Losing copies are dropped so Envoy
+  // emits exactly one filter chain per SNI, and each drop is reported as a warning.
+  const byPriority: Array<{ name: string; set: Set<string> }> = [
+    { name: 'authCandidate', set: authCandidate },
+    { name: 'terminate', set: terminate },
+    { name: 'passthrough', set: passthroughSet },
+  ];
+  const displayOrder = ['passthrough', 'terminate', 'authCandidate'];
+
+  for (const entry of new Set([...passthroughSet, ...terminate, ...authCandidate])) {
+    const present = byPriority.filter((s) => s.set.has(entry));
+    if (present.length < 2) continue;
+    const [winner, ...losers] = present; // byPriority is priority-ordered
+    for (const loser of losers) loser.set.delete(entry);
+    const listed = displayOrder.filter((name) => present.some((p) => p.name === name));
+    warnings.add(`collision: '${entry}' listed in ${listed.join(' and ')}; using ${winner.name}`);
   }
 
   return {
-    passthrough: prunePassthrough([...passthrough]),
+    passthrough: [...passthroughSet],
     terminate: [...terminate],
     authCandidate: [...authCandidate],
-    invalid: [...invalid],
+    warnings: [...warnings],
   };
 }
 
