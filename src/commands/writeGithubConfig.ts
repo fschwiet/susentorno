@@ -5,7 +5,7 @@ import { createInterface } from 'node:readline/promises';
 import type { Command } from 'commander';
 import { validateGithubTokenFormat } from '../githubToken';
 import { formatGithubConfig } from '../githubConfig';
-import { formatGithubSecret } from '../githubSecret';
+import { formatGithubBasicSecret, formatGithubApiTokenSecret } from '../githubSecret';
 import { GITHUB_PLACEHOLDER_PAT } from '../githubPlaceholder';
 import { requireEnvPathsOrExit } from '../envPaths';
 
@@ -22,7 +22,8 @@ export function registerWriteGithubConfig(program: Command): void {
     .command('write-github-config')
     .description(
       'Prompt for a GitHub fine-grained PAT. Write identity + a placeholder PAT to the VM ' +
-        'share, and the real credential only to the proxy secret github-secret.yaml.',
+        'share, and the real credential only to the proxy secrets github-basic-secret.yaml ' +
+        'and github-api-token-secret.yaml.',
     )
     .action(async () => {
       const paths = requireEnvPathsOrExit('write-github-config');
@@ -58,14 +59,17 @@ export function registerWriteGithubConfig(program: Command): void {
         );
       }
 
-      // Proxy watched dir: the real credential, in a sibling SDS file run-proxy never rewrites.
-      mkdirSync(dirname(paths.githubSecret), { recursive: true });
-      writeFileSync(paths.githubSecret, formatGithubSecret(username, token));
+      // Proxy watched dir: the real credential, in sibling SDS files run-proxy never rewrites.
+      // Envoy's filesystem SDS requires one resource per watched file, hence two files.
+      mkdirSync(dirname(paths.githubBasicSecret), { recursive: true });
+      writeFileSync(paths.githubBasicSecret, formatGithubBasicSecret(username, token));
+      writeFileSync(paths.githubApiTokenSecret, formatGithubApiTokenSecret(token));
 
       // Never echo the token.
       console.log(
         `write-github-config: wrote placeholder github-config.txt to vm-shared and vm-shared-windows, ` +
-          `and the real credential to github-secret.yaml for ${username} <${email}>`,
+          `and the real credential to github-basic-secret.yaml and github-api-token-secret.yaml ` +
+          `for ${username} <${email}>`,
       );
     });
 }

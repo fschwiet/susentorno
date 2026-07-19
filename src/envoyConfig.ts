@@ -239,15 +239,26 @@ end
 `;
 
 // github.com -> Basic gate + github_basic_auth; api.github.com -> Bearer gate + github_api_token.
-const GITHUB_INJECTION: Record<string, { sdsResource: string; gate: string }> = {
-  'github.com': { sdsResource: 'github_basic_auth', gate: GITHUB_BASIC_GATE_LUA },
-  'api.github.com': { sdsResource: 'github_api_token', gate: GITHUB_BEARER_GATE_LUA },
+// Each SDS resource lives in its own watched file: Envoy's filesystem SDS rejects a
+// watched file that holds more than the one resource a given sds_config expects.
+const GITHUB_INJECTION: Record<string, { sdsResource: string; sdsFile: string; gate: string }> = {
+  'github.com': {
+    sdsResource: 'github_basic_auth',
+    sdsFile: 'github-basic-secret.yaml',
+    gate: GITHUB_BASIC_GATE_LUA,
+  },
+  'api.github.com': {
+    sdsResource: 'github_api_token',
+    sdsFile: 'github-api-token-secret.yaml',
+    gate: GITHUB_BEARER_GATE_LUA,
+  },
 };
 
 function buildGithubEntry(
   entry: string,
   overrides: UpstreamOverride[],
   sdsResource: string,
+  sdsFile: string,
   gateSource: string,
 ) {
   const [sniHost, portStr] = entry.split(':');
@@ -315,7 +326,7 @@ function buildGithubEntry(
                       name: sdsResource,
                       sds_config: {
                         path_config_source: {
-                          path: '/etc/envoy/secrets/github-secret.yaml',
+                          path: `/etc/envoy/secrets/${sdsFile}`,
                           watched_directory: { path: '/etc/envoy/secrets' },
                         },
                         resource_api_version: 'V3',
@@ -538,7 +549,7 @@ export function generateEnvoyConfig(
     .map((e) => {
       const host = e.split(':')[0];
       const cfg = GITHUB_INJECTION[host];
-      return cfg ? buildGithubEntry(e, overrides, cfg.sdsResource, cfg.gate) : null;
+      return cfg ? buildGithubEntry(e, overrides, cfg.sdsResource, cfg.sdsFile, cfg.gate) : null;
     })
     .filter((b): b is NonNullable<typeof b> => b !== null);
   const passthroughServerNames = allowlist.passthrough

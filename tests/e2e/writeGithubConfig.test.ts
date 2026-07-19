@@ -46,10 +46,10 @@ describe('configamatron write-github-config', () => {
       expect(cfg, folder).not.toContain(token);
     }
 
-    const secret = readFileSync(
-      join(dir, '.configamatron', 'proxy', 'secrets', 'github-secret.yaml'),
+    const apiTokenSecret = readFileSync(
+      join(dir, '.configamatron', 'proxy', 'secrets', 'github-api-token-secret.yaml'),
       'utf8',
     );
-    expect(secret).toContain(`inline_string: "Bearer ${token}"`);
+    expect(apiTokenSecret).toContain(`inline_string: "Bearer ${token}"`);
   });
 });

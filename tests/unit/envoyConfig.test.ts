@@ -345,13 +345,13 @@ describe('generateEnvoyConfig github authenticated', () => {
     expect(lua).toContain('ghp-SANDBOX-PLACEHOLDER');
     expect(lua).toContain('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/');
     expect(hcm.http_filters[0].typed_config.default_source_code.filename).toBeUndefined();
-    // Injector reads the Basic SDS resource from the sibling github secret file.
+    // Injector reads the Basic SDS resource from its own single-resource secret file.
     const injector = hcm.http_filters[1].typed_config;
     expect(injector.overwrite).toBe(true);
     const cred = injector.credential.typed_config.credential;
     expect(cred.name).toBe('github_basic_auth');
     expect(cred.sds_config.path_config_source.path).toBe(
-      '/etc/envoy/secrets/github-secret.yaml',
+      '/etc/envoy/secrets/github-basic-secret.yaml',
     );
     expect(cred.sds_config.path_config_source.watched_directory.path).toBe('/etc/envoy/secrets');
     expect(hcm.route_config.virtual_hosts[0].routes[0].route.cluster).toBe(
@@ -370,6 +370,9 @@ describe('generateEnvoyConfig github authenticated', () => {
     expect(lua).not.toContain('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz');
     const cred = hcm.http_filters[1].typed_config.credential.typed_config.credential;
     expect(cred.name).toBe('github_api_token');
+    expect(cred.sds_config.path_config_source.path).toBe(
+      '/etc/envoy/secrets/github-api-token-secret.yaml',
+    );
   });
 
   it('serves the leaf cert and builds override-aware github clusters', () => {

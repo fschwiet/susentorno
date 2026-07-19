@@ -137,7 +137,7 @@ describe('write-github-config', () => {
     writeFileSync(path, contents);
   }
 
-  it('writes a placeholder VM config and the real credential to github-secret.yaml', async () => {
+  it('writes a placeholder VM config and the real credential to the github secret files', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
     const gitConfigPath = join(dir, 'gitconfig');
     writeFixtureGitConfig(gitConfigPath, '[user]\n\tname = Test User\n\temail = test@example.com\n');
@@ -169,16 +169,21 @@ describe('write-github-config', () => {
       );
       expect(vmConfig).not.toContain(validToken);
 
-      // The real credential lands only in the proxy secret.
-      const secret = readFileSync(
-        join(dir, '.configamatron', 'proxy', 'secrets', 'github-secret.yaml'),
+      // The real credential lands only in the proxy secrets, one resource per file.
+      const basicSecret = readFileSync(
+        join(dir, '.configamatron', 'proxy', 'secrets', 'github-basic-secret.yaml'),
         'utf8',
       );
-      expect(secret).toContain('name: github_basic_auth');
-      expect(secret).toContain('name: github_api_token');
-      expect(secret).toContain(`inline_string: "Bearer ${validToken}"`);
+      expect(basicSecret).toContain('name: github_basic_auth');
       const expectedBasic = 'Basic ' + Buffer.from(`Test User:${validToken}`).toString('base64');
-      expect(secret).toContain(`inline_string: "${expectedBasic}"`);
+      expect(basicSecret).toContain(`inline_string: "${expectedBasic}"`);
+
+      const apiTokenSecret = readFileSync(
+        join(dir, '.configamatron', 'proxy', 'secrets', 'github-api-token-secret.yaml'),
+        'utf8',
+      );
+      expect(apiTokenSecret).toContain('name: github_api_token');
+      expect(apiTokenSecret).toContain(`inline_string: "Bearer ${validToken}"`);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -202,7 +207,12 @@ describe('write-github-config', () => {
       expect(stderr).toContain('invalid token');
       expect(existsSync(join(dir, '.configamatron', 'vm-shared', 'github-config.txt'))).toBe(false);
       expect(
-        existsSync(join(dir, '.configamatron', 'proxy', 'secrets', 'github-secret.yaml')),
+        existsSync(join(dir, '.configamatron', 'proxy', 'secrets', 'github-basic-secret.yaml')),
+      ).toBe(false);
+      expect(
+        existsSync(
+          join(dir, '.configamatron', 'proxy', 'secrets', 'github-api-token-secret.yaml'),
+        ),
       ).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });

@@ -20,7 +20,12 @@ describe('envPaths', () => {
     expect(paths.caLeafKey).toBe(join(root, 'proxy', 'ca', 'leaf-key.pem'));
     expect(paths.secretsDir).toBe(join(root, 'proxy', 'secrets'));
     expect(paths.sdsSecret).toBe(join(root, 'proxy', 'secrets', 'sds-secret.yaml'));
-    expect(paths.githubSecret).toBe(join(root, 'proxy', 'secrets', 'github-secret.yaml'));
+    expect(paths.githubBasicSecret).toBe(
+      join(root, 'proxy', 'secrets', 'github-basic-secret.yaml'),
+    );
+    expect(paths.githubApiTokenSecret).toBe(
+      join(root, 'proxy', 'secrets', 'github-api-token-secret.yaml'),
+    );
     expect(paths.vmCert).toBe(join(root, 'vm-shared', 'cert.pem'));
     expect(paths.vmCredentials).toBe(join(root, 'vm-shared', 'credentials.json'));
     expect(paths.githubConfig).toBe(join(root, 'vm-shared', 'github-config.txt'));
