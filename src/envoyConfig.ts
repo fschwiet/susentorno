@@ -298,7 +298,9 @@ function buildGithubEntry(
               {
                 name: 'terminate',
                 domains: ['*'],
-                routes: [{ match: { prefix: '/' }, route: { cluster: clusterName, timeout: '0s' } }],
+                routes: [
+                  { match: { prefix: '/' }, route: { cluster: clusterName, timeout: '0s' } },
+                ],
               },
             ],
           },

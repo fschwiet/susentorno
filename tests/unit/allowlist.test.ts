@@ -613,12 +613,9 @@ describe('parseAllowlist github authenticated', () => {
   });
 
   it('flags a wildcard in the github section as invalid', () => {
-    const content = [
-      '#pragma github authenticated',
-      '*.github.com:443',
-      'github.com:443',
-      '',
-    ].join('\n');
+    const content = ['#pragma github authenticated', '*.github.com:443', 'github.com:443', ''].join(
+      '\n',
+    );
 
     expect(parseAllowlist(content)).toEqual({
       passthrough: [],

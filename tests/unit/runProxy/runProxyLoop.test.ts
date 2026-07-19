@@ -173,7 +173,9 @@ describe('runProxyLoop startup', () => {
 
     expect(h.mocks.ensureLeaf).toHaveBeenCalledWith(['api.anthropic.com']);
     expect(h.mocks.buildConfig).toHaveBeenCalledTimes(1);
-    expect(h.mocks.buildConfig.mock.calls[0][0].claudeAuthenticated).toEqual(['api.anthropic.com:443']);
+    expect(h.mocks.buildConfig.mock.calls[0][0].claudeAuthenticated).toEqual([
+      'api.anthropic.com:443',
+    ]);
     expect(h.mocks.writeSecret).toHaveBeenCalledWith('A', '/fake/sds-secret.yaml');
     expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1);
     expect(h.mocks.bringUpColor.mock.calls[0][0]).toBe('blue');
@@ -352,7 +354,9 @@ describe('runProxyLoop allowlist changes', () => {
       expect.stringContaining("collision: 'shared.example.com:443'"),
     );
     expect(h.mocks.buildConfig).toHaveBeenCalledTimes(1);
-    expect(h.mocks.buildConfig.mock.calls[0][0].claudeAuthenticated).toContain('shared.example.com:443');
+    expect(h.mocks.buildConfig.mock.calls[0][0].claudeAuthenticated).toContain(
+      'shared.example.com:443',
+    );
     expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1);
   });
 });

@@ -140,7 +140,10 @@ describe('write-github-config', () => {
   it('writes a placeholder VM config and the real credential to the github secret files', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
     const gitConfigPath = join(dir, 'gitconfig');
-    writeFixtureGitConfig(gitConfigPath, '[user]\n\tname = Test User\n\temail = test@example.com\n');
+    writeFixtureGitConfig(
+      gitConfigPath,
+      '[user]\n\tname = Test User\n\temail = test@example.com\n',
+    );
 
     try {
       await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: dir });
@@ -192,7 +195,10 @@ describe('write-github-config', () => {
   it('rejects a malformed token without writing either output', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
     const gitConfigPath = join(dir, 'gitconfig');
-    writeFixtureGitConfig(gitConfigPath, '[user]\n\tname = Test User\n\temail = test@example.com\n');
+    writeFixtureGitConfig(
+      gitConfigPath,
+      '[user]\n\tname = Test User\n\temail = test@example.com\n',
+    );
 
     try {
       await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: dir });
@@ -210,9 +216,7 @@ describe('write-github-config', () => {
         existsSync(join(dir, '.configamatron', 'proxy', 'secrets', 'github-basic-secret.yaml')),
       ).toBe(false);
       expect(
-        existsSync(
-          join(dir, '.configamatron', 'proxy', 'secrets', 'github-api-token-secret.yaml'),
-        ),
+        existsSync(join(dir, '.configamatron', 'proxy', 'secrets', 'github-api-token-secret.yaml')),
       ).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
