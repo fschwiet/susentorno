@@ -311,3 +311,89 @@ describe('generateEnvoyConfig auth candidate', () => {
     expect(log).toContain('%REQ(PROXY-AUTHORIZATION):12%');
   });
 });
+
+describe('generateEnvoyConfig github authenticated', () => {
+  const ghAllowlist: Allowlist = {
+    passthrough: [],
+    claudeAuthenticated: ['api.anthropic.com:443'],
+    githubAuthenticated: ['github.com:443', 'api.github.com:443'],
+    authCandidate: [],
+    warnings: [],
+  };
+
+  function githubChain(host: string) {
+    const config = generateEnvoyConfig(ghAllowlist) as any;
+    const listener443 = config.static_resources.listeners.find(
+      (l: any) => l.name === 'listener_443',
+    );
+    return listener443.filter_chains.find((fc: any) =>
+      fc.filter_chain_match?.server_names?.includes(host),
+    );
+  }
+
+  it('builds a github.com Basic chain: inline lua gate, injector, router', () => {
+    const chain = githubChain('github.com');
+    expect(chain).toBeDefined();
+    const hcm = chain.filters[0].typed_config;
+    expect(hcm.http_filters.map((f: any) => f.name)).toEqual([
+      'envoy.filters.http.lua',
+      'envoy.filters.http.credential_injector',
+      'envoy.filters.http.router',
+    ]);
+    // Gate is inline (no mounted file) and embeds a base64 decoder + placeholder check.
+    const lua = hcm.http_filters[0].typed_config.default_source_code.inline_string;
+    expect(lua).toContain('ghp-SANDBOX-PLACEHOLDER');
+    expect(lua).toContain('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/');
+    expect(hcm.http_filters[0].typed_config.default_source_code.filename).toBeUndefined();
+    // Injector reads the Basic SDS resource from the sibling github secret file.
+    const injector = hcm.http_filters[1].typed_config;
+    expect(injector.overwrite).toBe(true);
+    const cred = injector.credential.typed_config.credential;
+    expect(cred.name).toBe('github_basic_auth');
+    expect(cred.sds_config.path_config_source.path).toBe(
+      '/etc/envoy/secrets/github-secret.yaml',
+    );
+    expect(cred.sds_config.path_config_source.watched_directory.path).toBe('/etc/envoy/secrets');
+    expect(hcm.route_config.virtual_hosts[0].routes[0].route.cluster).toBe(
+      'cluster_github_github_com',
+    );
+    expect(hcm.route_config.virtual_hosts[0].routes[0].route.timeout).toBe('0s');
+  });
+
+  it('builds an api.github.com Bearer chain with an exact-match inline gate', () => {
+    const chain = githubChain('api.github.com');
+    expect(chain).toBeDefined();
+    const hcm = chain.filters[0].typed_config;
+    const lua = hcm.http_filters[0].typed_config.default_source_code.inline_string;
+    expect(lua).toContain('Bearer ghp-SANDBOX-PLACEHOLDER');
+    // Bearer gate is a plain exact match — no base64 decoder embedded.
+    expect(lua).not.toContain('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz');
+    const cred = hcm.http_filters[1].typed_config.credential.typed_config.credential;
+    expect(cred.name).toBe('github_api_token');
+  });
+
+  it('serves the leaf cert and builds override-aware github clusters', () => {
+    const config = generateEnvoyConfig(ghAllowlist, {
+      overrides: [{ sniHost: 'github.com', target: '127.0.0.1:9443' }],
+    }) as any;
+    const listener443 = config.static_resources.listeners.find(
+      (l: any) => l.name === 'listener_443',
+    );
+    const chain = listener443.filter_chains.find((fc: any) =>
+      fc.filter_chain_match?.server_names?.includes('github.com'),
+    );
+    const tls = chain.transport_socket.typed_config.common_tls_context.tls_certificates[0];
+    expect(tls.certificate_chain.filename).toBe('/etc/envoy/ca/leaf-cert.pem');
+
+    const cluster = config.static_resources.clusters.find(
+      (c: any) => c.name === 'cluster_github_github_com',
+    );
+    expect(
+      cluster.load_assignment.endpoints[0].lb_endpoints[0].endpoint.address.socket_address,
+    ).toEqual({ address: '127.0.0.1', port_value: 9443 });
+    expect(
+      cluster.transport_socket.typed_config.common_tls_context.validation_context
+        .trust_chain_verification,
+    ).toBe('ACCEPT_UNTRUSTED');
+  });
+});

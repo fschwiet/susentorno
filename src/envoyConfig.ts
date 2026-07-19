@@ -1,4 +1,5 @@
 import type { Allowlist } from './allowlist';
+import { GITHUB_PLACEHOLDER_PAT } from './githubPlaceholder';
 
 export interface UpstreamOverride {
   sniHost: string;
@@ -165,6 +166,179 @@ function buildAuthCandidateEntry(entry: string, overrides: UpstreamOverride[]) {
   };
 
   const cluster = buildTlsUpstreamCluster(clusterName, sniHost, portStr, override);
+  return { filterChain, cluster };
+}
+
+// api.github.com: exact-match Bearer gate (same shape as templates/proxy/gate.lua,
+// only the placeholder constant differs).
+const GITHUB_BEARER_GATE_LUA = `local PLACEHOLDER = "Bearer ${GITHUB_PLACEHOLDER_PAT}"
+
+function envoy_on_request(request_handle)
+  local auth = request_handle:headers():get("authorization")
+  if auth == nil then
+    return
+  end
+  if auth ~= PLACEHOLDER then
+    request_handle:respond({[":status"] = "403"}, "sandbox: unexpected credential")
+  end
+end
+`;
+
+// github.com: git sends Basic base64(<login>:<PAT>). The login is chosen by gh's
+// credential helper and unknown at config time, so this gate decodes the credential
+// and checks ONLY the password half against the placeholder PAT, ignoring the user.
+// Envoy's Lua has no base64 decoder, so one is embedded inline.
+const GITHUB_BASIC_GATE_LUA = `local PLACEHOLDER_PAT = "${GITHUB_PLACEHOLDER_PAT}"
+local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+local function b64decode(data)
+  if #data % 4 ~= 0 or string.match(data, "[^" .. B64 .. "=]") then
+    return nil
+  end
+  data = string.gsub(data, "=", "")
+  local bits = string.gsub(data, ".", function(c)
+    local f = B64:find(c, 1, true) - 1
+    local r = ""
+    for i = 6, 1, -1 do
+      r = r .. (f % (2 ^ i) - f % (2 ^ (i - 1)) > 0 and "1" or "0")
+    end
+    return r
+  end)
+  return (string.gsub(bits, "%d%d%d?%d?%d?%d?%d?%d?", function(x)
+    if #x ~= 8 then
+      return ""
+    end
+    local c = 0
+    for i = 1, 8 do
+      c = c + (x:sub(i, i) == "1" and 2 ^ (8 - i) or 0)
+    end
+    return string.char(c)
+  end))
+end
+
+function envoy_on_request(request_handle)
+  local auth = request_handle:headers():get("authorization")
+  if auth == nil then
+    return
+  end
+  local encoded = string.match(auth, "^Basic (.+)$")
+  if encoded == nil then
+    request_handle:respond({[":status"] = "403"}, "sandbox: unexpected credential")
+    return
+  end
+  local decoded = b64decode(encoded)
+  if decoded == nil then
+    request_handle:respond({[":status"] = "403"}, "sandbox: unexpected credential")
+    return
+  end
+  local password = string.match(decoded, "^[^:]*:(.*)$")
+  if password ~= PLACEHOLDER_PAT then
+    request_handle:respond({[":status"] = "403"}, "sandbox: unexpected credential")
+  end
+end
+`;
+
+// github.com -> Basic gate + github_basic_auth; api.github.com -> Bearer gate + github_api_token.
+const GITHUB_INJECTION: Record<string, { sdsResource: string; gate: string }> = {
+  'github.com': { sdsResource: 'github_basic_auth', gate: GITHUB_BASIC_GATE_LUA },
+  'api.github.com': { sdsResource: 'github_api_token', gate: GITHUB_BEARER_GATE_LUA },
+};
+
+function buildGithubEntry(
+  entry: string,
+  overrides: UpstreamOverride[],
+  sdsResource: string,
+  gateSource: string,
+) {
+  const [sniHost, portStr] = entry.split(':');
+  const override = overrides.find((o) => o.sniHost === sniHost);
+  const clusterName = `cluster_github_${sanitizeName(sniHost)}`;
+
+  const filterChain = {
+    filter_chain_match: { server_names: [sniHost] },
+    transport_socket: {
+      name: 'envoy.transport_sockets.tls',
+      typed_config: {
+        '@type':
+          'type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext',
+        common_tls_context: {
+          tls_certificates: [
+            {
+              certificate_chain: { filename: '/etc/envoy/ca/leaf-cert.pem' },
+              private_key: { filename: '/etc/envoy/ca/leaf-key.pem' },
+            },
+          ],
+        },
+      },
+    },
+    filters: [
+      {
+        name: 'envoy.filters.network.http_connection_manager',
+        typed_config: {
+          '@type':
+            'type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager',
+          stat_prefix: `github_${sanitizeName(sniHost)}`,
+          // Reuse the 'term' access-log tag: github chains are credential-injected
+          // terminate chains, so they classify as ALLOW CRED like the Claude host.
+          access_log: accessLog('term'),
+          route_config: {
+            name: 'local_route',
+            virtual_hosts: [
+              {
+                name: 'terminate',
+                domains: ['*'],
+                routes: [{ match: { prefix: '/' }, route: { cluster: clusterName, timeout: '0s' } }],
+              },
+            ],
+          },
+          http_filters: [
+            {
+              name: 'envoy.filters.http.lua',
+              typed_config: {
+                '@type': 'type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua',
+                default_source_code: { inline_string: gateSource },
+              },
+            },
+            {
+              name: 'envoy.filters.http.credential_injector',
+              typed_config: {
+                '@type':
+                  'type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector',
+                overwrite: true,
+                credential: {
+                  name: 'envoy.http.injected_credentials.generic',
+                  typed_config: {
+                    '@type':
+                      'type.googleapis.com/envoy.extensions.http.injected_credentials.generic.v3.Generic',
+                    header: 'Authorization',
+                    credential: {
+                      name: sdsResource,
+                      sds_config: {
+                        path_config_source: {
+                          path: '/etc/envoy/secrets/github-secret.yaml',
+                          watched_directory: { path: '/etc/envoy/secrets' },
+                        },
+                        resource_api_version: 'V3',
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            {
+              name: 'envoy.filters.http.router',
+              typed_config: {
+                '@type': 'type.googleapis.com/envoy.extensions.filters.http.router.v3.Router',
+              },
+            },
+          ],
+        },
+      },
+    ],
+  };
+
+  const cluster = buildTlsUpstreamCluster(clusterName, sniHost, portStr, override);
+
   return { filterChain, cluster };
 }
 
@@ -359,6 +533,14 @@ export function generateEnvoyConfig(
   const authCandidateBuilt = allowlist.authCandidate
     .filter((e) => e.endsWith(':443'))
     .map((e) => buildAuthCandidateEntry(e, overrides));
+  const githubBuilt = allowlist.githubAuthenticated
+    .filter((e) => e.endsWith(':443'))
+    .map((e) => {
+      const host = e.split(':')[0];
+      const cfg = GITHUB_INJECTION[host];
+      return cfg ? buildGithubEntry(e, overrides, cfg.sdsResource, cfg.gate) : null;
+    })
+    .filter((b): b is NonNullable<typeof b> => b !== null);
   const passthroughServerNames = allowlist.passthrough
     .filter((e) => e.endsWith(':443'))
     .map((e) => e.split(':')[0]);
@@ -391,6 +573,7 @@ export function generateEnvoyConfig(
           filter_chains: [
             ...terminateBuilt.map((b) => b.filterChain),
             ...authCandidateBuilt.map((b) => b.filterChain),
+            ...githubBuilt.map((b) => b.filterChain),
             {
               filter_chain_match: { server_names: passthroughServerNames },
               filters: [
@@ -489,6 +672,7 @@ export function generateEnvoyConfig(
       clusters: [
         ...terminateBuilt.map((b) => b.cluster),
         ...authCandidateBuilt.map((b) => b.cluster),
+        ...githubBuilt.map((b) => b.cluster),
         ...http80ExactBuilt.map((b) => b.cluster),
         ...(hasWildcardHttp80 ? [buildDynamicForwardProxyHttpCluster()] : []),
         {
