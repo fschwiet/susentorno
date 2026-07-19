@@ -107,7 +107,7 @@ type WaitResult = { ready: true } | { ready: false; reason: 'exited' | 'timeout'
 
 The loop's existing `!ready` handling is unchanged in behavior (keep the previous proxy on a
 restart; `fatal` at startup) but gains a distinguishing log line: for `reason === 'exited'` it
-logs e.g. `run-proxy: new proxy (<color>) exited during startup — check the proxy config` (and the
+logs e.g. `run-proxy: new proxy (<color>) exited during startup — likely config issue, check the logs` (and the
 startup-path equivalent), versus the existing generic "did not become ready" for `'timeout'`.
 
 The enum is retained specifically for **test observability** (see §4), not for user guidance — in
