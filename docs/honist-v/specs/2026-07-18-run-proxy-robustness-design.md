@@ -128,10 +128,12 @@ mutation of the generated `envoy.yaml` — the whole config is ours to generate,
 image or entrypoint changes are needed, and the mutation is independent of allowlist resolution
 (so it is not neutralized by the issue-#1 fix):
 
-- **`crash-config`** — render a config that fails Envoy bootstrap validation (e.g. an out-of-range
-  `admin.port_value`). Envoy exits immediately → container reaches `exited` → exercises the §2
-  fast-fail. (Exact invalid element chosen during TDD; the requirement is "Envoy rejects it at
-  bootstrap and exits non-zero.")
+- **`crash-config`** — set `admin.address.socket_address.port_value` to an out-of-range value
+  (`70000`). Envoy's bootstrap proto validation constrains `port_value` to `<= 65535`
+  (`envoy.config.core.v3.SocketAddress`), so Envoy rejects the config at load with a proto-
+  constraint error and exits non-zero **before binding any listener** — deterministically, on every
+  platform, independent of the allowlist. It is a single-field mutation of the admin block we
+  already emit (`envoyConfig.ts:363-364`). Container reaches `exited` → exercises the §2 fast-fail.
 - **`never-ready`** — render an otherwise-valid config but move admin off container port 9901 (the
   port the compose file maps the host admin port to). Envoy runs healthy, but the admin probe is
   refused forever → container stays alive → the classic "up but wedged" case. This is also the
