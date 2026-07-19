@@ -181,8 +181,8 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
       }
     };
 
-    /** Read+parse the allowlist; null (with a logged reason) when unreadable or invalid. */
-    const readValidAllowlist = (): Allowlist | null => {
+    /** Read+parse the allowlist; null only when the file is unreadable (keep previous config). */
+    const readParsedAllowlist = (): Allowlist | null => {
       const content = deps.readAllowlist(config.allowlistPath);
       if (content === null) {
         deps.error(
@@ -191,13 +191,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
         return null;
       }
       const allowlist = parseAllowlist(content);
-      if (allowlist.warnings.length > 0) {
-        deps.error(
-          'run-proxy: allowlist has unsupported wildcard syntax, keeping previous config:\n' +
-            allowlist.warnings.map((entry) => `  - ${entry}`).join('\n'),
-        );
-        return null;
-      }
+      for (const warning of allowlist.warnings) deps.error(`run-proxy: ${warning}`);
       return allowlist;
     };
 
@@ -234,7 +228,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
           const reasons: string[] = [];
 
           if (allowlistDirty) {
-            const allowlist = readValidAllowlist();
+            const allowlist = readParsedAllowlist();
             if (allowlist !== null) {
               try {
                 applyAllowlist(allowlist);
@@ -366,13 +360,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
         return;
       }
       const allowlist = parseAllowlist(content);
-      if (allowlist.warnings.length > 0) {
-        fatal(
-          `unsupported wildcard syntax in ${config.allowlistPath}:\n` +
-            allowlist.warnings.map((entry) => `  - ${entry}`).join('\n'),
-        );
-        return;
-      }
+      for (const warning of allowlist.warnings) deps.error(`run-proxy: ${warning}`);
 
       // Arm both watchers before the (slow) startup recreate: a change landing
       // mid-startup coalesces into one follow-up restart instead of being dropped.

@@ -19,6 +19,16 @@ const VALID_ALLOWLIST = [
 
 const INVALID_ALLOWLIST = ['#pragma claude authenticated', '*.bad.example.com:443', ''].join('\n');
 
+const COLLISION_ALLOWLIST = [
+  '#pragma passthrough',
+  'shared.example.com:443',
+  '',
+  '#pragma claude authenticated',
+  'api.anthropic.com:443',
+  'shared.example.com:443',
+  '',
+].join('\n');
+
 const PASS_LINE = 'envoy-1  | CFGM|pass|2026-07-10T12:00:00|pypi.org|-|-';
 const CRED_LINE =
   'envoy-1  | CFGM|term|2026-07-10T12:00:01|api.anthropic.com|api.anthropic.com|via_upstream';
@@ -173,18 +183,43 @@ describe('runProxyLoop startup', () => {
     expect(h.mocks.startLogStream.mock.calls[0][0]).toBe('blue');
   });
 
-  it('exits 1 on an invalid allowlist without touching docker', async () => {
+  it('warns but still brings up the proxy on an invalid-syntax allowlist', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN }, INVALID_ALLOWLIST);
     const exit = runProxyLoop(baseConfig(), h.deps);
     await flush();
 
-    await expect(exit).resolves.toBe(1);
     expect(h.mocks.error).toHaveBeenCalledWith(
       expect.stringContaining('unsupported wildcard syntax'),
     );
-    expect(h.mocks.error).toHaveBeenCalledWith(expect.stringContaining('*.bad.example.com:443'));
-    expect(h.mocks.buildConfig).not.toHaveBeenCalled();
-    expect(h.mocks.bringUpColor).not.toHaveBeenCalled();
+    expect(h.mocks.buildConfig).toHaveBeenCalledTimes(1);
+    expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1);
+
+    // Still running (not settled): a later SIGINT would resolve it.
+    let settled = false;
+    void exit.then(() => {
+      settled = true;
+    });
+    await flush();
+    expect(settled).toBe(false);
+  });
+
+  it('warns and resolves a collision, then brings up the proxy from the resolved config', async () => {
+    const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN }, COLLISION_ALLOWLIST);
+    void runProxyLoop(baseConfig(), h.deps);
+    await flush();
+
+    expect(h.mocks.error).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "collision: 'shared.example.com:443' listed in passthrough and terminate; using terminate",
+      ),
+    );
+    expect(h.mocks.buildConfig).toHaveBeenCalledTimes(1);
+    expect(h.mocks.buildConfig.mock.calls[0][0].terminate).toEqual([
+      'api.anthropic.com:443',
+      'shared.example.com:443',
+    ]);
+    expect(h.mocks.buildConfig.mock.calls[0][0].passthrough).toEqual([]);
+    expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1);
   });
 
   it('exits 1 when the allowlist is unreadable', async () => {
@@ -302,28 +337,22 @@ describe('runProxyLoop allowlist changes', () => {
     expect(h.mocks.log).toHaveBeenCalledWith('12:00:00  ALLOW PASS  pypi.org');
   });
 
-  it('keeps the previous config on an invalid edit and stays live for the fix', async () => {
+  it('applies the resolved config on a flawed edit and warns instead of keeping previous', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
     void runProxyLoop(baseConfig(), h.deps);
     await flush();
     h.mocks.buildConfig.mockClear();
     h.mocks.bringUpColor.mockClear();
 
-    h.allowlist.value = INVALID_ALLOWLIST;
+    h.allowlist.value = COLLISION_ALLOWLIST;
     h.fireAllowlist();
     await flush();
 
     expect(h.mocks.error).toHaveBeenCalledWith(
-      expect.stringContaining('allowlist has unsupported wildcard syntax, keeping previous config'),
+      expect.stringContaining("collision: 'shared.example.com:443'"),
     );
-    expect(h.mocks.buildConfig).not.toHaveBeenCalled();
-    expect(h.mocks.bringUpColor).not.toHaveBeenCalled();
-
-    // The watcher stayed live: fixing the file triggers a fresh swap.
-    h.allowlist.value = VALID_ALLOWLIST;
-    h.fireAllowlist();
-    await flush();
     expect(h.mocks.buildConfig).toHaveBeenCalledTimes(1);
+    expect(h.mocks.buildConfig.mock.calls[0][0].terminate).toContain('shared.example.com:443');
     expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1);
   });
 });
