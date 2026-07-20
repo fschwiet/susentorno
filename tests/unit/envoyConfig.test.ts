@@ -360,13 +360,14 @@ describe('generateEnvoyConfig github authenticated', () => {
     expect(hcm.route_config.virtual_hosts[0].routes[0].route.timeout).toBe('0s');
   });
 
-  it('builds an api.github.com Bearer chain with an exact-match inline gate', () => {
+  it('builds an api.github.com chain accepting either token or Bearer scheme', () => {
     const chain = githubChain('api.github.com');
     expect(chain).toBeDefined();
     const hcm = chain.filters[0].typed_config;
     const lua = hcm.http_filters[0].typed_config.default_source_code.inline_string;
+    expect(lua).toContain('token ghp-SANDBOX-PLACEHOLDER');
     expect(lua).toContain('Bearer ghp-SANDBOX-PLACEHOLDER');
-    // Bearer gate is a plain exact match — no base64 decoder embedded.
+    // Still a plain exact match — no base64 decoder embedded (that's the Basic gate only).
     expect(lua).not.toContain('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz');
     const cred = hcm.http_filters[1].typed_config.credential.typed_config.credential;
     expect(cred.name).toBe('github_api_token');

@@ -3,8 +3,9 @@
  * .configamatron/proxy/secrets/. Each file carries exactly one resource:
  * Envoy's filesystem SDS rejects a watched file that holds more than the one
  * resource a given sds_config subscription expects. `github_basic_auth`
- * (git's Basic auth to github.com) and `github_api_token` (gh's Bearer auth
- * to api.github.com) are therefore two separate files, both derived from one PAT.
+ * (git's Basic auth to github.com) and `github_api_token` (gh's `token`-scheme
+ * auth to api.github.com) are therefore two separate files, both derived from
+ * one PAT.
  */
 export function formatGithubBasicSecret(username: string, token: string): string {
   const basic = 'Basic ' + Buffer.from(`${username}:${token}`).toString('base64');
@@ -26,7 +27,7 @@ export function formatGithubApiTokenSecret(token: string): string {
     '    name: github_api_token',
     '    generic_secret:',
     '      secret:',
-    `        inline_string: "Bearer ${token}"`,
+    `        inline_string: "token ${token}"`,
     '',
   ].join('\n');
 }

@@ -27,7 +27,7 @@ describe('formatGithubBasicSecret', () => {
 });
 
 describe('formatGithubApiTokenSecret', () => {
-  it('renders the single Bearer SDS resource as an inline string', () => {
+  it('renders the single token-scheme SDS resource as an inline string', () => {
     const token = 'github_pat_' + 'B'.repeat(82);
 
     expect(formatGithubApiTokenSecret(token)).toBe(
@@ -37,7 +37,7 @@ describe('formatGithubApiTokenSecret', () => {
         '    name: github_api_token',
         '    generic_secret:',
         '      secret:',
-        `        inline_string: "Bearer ${token}"`,
+        `        inline_string: "token ${token}"`,
         '',
       ].join('\n'),
     );

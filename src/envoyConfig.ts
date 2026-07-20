@@ -169,16 +169,20 @@ function buildAuthCandidateEntry(entry: string, overrides: UpstreamOverride[]) {
   return { filterChain, cluster };
 }
 
-// api.github.com: exact-match Bearer gate (same shape as templates/proxy/gate.lua,
-// only the placeholder constant differs).
-const GITHUB_BEARER_GATE_LUA = `local PLACEHOLDER = "Bearer ${GITHUB_PLACEHOLDER_PAT}"
+// api.github.com: exact-match gate accepting either the classic `token` scheme (what
+// gh actually sends today, confirmed by wire capture) or `Bearer` (GitHub's documented
+// alternative, in case a future gh version switches — see cli/cli#12828, currently
+// unshipped). Same overall shape as templates/proxy/gate.lua, just two accepted
+// placeholder strings instead of one.
+const GITHUB_API_TOKEN_GATE_LUA = `local TOKEN_PLACEHOLDER = "token ${GITHUB_PLACEHOLDER_PAT}"
+local BEARER_PLACEHOLDER = "Bearer ${GITHUB_PLACEHOLDER_PAT}"
 
 function envoy_on_request(request_handle)
   local auth = request_handle:headers():get("authorization")
   if auth == nil then
     return
   end
-  if auth ~= PLACEHOLDER then
+  if auth ~= TOKEN_PLACEHOLDER and auth ~= BEARER_PLACEHOLDER then
     request_handle:respond({[":status"] = "403"}, "sandbox: unexpected credential")
   end
 end
@@ -238,7 +242,7 @@ function envoy_on_request(request_handle)
 end
 `;
 
-// github.com -> Basic gate + github_basic_auth; api.github.com -> Bearer gate + github_api_token.
+// github.com -> Basic gate + github_basic_auth; api.github.com -> token/Bearer gate + github_api_token.
 // Each SDS resource lives in its own watched file: Envoy's filesystem SDS rejects a
 // watched file that holds more than the one resource a given sds_config expects.
 const GITHUB_INJECTION: Record<string, { sdsResource: string; sdsFile: string; gate: string }> = {
@@ -250,7 +254,7 @@ const GITHUB_INJECTION: Record<string, { sdsResource: string; sdsFile: string; g
   'api.github.com': {
     sdsResource: 'github_api_token',
     sdsFile: 'github-api-token-secret.yaml',
-    gate: GITHUB_BEARER_GATE_LUA,
+    gate: GITHUB_API_TOKEN_GATE_LUA,
   },
 };
 
