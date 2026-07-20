@@ -34,7 +34,8 @@ function accessLog(pathId: string): Record<string, unknown>[] {
           text_format_source: {
             inline_string:
               `CFGM|${pathId}|%START_TIME(%Y-%m-%dT%H:%M:%S)%|%REQUESTED_SERVER_NAME%|` +
-              `%REQ(:AUTHORITY)%|%RESPONSE_CODE_DETAILS%\n`,
+              `%REQ(:AUTHORITY)%|%RESPONSE_CODE_DETAILS%|%RESPONSE_CODE%|%RESPONSE_FLAGS%|` +
+              `%DURATION%|%BYTES_SENT%\n`,
           },
         },
       },

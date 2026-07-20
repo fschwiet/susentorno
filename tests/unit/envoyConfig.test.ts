@@ -127,12 +127,14 @@ describe('generateEnvoyConfig', () => {
     expect(config.admin.address.socket_address.port_value).toBe(9902);
   });
 
-  it('tags every path with a CFGM access log to stdout', () => {
+  it('tags every path with a CFGM access log to stdout, including response/duration/bytes fields', () => {
     const config = generateEnvoyConfig(allowlist) as any;
     const listener443 = config.static_resources.listeners.find(
       (l: any) => l.name === 'listener_443',
     );
     const listener80 = config.static_resources.listeners.find((l: any) => l.name === 'listener_80');
+
+    const expectedSuffix = '|%RESPONSE_CODE%|%RESPONSE_FLAGS%|%DURATION%|%BYTES_SENT%\n';
 
     const termChain = listener443.filter_chains.find((fc: any) =>
       fc.filter_chain_match?.server_names?.includes('api.anthropic.com'),
@@ -140,9 +142,9 @@ describe('generateEnvoyConfig', () => {
     const termLog = termChain.filters[0].typed_config.access_log[0];
     expect(termLog.name).toBe('envoy.access_loggers.file');
     expect(termLog.typed_config.path).toBe('/dev/stdout');
-    expect(termLog.typed_config.log_format.text_format_source.inline_string).toMatch(
-      /^CFGM\|term\|/,
-    );
+    const termFormat = termLog.typed_config.log_format.text_format_source.inline_string;
+    expect(termFormat).toMatch(/^CFGM\|term\|/);
+    expect(termFormat.endsWith(expectedSuffix)).toBe(true);
 
     const passChain = listener443.filter_chains.find((fc: any) =>
       fc.filter_chain_match?.server_names?.includes('*.chatgpt.com'),
@@ -150,14 +152,15 @@ describe('generateEnvoyConfig', () => {
     const passTcp = passChain.filters.find(
       (f: any) => f.name === 'envoy.filters.network.tcp_proxy',
     ).typed_config;
-    expect(passTcp.access_log[0].typed_config.log_format.text_format_source.inline_string).toMatch(
-      /^CFGM\|pass\|/,
-    );
+    const passFormat = passTcp.access_log[0].typed_config.log_format.text_format_source.inline_string;
+    expect(passFormat).toMatch(/^CFGM\|pass\|/);
+    expect(passFormat.endsWith(expectedSuffix)).toBe(true);
 
-    const httpLog =
+    const httpFormat =
       listener80.filter_chains[0].filters[0].typed_config.access_log[0].typed_config.log_format
         .text_format_source.inline_string;
-    expect(httpLog).toMatch(/^CFGM\|http\|/);
+    expect(httpFormat).toMatch(/^CFGM\|http\|/);
+    expect(httpFormat.endsWith(expectedSuffix)).toBe(true);
   });
 
   it('routes wildcard :80 hosts through a shared dynamic_forward_proxy_cluster_http', () => {
@@ -232,8 +235,10 @@ describe('generateEnvoyConfig', () => {
       (f: any) => f.name === 'envoy.filters.network.tcp_proxy',
     ).typed_config;
     expect(tcp.cluster).toBe('blackhole');
-    expect(tcp.access_log[0].typed_config.log_format.text_format_source.inline_string).toMatch(
-      /^CFGM\|deny443\|/,
+    const deny443Format = tcp.access_log[0].typed_config.log_format.text_format_source.inline_string;
+    expect(deny443Format).toMatch(/^CFGM\|deny443\|/);
+    expect(deny443Format.endsWith('|%RESPONSE_CODE%|%RESPONSE_FLAGS%|%DURATION%|%BYTES_SENT%\n')).toBe(
+      true,
     );
 
     const blackhole = config.static_resources.clusters.find((c: any) => c.name === 'blackhole');
@@ -309,6 +314,23 @@ describe('generateEnvoyConfig auth candidate', () => {
     expect(log).toContain('%REQ(X-API-KEY):12%');
     expect(log).toContain('%REQ(X-AUTH-TOKEN):12%');
     expect(log).toContain('%REQ(PROXY-AUTHORIZATION):12%');
+  });
+
+  it('does not add response/duration/bytes fields to the cand access log', () => {
+    const config = generateEnvoyConfig(candAllowlist) as any;
+    const listener443 = config.static_resources.listeners.find(
+      (l: any) => l.name === 'listener_443',
+    );
+    const chain = listener443.filter_chains.find((fc: any) =>
+      fc.filter_chain_match?.server_names?.includes('partner.example.com'),
+    );
+    const log =
+      chain.filters[0].typed_config.access_log[0].typed_config.log_format.text_format_source
+        .inline_string;
+    expect(log).not.toContain('%RESPONSE_CODE%');
+    expect(log).not.toContain('%RESPONSE_FLAGS%');
+    expect(log).not.toContain('%DURATION%');
+    expect(log).not.toContain('%BYTES_SENT%');
   });
 });
 
