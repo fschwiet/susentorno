@@ -157,7 +157,7 @@ describe('write-github-config', () => {
         'utf8',
       );
       expect(apiTokenSecret).toContain('name: github_api_token');
-      expect(apiTokenSecret).toContain(`inline_string: "Bearer ${validToken}"`);
+      expect(apiTokenSecret).toContain(`inline_string: "token ${validToken}"`);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

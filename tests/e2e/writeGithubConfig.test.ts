@@ -50,6 +50,6 @@ describe('configamatron write-github-config', () => {
       join(dir, '.configamatron', 'proxy', 'secrets', 'github-api-token-secret.yaml'),
       'utf8',
     );
-    expect(apiTokenSecret).toContain(`inline_string: "Bearer ${token}"`);
+    expect(apiTokenSecret).toContain(`inline_string: "token ${token}"`);
   });
 });
