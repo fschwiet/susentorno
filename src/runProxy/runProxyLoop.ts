@@ -195,7 +195,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
       return allowlist;
     };
 
-    /** Reissue the leaf if the terminate hosts changed and rewrite envoy.yaml. */
+    /** Reissue the leaf if the TLS-terminated hosts changed and rewrite envoy.yaml. */
     const applyAllowlist = (allowlist: Allowlist): void => {
       deps.log(`run-proxy: ${deps.ensureLeaf(terminateTlsHosts(allowlist))}`);
       deps.buildConfig(allowlist);

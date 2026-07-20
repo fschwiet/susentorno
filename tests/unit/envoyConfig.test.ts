@@ -11,22 +11,22 @@ const allowlist: Allowlist = {
 };
 
 describe('generateEnvoyConfig', () => {
-  it('builds a terminate filter chain and cluster for each terminate host', () => {
+  it('builds a claude filter chain and cluster for each claude-authenticated host', () => {
     const config = generateEnvoyConfig(allowlist) as any;
     const listener443 = config.static_resources.listeners.find(
       (l: any) => l.name === 'listener_443',
     );
-    const terminateChain = listener443.filter_chains.find((fc: any) =>
+    const claudeChain = listener443.filter_chains.find((fc: any) =>
       fc.filter_chain_match?.server_names?.includes('api.anthropic.com'),
     );
 
-    expect(terminateChain).toBeDefined();
-    const hcm = terminateChain.filters[0].typed_config;
+    expect(claudeChain).toBeDefined();
+    const hcm = claudeChain.filters[0].typed_config;
     expect(hcm['@type']).toBe(
       'type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager',
     );
     expect(hcm.route_config.virtual_hosts[0].routes[0].route.cluster).toBe(
-      'cluster_terminate_api_anthropic_com',
+      'cluster_claude_api_anthropic_com',
     );
     // timeout '0s' disables Envoy's default 15s route timeout so long streaming
     // (SSE) responses are not severed mid-response. See
@@ -39,7 +39,7 @@ describe('generateEnvoyConfig', () => {
     ]);
 
     const cluster = config.static_resources.clusters.find(
-      (c: any) => c.name === 'cluster_terminate_api_anthropic_com',
+      (c: any) => c.name === 'cluster_claude_api_anthropic_com',
     );
     expect(
       cluster.load_assignment.endpoints[0].lb_endpoints[0].endpoint.address.socket_address,
@@ -49,13 +49,13 @@ describe('generateEnvoyConfig', () => {
     );
   });
 
-  it('redirects a terminate cluster to the override target and disables upstream cert validation', () => {
+  it('redirects a claude cluster to the override target and disables upstream cert validation', () => {
     const config = generateEnvoyConfig(allowlist, {
       overrides: [{ sniHost: 'api.anthropic.com', target: '127.0.0.1:9443' }],
     }) as any;
 
     const cluster = config.static_resources.clusters.find(
-      (c: any) => c.name === 'cluster_terminate_api_anthropic_com',
+      (c: any) => c.name === 'cluster_claude_api_anthropic_com',
     );
     expect(
       cluster.load_assignment.endpoints[0].lb_endpoints[0].endpoint.address.socket_address,
@@ -207,15 +207,15 @@ describe('generateEnvoyConfig', () => {
     ).toBeUndefined();
   });
 
-  it('serves the leaf certificate (not the root CA) on terminate chains', () => {
+  it('serves the leaf certificate (not the root CA) on TLS-terminating chains', () => {
     const config = generateEnvoyConfig(allowlist) as any;
     const listener443 = config.static_resources.listeners.find(
       (l: any) => l.name === 'listener_443',
     );
-    const terminateChain = listener443.filter_chains.find((fc: any) =>
+    const claudeChain = listener443.filter_chains.find((fc: any) =>
       fc.filter_chain_match?.server_names?.includes('api.anthropic.com'),
     );
-    const tls = terminateChain.transport_socket.typed_config.common_tls_context.tls_certificates[0];
+    const tls = claudeChain.transport_socket.typed_config.common_tls_context.tls_certificates[0];
     expect(tls.certificate_chain.filename).toBe('/etc/envoy/ca/leaf-cert.pem');
     expect(tls.private_key.filename).toBe('/etc/envoy/ca/leaf-key.pem');
   });

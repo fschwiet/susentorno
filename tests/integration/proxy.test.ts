@@ -28,7 +28,7 @@ afterAll(async () => {
   await stopProxyStack(stack);
 }, 30000);
 
-function requestThroughTerminate(
+function requestThroughClaudeHost(
   authorization: string | undefined,
 ): Promise<{ statusCode?: number }> {
   return new Promise((resolve, reject) => {
@@ -75,7 +75,7 @@ function requestThroughAuthCandidate(authorization: string): Promise<{ statusCod
 describe('Envoy sandbox proxy stack', () => {
   it('injects the real credential when the placeholder Authorization header is presented', async () => {
     const before = mockUpstream.receivedAuthorizationHeaders.length;
-    const { statusCode } = await requestThroughTerminate(PLACEHOLDER_AUTH);
+    const { statusCode } = await requestThroughClaudeHost(PLACEHOLDER_AUTH);
 
     expect(statusCode).toBe(200);
     expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_AUTH]);
@@ -83,7 +83,7 @@ describe('Envoy sandbox proxy stack', () => {
 
   it('rejects a non-placeholder Authorization header before reaching the upstream', async () => {
     const before = mockUpstream.receivedAuthorizationHeaders.length;
-    const { statusCode } = await requestThroughTerminate('Bearer something-else');
+    const { statusCode } = await requestThroughClaudeHost('Bearer something-else');
 
     expect(statusCode).toBe(403);
     expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([]);
@@ -213,7 +213,7 @@ describe('Envoy sandbox proxy stack', () => {
     const original = 'Bearer candidate-original-secret-value';
     const { statusCode } = await requestThroughAuthCandidate(original);
 
-    // No lua gate: a non-placeholder credential is NOT 403'd (contrast the terminate host).
+    // No lua gate: a non-placeholder credential is NOT 403'd (contrast the claude host).
     expect(statusCode).toBe(200);
     // No credential_injector: the upstream sees the client's own header, unmodified.
     expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([original]);
@@ -231,9 +231,9 @@ describe('Envoy access logging', () => {
     return stdout;
   }
 
-  it('emits a CFGM line for terminate, passthrough, port-80, and blocked SNI', async () => {
-    // terminate (ALLOW CRED)
-    await requestThroughTerminate(PLACEHOLDER_AUTH);
+  it('emits a CFGM line for claude, passthrough, port-80, and blocked SNI', async () => {
+    // claude (ALLOW CRED)
+    await requestThroughClaudeHost(PLACEHOLDER_AUTH);
 
     // passthrough (ALLOW PASS)
     // pypi.org's response never fires Node's 'end' event on its own (no close-delimited

@@ -73,7 +73,7 @@ export function registerRunProxy(program: Command): void {
     )
     .option(
       '--upstream-override <sniHost=host:port>',
-      'redirect a terminate cluster to a different upstream (test use only)',
+      'redirect a TLS-terminating cluster to a different upstream (test use only)',
       collectOverride,
       [] as UpstreamOverride[],
     )

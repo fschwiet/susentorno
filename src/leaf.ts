@@ -16,7 +16,7 @@ export function ensureLeaf(
   caKeyPem: string,
   sans: string[],
 ): string {
-  if (sans.length === 0) return 'no terminate hosts in the allowlist, skipped leaf';
+  if (sans.length === 0) return 'no TLS-terminated hosts in the allowlist, skipped leaf';
 
   const leafValid =
     existsSync(paths.caLeafCert) &&

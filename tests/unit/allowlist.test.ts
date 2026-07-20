@@ -7,7 +7,7 @@ import {
 } from '../../src/allowlist';
 
 describe('formatAllowlist', () => {
-  it('writes sorted passthrough and terminate sections', () => {
+  it('writes sorted passthrough and claude authenticated sections', () => {
     const allowlist: Allowlist = {
       passthrough: ['archive.ubuntu.com:80', '*.chatgpt.com:443'],
       claudeAuthenticated: ['claude.com:443', 'api.anthropic.com:443'],
@@ -32,7 +32,7 @@ describe('formatAllowlist', () => {
 });
 
 describe('parseAllowlist', () => {
-  it('splits entries into passthrough and terminate by section header', () => {
+  it('splits entries into passthrough and claude authenticated by section header', () => {
     const content = [
       '#pragma passthrough',
       '*.chatgpt.com:443',
@@ -149,7 +149,7 @@ describe('parseAllowlist', () => {
     });
   });
 
-  it('resolves a passthrough+terminate collision to terminate with a warning', () => {
+  it('resolves a passthrough+claudeAuthenticated collision to claudeAuthenticated with a warning', () => {
     const content = [
       '#pragma passthrough',
       'shared.example.com:443',
@@ -270,7 +270,7 @@ describe('parseAllowlist', () => {
     });
   });
 
-  it('does not prune a terminate entry covered by a passthrough wildcard', () => {
+  it('does not prune a claude-authenticated entry covered by a passthrough wildcard', () => {
     const content = [
       '#pragma passthrough',
       '*.ubuntu.com:80',
@@ -309,7 +309,7 @@ describe('parseAllowlist', () => {
     });
   });
 
-  it('flags any wildcard in the terminate section as invalid, valid shape or not', () => {
+  it('flags any wildcard in the claude authenticated section as invalid, valid shape or not', () => {
     const content = [
       '#pragma passthrough',
       'archive.ubuntu.com:80',
@@ -351,7 +351,7 @@ describe('parseAllowlist', () => {
 });
 
 describe('parseAllowlist auth candidate', () => {
-  it('parses the #pragma auth candidate section like terminate', () => {
+  it('parses the #pragma auth candidate section like claude authenticated', () => {
     const content = [
       '#pragma passthrough',
       'pypi.org:443',
@@ -393,7 +393,7 @@ describe('parseAllowlist auth candidate', () => {
     });
   });
 
-  it('resolves a terminate+authCandidate collision to authCandidate with a warning', () => {
+  it('resolves a claudeAuthenticated+authCandidate collision to authCandidate with a warning', () => {
     const content = [
       '#pragma claude authenticated',
       'shared.example.com:443',
@@ -482,7 +482,7 @@ describe('parseAllowlist auth candidate', () => {
     });
   });
 
-  it('does not treat a wildcard-covered terminate host as a collision', () => {
+  it('does not treat a wildcard-covered claude-authenticated host as a collision', () => {
     const content = [
       '#pragma passthrough',
       '*.example.com:443',
@@ -554,7 +554,7 @@ describe('parseAllowlist auth candidate', () => {
 });
 
 describe('terminateTlsHosts', () => {
-  it('returns terminate :443 hosts without the port and excludes passthrough', () => {
+  it('returns claude-authenticated :443 hosts without the port and excludes passthrough', () => {
     const allowlist: Allowlist = {
       passthrough: ['pypi.org:443', 'archive.ubuntu.com:80'],
       claudeAuthenticated: ['api.anthropic.com:443', 'claude.com:443'],
@@ -565,7 +565,7 @@ describe('terminateTlsHosts', () => {
     expect(terminateTlsHosts(allowlist)).toEqual(['api.anthropic.com', 'claude.com']);
   });
 
-  it('ignores non-:443 terminate entries', () => {
+  it('ignores non-:443 entries', () => {
     const allowlist: Allowlist = {
       passthrough: [],
       claudeAuthenticated: ['example.com:80'],
@@ -576,7 +576,7 @@ describe('terminateTlsHosts', () => {
     expect(terminateTlsHosts(allowlist)).toEqual([]);
   });
 
-  it('includes auth candidate :443 hosts alongside terminate hosts', () => {
+  it('includes auth candidate :443 hosts alongside claude hosts', () => {
     const allowlist: Allowlist = {
       passthrough: [],
       claudeAuthenticated: ['api.anthropic.com:443'],
