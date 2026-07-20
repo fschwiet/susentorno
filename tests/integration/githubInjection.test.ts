@@ -27,7 +27,7 @@ const envoyEnv = { ENVOY_HTTPS_PORT: String(HTTPS_PORT), ENVOY_HTTP_PORT: String
 const REAL_TOKEN = 'github_pat_' + 'R'.repeat(82);
 const REAL_USER = 'proxied-user';
 const REAL_BASIC = 'Basic ' + Buffer.from(`${REAL_USER}:${REAL_TOKEN}`).toString('base64');
-const REAL_BEARER = `Bearer ${REAL_TOKEN}`;
+const REAL_API_AUTH = `token ${REAL_TOKEN}`;
 
 const basicOf = (user: string, pass: string) =>
   'Basic ' + Buffer.from(`${user}:${pass}`).toString('base64');
@@ -186,18 +186,28 @@ describe('github.com Basic injection', () => {
   });
 });
 
-describe('api.github.com Bearer injection', () => {
-  it('injects the real Bearer token when the placeholder Bearer is presented', async () => {
+describe('api.github.com token/Bearer injection', () => {
+  it('injects the real token when the placeholder token scheme is presented', async () => {
+    const before = mockUpstream.receivedAuthorizationHeaders.length;
+    const { statusCode } = await requestThrough(
+      'api.github.com',
+      `token ${GITHUB_PLACEHOLDER_PAT}`,
+    );
+    expect(statusCode).toBe(200);
+    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_API_AUTH]);
+  });
+
+  it('injects the real token when the placeholder Bearer scheme is presented', async () => {
     const before = mockUpstream.receivedAuthorizationHeaders.length;
     const { statusCode } = await requestThrough(
       'api.github.com',
       `Bearer ${GITHUB_PLACEHOLDER_PAT}`,
     );
     expect(statusCode).toBe(200);
-    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_BEARER]);
+    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_API_AUTH]);
   });
 
-  it('403s a non-placeholder Bearer before reaching the upstream', async () => {
+  it('403s a non-placeholder credential before reaching the upstream', async () => {
     const before = mockUpstream.receivedAuthorizationHeaders.length;
     const { statusCode } = await requestThrough('api.github.com', 'Bearer wrong-token');
     expect(statusCode).toBe(403);
