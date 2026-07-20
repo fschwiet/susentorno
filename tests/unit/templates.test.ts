@@ -79,6 +79,17 @@ describe('templates', () => {
     expect(script).toContain("Trim('\"')");
   });
 
+  it('windows 05-github-auth fails loudly when gh auth login or setup-git fails', () => {
+    const script = readFileSync(
+      join(templatesDir(), 'vm-shared-windows', '05-github-auth.ps1'),
+      'utf8',
+    );
+    // $ErrorActionPreference = 'Stop' does not catch a native exe's non-zero exit code,
+    // so each gh call must be followed by an explicit $LASTEXITCODE check.
+    expect(script).toMatch(/gh auth login --with-token\r?\n\s*if \(\$LASTEXITCODE -ne 0\)/);
+    expect(script).toMatch(/gh auth setup-git\r?\n\s*if \(\$LASTEXITCODE -ne 0\)/);
+  });
+
   it('windows CA + claude scripts cover all trust surfaces and the placeholder', () => {
     const ca = readFileSync(join(templatesDir(), 'vm-shared-windows', '06-trust-ca.ps1'), 'utf8');
     expect(ca).toContain('certutil'); // Windows machine Root store

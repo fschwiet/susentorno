@@ -21,6 +21,8 @@ foreach ($k in 'GITHUB_USERNAME', 'GITHUB_EMAIL', 'GITHUB_TOKEN') {
 git config --global user.name  $cfg['GITHUB_USERNAME']
 git config --global user.email $cfg['GITHUB_EMAIL']
 $cfg['GITHUB_TOKEN'] | gh auth login --with-token
+if ($LASTEXITCODE -ne 0) { Write-Error "05-github-auth: gh auth login failed"; exit 1 }
 gh auth setup-git
+if ($LASTEXITCODE -ne 0) { Write-Error "05-github-auth: gh auth setup-git failed"; exit 1 }
 
 Write-Host "05-github-auth: git identity and gh auth configured for $($cfg['GITHUB_USERNAME']) <$($cfg['GITHUB_EMAIL'])>"
