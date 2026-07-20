@@ -29,9 +29,9 @@ const COLLISION_ALLOWLIST = [
   '',
 ].join('\n');
 
-const PASS_LINE = 'envoy-1  | CFGM|pass|2026-07-10T12:00:00|pypi.org|-|-';
+const PASS_LINE = 'envoy-1  | CFGM|pass|2026-07-10T12:00:00|pypi.org|-|-|-|-|-|-';
 const CRED_LINE =
-  'envoy-1  | CFGM|term|2026-07-10T12:00:01|api.anthropic.com|api.anthropic.com|via_upstream';
+  'envoy-1  | CFGM|term|2026-07-10T12:00:01|api.anthropic.com|api.anthropic.com|via_upstream|200|-|10|100';
 
 function baseConfig(overrides: Partial<RunProxyConfig> = {}): RunProxyConfig {
   return {
