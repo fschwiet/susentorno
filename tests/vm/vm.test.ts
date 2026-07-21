@@ -349,7 +349,7 @@ describe('S2b: run-proxy inline logging', () => {
     const mark = stack.stdoutLines.length;
     writeStackCredentials(stack, 'rotated-vm-test-token');
 
-    await waitForProxyLine(stack, 'restarting proxy — credentials changed', 120_000, mark);
+    await waitForProxyLine(stack, 'restarting proxy — claude credentials changed', 120_000, mark);
     await waitForProxyLine(stack, 'swap complete', 120_000, mark);
     const pypiBefore = countProxyLines(stack, 'ALLOW PASS  pypi.org');
 
