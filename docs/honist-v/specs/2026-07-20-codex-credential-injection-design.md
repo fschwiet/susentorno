@@ -30,12 +30,21 @@ wire capture against `chatgpt.com`:
 - Codex also sends a `Cookie: __cf_bm=...` (Cloudflare bot-management
   cookie), set by Cloudflare on a prior response and echoed back by the
   client. Not a credential we own; the gate/injector must leave `Cookie`
-  untouched in both directions, same as the existing gates already do.
+  untouched in both directions, same as the existing gates already do, and
+  it must never appear in access logs (the existing `#pragma auth candidate`
+  diagnostic capture already truncates header values to 12 characters for
+  exactly this reason — the permanent authenticated chain logs no header
+  values at all).
 - Token refresh happens against a **different** host,
   `auth.openai.com/oauth/token`, using `tokens.refresh_token`. This mirrors
-  Claude exactly: if the VM's placeholder `auth.json` never appears expired
-  to Codex's own client-side check, the VM never attempts a refresh itself,
-  and `auth.openai.com` never needs to be reachable from the VM at all.
+  Claude exactly: a far-future placeholder `exp` suppresses Codex's
+  *proactive* local-expiry check, so the VM's own client has no reason to
+  initiate a refresh on its own. This isn't an absolute guarantee against
+  every code path (e.g. a refresh retried after some other auth failure) —
+  but there's no such path today, and if the VM ever did call
+  `auth.openai.com` with the placeholder `refresh_token`, it would simply
+  fail (that host isn't allow-listed for the VM at all, so the call never
+  reaches OpenAI).
 - Unlike Claude's `credentials.json`, `auth.json` has no plain `expiresAt`
   field — the access token is a JWT, and expiry is its `exp` claim. Reading
   real expiry requires decoding the JWT locally (no signature verification
@@ -59,7 +68,11 @@ wire capture against `chatgpt.com`:
   closed stdin, but `run-proxy`'s nudge call must not rely on that — it will
   explicitly pass `stdin: 'ignore'` to `execa` rather than inherit whatever
   stdin the long-running `run-proxy` process happens to have, so a nudge can
-  never hang waiting on it.
+  never hang waiting on it. The nudge runs `codex exec` directly on the
+  **host**, using the host's real `auth.json` over the host's own normal
+  network path — it never touches the sandboxed VM's proxied traffic (the
+  gateway only forwards connections arriving from the VM's host-only
+  adapter), so it can't be blocked by the placeholder-only gate.
 
 ## Scope
 
@@ -67,6 +80,14 @@ One host gets TLS-terminated injection: `chatgpt.com:443` (exact host only;
 other `*.chatgpt.com` subdomains carry no credentialed traffic and stay
 passthrough). Single Bearer scheme, same shape as the existing Claude
 injection.
+
+This design is scoped to `auth_mode: "chatgpt"` (ChatGPT-plan sign-in),
+confirmed from the real `auth.json` this was designed against. Codex also
+supports API-key-based operation (`OPENAI_API_KEY` set, `auth_mode:
+"api_key"`), which talks to a different host (`api.openai.com`) with a plain
+`Authorization: Bearer <api_key>` and no `ChatGPT-Account-Id`/JWT-expiry
+machinery at all — that mode is out of scope here and would need its own
+(much simpler, GitHub-PAT-shaped) design if ever needed.
 
 ## Architecture — generalizing `run-proxy` to multiple credential channels
 
@@ -173,7 +194,10 @@ New `buildCodexEntry()` in `envoyConfig.ts`, structurally mirroring
 - `upgrade_configs: [{ upgrade_type: 'websocket' }]` added to this chain's
   `http_connection_manager` only — Claude/GitHub chains are untouched. The
   gate and credential_injector both run on the initial upgrade request's
-  headers, same as any normal request.
+  headers, same as any normal request. `route.timeout: 0s` bounds only the
+  route timeout, not idle-connection reaping — the implementation needs to
+  check `stream_idle_timeout` behavior for the upgraded connection too (same
+  concern already noted for Claude's long-lived streaming responses).
 - `Cookie` is never touched by the gate or injector — it passes through
   unmodified in both directions.
 - Route `timeout: '0s'` (same rationale as Claude: don't cut a long-lived
