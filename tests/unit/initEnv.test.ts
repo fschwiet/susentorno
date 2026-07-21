@@ -146,4 +146,24 @@ describe('initEnvironment', () => {
     );
     expect(existsSync(join(dir, ENV_DIR_NAME))).toBe(false);
   });
+
+  it('seeds home-jq-transforms into the source folder and both shares', () => {
+    initEnvironment(options());
+    const root = join(dir, ENV_DIR_NAME);
+    for (const rel of [
+      'home-jq-transforms/manifest.yaml',
+      'home-jq-transforms/vscode-settings.jq',
+      'vm-shared/home-jq-transforms/manifest.yaml',
+      'vm-shared-windows/home-jq-transforms/manifest.yaml',
+    ]) {
+      expect(existsSync(join(root, rel)), rel).toBe(true);
+    }
+  });
+
+  it('writes a .configamatron/.gitignore that ignores real secrets', () => {
+    initEnvironment(options());
+    const gi = readFileSync(join(dir, ENV_DIR_NAME, '.gitignore'), 'utf8');
+    expect(gi).toContain('proxy/secrets/');
+    expect(gi).toContain('proxy/ca/leaf-key.pem');
+  });
 });

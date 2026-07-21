@@ -85,4 +85,11 @@ export function initEnvironment(options: InitOptions): void {
     writeFileSync(target.credentials, sanitized);
     writeFileSync(target.authJson, sanitizedCodex);
   }
+
+  const templateTransforms = join(options.templatesDir, 'home-jq-transforms');
+  cpSync(templateTransforms, paths.homeJqTransforms, { recursive: true });
+  for (const target of paths.vmSharedTargets) {
+    cpSync(templateTransforms, target.homeJqTransforms, { recursive: true });
+  }
+  copyFileSync(join(options.templatesDir, 'configamatron.gitignore'), paths.gitignore);
 }
