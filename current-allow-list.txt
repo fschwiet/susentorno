@@ -101,7 +101,6 @@ cacerts.digicert.com:80
 cdn.openaimerge.com:443
 centos.org:443
 challenges.cloudflare.com:443
-chatgpt.com:443
 clerk.com:443
 cocoapods.org:443
 cpan.org:443
@@ -235,3 +234,6 @@ statsig.anthropic.com:443
 claude.ai:443
 a.claude.ai:443
 a-api.anthropic.com:443
+
+#pragma codex authenticated
+chatgpt.com:443

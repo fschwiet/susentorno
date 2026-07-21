@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { packagedAllowlist, templatesDir } from '../../src/templates';
+import { parseAllowlist } from '../../src/allowlist';
 
 const expectedTemplateFiles = [
   'vm-shared/01-apt-packages.sh',
@@ -42,6 +43,13 @@ describe('templates', () => {
 
   it('ships the packaged allowlist', () => {
     expect(existsSync(packagedAllowlist())).toBe(true);
+  });
+
+  it('ships chatgpt.com under codex authenticated, not passthrough', () => {
+    const parsed = parseAllowlist(readFileSync(packagedAllowlist(), 'utf8'));
+    expect(parsed.codexAuthenticated).toContain('chatgpt.com:443');
+    expect(parsed.passthrough).not.toContain('chatgpt.com:443');
+    expect(parsed.passthrough).toContain('*.chatgpt.com:443');
   });
 
   it('pins the compose project name so environments replace each other', () => {

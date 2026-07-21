@@ -2,6 +2,7 @@ export interface Allowlist {
   passthrough: string[];
   claudeAuthenticated: string[];
   githubAuthenticated: string[];
+  codexAuthenticated: string[];
   authCandidate: string[];
   warnings: string[];
 }
@@ -32,12 +33,18 @@ function prunePassthrough(entries: string[]): string[] {
   });
 }
 
-type Section = 'passthrough' | 'claudeAuthenticated' | 'githubAuthenticated' | 'authCandidate';
+type Section =
+  | 'passthrough'
+  | 'claudeAuthenticated'
+  | 'githubAuthenticated'
+  | 'codexAuthenticated'
+  | 'authCandidate';
 
 export function parseAllowlist(content: string): Allowlist {
   const passthrough = new Set<string>();
   const claudeAuthenticated = new Set<string>();
   const githubAuthenticated = new Set<string>();
+  const codexAuthenticated = new Set<string>();
   const authCandidate = new Set<string>();
   const warnings = new Set<string>();
   let section: Section | null = null;
@@ -55,6 +62,10 @@ export function parseAllowlist(content: string): Allowlist {
     }
     if (line === '#pragma github authenticated') {
       section = 'githubAuthenticated';
+      continue;
+    }
+    if (line === '#pragma codex authenticated') {
+      section = 'codexAuthenticated';
       continue;
     }
     if (line === '#pragma auth candidate') {
@@ -84,6 +95,7 @@ export function parseAllowlist(content: string): Allowlist {
     if (section === 'passthrough') passthrough.add(line);
     else if (section === 'claudeAuthenticated') claudeAuthenticated.add(line);
     else if (section === 'githubAuthenticated') githubAuthenticated.add(line);
+    else if (section === 'codexAuthenticated') codexAuthenticated.add(line);
     else authCandidate.add(line);
   }
 
@@ -96,12 +108,14 @@ export function parseAllowlist(content: string): Allowlist {
   const byPriority: Array<{ name: string; set: Set<string> }> = [
     { name: 'authCandidate', set: authCandidate },
     { name: 'githubAuthenticated', set: githubAuthenticated },
+    { name: 'codexAuthenticated', set: codexAuthenticated },
     { name: 'claudeAuthenticated', set: claudeAuthenticated },
     { name: 'passthrough', set: passthroughSet },
   ];
   const displayOrder = [
     'passthrough',
     'claudeAuthenticated',
+    'codexAuthenticated',
     'githubAuthenticated',
     'authCandidate',
   ];
@@ -110,6 +124,7 @@ export function parseAllowlist(content: string): Allowlist {
     ...passthroughSet,
     ...claudeAuthenticated,
     ...githubAuthenticated,
+    ...codexAuthenticated,
     ...authCandidate,
   ])) {
     const present = byPriority.filter((s) => s.set.has(entry));
@@ -124,16 +139,18 @@ export function parseAllowlist(content: string): Allowlist {
     passthrough: [...passthroughSet],
     claudeAuthenticated: [...claudeAuthenticated],
     githubAuthenticated: [...githubAuthenticated],
+    codexAuthenticated: [...codexAuthenticated],
     authCandidate: [...authCandidate],
     warnings: [...warnings],
   };
 }
 
-/** Hosts the proxy terminates TLS for (the leaf's SANs): claude + github + authCandidate entries on :443, port stripped. */
+/** Hosts the proxy terminates TLS for (the leaf's SANs): claude + github + codex + authCandidate entries on :443, port stripped. */
 export function terminateTlsHosts(allowlist: Allowlist): string[] {
   return [
     ...allowlist.claudeAuthenticated,
     ...allowlist.githubAuthenticated,
+    ...allowlist.codexAuthenticated,
     ...allowlist.authCandidate,
   ]
     .filter((entry) => entry.endsWith(':443'))
@@ -148,6 +165,10 @@ export function formatAllowlist(allowlist: Allowlist): string {
   if (allowlist.githubAuthenticated.length > 0) {
     lines.push('', '#pragma github authenticated');
     for (const entry of [...allowlist.githubAuthenticated].sort()) lines.push(entry);
+  }
+  if (allowlist.codexAuthenticated.length > 0) {
+    lines.push('', '#pragma codex authenticated');
+    for (const entry of [...allowlist.codexAuthenticated].sort()) lines.push(entry);
   }
   if (allowlist.authCandidate.length > 0) {
     lines.push('', '#pragma auth candidate');

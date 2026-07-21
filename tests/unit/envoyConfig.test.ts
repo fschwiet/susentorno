@@ -6,6 +6,7 @@ const allowlist: Allowlist = {
   passthrough: ['*.chatgpt.com:443', 'archive.ubuntu.com:80'],
   claudeAuthenticated: ['api.anthropic.com:443'],
   githubAuthenticated: [],
+  codexAuthenticated: [],
   authCandidate: [],
   warnings: [],
 };
@@ -169,6 +170,7 @@ describe('generateEnvoyConfig', () => {
       passthrough: ['*.ubuntu.com:80', 'security.ubuntu.com:80'],
       claudeAuthenticated: ['api.anthropic.com:443'],
       githubAuthenticated: [],
+      codexAuthenticated: [],
       authCandidate: [],
       warnings: [],
     };
@@ -254,6 +256,7 @@ describe('generateEnvoyConfig auth candidate', () => {
     passthrough: [],
     claudeAuthenticated: ['api.anthropic.com:443'],
     githubAuthenticated: [],
+    codexAuthenticated: [],
     authCandidate: ['partner.example.com:443'],
     warnings: [],
   };
@@ -341,6 +344,7 @@ describe('generateEnvoyConfig github authenticated', () => {
     passthrough: [],
     claudeAuthenticated: ['api.anthropic.com:443'],
     githubAuthenticated: ['github.com:443', 'api.github.com:443'],
+    codexAuthenticated: [],
     authCandidate: [],
     warnings: [],
   };
