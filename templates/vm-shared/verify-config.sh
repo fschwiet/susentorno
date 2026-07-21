@@ -57,10 +57,10 @@ elif [ -n "$dnat_ip" ]; then
   ok "discovered host IP from DNAT rules: $host_ip"
 else
   host_ip=''
-  bad 'host IP determinable' 'no DNAT rule found and no host-ip argument given -- has 07-setup-persistence.sh run?'
+  bad 'host IP determinable' 'no DNAT rule found and no host-ip argument given -- has 05-configure-network.sh run?'
 fi
 
-section 'CA trust (06)'
+section 'CA trust (05)'
 
 ca_src='/usr/local/share/ca-certificates/configamatron-proxy-certificate-authority.crt'
 if [ -f "$ca_src" ]; then ok 'proxy CA installed'; else bad 'proxy CA installed' "missing $ca_src"; fi
@@ -89,7 +89,7 @@ if command -v firefox > /dev/null 2>&1 || snap list firefox > /dev/null 2>&1; th
   if [ -f "$ff_ca" ] && cmp -s "$ff_ca" "$ca_src"; then
     ok 'firefox policy cert matches installed proxy CA'
   else
-    bad 'firefox policy cert matches installed proxy CA' "missing or stale $ff_ca -- re-run 06-trust-ca.sh"
+    bad 'firefox policy cert matches installed proxy CA' "missing or stale $ff_ca -- re-run 05-configure-network.sh"
   fi
 
   if snap list firefox > /dev/null 2>&1 && [ -f "$ff_policy" ]; then
@@ -112,7 +112,7 @@ else
   adv 'firefox CA checks' 'Firefox not found; skipped'
 fi
 
-section 'DNS stub (07)'
+section 'DNS stub (05)'
 
 if [ "$(systemctl is-active dnsmasq 2>/dev/null)" = 'active' ]; then ok 'dnsmasq active'; else bad 'dnsmasq active' "is-active=$(systemctl is-active dnsmasq 2>/dev/null)"; fi
 if [ "$(systemctl is-enabled dnsmasq 2>/dev/null)" = 'enabled' ]; then ok 'dnsmasq enabled at boot'; else bad 'dnsmasq enabled at boot' "is-enabled=$(systemctl is-enabled dnsmasq 2>/dev/null)"; fi
@@ -143,7 +143,7 @@ else
   bad 'resolvectl lists no resolver besides 127.0.0.1' "extra DNS servers configured: $extra_dns(DHCP DNS not suppressed? intermittent lookup stalls likely)"
 fi
 
-section 'Routing / NAT (07)'
+section 'Routing / NAT (05)'
 
 if printf '%s\n' "$nat_dump" | grep -q -- "--dport 443 -j DNAT --to-destination ${host_ip}:443"; then
   ok 'DNAT rule for :443 present'
@@ -177,7 +177,7 @@ section 'Placeholder credential'
 
 cred="$HOME/.claude/.credentials.json"
 if [ ! -f "$cred" ]; then
-  bad 'placeholder credential in place' "missing $cred -- run 08-claude-config.sh to link vm-shared/credentials.json"
+  bad 'placeholder credential in place' "missing $cred -- run 06-auth-config.sh to link vm-shared/credentials.json"
 elif grep -q "$PLACEHOLDER" "$cred"; then
   ok 'credentials.json is the placeholder'
 else

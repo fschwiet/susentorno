@@ -23,9 +23,9 @@ if ($HostIp) {
   else { Bad 'responder config matches requested host IP' "requested $HostIp, config has '$configuredIp'" }
 }
 elseif ($configuredIp) { $HostIp = $configuredIp; Ok "discovered host IP from responder config: $HostIp" }
-else { Bad 'host IP determinable' 'no responder config and no host-ip arg -- has 07-setup-network.ps1 run?' }
+else { Bad 'host IP determinable' 'no responder config and no host-ip arg -- has 05-configure-network.ps1 run?' }
 
-Section 'CA trust (06)'
+Section 'CA trust (05)'
 $root = Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like '*configamatron-proxy-certificate-authority*' }
 if ($root) { Ok 'proxy CA present in LocalMachine\Root' } else { Bad 'proxy CA present in LocalMachine\Root' 'certutil import missing?' }
 $nodeCa = [Environment]::GetEnvironmentVariable('NODE_EXTRA_CA_CERTS', 'Machine')
@@ -33,7 +33,7 @@ if ($nodeCa -and (Test-Path $nodeCa)) { Ok "NODE_EXTRA_CA_CERTS set ($nodeCa)" }
 $sslBackend = (git config --global http.sslBackend) 2>$null
 if ($sslBackend -eq 'schannel') { Ok 'git http.sslBackend=schannel' } else { Bad 'git http.sslBackend=schannel' "got '$sslBackend'" }
 
-Section 'DNS redirect (07)'
+Section 'DNS redirect (05)'
 $task = Get-ScheduledTask -TaskName 'ConfigamatronDnsResponder' -ErrorAction SilentlyContinue
 if ($task) { Ok 'responder scheduled task registered' } else { Bad 'responder scheduled task registered' 'Register-ScheduledTask not run?' }
 $listening = Get-NetUDPEndpoint -LocalPort 53 -LocalAddress 127.0.0.1 -ErrorAction SilentlyContinue
@@ -50,9 +50,9 @@ if ($HostIp) {
   catch { Bad 'stub answers example.com -> host IP' $_.Exception.Message }
 }
 
-Section 'Placeholder credential (08)'
+Section 'Placeholder credential (06)'
 $cred = Join-Path $env:USERPROFILE '.claude\.credentials.json'
-if (-not (Test-Path $cred)) { Bad 'placeholder credential in place' "missing $cred -- run 08-claude-config.ps1" }
+if (-not (Test-Path $cred)) { Bad 'placeholder credential in place' "missing $cred -- run 06-auth-config.ps1" }
 elseif ((Get-Content $cred -Raw).Contains($PLACEHOLDER)) { Ok 'credentials.json is the placeholder' }
 else { Bad 'credentials.json is the placeholder' 'a NON-placeholder token is present -- must never live in the guest' }
 
