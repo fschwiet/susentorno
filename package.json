@@ -17,7 +17,8 @@
     "current-allow-list.txt"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && node scripts/copy-vm-applier.mjs",
+    "prepack": "pnpm build",
     "cli": "pnpm build && node dist/cli.js",
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run",

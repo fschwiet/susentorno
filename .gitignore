@@ -11,3 +11,6 @@ obj/
 github-basic-secret.yaml
 github-api-token-secret.yaml
 codex-secret.yaml
+
+templates/vm-shared/apply-home-jq-transforms.mjs
+templates/vm-shared-windows/apply-home-jq-transforms.mjs

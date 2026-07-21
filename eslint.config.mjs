@@ -4,7 +4,14 @@ import globals from 'globals';
 import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(
-  { ignores: ['dist/'] },
+  {
+    ignores: [
+      'dist/',
+      'scripts/',
+      'templates/vm-shared/apply-home-jq-transforms.mjs',
+      'templates/vm-shared-windows/apply-home-jq-transforms.mjs',
+    ],
+  },
   eslint.configs.recommended,
   tseslint.configs.recommended,
   prettier,

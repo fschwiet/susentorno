@@ -66,7 +66,9 @@ export function loadManifest(dir: string): TransformEntry[] {
   try {
     parsed = parse(raw);
   } catch (error) {
-    throw new Error(`manifest.yaml is not valid YAML: ${(error as Error).message}`);
+    throw new Error(`manifest.yaml is not valid YAML: ${(error as Error).message}`, {
+      cause: error,
+    });
   }
   if (!Array.isArray(parsed)) {
     throw new Error('manifest.yaml must be a top-level list of entries');
