@@ -40,6 +40,7 @@ describe('envPaths', () => {
       credentials: join(root, 'vm-shared', 'credentials.json'),
       authJson: join(root, 'vm-shared', 'auth.json'),
       githubConfig: join(root, 'vm-shared', 'github-config.txt'),
+      homeJqTransforms: join(root, 'vm-shared', 'home-jq-transforms'),
     });
     expect(paths.vmSharedTargets[1]).toEqual({
       dir: join(root, 'vm-shared-windows'),
@@ -47,6 +48,7 @@ describe('envPaths', () => {
       credentials: join(root, 'vm-shared-windows', 'credentials.json'),
       authJson: join(root, 'vm-shared-windows', 'auth.json'),
       githubConfig: join(root, 'vm-shared-windows', 'github-config.txt'),
+      homeJqTransforms: join(root, 'vm-shared-windows', 'home-jq-transforms'),
     });
   });
 
@@ -74,5 +76,21 @@ describe('envPaths', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('envPaths home-jq-transforms', () => {
+  it('locates the source transforms folder and the env gitignore', () => {
+    const p = envPaths('/work');
+    expect(p.homeJqTransforms).toBe(join('/work', '.configamatron', 'home-jq-transforms'));
+    expect(p.gitignore).toBe(join('/work', '.configamatron', '.gitignore'));
+  });
+
+  it('gives each share its own home-jq-transforms copy', () => {
+    const p = envPaths('/work');
+    expect(p.vmSharedTargets[0].homeJqTransforms).toBe(join(p.vmShared, 'home-jq-transforms'));
+    expect(p.vmSharedTargets[1].homeJqTransforms).toBe(
+      join(p.vmSharedWindows, 'home-jq-transforms'),
+    );
   });
 });
