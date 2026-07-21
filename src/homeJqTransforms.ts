@@ -36,6 +36,22 @@ function validateEntry(entry: unknown, index: number, dir: string): TransformEnt
   return { transform, linux, windows };
 }
 
+export function resolveTarget(target: string, env: NodeJS.ProcessEnv, home: string): string {
+  let t = target.replace(/%([^%]+)%/g, (_, name: string) => {
+    const value = env[name];
+    if (value === undefined) {
+      throw new Error(`environment variable %${name}% is not set`);
+    }
+    return value;
+  });
+  if (t === '~' || t.startsWith('~/') || t.startsWith('~\\')) {
+    t = home + t.slice(1);
+  } else if (t.startsWith('~')) {
+    throw new Error(`unsupported '~name' path (only ~ / ~/ expand): ${target}`);
+  }
+  return t;
+}
+
 export function loadManifest(dir: string): TransformEntry[] {
   const manifestPath = join(dir, 'manifest.yaml');
   let raw: string;

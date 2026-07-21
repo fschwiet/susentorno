@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadManifest } from '../../src/homeJqTransforms';
+import { loadManifest, resolveTarget } from '../../src/homeJqTransforms';
 
 let dir: string;
 beforeEach(() => {
@@ -42,5 +42,27 @@ describe('loadManifest', () => {
   it('rejects a missing transform file', () => {
     write('manifest.yaml', '- transform: nope.jq\n  linux: ~/a.json\n');
     expect(() => loadManifest(dir)).toThrow('not found');
+  });
+});
+
+describe('resolveTarget', () => {
+  const home = '/home/me';
+  it('expands a leading ~', () => {
+    expect(resolveTarget('~/.claude.json', {}, home)).toBe('/home/me/.claude.json');
+    expect(resolveTarget('~', {}, home)).toBe('/home/me');
+  });
+  it('expands %NAME% from env', () => {
+    expect(
+      resolveTarget('%APPDATA%/Code/User/settings.json', { APPDATA: 'C:/AppData' }, home),
+    ).toBe('C:/AppData/Code/User/settings.json');
+  });
+  it('throws on an unset variable', () => {
+    expect(() => resolveTarget('%APPDATA%/x', {}, home)).toThrow('is not set');
+  });
+  it('rejects a ~name form', () => {
+    expect(() => resolveTarget('~other/x', {}, home)).toThrow('only ~ / ~/');
+  });
+  it('leaves an absolute path unchanged', () => {
+    expect(resolveTarget('/tmp/out.json', {}, home)).toBe('/tmp/out.json');
   });
 });
