@@ -10,3 +10,4 @@ obj/
 # GitHub proxy credential (real PAT); belt-and-suspenders on top of .configamatron/
 github-basic-secret.yaml
 github-api-token-secret.yaml
+codex-secret.yaml
