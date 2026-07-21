@@ -8,6 +8,7 @@ import { templatesDir, packagedAllowlist } from '../../src/templates';
 import { ENV_DIR_NAME } from '../../src/envPaths';
 
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
+const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
 
 let dir: string;
 
@@ -23,6 +24,7 @@ function options(overrides: Partial<Parameters<typeof initEnvironment>[0]> = {})
   return {
     cwd: dir,
     credentialsPath: credentialsFixture,
+    codexCredentialsPath: authFixture,
     templatesDir: templatesDir(),
     allowlistSource: packagedAllowlist(),
     ...overrides,
@@ -70,6 +72,33 @@ describe('initEnvironment', () => {
         'sk-ant-oat-SANDBOX-PLACEHOLDER',
       );
     }
+  });
+
+  it('writes the sanitized placeholder auth.json into both shared folders', () => {
+    initEnvironment(options());
+    const root = join(dir, ENV_DIR_NAME);
+    for (const folder of ['vm-shared', 'vm-shared-windows']) {
+      const auth = readFileSync(join(root, folder, 'auth.json'), 'utf8');
+      const parsed = JSON.parse(auth);
+      expect(parsed.tokens.account_id, folder).toBe('acct-uuid-1234'); // pass-through
+      expect(auth, folder).not.toContain('real.access.token.value'); // secret gone
+    }
+  });
+
+  it('fails without writing anything when the codex auth file is missing', () => {
+    expect(() =>
+      initEnvironment(options({ codexCredentialsPath: join(dir, 'nope.json') })),
+    ).toThrow('could not read codex credentials');
+    expect(existsSync(join(dir, ENV_DIR_NAME))).toBe(false);
+  });
+
+  it('fails without writing anything when the codex auth file is unparseable', () => {
+    const badPath = join(dir, 'bad-auth.json');
+    writeFileSync(badPath, '{nope');
+    expect(() => initEnvironment(options({ codexCredentialsPath: badPath }))).toThrow(
+      'invalid codex auth file',
+    );
+    expect(existsSync(join(dir, ENV_DIR_NAME))).toBe(false);
   });
 
   it('does not copy dns-responder bin/obj build artifacts into vm-shared-windows', () => {

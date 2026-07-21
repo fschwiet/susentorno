@@ -2,10 +2,12 @@ import { copyFileSync, cpSync, existsSync, readFileSync, writeFileSync } from 'n
 import { join } from 'node:path';
 import { envPaths } from './envPaths';
 import { sanitizeCredentials } from './sanitizeCredentials';
+import { sanitizeCodexCredentials } from './sanitizeCodexCredentials';
 
 export interface InitOptions {
   cwd: string;
   credentialsPath: string;
+  codexCredentialsPath: string;
   templatesDir: string;
   allowlistSource: string;
 }
@@ -53,6 +55,25 @@ export function initEnvironment(options: InitOptions): void {
     );
   }
 
+  let rawCodex: string;
+  try {
+    rawCodex = readFileSync(options.codexCredentialsPath, 'utf8');
+  } catch {
+    throw new Error(
+      `could not read codex credentials at ${options.codexCredentialsPath} — log in with the codex CLI first, or pass --codex-credentials`,
+    );
+  }
+
+  let sanitizedCodex: string;
+  try {
+    sanitizedCodex = sanitizeCodexCredentials(rawCodex);
+  } catch (error) {
+    throw new Error(
+      `invalid codex auth file at ${options.codexCredentialsPath}: ${(error as Error).message}`,
+      { cause: error },
+    );
+  }
+
   cpSync(join(options.templatesDir, 'vm-shared'), paths.vmShared, { recursive: true });
   cpSync(join(options.templatesDir, 'vm-shared-windows'), paths.vmSharedWindows, {
     recursive: true,
@@ -62,5 +83,6 @@ export function initEnvironment(options: InitOptions): void {
   copyFileSync(options.allowlistSource, paths.allowlist);
   for (const target of paths.vmSharedTargets) {
     writeFileSync(target.credentials, sanitized);
+    writeFileSync(target.authJson, sanitizedCodex);
   }
 }

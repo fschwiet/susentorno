@@ -7,6 +7,7 @@ import { packagedAllowlist, templatesDir } from '../templates';
 
 interface InitCommandOptions {
   credentials: string;
+  codexCredentials: string;
 }
 
 export function registerInit(program: Command): void {
@@ -18,11 +19,17 @@ export function registerInit(program: Command): void {
       'Claude credentials file to sanitize into the VM placeholder credential',
       join(homedir(), '.claude', '.credentials.json'),
     )
+    .option(
+      '--codex-credentials <path>',
+      'Codex auth.json to sanitize into the VM placeholder credential',
+      join(homedir(), '.codex', 'auth.json'),
+    )
     .action((options: InitCommandOptions) => {
       try {
         initEnvironment({
           cwd: process.cwd(),
           credentialsPath: options.credentials,
+          codexCredentialsPath: options.codexCredentials,
           templatesDir: templatesDir(),
           allowlistSource: packagedAllowlist(),
         });

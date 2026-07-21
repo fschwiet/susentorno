@@ -17,6 +17,7 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const cliPath = join(repoRoot, 'dist', 'cli.js');
 const allowlistFixture = join(repoRoot, 'tests', 'integration', 'fixtures', 'allowlist.txt');
 const credentialsFixture = join(repoRoot, 'tests', 'fixtures', 'credentials.json');
+const authFixture = join(repoRoot, 'tests', 'fixtures', 'auth.json');
 const envRoot = join(repoRoot, '.configamatron');
 
 export interface ProxyStack {
@@ -104,7 +105,11 @@ export async function startProxyStack(): Promise<ProxyStack> {
 
   // Fresh environment per run: environments are rebuilt from scratch, never migrated.
   await rmEnvRoot(envRoot);
-  await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: repoRoot });
+  await execa(
+    'node',
+    [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
+    { cwd: repoRoot },
+  );
 
   // Stage the test allowlist as the environment's own before generate-ca so
   // the leaf SANs derive from it; run-proxy then builds envoy.yaml from it too.

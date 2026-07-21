@@ -7,6 +7,7 @@ import { join } from 'node:path';
 
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
+const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
 
 let dir: string;
 let gitConfig: string;
@@ -16,7 +17,11 @@ const token = 'github_pat_' + 'A'.repeat(82);
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'configamatron-ghcfg-'));
-  await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: dir });
+  await execa(
+    'node',
+    [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
+    { cwd: dir },
+  );
   // Hermetic global git identity via a scratch config the command will read.
   gitConfig = join(dir, 'gitconfig');
   writeFileSync(gitConfig, '');

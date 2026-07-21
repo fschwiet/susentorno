@@ -8,6 +8,7 @@ import { join } from 'node:path';
 
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
+const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
 
 let dir: string;
 const caCert = () => join(dir, '.configamatron', 'proxy', 'ca', 'cert.pem');
@@ -19,7 +20,11 @@ const vmWindowsCert = () => join(dir, '.configamatron', 'vm-shared-windows', 'ce
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'configamatron-ca-'));
-  await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: dir });
+  await execa(
+    'node',
+    [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
+    { cwd: dir },
+  );
 });
 
 afterEach(() => {

@@ -7,6 +7,7 @@ import { join } from 'node:path';
 
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
+const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
 
 describe('configamatron init', () => {
   it('scaffolds .configamatron and prints next steps', async () => {
@@ -14,7 +15,7 @@ describe('configamatron init', () => {
     try {
       const { exitCode, stdout } = await execa(
         'node',
-        [cliPath, 'init', '--credentials', credentialsFixture],
+        [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
         { cwd: dir },
       );
       expect(exitCode).toBe(0);
@@ -29,10 +30,14 @@ describe('configamatron init', () => {
   it('exits 1 when .configamatron already exists', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'configamatron-init-'));
     try {
-      await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: dir });
+      await execa(
+        'node',
+        [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
+        { cwd: dir },
+      );
       const { exitCode, stderr } = await execa(
         'node',
-        [cliPath, 'init', '--credentials', credentialsFixture],
+        [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
         { cwd: dir, reject: false },
       );
       expect(exitCode).toBe(1);
@@ -47,7 +52,14 @@ describe('configamatron init', () => {
     try {
       const { exitCode, stderr } = await execa(
         'node',
-        [cliPath, 'init', '--credentials', join(dir, 'missing.json')],
+        [
+          cliPath,
+          'init',
+          '--credentials',
+          join(dir, 'missing.json'),
+          '--codex-credentials',
+          authFixture,
+        ],
         { cwd: dir, reject: false },
       );
       expect(exitCode).toBe(1);
