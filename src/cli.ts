@@ -6,6 +6,7 @@ import { registerGenerateCa } from './commands/generateCa';
 import { registerImportSbxNetworkPolicy } from './commands/importSbxNetworkPolicy';
 import { registerWriteGithubConfig } from './commands/writeGithubConfig';
 import { registerRunProxy } from './commands/runProxy';
+import { registerUpdateShares } from './commands/updateShares';
 
 const program = new Command();
 
@@ -19,5 +20,6 @@ registerGenerateCa(program);
 registerImportSbxNetworkPolicy(program);
 registerWriteGithubConfig(program);
 registerRunProxy(program);
+registerUpdateShares(program);
 
 await program.parseAsync();
