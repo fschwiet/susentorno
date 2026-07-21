@@ -99,13 +99,12 @@ afterAll(async () => {
 }, 600_000);
 
 describe('S1: setup during NAT phase', () => {
-  it('runs 06-trust-ca.sh and 07-setup-persistence.sh from the read-only share', async () => {
-    await guest('g1', 'bash /mnt/vm-shared/06-trust-ca.sh');
+  it('runs 05-configure-network.sh from the read-only share', async () => {
     const { stdout } = await guest(
       'g1',
-      `bash /mnt/vm-shared/07-setup-persistence.sh ${BRIDGE_IP}`,
+      `bash /mnt/vm-shared/05-configure-network.sh ${BRIDGE_IP}`,
     );
-    expect(stdout).toContain('07-setup-persistence:');
+    expect(stdout).toContain('05-configure-network:');
   });
 
   it('dnsmasq stub answers every name with the placeholder IP', async () => {
@@ -133,9 +132,12 @@ describe('S1: setup during NAT phase', () => {
   });
 });
 
-describe('S1b: claude config (08) and firefox policy merge (06), offline', () => {
-  it('08 sets hasCompletedOnboarding on a fresh ~/.claude.json', async () => {
-    await guest('g1', 'rm -f "$HOME/.claude.json" && bash /mnt/vm-shared/08-claude-config.sh');
+describe('S1b: applier onboarding (07), auth-config symlink (06), firefox policy merge (05), offline', () => {
+  it('applier sets hasCompletedOnboarding on a fresh ~/.claude.json', async () => {
+    await guest(
+      'g1',
+      'rm -f "$HOME/.claude.json" && bash /mnt/vm-shared/07-apply-home-jq-transforms.sh',
+    );
     const { stdout } = await guest(
       'g1',
       `python3 -c "import json,os;print(json.load(open(os.path.expanduser('~/.claude.json')))['hasCompletedOnboarding'])"`,
@@ -143,10 +145,10 @@ describe('S1b: claude config (08) and firefox policy merge (06), offline', () =>
     expect(stdout.trim()).toBe('True');
   });
 
-  it('08 merges into an existing ~/.claude.json without clobbering, idempotently', async () => {
+  it('applier merges into an existing ~/.claude.json without clobbering', async () => {
     await guest(
       'g1',
-      `printf '%s' '{"someExisting": 123}' > "$HOME/.claude.json" && bash /mnt/vm-shared/08-claude-config.sh && bash /mnt/vm-shared/08-claude-config.sh`,
+      `printf '%s' '{"someExisting": 123}' > "$HOME/.claude.json" && bash /mnt/vm-shared/07-apply-home-jq-transforms.sh`,
     );
     const { stdout } = await guest(
       'g1',
@@ -155,7 +157,19 @@ describe('S1b: claude config (08) and firefox policy merge (06), offline', () =>
     expect(stdout.trim()).toBe('True 123');
   });
 
-  it('08 symlinks the placeholder credential into place', async () => {
+  it('06-auth-config symlinks the placeholder credential into place (gh stubbed)', async () => {
+    // The credential symlink moved into 06-auth-config.sh, which also runs
+    // `gh auth login` (network, only meaningful post-isolation). Stub gh so this
+    // stays an offline check like the firefox stub test above. The share is
+    // read-only in the guest (virtfs readonly=on), so github-config.txt is
+    // written from the WSL side into the live share dir instead.
+    await wslExec(
+      `printf '%s\n' 'GITHUB_USERNAME="test-user"' 'GITHUB_EMAIL="test@example.com"' 'GITHUB_TOKEN="stub-token"' > ${shareDir}/github-config.txt`,
+    );
+    await guest(
+      'g1',
+      `printf '#!/bin/sh\\nexit 0\\n' | sudo tee /usr/local/bin/gh >/dev/null && sudo chmod +x /usr/local/bin/gh && bash /mnt/vm-shared/06-auth-config.sh`,
+    );
     const link = await guest('g1', 'readlink "$HOME/.claude/.credentials.json"');
     expect(link.stdout.trim()).toBe('/mnt/vm-shared/credentials.json');
     const body = await guest('g1', 'cat "$HOME/.claude/.credentials.json"');
@@ -165,7 +179,7 @@ describe('S1b: claude config (08) and firefox policy merge (06), offline', () =>
   it('06 merges the CA into an existing firefox policies.json, preserving other keys', async () => {
     await guest(
       'g1',
-      `printf '#!/bin/sh\\n' | sudo tee /usr/local/bin/firefox >/dev/null && sudo chmod +x /usr/local/bin/firefox && sudo mkdir -p /etc/firefox/policies && printf '%s' '{"policies":{"SomeOther":true,"Certificates":{"Install":["/usr/local/share/ca-certificates/configamatron-proxy-certificate-authority.crt"]}}}' | sudo tee /etc/firefox/policies/policies.json >/dev/null && bash /mnt/vm-shared/06-trust-ca.sh`,
+      `printf '#!/bin/sh\\n' | sudo tee /usr/local/bin/firefox >/dev/null && sudo chmod +x /usr/local/bin/firefox && sudo mkdir -p /etc/firefox/policies && printf '%s' '{"policies":{"SomeOther":true,"Certificates":{"Install":["/usr/local/share/ca-certificates/configamatron-proxy-certificate-authority.crt"]}}}' | sudo tee /etc/firefox/policies/policies.json >/dev/null && bash /mnt/vm-shared/05-configure-network.sh ${BRIDGE_IP}`,
     );
     const { stdout } = await guest(
       'g1',
@@ -357,17 +371,17 @@ describe('S2b: run-proxy inline logging', () => {
 });
 
 describe('S3: fresh setup with no default route', () => {
-  it('07 discovers the interface via the fallback and installs the route', async () => {
+  it('05 discovers the interface via the fallback and installs the route', async () => {
     // DHCP is still in host-only mode (S2), so g2 boots gateway-less: the
-    // interface-discovery fallback branch in 07 is the only path that works.
+    // interface-discovery fallback branch in 05 is the only path that works.
     await harness('guest.sh', 'start', 'g2', '--share', shareDir);
     await harness('guest.sh', 'wait-ssh', 'g2');
 
     const before = await guest('g2', 'ip -4 route show default');
     expect(before.stdout.trim()).toBe(''); // precondition: no default route
 
-    const run = await guest('g2', `bash /mnt/vm-shared/07-setup-persistence.sh ${BRIDGE_IP}`);
-    expect(run.stdout).toContain('07-setup-persistence:');
+    const run = await guest('g2', `bash /mnt/vm-shared/05-configure-network.sh ${BRIDGE_IP}`);
+    expect(run.stdout).toContain('05-configure-network:');
 
     const after = await guest('g2', 'ip -4 route show default');
     expect(after.stdout).toContain(`default via ${BRIDGE_IP}`);
