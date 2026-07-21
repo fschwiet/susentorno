@@ -7,6 +7,7 @@ export interface VmSharedPaths {
   dir: string;
   cert: string;
   credentials: string;
+  authJson: string;
   githubConfig: string;
 }
 
@@ -25,6 +26,7 @@ export interface EnvPaths {
   caLeafKey: string;
   secretsDir: string;
   sdsSecret: string;
+  codexSecret: string;
   githubBasicSecret: string;
   githubApiTokenSecret: string;
   vmCert: string;
@@ -41,6 +43,7 @@ export function envPaths(cwd: string): EnvPaths {
     dir,
     cert: join(dir, 'cert.pem'),
     credentials: join(dir, 'credentials.json'),
+    authJson: join(dir, 'auth.json'),
     githubConfig: join(dir, 'github-config.txt'),
   });
   const vmSharedTargets = [target(vmShared), target(vmSharedWindows)];
@@ -59,6 +62,7 @@ export function envPaths(cwd: string): EnvPaths {
     caLeafKey: join(proxy, 'ca', 'leaf-key.pem'),
     secretsDir: join(proxy, 'secrets'),
     sdsSecret: join(proxy, 'secrets', 'sds-secret.yaml'),
+    codexSecret: join(proxy, 'secrets', 'codex-secret.yaml'),
     githubBasicSecret: join(proxy, 'secrets', 'github-basic-secret.yaml'),
     githubApiTokenSecret: join(proxy, 'secrets', 'github-api-token-secret.yaml'),
     vmCert: vmSharedTargets[0].cert,

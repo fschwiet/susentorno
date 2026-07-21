@@ -20,6 +20,7 @@ describe('envPaths', () => {
     expect(paths.caLeafKey).toBe(join(root, 'proxy', 'ca', 'leaf-key.pem'));
     expect(paths.secretsDir).toBe(join(root, 'proxy', 'secrets'));
     expect(paths.sdsSecret).toBe(join(root, 'proxy', 'secrets', 'sds-secret.yaml'));
+    expect(paths.codexSecret).toBe(join(root, 'proxy', 'secrets', 'codex-secret.yaml'));
     expect(paths.githubBasicSecret).toBe(
       join(root, 'proxy', 'secrets', 'github-basic-secret.yaml'),
     );
@@ -37,14 +38,31 @@ describe('envPaths', () => {
       dir: join(root, 'vm-shared'),
       cert: join(root, 'vm-shared', 'cert.pem'),
       credentials: join(root, 'vm-shared', 'credentials.json'),
+      authJson: join(root, 'vm-shared', 'auth.json'),
       githubConfig: join(root, 'vm-shared', 'github-config.txt'),
     });
     expect(paths.vmSharedTargets[1]).toEqual({
       dir: join(root, 'vm-shared-windows'),
       cert: join(root, 'vm-shared-windows', 'cert.pem'),
       credentials: join(root, 'vm-shared-windows', 'credentials.json'),
+      authJson: join(root, 'vm-shared-windows', 'auth.json'),
       githubConfig: join(root, 'vm-shared-windows', 'github-config.txt'),
     });
+  });
+
+  it('places the codex placeholder auth.json in each vm-shared target', () => {
+    const paths = envPaths('/work');
+    expect(paths.vmSharedTargets.map((t) => t.authJson)).toEqual([
+      join('/work', '.configamatron', 'vm-shared', 'auth.json'),
+      join('/work', '.configamatron', 'vm-shared-windows', 'auth.json'),
+    ]);
+  });
+
+  it('places the codex SDS secret under proxy/secrets', () => {
+    const paths = envPaths('/work');
+    expect(paths.codexSecret).toBe(
+      join('/work', '.configamatron', 'proxy', 'secrets', 'codex-secret.yaml'),
+    );
   });
 
   it('hasEnvironment reflects whether .configamatron exists', () => {
