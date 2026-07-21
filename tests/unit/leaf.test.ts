@@ -25,7 +25,7 @@ afterAll(() => {
 });
 
 describe('ensureLeaf', () => {
-  it('skips when there are no terminate hosts', () => {
+  it('skips when there are no TLS-terminated hosts', () => {
     expect(ensureLeaf(paths, caCertPem, caKeyPem, [])).toContain('skipped leaf');
   });
 

@@ -152,7 +152,7 @@ describe('run-proxy robustness', () => {
     expect(Date.now() - t0).toBeLessThan(10000); // a regression would hang ~60s
   }, 120000);
 
-  it('starts cleanly on a passthrough+terminate collision (single filter chain per SNI)', async () => {
+  it('starts cleanly on a passthrough+claudeAuthenticated collision (single filter chain per SNI)', async () => {
     writeFileSync(
       join(proxyDir, 'allowlist.txt'),
       [

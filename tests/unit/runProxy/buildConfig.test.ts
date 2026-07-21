@@ -28,7 +28,7 @@ describe('writeEnvoyConfig', () => {
         static_resources: { clusters: Array<{ name: string; load_assignment: any }> };
       };
       const cluster = config.static_resources.clusters.find(
-        (c) => c.name === 'cluster_terminate_api_anthropic_com',
+        (c) => c.name === 'cluster_claude_api_anthropic_com',
       );
       expect(cluster).toBeDefined();
       expect(

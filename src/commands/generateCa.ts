@@ -15,8 +15,9 @@ export function registerGenerateCa(program: Command): void {
     .command('generate-ca')
     .description(
       'Generate the proxy root CA and the leaf it signs into .configamatron/proxy/ca, copy the ' +
-        'root cert.pem into vm-shared, and derive the leaf SANs from the allowlist terminate ' +
-        'section. Reuses existing valid material; reissues the leaf without touching the root.',
+        'root cert.pem into vm-shared, and derive the leaf SANs from the allowlist sections the ' +
+        'proxy terminates TLS for. Reuses existing valid material; reissues the leaf without ' +
+        'touching the root.',
     )
     .action(() => {
       const paths = requireEnvPathsOrExit('generate-ca');

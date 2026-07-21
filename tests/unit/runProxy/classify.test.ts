@@ -14,7 +14,7 @@ function line(over: Partial<AccessLine>): AccessLine {
 }
 
 describe('classify', () => {
-  it('maps terminate to ALLOW CRED with the SNI as domain', () => {
+  it("maps the 'term' path to ALLOW CRED with the SNI as domain", () => {
     expect(classify(line({ pathId: 'term', serverName: 'api.anthropic.com' }))).toEqual([
       { time: '2026-07-06T12:00:00', tag: 'ALLOW CRED', domain: 'api.anthropic.com' },
     ]);

@@ -1,7 +1,7 @@
 import type { Allowlist } from './allowlist';
 import { WILDCARD_HOST_PATTERN } from './allowlist';
 
-const TERMINATE_HOSTS = new Set([
+const CLAUDE_AUTHENTICATED_HOSTS = new Set([
   'api.anthropic.com',
   'claude.com',
   'platform.claude.com',
@@ -16,7 +16,7 @@ function normalizeWildcardHost(host: string): string {
 
 export function parsePolicyFile(content: string): Allowlist {
   const passthrough = new Set<string>();
-  const terminate = new Set<string>();
+  const claudeAuthenticated = new Set<string>();
   const warnings = new Set<string>();
   let currentType: string | null = null;
   let currentDecision: string | null = null;
@@ -34,7 +34,7 @@ export function parsePolicyFile(content: string): Allowlist {
       passthrough.add(`${normalizedHost}${resource.slice(host.length)}`);
       return;
     }
-    if (TERMINATE_HOSTS.has(host)) terminate.add(resource);
+    if (CLAUDE_AUTHENTICATED_HOSTS.has(host)) claudeAuthenticated.add(resource);
     else passthrough.add(resource);
   };
 
@@ -55,7 +55,7 @@ export function parsePolicyFile(content: string): Allowlist {
 
   return {
     passthrough: [...passthrough].sort(),
-    claudeAuthenticated: [...terminate].sort(),
+    claudeAuthenticated: [...claudeAuthenticated].sort(),
     githubAuthenticated: [],
     authCandidate: [],
     warnings: [...warnings].sort(),

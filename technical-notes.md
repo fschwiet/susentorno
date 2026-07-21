@@ -21,7 +21,7 @@ It writes `current-allow-list.txt` in the current directory by default (`-o` to 
 
 ## How the proxy works
 
-Envoy runs in Docker on the host and is the VM's only network path. Allow-listed hosts are either passed through by SNI (TLS) / Host header (port 80), or TLS-terminated for credential injection: requests presenting the placeholder Authorization header get the real bearer token injected from a file-based SDS secret; anything else is rejected before reaching the upstream. `run-proxy` owns the proxy end to end: it builds `envoy.yaml` from the allowlist, writes the SDS secret from the host credential, and force-recreates the container whenever the token rotates or the allowlist changes (reissuing the leaf certificate when the terminate-host set changes — the root CA from `generate-ca` is never touched).
+Envoy runs in Docker on the host and is the VM's only network path. Allow-listed hosts are either passed through by SNI (TLS) / Host header (port 80), or TLS-terminated for credential injection: requests presenting the placeholder Authorization header get the real bearer token injected from a file-based SDS secret; anything else is rejected before reaching the upstream. `run-proxy` owns the proxy end to end: it builds `envoy.yaml` from the allowlist, writes the SDS secret from the host credential, and force-recreates the container whenever the token rotates or the allowlist changes (reissuing the leaf certificate when the TLS-terminated host set changes — the root CA from `generate-ca` is never touched).
 
 Design history (reference only, not updated):
 

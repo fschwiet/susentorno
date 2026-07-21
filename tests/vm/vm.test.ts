@@ -313,7 +313,7 @@ describe('S2b: run-proxy inline logging', () => {
     const mark = stack.stdoutLines.length;
 
     // The staged fixture ends with the '#pragma claude authenticated' section, so appending
-    // adds a terminate host — the terminate-host set changes and the
+    // adds a claude-authenticated host — the TLS-terminated host set changes and the
     // leaf-reissue path runs too, not just the config rebuild.
     appendFileSync(stack.allowlistPath, 'example.org:443\n');
 

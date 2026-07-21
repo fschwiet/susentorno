@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { parsePolicyFile } from '../../src/policyFile';
 
 describe('parsePolicyFile', () => {
-  it('collects network/allow resources, splitting terminate hosts from passthrough', () => {
+  it('collects network/allow resources, splitting claude-authenticated hosts from passthrough', () => {
     const content = [
       'PROVENANCE   APPLIES_TO      POLICY/RULE                    TYPE               DECISION   RESOURCES',
       'local        all             default-ai-services            network            allow      **.chatgpt.com:443',

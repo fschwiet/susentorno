@@ -143,7 +143,7 @@ function buildAuthCandidateEntry(entry: string, overrides: UpstreamOverride[]) {
               {
                 name: 'authcandidate',
                 domains: ['*'],
-                // timeout '0s' matches the terminate path: don't sever long
+                // timeout '0s' matches the claude path: don't sever long
                 // streaming responses at Envoy's default 15s route timeout.
                 routes: [
                   { match: { prefix: '/' }, route: { cluster: clusterName, timeout: '0s' } },
@@ -295,13 +295,13 @@ function buildGithubEntry(
             'type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager',
           stat_prefix: `github_${sanitizeName(sniHost)}`,
           // Reuse the 'term' access-log tag: github chains are credential-injected
-          // terminate chains, so they classify as ALLOW CRED like the Claude host.
+          // TLS-terminating chains, so they classify as ALLOW CRED like the Claude hosts.
           access_log: accessLog('term'),
           route_config: {
             name: 'local_route',
             virtual_hosts: [
               {
-                name: 'terminate',
+                name: 'github',
                 domains: ['*'],
                 routes: [
                   { match: { prefix: '/' }, route: { cluster: clusterName, timeout: '0s' } },
@@ -360,10 +360,10 @@ function buildGithubEntry(
   return { filterChain, cluster };
 }
 
-function buildTerminateEntry(entry: string, overrides: UpstreamOverride[]) {
+function buildClaudeEntry(entry: string, overrides: UpstreamOverride[]) {
   const [sniHost, portStr] = entry.split(':');
   const override = overrides.find((o) => o.sniHost === sniHost);
-  const clusterName = `cluster_terminate_${sanitizeName(sniHost)}`;
+  const clusterName = `cluster_claude_${sanitizeName(sniHost)}`;
 
   const filterChain = {
     filter_chain_match: { server_names: [sniHost] },
@@ -388,13 +388,13 @@ function buildTerminateEntry(entry: string, overrides: UpstreamOverride[]) {
         typed_config: {
           '@type':
             'type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager',
-          stat_prefix: `terminate_${sanitizeName(sniHost)}`,
+          stat_prefix: `claude_${sanitizeName(sniHost)}`,
           access_log: accessLog('term'),
           route_config: {
             name: 'local_route',
             virtual_hosts: [
               {
-                name: 'terminate',
+                name: 'claude',
                 domains: ['*'],
                 routes: [
                   {
@@ -545,9 +545,9 @@ export function generateEnvoyConfig(
   const adminPortValue =
     options.fault === 'crash-config' ? 70000 : options.fault === 'never-ready' ? 9902 : 9901;
 
-  const terminateBuilt = allowlist.claudeAuthenticated
+  const claudeBuilt = allowlist.claudeAuthenticated
     .filter((e) => e.endsWith(':443'))
-    .map((e) => buildTerminateEntry(e, overrides));
+    .map((e) => buildClaudeEntry(e, overrides));
   const authCandidateBuilt = allowlist.authCandidate
     .filter((e) => e.endsWith(':443'))
     .map((e) => buildAuthCandidateEntry(e, overrides));
@@ -589,7 +589,7 @@ export function generateEnvoyConfig(
             },
           ],
           filter_chains: [
-            ...terminateBuilt.map((b) => b.filterChain),
+            ...claudeBuilt.map((b) => b.filterChain),
             ...authCandidateBuilt.map((b) => b.filterChain),
             ...githubBuilt.map((b) => b.filterChain),
             {
@@ -688,7 +688,7 @@ export function generateEnvoyConfig(
         },
       ],
       clusters: [
-        ...terminateBuilt.map((b) => b.cluster),
+        ...claudeBuilt.map((b) => b.cluster),
         ...authCandidateBuilt.map((b) => b.cluster),
         ...githubBuilt.map((b) => b.cluster),
         ...http80ExactBuilt.map((b) => b.cluster),
