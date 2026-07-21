@@ -1,5 +1,6 @@
 import type { Allowlist } from './allowlist';
 import { GITHUB_PLACEHOLDER_PAT } from './githubPlaceholder';
+import { CODEX_PLACEHOLDER_ACCESS_TOKEN } from './codexPlaceholder';
 
 export interface UpstreamOverride {
   sniHost: string;
@@ -461,6 +462,118 @@ function buildClaudeEntry(entry: string, overrides: UpstreamOverride[]) {
   return { filterChain, cluster };
 }
 
+// chatgpt.com: exact-match gate accepting only the placeholder Bearer. Emitted inline
+// (GitHub's precedent) so docker-compose.yml needs no new mounted gate file. Cookie is
+// never read here, so it passes through untouched in both directions.
+const CODEX_GATE_LUA = `local PLACEHOLDER = "Bearer ${CODEX_PLACEHOLDER_ACCESS_TOKEN}"
+
+function envoy_on_request(request_handle)
+  local auth = request_handle:headers():get("authorization")
+  if auth == nil then
+    return
+  end
+  if auth ~= PLACEHOLDER then
+    request_handle:respond({[":status"] = "403"}, "sandbox: unexpected credential")
+  end
+end
+`;
+
+function buildCodexEntry(entry: string, overrides: UpstreamOverride[]) {
+  const [sniHost, portStr] = entry.split(':');
+  const override = overrides.find((o) => o.sniHost === sniHost);
+  const clusterName = `cluster_codex_${sanitizeName(sniHost)}`;
+
+  const filterChain = {
+    filter_chain_match: { server_names: [sniHost] },
+    transport_socket: {
+      name: 'envoy.transport_sockets.tls',
+      typed_config: {
+        '@type':
+          'type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext',
+        common_tls_context: {
+          tls_certificates: [
+            {
+              certificate_chain: { filename: '/etc/envoy/ca/leaf-cert.pem' },
+              private_key: { filename: '/etc/envoy/ca/leaf-key.pem' },
+            },
+          ],
+        },
+      },
+    },
+    filters: [
+      {
+        name: 'envoy.filters.network.http_connection_manager',
+        typed_config: {
+          '@type':
+            'type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager',
+          stat_prefix: `codex_${sanitizeName(sniHost)}`,
+          access_log: accessLog('term'),
+          // Codex prefers wss://chatgpt.com/backend-api/codex/responses; without this the
+          // upgrade 403s at the HCM and Codex silently falls back to HTTPS. The gate and
+          // injector still run on the upgrade request's headers.
+          upgrade_configs: [{ upgrade_type: 'websocket' }],
+          route_config: {
+            name: 'local_route',
+            virtual_hosts: [
+              {
+                name: 'codex',
+                domains: ['*'],
+                routes: [
+                  { match: { prefix: '/' }, route: { cluster: clusterName, timeout: '0s' } },
+                ],
+              },
+            ],
+          },
+          http_filters: [
+            {
+              name: 'envoy.filters.http.lua',
+              typed_config: {
+                '@type': 'type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua',
+                default_source_code: { inline_string: CODEX_GATE_LUA },
+              },
+            },
+            {
+              name: 'envoy.filters.http.credential_injector',
+              typed_config: {
+                '@type':
+                  'type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector',
+                overwrite: true,
+                credential: {
+                  name: 'envoy.http.injected_credentials.generic',
+                  typed_config: {
+                    '@type':
+                      'type.googleapis.com/envoy.extensions.http.injected_credentials.generic.v3.Generic',
+                    header: 'Authorization',
+                    credential: {
+                      name: 'codex_bearer_token',
+                      sds_config: {
+                        path_config_source: {
+                          path: '/etc/envoy/secrets/codex-secret.yaml',
+                          watched_directory: { path: '/etc/envoy/secrets' },
+                        },
+                        resource_api_version: 'V3',
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            {
+              name: 'envoy.filters.http.router',
+              typed_config: {
+                '@type': 'type.googleapis.com/envoy.extensions.filters.http.router.v3.Router',
+              },
+            },
+          ],
+        },
+      },
+    ],
+  };
+
+  const cluster = buildTlsUpstreamCluster(clusterName, sniHost, portStr, override);
+  return { filterChain, cluster };
+}
+
 const DYNAMIC_FORWARD_PROXY_HTTP_CACHE = 'dynamic_forward_proxy_cache_config_http';
 
 function buildWildcardHttp80VirtualHost(hosts: string[]) {
@@ -548,6 +661,9 @@ export function generateEnvoyConfig(
   const claudeBuilt = allowlist.claudeAuthenticated
     .filter((e) => e.endsWith(':443'))
     .map((e) => buildClaudeEntry(e, overrides));
+  const codexBuilt = allowlist.codexAuthenticated
+    .filter((e) => e.endsWith(':443'))
+    .map((e) => buildCodexEntry(e, overrides));
   const authCandidateBuilt = allowlist.authCandidate
     .filter((e) => e.endsWith(':443'))
     .map((e) => buildAuthCandidateEntry(e, overrides));
@@ -590,6 +706,7 @@ export function generateEnvoyConfig(
           ],
           filter_chains: [
             ...claudeBuilt.map((b) => b.filterChain),
+            ...codexBuilt.map((b) => b.filterChain),
             ...authCandidateBuilt.map((b) => b.filterChain),
             ...githubBuilt.map((b) => b.filterChain),
             {
@@ -689,6 +806,7 @@ export function generateEnvoyConfig(
       ],
       clusters: [
         ...claudeBuilt.map((b) => b.cluster),
+        ...codexBuilt.map((b) => b.cluster),
         ...authCandidateBuilt.map((b) => b.cluster),
         ...githubBuilt.map((b) => b.cluster),
         ...http80ExactBuilt.map((b) => b.cluster),

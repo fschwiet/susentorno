@@ -428,4 +428,58 @@ describe('generateEnvoyConfig github authenticated', () => {
         .trust_chain_verification,
     ).toBe('ACCEPT_UNTRUSTED');
   });
+
+  it('builds a codex filter chain with an inline lua gate, credential injector, router, and websocket upgrade', () => {
+    const codexAllowlist: Allowlist = {
+      passthrough: [],
+      claudeAuthenticated: [],
+      githubAuthenticated: [],
+      codexAuthenticated: ['chatgpt.com:443'],
+      authCandidate: [],
+      warnings: [],
+    };
+    const config = generateEnvoyConfig(codexAllowlist) as any;
+    const listener443 = config.static_resources.listeners.find(
+      (l: any) => l.name === 'listener_443',
+    );
+    const codexChain = listener443.filter_chains.find((fc: any) =>
+      fc.filter_chain_match?.server_names?.includes('chatgpt.com'),
+    );
+    expect(codexChain).toBeDefined();
+
+    const hcm = codexChain.filters[0].typed_config;
+    expect(hcm.http_filters.map((f: any) => f.name)).toEqual([
+      'envoy.filters.http.lua',
+      'envoy.filters.http.credential_injector',
+      'envoy.filters.http.router',
+    ]);
+    // Inline gate (not a mounted file) referencing the placeholder Bearer.
+    expect(hcm.http_filters[0].typed_config.default_source_code.inline_string).toContain('Bearer ');
+    // Codex-only websocket upgrade support.
+    expect(hcm.upgrade_configs).toEqual([{ upgrade_type: 'websocket' }]);
+    // Long-lived streaming: no route timeout.
+    expect(hcm.route_config.virtual_hosts[0].routes[0].route.timeout).toBe('0s');
+
+    const injector = hcm.http_filters[1].typed_config;
+    expect(injector.credential.typed_config.credential.name).toBe('codex_bearer_token');
+    expect(injector.credential.typed_config.credential.sds_config.path_config_source.path).toBe(
+      '/etc/envoy/secrets/codex-secret.yaml',
+    );
+
+    const cluster = config.static_resources.clusters.find(
+      (c: any) => c.name === 'cluster_codex_chatgpt_com',
+    );
+    expect(cluster).toBeDefined();
+  });
+
+  it('does not add websocket upgrade support to the claude chain', () => {
+    const config = generateEnvoyConfig(allowlist) as any;
+    const listener443 = config.static_resources.listeners.find(
+      (l: any) => l.name === 'listener_443',
+    );
+    const claudeChain = listener443.filter_chains.find((fc: any) =>
+      fc.filter_chain_match?.server_names?.includes('api.anthropic.com'),
+    );
+    expect(claudeChain.filters[0].typed_config.upgrade_configs).toBeUndefined();
+  });
 });
