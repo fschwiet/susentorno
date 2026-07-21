@@ -48,11 +48,12 @@ describe('initEnvironment', () => {
       'proxy/host-allow-vm-inbound.ps1',
       'proxy/allowlist.txt',
       'vm-shared-windows/01-install-packages.ps1',
-      'vm-shared-windows/07-setup-network.ps1',
+      'vm-shared-windows/05-configure-network.ps1',
+      'vm-shared-windows/06-auth-config.ps1',
+      'vm-shared-windows/07-apply-home-jq-transforms.ps1',
       'vm-shared-windows/verify-config.ps1',
       'vm-shared-windows/dns-responder/Program.cs',
       'vm-shared-windows/credentials.json',
-      'vm-shared-windows/09-codex-config.ps1',
     ]) {
       expect(existsSync(join(root, file)), file).toBe(true);
     }

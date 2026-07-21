@@ -1,11 +1,36 @@
 #Requires -RunAsAdministrator
-param([Parameter(Mandatory = $true)][string]$HostIp)
+param([Parameter(Mandatory = $true)][string]$HostIp, [string]$CertPath)
 $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+if (-not $CertPath) { $CertPath = Join-Path $scriptDir 'cert.pem' }
+
+if (-not (Test-Path $CertPath)) {
+  Write-Error "05-configure-network: $CertPath not found. Run 'configamatron generate-ca' on the host first."
+  exit 1
+}
+
+# --- Trust the proxy CA ---
+
+# 1) Windows machine Root store — covers .NET (uses the store) and schannel.
+certutil -f -addstore Root $CertPath | Out-Null
+
+# 2) Node tools (claude/codex) ignore the Windows store, so point NODE_EXTRA_CA_CERTS
+#    at a stable copy. Machine scope so every new shell inherits it.
+$caDir = 'C:\ProgramData\configamatron'
+New-Item -ItemType Directory -Force -Path $caDir | Out-Null
+$caStable = Join-Path $caDir 'proxy-ca.pem'
+Copy-Item -Force $CertPath $caStable
+[Environment]::SetEnvironmentVariable('NODE_EXTRA_CA_CERTS', $caStable, 'Machine')
+
+# 3) Git for Windows: use the Windows store (schannel).
+git config --global http.sslBackend schannel
+
+Write-Host "05-configure-network: imported $CertPath into LocalMachine\Root; NODE_EXTRA_CA_CERTS=$caStable; git sslBackend=schannel"
+
+# --- DNS responder ---
 
 # Stop any already-running responder first: Windows locks a running exe, so a
-# rerun's `dotnet publish` below would fail to overwrite it otherwise. Safe on
-# a first-ever run, where the task doesn't exist yet.
+# rerun's `dotnet publish` below would fail to overwrite it otherwise.
 $taskName = 'ConfigamatronDnsResponder'
 if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
   Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
@@ -15,16 +40,13 @@ if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
   }
 }
 
-# 1) Publish the shipped C# catch-all DNS responder to a stable location.
-#    dotnet publish writes obj/ intermediates into the *source* project dir, but this
-#    script runs from the read-only VMware share. Copy the source to a writable build
-#    dir first and publish from there, so nothing writes back to the share.
+# 1) Publish the shipped C# catch-all DNS responder to a stable location. Copy the
+#    source to a writable build dir first (the share is read-only for dotnet's obj/).
 $installDir = 'C:\ProgramData\configamatron\dns-responder'
 $buildDir = 'C:\ProgramData\configamatron\dns-responder-build'
 if (Test-Path $buildDir) { Remove-Item -Recurse -Force $buildDir }
 New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 Copy-Item -Recurse -Force -Path (Join-Path (Join-Path $scriptDir 'dns-responder') '*') -Destination $buildDir
-# Defense in depth: drop any bin/obj that slipped onto the share (initEnv filters these).
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue `
   (Join-Path $buildDir 'bin'), (Join-Path $buildDir 'obj')
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
@@ -45,19 +67,12 @@ Register-ScheduledTask -TaskName 'ConfigamatronDnsResponder' -Action $action -Tr
 Start-ScheduledTask -TaskName 'ConfigamatronDnsResponder'
 
 # 4) Point every up adapter's DNS at the local responder; suppress DHCP DNS.
-#    A single-NIC guest (VMware NAT -> host-only) has one adapter here. A two-NIC
-#    guest (Hyper-V: a permanent Internal-switch NIC plus a temporary Default-Switch
-#    NIC that supplies setup-time internet) has two -- and the Default-Switch NIC,
-#    the only one carrying a default gateway, is REMOVED at isolation. Targeting just
-#    the gateway NIC would put the setting on that temporary adapter and lose it on
-#    isolation; setting every up NIC guarantees the surviving adapter still points at
-#    the responder. Harmless on VMware, where there is only the one adapter.
 $ifaces = Get-NetIPConfiguration | Where-Object { $_.IPv4Address -and $_.NetAdapter.Status -eq 'Up' } |
   Select-Object -ExpandProperty InterfaceAlias
-if (-not $ifaces) { Write-Error "07-setup-network: could not determine the VM's network interface."; exit 1 }
+if (-not $ifaces) { Write-Error "05-configure-network: could not determine the VM's network interface."; exit 1 }
 foreach ($iface in $ifaces) {
   Set-DnsClientServerAddress -InterfaceAlias $iface -ServerAddresses '127.0.0.1'
 }
 Clear-DnsClientCache
 
-Write-Host "07-setup-network: DNS responder installed (-> $HostIp), scheduled at startup; DNS set to 127.0.0.1 on: $($ifaces -join ', ')"
+Write-Host "05-configure-network: CA trusted; DNS responder installed (-> $HostIp), scheduled at startup; DNS set to 127.0.0.1 on: $($ifaces -join ', ')"

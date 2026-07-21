@@ -24,11 +24,9 @@ const expectedTemplateFiles = [
   'vm-shared-windows/02-install-pnpm.ps1',
   'vm-shared-windows/03-install-tools.ps1',
   'vm-shared-windows/04-configure-tools.ps1',
-  'vm-shared-windows/05-github-auth.ps1',
-  'vm-shared-windows/06-trust-ca.ps1',
-  'vm-shared-windows/08-claude-config.ps1',
-  'vm-shared-windows/09-codex-config.ps1',
-  'vm-shared-windows/07-setup-network.ps1',
+  'vm-shared-windows/05-configure-network.ps1',
+  'vm-shared-windows/06-auth-config.ps1',
+  'vm-shared-windows/07-apply-home-jq-transforms.ps1',
   'vm-shared-windows/dns-responder/ConfigamatronDnsResponder.csproj',
   'vm-shared-windows/dns-responder/Program.cs',
   'vm-shared-windows/verify-config.ps1',
@@ -81,54 +79,49 @@ describe('templates', () => {
     expect(compose).toContain('127.0.0.1:${ENVOY_GREEN_ADMIN_PORT:-}:9901');
   });
 
-  it('windows 05-github-auth parses the double-quoted github-config format', () => {
+  it('windows 06-auth-config parses the double-quoted github-config format', () => {
     const script = readFileSync(
-      join(templatesDir(), 'vm-shared-windows', '05-github-auth.ps1'),
+      join(templatesDir(), 'vm-shared-windows', '06-auth-config.ps1'),
       'utf8',
     );
-    // The config file is GITHUB_USERNAME="..." etc; the parser must strip quotes.
     expect(script).toContain('GITHUB_USERNAME');
     expect(script).toContain("Trim('\"')");
   });
 
-  it('windows 05-github-auth fails loudly when gh auth login or setup-git fails', () => {
+  it('windows 06-auth-config fails loudly when gh auth login or setup-git fails', () => {
     const script = readFileSync(
-      join(templatesDir(), 'vm-shared-windows', '05-github-auth.ps1'),
+      join(templatesDir(), 'vm-shared-windows', '06-auth-config.ps1'),
       'utf8',
     );
-    // $ErrorActionPreference = 'Stop' does not catch a native exe's non-zero exit code,
-    // so each gh call must be followed by an explicit $LASTEXITCODE check.
     expect(script).toMatch(/gh auth login --with-token\r?\n\s*if \(\$LASTEXITCODE -ne 0\)/);
     expect(script).toMatch(/gh auth setup-git\r?\n\s*if \(\$LASTEXITCODE -ne 0\)/);
   });
 
-  it('windows CA + claude scripts cover all trust surfaces and the placeholder', () => {
-    const ca = readFileSync(join(templatesDir(), 'vm-shared-windows', '06-trust-ca.ps1'), 'utf8');
-    expect(ca).toContain('certutil'); // Windows machine Root store
-    expect(ca).toContain('NODE_EXTRA_CA_CERTS'); // Node tools
-    expect(ca).toContain('http.sslBackend schannel'); // git
-
-    const claude = readFileSync(
-      join(templatesDir(), 'vm-shared-windows', '08-claude-config.ps1'),
+  it('windows 05-configure-network covers CA trust surfaces; 06-auth-config installs the placeholder', () => {
+    const net = readFileSync(
+      join(templatesDir(), 'vm-shared-windows', '05-configure-network.ps1'),
       'utf8',
     );
-    expect(claude).toContain('hasCompletedOnboarding');
-    expect(claude).toContain('.credentials.json');
+    expect(net).toContain('certutil');
+    expect(net).toContain('NODE_EXTRA_CA_CERTS');
+    expect(net).toContain('http.sslBackend schannel');
+    const auth = readFileSync(
+      join(templatesDir(), 'vm-shared-windows', '06-auth-config.ps1'),
+      'utf8',
+    );
+    expect(auth).toContain('.credentials.json');
   });
 
   it('windows DNS redirect wires responder to the host IP and adapter DNS', () => {
     const net = readFileSync(
-      join(templatesDir(), 'vm-shared-windows', '07-setup-network.ps1'),
+      join(templatesDir(), 'vm-shared-windows', '05-configure-network.ps1'),
       'utf8',
     );
     expect(net).toContain('Register-ScheduledTask');
     expect(net).toContain('ConfigamatronDnsResponder');
-    expect(net).toContain('responder-config.txt'); // host IP written for the responder
+    expect(net).toContain('responder-config.txt');
     expect(net).toContain('Set-DnsClientServerAddress');
     expect(net).toContain("'127.0.0.1'");
-
-    // The responder is built from a writable scratch dir, not published directly from
-    // the read-only share (which cannot hold dotnet's obj/ intermediates).
     expect(net).toContain('dns-responder-build');
     expect(net).toContain('Copy-Item');
 
@@ -136,8 +129,8 @@ describe('templates', () => {
       join(templatesDir(), 'vm-shared-windows', 'dns-responder', 'Program.cs'),
       'utf8',
     );
-    expect(prog).toContain('responder-config.txt'); // reads the target IP
-    expect(prog).toContain('53'); // binds DNS port
+    expect(prog).toContain('responder-config.txt');
+    expect(prog).toContain('53');
   });
 
   it('windows verify-config checks the placeholder invariant and gate', () => {
@@ -158,25 +151,6 @@ describe('templates', () => {
     expect(s).toContain('sudo jq . "$policy_file"');
     expect(s).toContain('.policies.Certificates.Install');
     expect(s).not.toContain('python3');
-  });
-
-  it('windows 08-claude-config writes .claude.json with jq', () => {
-    const s = readFileSync(
-      join(templatesDir(), 'vm-shared-windows', '08-claude-config.ps1'),
-      'utf8',
-    );
-    expect(s).toContain('jq . $claudeJson');
-    expect(s).toContain('.hasCompletedOnboarding = true');
-    expect(s).not.toContain('ConvertTo-Json');
-  });
-
-  it('windows 04-configure-tools writes settings.json with jq', () => {
-    const s = readFileSync(
-      join(templatesDir(), 'vm-shared-windows', '04-configure-tools.ps1'),
-      'utf8',
-    );
-    expect(s).toContain('jq . $vscodeSettings');
-    expect(s).not.toContain('ConvertTo-Json');
   });
 
   it('seed transforms reproduce the extracted inline jq programs', () => {
