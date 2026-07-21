@@ -98,13 +98,7 @@ Run the scripts from the shared folder in number order. Run them without `sudo` 
 
 ## Customizing settings transforms
 
-`.configamatron/home-jq-transforms/` holds a `manifest.yaml` plus `.jq` files that edit
-settings files in the guest's home directory. Each manifest entry names a `.jq` transform and
-its `linux` and/or `windows` target path (a leading `~` is the home dir; `%NAME%` is an
-environment variable). Step 07 applies them all, seeding an empty `{}` when a target is
-missing. Add or edit transforms, then run `configamatron update-shares` to copy them into the
-VM shares (`-n`/`--dry-run` previews without copying). A transform whose `{}` preview fails
-blocks the copy.
+`.configamatron/home-jq-transforms/` holds a `manifest.yaml` plus `.jq` files that edit settings files in the guest's home directory. Each manifest entry names a `.jq` transform and its `linux` and/or `windows` target path (a leading `~` is the home dir; `%NAME%` is an environment variable). Step 07 applies them all, seeding an empty `{}` when a target is missing. Add or edit transforms, then run `configamatron update-shares` to copy them into the VM shares (`-n`/`--dry-run` previews without copying). A transform whose `{}` preview fails blocks the copy.
 
 ## Verifying an environment
 
@@ -159,5 +153,4 @@ Run the full pipeline (steps 1–6) in one command:
 pnpm test
 ```
 
-> The e2e suite shells out to `jq`; install it on the dev host (and CI) or the jq-dependent
-> tests self-skip.
+> The e2e suite shells out to `jq`; install it on the dev host (and CI) or the jq-dependent tests self-skip.

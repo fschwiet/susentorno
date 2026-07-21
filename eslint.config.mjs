@@ -8,6 +8,7 @@ export default tseslint.config(
     ignores: [
       'dist/',
       'scripts/',
+      '.configamatron/',
       'templates/vm-shared/apply-home-jq-transforms.mjs',
       'templates/vm-shared-windows/apply-home-jq-transforms.mjs',
     ],
