@@ -143,7 +143,7 @@ export function registerRunProxy(program: Command): void {
             return null;
           }
         },
-        writeSecret,
+        writeSecret: (token: string, path: string) => writeSecret(token, path, 'sandbox_bearer_token'),
         buildConfig: (allowlist) =>
           writeEnvoyConfig(
             allowlist,
