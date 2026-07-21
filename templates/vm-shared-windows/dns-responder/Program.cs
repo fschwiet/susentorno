@@ -5,7 +5,7 @@ using System.Net.Sockets;
 // routes all names to the transparent Envoy proxy (the app connects to hostIp:443
 // with SNI intact). AAAA queries get NOERROR/no-answer so callers fall back to A.
 // The target IP is read from responder-config.txt next to the exe (written by
-// 07-setup-network.ps1).
+// 05-configure-network.ps1).
 
 string exeDir = AppContext.BaseDirectory;
 string configPath = Path.Combine(exeDir, "responder-config.txt");

@@ -180,7 +180,7 @@ Once done, set a more reasonable policy:
 | Ubuntu | `README.md` ("Run the numbered scripts from the VM") | `/mnt/vm-shared` instead of `/mnt/hgfs/vm-shared` |
 | Windows | `usage-windows-vm.md` ("Run the numbered scripts") | `\\192.168.67.1\vm-shared-windows` instead of `\\vmware-host\Shared Folders\vm-shared-windows` |
 
-When a script asks for `<host-ip>` (`07-setup-persistence.sh` / `07-setup-network.ps1`), it is the Internal-switch host IP from step 1 (`192.168.67.1` here).
+When a script asks for `<host-ip>` (`05-configure-network.sh` / `05-configure-network.ps1`), it is the Internal-switch host IP from step 1 (`192.168.67.1` here).
 
 ## 7. Isolate
 
