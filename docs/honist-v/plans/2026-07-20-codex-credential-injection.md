@@ -203,6 +203,12 @@ describe('jwt helpers', () => {
     expect(jwtExpMs(buildJwt({ exp: 'soon' }))).toBeNull();
   });
 
+  it('returns null when exp decodes to a non-finite number', () => {
+    // JSON.parse('1e999') === Infinity, which is typeof 'number'.
+    const token = `${encodeBase64Url({ alg: 'none' })}.${encodeBase64Url('{"exp":1e999}')}.sig`;
+    expect(jwtExpMs(token)).toBeNull();
+  });
+
   it('returns null on a payload that is not JSON', () => {
     const bad = `${encodeBase64Url({ a: 1 })}.notbase64json!!.sig`;
     expect(decodeJwtClaims(bad)).toBeNull();
@@ -252,7 +258,9 @@ export function decodeJwtClaims(token: string): Record<string, unknown> | null {
 /** Absolute expiry in epoch **milliseconds** from a JWT's `exp` claim (seconds). */
 export function jwtExpMs(token: string): number | null {
   const claims = decodeJwtClaims(token);
-  if (!claims || typeof claims.exp !== 'number') return null;
+  // NumericDate must be a finite number. Reject Infinity/NaN (e.g. a payload `exp: 1e999`
+  // decodes to Infinity and would otherwise suppress refresh forever).
+  if (!claims || typeof claims.exp !== 'number' || !Number.isFinite(claims.exp)) return null;
   return claims.exp * 1000;
 }
 
@@ -441,6 +449,18 @@ describe('readCodexCredentials', () => {
     writeAuth({ access_token: buildJwt({ sub: 'x' }) });
     expect(readCodexCredentials(path)).toBeNull();
   });
+
+  it('returns null for a non-chatgpt (api_key) auth file', () => {
+    writeFileSync(
+      path,
+      JSON.stringify({
+        OPENAI_API_KEY: 'sk-real-api-key',
+        tokens: { access_token: buildJwt({ exp: 1_700_000_000 }) },
+        auth_mode: 'api_key',
+      }),
+    );
+    expect(readCodexCredentials(path)).toBeNull();
+  });
 });
 ```
 
@@ -478,6 +498,11 @@ export function readCodexCredentials(path: string): Credentials | null {
   } catch {
     return null;
   }
+
+  // Scope guard: this channel handles ChatGPT-plan sign-in only. An api_key-mode file
+  // has no chatgpt JWT to inject; treat it as unreadable so startup fails loudly rather
+  // than silently mis-injecting.
+  if ((parsed as { auth_mode?: unknown } | null)?.auth_mode !== 'chatgpt') return null;
 
   const tokens = (parsed as { tokens?: unknown } | null)?.tokens as
     | { access_token?: unknown }
@@ -582,6 +607,15 @@ describe('sanitizeCodexCredentials', () => {
   it('throws when tokens is missing', () => {
     expect(() => sanitizeCodexCredentials('{"auth_mode":"chatgpt"}')).toThrow('tokens');
   });
+
+  it('refuses an api_key-mode file (would leak a real OPENAI_API_KEY)', () => {
+    const apiKeyFile = JSON.stringify({
+      OPENAI_API_KEY: 'sk-real-api-key',
+      tokens: { access_token: 'whatever' },
+      auth_mode: 'api_key',
+    });
+    expect(() => sanitizeCodexCredentials(apiKeyFile)).toThrow('chatgpt-mode');
+  });
 });
 ```
 
@@ -614,6 +648,13 @@ export function sanitizeCodexCredentials(raw: string): string {
     parsed = JSON.parse(raw);
   } catch {
     throw new Error('codex auth file is not valid JSON');
+  }
+
+  // Scope + safety guard: only ChatGPT-plan sign-in is supported. In api_key mode the
+  // real OPENAI_API_KEY is a live secret that pass-through would leak into the VM share,
+  // so refuse rather than sanitize it.
+  if ((parsed as { auth_mode?: unknown } | null)?.auth_mode !== 'chatgpt') {
+    throw new Error('codex auth file is not chatgpt-mode (auth_mode must be "chatgpt")');
   }
 
   const tokens = (parsed as { tokens?: unknown } | null)?.tokens;
@@ -1630,15 +1671,112 @@ expect(h.mocks.log).toHaveBeenCalledWith('run-proxy: restarting proxy — claude
 
 (The `maxAttempts` exhaustion test asserts `stringContaining('token did not refresh after 3 attempts')`, which the channel's `"claude: token did not refresh after 3 attempts"` still satisfies — no change needed there. The startup log `'serving the current token'` and the `writeSecret` `toHaveBeenCalledWith('A', '/fake/sds-secret.yaml')` assertions are also unchanged.)
 
-- [ ] **Step 5: Run the loop tests + typecheck**
+- [ ] **Step 5: Add loop-level two-channel parity tests**
 
-Run: `pnpm test:unit -- runProxyLoop && pnpm typecheck` Expected: PASS (all existing behaviors green under the channel-driven loop).
+The single-channel harness proves the old behavior is preserved, but the spec's multi-channel guarantees (both dirty channels write/stage then commit after one shared swap; either channel exhausting fatals the whole loop) need loop-level coverage. First generalize the harness `watch` dispatch to key on path (so a second credentials file routes correctly). In `makeHarness`, replace the `watch` closure and the `fireCredentials` closure with a path-keyed map:
 
-- [ ] **Step 6: Run the full unit suite**
+```ts
+  const credentialCbs = new Map<string, () => void>();
+  // ...in deps:
+    watch: (path, onEvent) => {
+      if (path.endsWith('allowlist.txt')) allowlistCb = onEvent;
+      else credentialCbs.set(path, onEvent);
+      return { close: watchClose };
+    },
+  // ...in the returned object:
+    fireCredentials: (p = '/fake/.credentials.json') => credentialCbs.get(p)?.(),
+```
+
+Then add a second suite that builds two channels sharing one harness. Because the existing harness's `readCredentials`/`writeSecret` are per-channel-config, build two configs with distinct paths and independent creds refs:
+
+```ts
+describe('runProxyLoop multi-channel', () => {
+  it('coalesces two dirty channels into one swap, writes both secrets, commits both', async () => {
+    const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+    const codexCreds = { value: { accessToken: 'X', expiresAt: 60 * MIN } as Credentials };
+    const codexWrite = vi.fn();
+    const codexChannel: CredentialChannelConfig = {
+      name: 'codex',
+      credentialsPath: '/fake/auth.json',
+      secretPath: '/fake/codex-secret.yaml',
+      readCredentials: () => codexCreds.value,
+      writeSecret: codexWrite,
+      nudgeRefresh: vi.fn().mockResolvedValue({ ok: true, stderr: '' }),
+      refreshWindowMs: 3 * MIN,
+      retryIntervalMs: 2 * MIN,
+      maxAttempts: 3,
+      refreshEnabled: true,
+    };
+    void runProxyLoop(baseConfig([h.channelConfig, codexChannel]), h.deps);
+    await flush();
+    h.mocks.bringUpColor.mockClear();
+    h.mocks.writeSecret.mockClear();
+    codexWrite.mockClear();
+
+    // Both credentials change; fire both watchers.
+    h.creds.value = { accessToken: 'B', expiresAt: 60 * MIN };
+    codexCreds.value = { accessToken: 'Y', expiresAt: 60 * MIN };
+    h.fireCredentials('/fake/.credentials.json');
+    h.fireCredentials('/fake/auth.json');
+    await flush();
+
+    // One swap serves both.
+    expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1);
+    expect(h.mocks.writeSecret).toHaveBeenCalledWith('B', '/fake/sds-secret.yaml');
+    expect(codexWrite).toHaveBeenCalledWith('Y', '/fake/codex-secret.yaml');
+    expect(h.mocks.log).toHaveBeenCalledWith(
+      'run-proxy: swap complete — now serving green',
+    );
+
+    // Both are committed: presenting the same tokens again needs no further swap.
+    h.mocks.bringUpColor.mockClear();
+    h.fireCredentials('/fake/.credentials.json');
+    h.fireCredentials('/fake/auth.json');
+    await flush();
+    expect(h.mocks.bringUpColor).not.toHaveBeenCalled();
+  });
+
+  it('one channel exhausting its nudges fatals the whole loop and closes both watchers', async () => {
+    const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+    const codexChannel: CredentialChannelConfig = {
+      name: 'codex',
+      credentialsPath: '/fake/auth.json',
+      secretPath: '/fake/codex-secret.yaml',
+      readCredentials: () => ({ accessToken: 'X', expiresAt: 1 * MIN }),
+      writeSecret: vi.fn(),
+      nudgeRefresh: vi.fn().mockResolvedValue({ ok: false, stderr: 'codex boom' }),
+      refreshWindowMs: 3 * MIN,
+      retryIntervalMs: 2 * MIN,
+      maxAttempts: 3,
+      refreshEnabled: true,
+    };
+    const exit = runProxyLoop(baseConfig([h.channelConfig, codexChannel]), h.deps);
+    await flush();
+
+    // Codex's token is inside the refresh window and every nudge fails -> exhaustion.
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+
+    await expect(exit).resolves.toBe(1);
+    expect(h.mocks.error).toHaveBeenCalledWith(expect.stringContaining('codex boom'));
+    // Both credentials watchers + the allowlist watcher were closed (3 total).
+    expect(h.mocks.watchClose).toHaveBeenCalledTimes(3);
+  });
+});
+```
+
+(The exhaustion message uses the failing nudge's stderr — `handleFailedAttempt` passes `lastNudgeStderr ?? "<name>: token did not refresh…"`, and here stderr is `'codex boom'`.)
+
+- [ ] **Step 6: Run the loop tests + typecheck**
+
+Run: `pnpm test:unit -- runProxyLoop && pnpm typecheck` Expected: PASS (all existing behaviors green under the channel-driven loop, plus the two multi-channel cases).
+
+- [ ] **Step 7: Run the full unit suite**
 
 Run: `pnpm test:unit` Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add src/runProxy/runProxyLoop.ts src/commands/runProxy.ts tests/unit/runProxy/runProxyLoop.test.ts
@@ -1837,22 +1975,51 @@ In `src/allowlist.ts`:
   }
 ```
 
-- [ ] **Step 4: Fix the other `Allowlist` literals so the build stays green**
+- [ ] **Step 4: Update every other place that builds or asserts a full `Allowlist`**
 
-`Allowlist` object literals elsewhere now need `codexAuthenticated: []`. Add the field to each:
+`codexAuthenticated` is a **required** field (like `githubAuthenticated`), so every `Allowlist`-shaped object — produced or asserted — must gain it. Do all of these (they will otherwise fail `typecheck` or `toEqual` at runtime):
 
-- `tests/unit/envoyConfig.test.ts` — the top-of-file `const allowlist: Allowlist = { ... }` (Task 11 also touches this file; add `codexAuthenticated: []` now).
-- Any other `Allowlist` literal flagged by `pnpm typecheck` (search: `githubAuthenticated: [`), e.g. in `tests/unit/runProxy/buildConfig.test.ts` if present.
+- **`src/policyFile.ts`** — `parsePolicyFile` returns an `Allowlist` literal; add `codexAuthenticated: [],` next to its `githubAuthenticated: [],`.
+- **`tests/unit/policyFile.test.ts`** — the three `toEqual` expectation objects (they list `claudeAuthenticated`/`githubAuthenticated`); add `codexAuthenticated: [],` to each.
+- **`tests/unit/allowlist.test.ts`** — every `parseAllowlist(...)` `toEqual` expectation is a full `Allowlist`; add `codexAuthenticated: [],` to each (search the file for `githubAuthenticated:` — every match needs a sibling `codexAuthenticated:`). Where a case specifically tests codex parsing (the Step 1 additions), set the real value instead of `[]`.
+- **`tests/unit/envoyConfig.test.ts`** — the top-of-file `const allowlist: Allowlist = { ... }` and the other in-file `Allowlist` literals; add `codexAuthenticated: []` (or the codex host for the Task 11 case).
+- Anything else `pnpm typecheck` flags.
 
-- [ ] **Step 5: Run test to verify it passes**
+- [ ] **Step 5: Enable Codex in the shipped default allowlist**
 
-Run: `pnpm test:unit -- allowlist && pnpm typecheck` Expected: PASS.
+`init` copies `current-allow-list.txt` verbatim; today it lists `chatgpt.com:443` under `#pragma passthrough` and has **no** codex section, so a default environment builds no Codex chain. In `current-allow-list.txt`:
 
-- [ ] **Step 6: Commit**
+- Remove the exact `chatgpt.com:443` line from the passthrough block.
+- Keep `*.chatgpt.com:443` in passthrough (other subdomains stay passthrough, per scope).
+- Add a codex section (place it after the `#pragma claude authenticated` block):
+
+```
+#pragma codex authenticated
+chatgpt.com:443
+```
+
+Add a regression test to `tests/unit/templates.test.ts` (which already reads the packaged allowlist) asserting the shipped list enables codex and does not double-list the host:
+
+```ts
+  it('ships chatgpt.com under codex authenticated, not passthrough', () => {
+    const parsed = parseAllowlist(readFileSync(packagedAllowlist(), 'utf8'));
+    expect(parsed.codexAuthenticated).toContain('chatgpt.com:443');
+    expect(parsed.passthrough).not.toContain('chatgpt.com:443');
+    expect(parsed.passthrough).toContain('*.chatgpt.com:443');
+  });
+```
+
+(Import `parseAllowlist` from `../../src/allowlist`, `packagedAllowlist` from `../../src/templates`, and `readFileSync` from `node:fs` if not already present in the test.)
+
+- [ ] **Step 6: Run tests to verify they pass**
+
+Run: `pnpm test:unit -- allowlist policyFile templates && pnpm typecheck` Expected: PASS.
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git add src/allowlist.ts tests/unit/allowlist.test.ts tests/unit/envoyConfig.test.ts
-git commit -m "feat(allowlist): add codex authenticated section"
+git add src/allowlist.ts src/policyFile.ts current-allow-list.txt tests/unit/allowlist.test.ts tests/unit/policyFile.test.ts tests/unit/envoyConfig.test.ts tests/unit/templates.test.ts
+git commit -m "feat(allowlist): add codex authenticated section + enable it by default"
 ```
 
 ---
@@ -1860,6 +2027,8 @@ git commit -m "feat(allowlist): add codex authenticated section"
 ### Task 11: Envoy filter chain — `buildCodexEntry`
 
 Add a TLS-terminating chain for `chatgpt.com:443` structurally mirroring `buildClaudeEntry`: an **inline** Lua gate (GitHub's precedent — no new mounted file, so `docker-compose.yml` is unchanged), a `credential_injector` pointing at SDS resource `codex_bearer_token` (file `codex-secret.yaml`), and `upgrade_configs: [{ upgrade_type: 'websocket' }]` on this chain's HCM only. Route `timeout: '0s'` (same rationale as Claude). `Cookie` is never referenced, so it passes through untouched. Note (spec): `route.timeout: 0s` bounds only the route timeout, not idle-connection reaping — Envoy's `stream_idle_timeout` (5m default) still applies to the upgraded WebSocket connection. Confirm during the manual end-to-end run that a live upgraded stream is not reaped (same concern already noted for Claude's long-lived streaming); if it is, set `stream_idle_timeout: 0s` on this HCM.
+
+**Decision — exact-host scope is enforced by the curated allowlist, not the parser (codex review finding #2).** `generateEnvoyConfig` builds a codex injection chain for *every* `:443` entry in `codexAuthenticated`, exactly as `buildClaudeEntry` does for `claudeAuthenticated` — neither hard-restricts the host. The spec's "exact `chatgpt.com:443` only" scope is met by the shipped `current-allow-list.txt` (Task 10 Step 5) listing only that host, and by codex injection being opt-in per allowlist entry (symmetric with Claude's trust model). Hard-coding `chatgpt.com` into the parser or `buildCodexEntry` would diverge from that precedent and is intentionally **not** done here. If stricter runtime enforcement is later wanted, the clean place is a `parseAllowlist` warning-and-exclude for non-`chatgpt.com` entries under the codex pragma — call it out before implementing.
 
 **Files:**
 
