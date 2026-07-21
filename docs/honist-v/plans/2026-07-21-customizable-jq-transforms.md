@@ -745,7 +745,7 @@ git commit -m "feat(templates): seed home-jq-transforms and env gitignore"
 import { describe, it, expect } from 'vitest';
 import { execa } from 'execa';
 import { fileURLToPath } from 'node:url';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir, platform } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -755,10 +755,10 @@ const applierUbuntu = join(repoRoot, 'templates', 'vm-shared', 'apply-home-jq-tr
 const applierWindows = join(repoRoot, 'templates', 'vm-shared-windows', 'apply-home-jq-transforms.mjs');
 const seedDir = join(repoRoot, 'templates', 'home-jq-transforms');
 
-// jq/bash are external prerequisites; skip the tests that need them when absent
-// rather than failing on a machine that lacks them.
+// jq is an external prerequisite; skip the tests that need it when absent rather
+// than failing on a machine that lacks it. (The bash-wrapper test, which also
+// needs bash, lives in Task 10 alongside the 07-*.sh wrapper it exercises.)
 const hasJq = spawnSync('jq', ['--version']).status === 0;
-const hasBash = spawnSync('bash', ['--version']).status === 0;
 
 describe('vm applier bundle', () => {
   it('is built into both shares', () => {
@@ -802,33 +802,8 @@ describe('vm applier bundle', () => {
     expect(JSON.parse(claude.stdout)).toEqual({ hasCompletedOnboarding: true });
   });
 
-  // Proves the bash wrapper resolves paths from the script dir, not the caller's
-  // cwd. Windows-path handling under Git Bash is finicky, so this runs on
-  // POSIX only; CI/Linux covers the wrapper contract.
-  it.skipIf(!hasBash || !hasJq || process.platform === 'win32')(
-    'bash wrapper resolves its sibling mjs and transforms regardless of cwd',
-    async () => {
-      const share = mkdtempSync(join(tmpdir(), 'share-'));
-      try {
-        const out = join(share, 'out.json');
-        copyFileSync(applierUbuntu, join(share, 'apply-home-jq-transforms.mjs'));
-        copyFileSync(
-          join(repoRoot, 'templates', 'vm-shared', '07-apply-home-jq-transforms.sh'),
-          join(share, '07-apply-home-jq-transforms.sh'),
-        );
-        mkdirSync(join(share, 'home-jq-transforms'));
-        writeFileSync(join(share, 'home-jq-transforms', 't.jq'), '.applied = true');
-        writeFileSync(
-          join(share, 'home-jq-transforms', 'manifest.yaml'),
-          `- transform: t.jq\n  linux: ${out}\n`,
-        );
-        await execa('bash', [join(share, '07-apply-home-jq-transforms.sh')], { cwd: tmpdir() });
-        expect(JSON.parse(readFileSync(out, 'utf8'))).toEqual({ applied: true });
-      } finally {
-        rmSync(share, { recursive: true, force: true });
-      }
-    },
-  );
+  // The bash-wrapper test that exercises 07-apply-home-jq-transforms.sh is added
+  // to this file in Task 10, once that wrapper script exists.
 });
 ```
 
@@ -929,7 +904,7 @@ In `eslint.config.mjs`, extend the ignores so the build helper isn't linted:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm build && pnpm test:e2e -- vmApplier` Expected: PASS (all three cases).
+Run: `pnpm build && pnpm test:e2e -- vmApplier` Expected: PASS (packaging + real-jq cases; the bash-wrapper case is added in Task 10).
 
 - [ ] **Step 5: Commit**
 
@@ -1267,7 +1242,7 @@ git commit -m "feat(init): note transform customization and source control in ne
 - Create: `templates/vm-shared/06-auth-config.sh`
 - Create: `templates/vm-shared/07-apply-home-jq-transforms.sh`
 - Delete: `templates/vm-shared/05-github-auth.sh`, `06-trust-ca.sh`, `07-setup-persistence.sh`, `08-claude-config.sh`, `09-codex-config.sh`
-- Modify: `tests/unit/templates.test.ts`, `tests/unit/initEnv.test.ts`
+- Modify: `tests/unit/templates.test.ts`, `tests/unit/initEnv.test.ts`, `tests/e2e/vmApplier.test.ts`
 
 - [ ] **Step 1: Update the tests first (they will fail until the files change).**
 
@@ -1498,21 +1473,66 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 node "$script_dir/apply-home-jq-transforms.mjs" "$script_dir/home-jq-transforms"
 ```
 
-- [ ] **Step 7: Delete the five superseded scripts.**
+- [ ] **Step 7: Add the bash-wrapper e2e test** — now that `07-apply-home-jq-transforms.sh` exists, append this case to the `describe('vm applier bundle', ...)` block in `tests/e2e/vmApplier.test.ts` (created in Task 6). Add `copyFileSync` and `mkdirSync` to the `node:fs` import at the top of that file:
+
+```ts
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+```
+
+and add near the other prerequisite probe (`hasJq`):
+
+```ts
+const hasBash = spawnSync('bash', ['--version']).status === 0;
+```
+
+Then append inside the `describe` block (before its closing `});`):
+
+```ts
+  // Proves the bash wrapper resolves paths from the script dir, not the caller's
+  // cwd. Windows-path handling under Git Bash is finicky, so this runs on
+  // POSIX only; CI/Linux covers the wrapper contract. Requires the applier
+  // bundle from Task 6 (build before running).
+  it.skipIf(!hasBash || !hasJq || process.platform === 'win32')(
+    'bash wrapper resolves its sibling mjs and transforms regardless of cwd',
+    async () => {
+      const share = mkdtempSync(join(tmpdir(), 'share-'));
+      try {
+        const out = join(share, 'out.json');
+        copyFileSync(applierUbuntu, join(share, 'apply-home-jq-transforms.mjs'));
+        copyFileSync(
+          join(repoRoot, 'templates', 'vm-shared', '07-apply-home-jq-transforms.sh'),
+          join(share, '07-apply-home-jq-transforms.sh'),
+        );
+        mkdirSync(join(share, 'home-jq-transforms'));
+        writeFileSync(join(share, 'home-jq-transforms', 't.jq'), '.applied = true');
+        writeFileSync(
+          join(share, 'home-jq-transforms', 'manifest.yaml'),
+          `- transform: t.jq\n  linux: ${out}\n`,
+        );
+        await execa('bash', [join(share, '07-apply-home-jq-transforms.sh')], { cwd: tmpdir() });
+        expect(JSON.parse(readFileSync(out, 'utf8'))).toEqual({ applied: true });
+      } finally {
+        rmSync(share, { recursive: true, force: true });
+      }
+    },
+  );
+```
+
+- [ ] **Step 8: Delete the five superseded scripts.**
 
 ```bash
 git rm templates/vm-shared/05-github-auth.sh templates/vm-shared/06-trust-ca.sh templates/vm-shared/07-setup-persistence.sh templates/vm-shared/08-claude-config.sh templates/vm-shared/09-codex-config.sh
 ```
 
-- [ ] **Step 8: Run tests to verify they pass**
+- [ ] **Step 9: Run tests to verify they pass**
 
-Run: `pnpm test:unit -- templates initEnv` Expected: PASS.
+Run: `pnpm test:unit -- templates initEnv` Expected: PASS. Then `pnpm build && pnpm test:e2e -- vmApplier` Expected: PASS (the bash-wrapper case now runs on POSIX; it skips on Windows).
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 pnpm format
-git add templates/vm-shared tests/unit/templates.test.ts tests/unit/initEnv.test.ts
+git add templates/vm-shared tests/unit/templates.test.ts tests/unit/initEnv.test.ts tests/e2e/vmApplier.test.ts
 git commit -m "refactor(vm-shared): gh in step 01; combine into 05/06/07; drop inline jq"
 ```
 
@@ -2016,7 +2036,7 @@ git commit -m "chore: formatting" || echo "nothing to format"
 - Path expansion `~` / `%NAME%`, core-implemented → Task 3.
 - Core `applyTransforms` (seed `{}`, unparsable→`{}`, valid-wrong-shape leaves intact, unique-temp atomic write, mkdir, manifest order) + `previewTransforms` + injectable argv jq runner → Task 4.
 - In-VM applier bundle, tsup entry, `noExternal: yaml`, emit into both shares, gitignore artifact, `prepack` build, packaging test, seed-default behavior → Task 6.
-- Path-safe wrappers (`$BASH_SOURCE`/`$PSScriptRoot`, absolute paths) + bash wrapper test → Tasks 10 (step 6), 11 (step 5), 6.
+- Path-safe wrappers (`$BASH_SOURCE`/`$PSScriptRoot`, absolute paths) + bash wrapper test → Tasks 10 (steps 6–7), 11 (step 5).
 - Script consolidation + gh in step 01 + new run order + Windows `#Requires`/named params → Tasks 10, 11.
 - `init` seeds three locations + writes `.gitignore` + next-steps message → Tasks 7, 9.
 - `update-shares` explicit host-jq preflight, preview, stage-then-swap-with-backup, jq-error blocks copy, `-n/--dry-run` → Task 8.
