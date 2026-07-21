@@ -1,32 +1,26 @@
-import { planNextActions } from './planNextActions';
 import { parseAllowlist, terminateTlsHosts, type Allowlist } from '../allowlist';
 import { parseLine } from './parseLine';
 import { classify } from './classify';
 import { formatOutput } from './formatOutput';
 import { UniqueTracker } from './uniqueTracker';
-import type { Credentials, NudgeResult, RefreshState, Color, ColorPorts } from './types';
+import { CredentialChannel, type CredentialChannelConfig } from './credentialChannel';
+import type { Color, ColorPorts } from './types';
 import { otherColor } from './types';
 import type { WaitResult } from './waitColorReady';
 
 export interface RunProxyConfig {
-  credentialsPath: string;
+  /** One entry per credential source (Claude, Codex). Each drives its own file watch, secret, and nudge timer. */
+  channels: CredentialChannelConfig[];
   allowlistPath: string;
-  secretPath: string;
   /** How long to wait for a freshly-started color's admin /ready before giving up. */
   readyTimeoutMs: number;
   /** How long to let the old color's connections finish before force-closing them. */
   drainTimeoutMs: number;
-  refreshWindowMs: number;
-  retryIntervalMs: number;
-  maxAttempts: number;
-  refreshEnabled: boolean;
 }
 
 export interface RunProxyDeps {
-  readCredentials: (path: string) => Credentials | null;
   /** Raw allowlist file content, or null when unreadable. */
   readAllowlist: (path: string) => string | null;
-  writeSecret: (token: string, path: string) => void;
   /** Render and write envoy.yaml (upstream overrides are baked in by the caller). */
   buildConfig: (allowlist: Allowlist) => void;
   /** Ensure the leaf covers `sans` (reissue if needed); returns a status line. */
@@ -48,8 +42,7 @@ export interface RunProxyDeps {
   drainBackend: (ports: ColorPorts, timeoutMs: number, signal: AbortSignal) => Promise<void>;
   /** Stop the given color's container. */
   stopColor: (color: Color) => Promise<void>;
-  nudgeRefresh: () => Promise<NudgeResult>;
-  /** File watcher; used for both the credentials file and the allowlist. */
+  /** File watcher; used for each channel's credentials file and the allowlist. */
   watch: (path: string, onEvent: () => void) => { close: () => void };
   startLogStream: (color: Color, onLine: (raw: string) => void) => void;
   /** Resolves once the current log-follow child is fully gone; no-op when none. */
@@ -61,57 +54,37 @@ export interface RunProxyDeps {
 }
 
 /**
- * Long-running orchestrator. Owns the proxy end to end: builds envoy.yaml from
- * the allowlist, keeps the SDS secret fresh, watches both files, restarts the
- * container on changes (serialized, coalescing bursts), and streams the tagged
- * access log inline (each host+handling once). Resolves with a process exit
- * code: 0 on SIGINT (container left running), 1 on any fatal error.
+ * Long-running orchestrator. Owns the proxy end to end: builds envoy.yaml from the
+ * allowlist, keeps every channel's SDS secret fresh, watches all files, restarts the
+ * container on changes (serialized, coalescing bursts), and streams the tagged access
+ * log inline (each host+handling once). Resolves with a process exit code: 0 on SIGINT
+ * (container left running), 1 on any fatal error (including any channel exhausting its
+ * refresh attempts).
  */
 export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promise<number> {
   return new Promise<number>((resolve) => {
-    let lastAppliedToken: string | null = null;
-    let lastSeenExpiresAt: number | null = null;
-    let lastNudgeAt: number | null = null;
-    let lastNudgeStderr: string | null = null;
-    let awaitingOutcome = false;
-    let consecutiveFailures = 0;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let credentialsWatcher: { close: () => void } | null = null;
-    let allowlistWatcher: { close: () => void } | null = null;
     let settled = false;
     let restarting = false;
-    let pendingCredentials = false;
     let pendingAllowlist = false;
+    const dirtyChannels = new Set<CredentialChannel>();
     let sigintSeen = false;
     let activeColor: Color = 'blue';
     let activePorts: ColorPorts | null = null;
     const unique = new UniqueTracker();
     const shutdownAbort = new AbortController();
-
-    const planConfig = {
-      refreshWindowMs: config.refreshWindowMs,
-      retryIntervalMs: config.retryIntervalMs,
-    };
-
-    const clearTimer = (): void => {
-      if (timer !== null) {
-        clearTimeout(timer);
-        timer = null;
-      }
-    };
+    const watchers: { close: () => void }[] = [];
 
     /**
-     * Tear down every long-lived handle, then resolve. `settled` flips
-     * synchronously so no callback can act after shutdown begins; the log
-     * child is stopped asynchronously before resolving so it cannot outlive us.
+     * Tear down every long-lived handle, then resolve. `settled` flips synchronously so
+     * no callback can act after shutdown begins; the log child is stopped asynchronously
+     * before resolving so it cannot outlive us.
      */
     const shutdown = (code: number): void => {
       if (settled) return;
       settled = true;
       shutdownAbort.abort();
-      clearTimer();
-      credentialsWatcher?.close();
-      allowlistWatcher?.close();
+      for (const channel of channels) channel.clearTimer();
+      for (const watcher of watchers) watcher.close();
       void deps.stopLogStream().then(() => resolve(code));
     };
 
@@ -121,55 +94,16 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
       shutdown(1);
     };
 
-    const refreshState = (): RefreshState => ({
-      enabled: config.refreshEnabled,
-      awaitingOutcome,
-      lastNudgeAt,
-    });
-
-    const armTimer = (nudgeAt: number | null): void => {
-      clearTimer();
-      if (nudgeAt === null) return;
-      const delay = Math.max(0, nudgeAt - deps.now());
-      timer = setTimeout(() => {
-        void onTimer();
-      }, delay);
-    };
-
-    const handleFailedAttempt = (): void => {
-      clearTimer();
-      consecutiveFailures += 1;
-      if (consecutiveFailures >= config.maxAttempts) {
-        fatal(lastNudgeStderr ?? `token did not refresh after ${config.maxAttempts} attempts`);
-        return;
-      }
-      void doNudge();
-    };
-
-    const doNudge = async (): Promise<void> => {
-      awaitingOutcome = true;
-      lastNudgeAt = deps.now();
-      // Arm the outcome deadline: retryInterval from now.
-      armTimer(lastNudgeAt + config.retryIntervalMs);
-      const result = await deps.nudgeRefresh();
-      if (settled || !awaitingOutcome) return;
-      if (result.ok) {
-        lastNudgeStderr = null;
-      } else {
-        lastNudgeStderr = result.stderr;
-        handleFailedAttempt();
-      }
-    };
-
-    const onTimer = async (): Promise<void> => {
-      if (settled) return;
-      if (awaitingOutcome) {
-        // Outcome deadline reached with no observed advance -> failed attempt.
-        handleFailedAttempt();
-      } else {
-        await doNudge();
-      }
-    };
+    // Built after fatal so onExhausted can reference it; used only inside async callbacks
+    // that run well after this synchronous setup completes.
+    const channels = config.channels.map(
+      (channelConfig) =>
+        new CredentialChannel(channelConfig, {
+          now: deps.now,
+          onExhausted: (message) => fatal(message),
+          isSettled: () => settled,
+        }),
+    );
 
     const onLogLine = (raw: string): void => {
       if (settled) return;
@@ -201,27 +135,26 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
       deps.buildConfig(allowlist);
     };
 
-    const requestRestart = (source: 'credentials' | 'allowlist'): void => {
+    const requestRestart = (source: CredentialChannel | 'allowlist'): void => {
       if (settled) return;
-      if (source === 'credentials') pendingCredentials = true;
-      else pendingAllowlist = true;
+      if (source === 'allowlist') pendingAllowlist = true;
+      else dirtyChannels.add(source);
       if (!restarting) void drainRestarts();
     };
 
     /**
-     * Serialized restart pipeline: at most one force-recreate runs at a time.
-     * Events landing mid-restart only set pending flags; the while loop then
-     * collapses any burst into a single follow-up restart that re-reads both
-     * files fresh, so the final state always reflects the latest files.
+     * Serialized restart pipeline: at most one force-recreate runs at a time. Events
+     * landing mid-restart only set pending flags/dirty entries; the while loop collapses
+     * any burst into a single follow-up restart that re-reads every dirty source fresh.
      */
     const drainRestarts = async (): Promise<void> => {
       restarting = true;
       try {
-        while (!settled && (pendingCredentials || pendingAllowlist)) {
-          const credentialsDirty = pendingCredentials;
+        while (!settled && (dirtyChannels.size > 0 || pendingAllowlist)) {
           const allowlistDirty = pendingAllowlist;
-          pendingCredentials = false;
+          const channelsThisPass = [...dirtyChannels];
           pendingAllowlist = false;
+          dirtyChannels.clear();
 
           let restartNeeded = false;
           let clearUnique = false;
@@ -242,34 +175,19 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
             }
           }
 
-          let latestCreds: Credentials | null = null;
-          let tokenToApply: string | null = null;
-          if (credentialsDirty) {
-            latestCreds = deps.readCredentials(config.credentialsPath);
-            if (latestCreds === null) {
-              deps.error('run-proxy: skipped credentials event (unreadable or partial write)');
-            } else {
-              const advanced =
-                lastSeenExpiresAt !== null && latestCreds.expiresAt > lastSeenExpiresAt;
-              const plan = planNextActions({
-                creds: latestCreds,
-                lastAppliedToken,
-                now: deps.now(),
-                config: planConfig,
-                refresh: refreshState(),
-              });
-              if (plan.propagate) {
-                deps.writeSecret(latestCreds.accessToken, config.secretPath);
-                tokenToApply = latestCreds.accessToken;
-                restartNeeded = true;
-                reasons.push('credentials changed');
-              }
-              if (advanced) {
-                // Refresh landed: reset failure tracking and stop awaiting an outcome.
-                consecutiveFailures = 0;
-                awaitingOutcome = false;
-              }
-              lastSeenExpiresAt = latestCreds.expiresAt;
+          const appliedChannels: CredentialChannel[] = [];
+          const readableChannels: CredentialChannel[] = [];
+          for (const channel of channelsThisPass) {
+            const result = channel.prepareRestart();
+            if (result.readable) readableChannels.push(channel);
+            else
+              deps.error(
+                `run-proxy: skipped ${channel.name} credentials event (unreadable or partial write)`,
+              );
+            if (result.restartNeeded) {
+              restartNeeded = true;
+              appliedChannels.push(channel);
+              reasons.push(`${channel.name} credentials changed`);
             }
           }
 
@@ -312,7 +230,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
                 deps.setActiveBackend(idlePorts);
                 activeColor = idle;
                 activePorts = idlePorts;
-                if (tokenToApply !== null) lastAppliedToken = tokenToApply;
+                for (const channel of appliedChannels) channel.commit();
                 if (clearUnique) unique.clear();
                 deps.startLogStream(idle, onLogLine);
                 // Retire the old color once its connections drain (bounded).
@@ -323,16 +241,8 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
             }
           }
 
-          if (latestCreds !== null && !settled) {
-            const nextPlan = planNextActions({
-              creds: latestCreds,
-              lastAppliedToken,
-              now: deps.now(),
-              config: planConfig,
-              refresh: refreshState(),
-            });
-            armTimer(nextPlan.nudgeAt);
-          }
+          // Re-arm the nudge timer for each channel that produced a fresh read this pass.
+          if (!settled) for (const channel of readableChannels) channel.armTimer();
         }
       } finally {
         restarting = false;
@@ -340,7 +250,6 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
     };
 
     const onSigintOnce = (): void => {
-      // Guard the handler itself: a second Ctrl-C prints nothing and does nothing.
       if (sigintSeen || settled) return;
       sigintSeen = true;
       deps.log('run-proxy: SIGINT received, stopping (container left running)');
@@ -348,10 +257,14 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
     };
 
     const start = async (): Promise<void> => {
-      const creds = deps.readCredentials(config.credentialsPath);
-      if (creds === null) {
-        fatal(`could not read credentials at ${config.credentialsPath}`);
-        return;
+      // Read every channel up front (each also writes its secret + stages its token).
+      // Any unreadable credential is fatal on startup, same as the old single source.
+      for (const channel of channels) {
+        const creds = channel.startupRead();
+        if (creds === null) {
+          fatal(`could not read ${channel.name} credentials at ${channel.credentialsPath}`);
+          return;
+        }
       }
 
       const content = deps.readAllowlist(config.allowlistPath);
@@ -362,10 +275,12 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
       const allowlist = parseAllowlist(content);
       for (const warning of allowlist.warnings) deps.error(`run-proxy: ${warning}`);
 
-      // Arm both watchers before the (slow) startup recreate: a change landing
+      // Arm all watchers before the (slow) startup recreate: a change landing
       // mid-startup coalesces into one follow-up restart instead of being dropped.
-      credentialsWatcher = deps.watch(config.credentialsPath, () => requestRestart('credentials'));
-      allowlistWatcher = deps.watch(config.allowlistPath, () => requestRestart('allowlist'));
+      for (const channel of channels) {
+        watchers.push(deps.watch(channel.credentialsPath, () => requestRestart(channel)));
+      }
+      watchers.push(deps.watch(config.allowlistPath, () => requestRestart('allowlist')));
       deps.onSigint(onSigintOnce);
 
       restarting = true; // hold watcher events as pending until the startup bring-up is done
@@ -376,7 +291,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
           fatal(`failed to build the proxy config: ${String(err)}`);
           return;
         }
-        deps.writeSecret(creds.accessToken, config.secretPath);
+        // Secrets were already written by each channel's startupRead().
         const ports = await deps.allocatePorts();
         try {
           await deps.bringUpColor('blue', ports);
@@ -403,27 +318,19 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
         activeColor = 'blue';
         activePorts = ports;
         deps.setActiveBackend(ports);
-        lastAppliedToken = creds.accessToken;
-        lastSeenExpiresAt = creds.expiresAt;
+        for (const channel of channels) channel.commit();
         deps.startLogStream('blue', onLogLine);
       } finally {
         restarting = false;
       }
 
-      const plan = planNextActions({
-        creds,
-        lastAppliedToken,
-        now: deps.now(),
-        config: planConfig,
-        refresh: refreshState(),
-      });
-      armTimer(plan.nudgeAt);
+      for (const channel of channels) channel.armTimer();
       deps.log(
         `run-proxy: watching credentials and allowlist; proxy is serving the current token (${activeColor})`,
       );
 
       // Apply anything that landed during the startup recreate.
-      if (pendingCredentials || pendingAllowlist) void drainRestarts();
+      if (dirtyChannels.size > 0 || pendingAllowlist) void drainRestarts();
     };
 
     void start();

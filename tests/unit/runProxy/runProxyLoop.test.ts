@@ -4,6 +4,7 @@ import {
   type RunProxyConfig,
   type RunProxyDeps,
 } from '../../../src/runProxy/runProxyLoop';
+import type { CredentialChannelConfig } from '../../../src/runProxy/credentialChannel';
 import type { Credentials, ColorPorts, Color } from '../../../src/runProxy/types';
 
 const MIN = 60_000;
@@ -33,13 +34,21 @@ const PASS_LINE = 'envoy-1  | CFGM|pass|2026-07-10T12:00:00|pypi.org|-|-|-|-|-|-
 const CRED_LINE =
   'envoy-1  | CFGM|term|2026-07-10T12:00:01|api.anthropic.com|api.anthropic.com|via_upstream|200|-|10|100';
 
-function baseConfig(overrides: Partial<RunProxyConfig> = {}): RunProxyConfig {
+function claudeChannelConfig(
+  creds: { value: Credentials },
+  mocks: {
+    writeSecret: (token: string, path: string) => void;
+    nudgeRefresh: () => Promise<{ ok: boolean; stderr: string }>;
+  },
+  overrides: Partial<CredentialChannelConfig> = {},
+): CredentialChannelConfig {
   return {
+    name: 'claude',
     credentialsPath: '/fake/.credentials.json',
-    allowlistPath: '/fake/allowlist.txt',
     secretPath: '/fake/sds-secret.yaml',
-    readyTimeoutMs: 30_000,
-    drainTimeoutMs: 30_000,
+    readCredentials: () => creds.value,
+    writeSecret: mocks.writeSecret,
+    nudgeRefresh: mocks.nudgeRefresh,
     refreshWindowMs: 3 * MIN,
     retryIntervalMs: 2 * MIN,
     maxAttempts: 3,
@@ -48,23 +57,33 @@ function baseConfig(overrides: Partial<RunProxyConfig> = {}): RunProxyConfig {
   };
 }
 
+function baseConfig(channels: CredentialChannelConfig[]): RunProxyConfig {
+  return {
+    channels,
+    allowlistPath: '/fake/allowlist.txt',
+    readyTimeoutMs: 30_000,
+    drainTimeoutMs: 30_000,
+  };
+}
+
 interface Harness {
   deps: RunProxyDeps;
   creds: { value: Credentials };
   allowlist: { value: string | null };
-  fireCredentials: () => void;
+  channelConfig: CredentialChannelConfig;
+  fireCredentials: (path?: string) => void;
   fireAllowlist: () => void;
   fireSigint: () => void;
   feedLogLine: (raw: string) => void;
   mocks: {
-    writeSecret: ReturnType<typeof vi.fn>;
+    writeSecret: ReturnType<typeof vi.fn<(token: string, path: string) => void>>;
     allocatePorts: ReturnType<typeof vi.fn>;
     bringUpColor: ReturnType<typeof vi.fn>;
     waitColorReady: ReturnType<typeof vi.fn>;
     setActiveBackend: ReturnType<typeof vi.fn>;
     drainBackend: ReturnType<typeof vi.fn>;
     stopColor: ReturnType<typeof vi.fn>;
-    nudgeRefresh: ReturnType<typeof vi.fn>;
+    nudgeRefresh: ReturnType<typeof vi.fn<() => Promise<{ ok: boolean; stderr: string }>>>;
     buildConfig: ReturnType<typeof vi.fn>;
     ensureLeaf: ReturnType<typeof vi.fn>;
     startLogStream: ReturnType<typeof vi.fn>;
@@ -81,7 +100,7 @@ function makeHarness(
 ): Harness {
   const creds = { value: initial };
   const allowlist = { value: initialAllowlist };
-  let credentialsCb: (() => void) | null = null;
+  const credentialCbs = new Map<string, () => void>();
   let allowlistCb: (() => void) | null = null;
   let sigintCb: (() => void) | null = null;
   let onLine: ((raw: string) => void) | null = null;
@@ -94,14 +113,14 @@ function makeHarness(
   };
 
   const mocks = {
-    writeSecret: vi.fn(),
+    writeSecret: vi.fn<(token: string, path: string) => void>(),
     allocatePorts: vi.fn(async () => nextPorts()),
     bringUpColor: vi.fn().mockResolvedValue(undefined),
     waitColorReady: vi.fn().mockResolvedValue({ ready: true }),
     setActiveBackend: vi.fn(),
     drainBackend: vi.fn().mockResolvedValue(undefined),
     stopColor: vi.fn().mockResolvedValue(undefined),
-    nudgeRefresh: vi.fn().mockResolvedValue({ ok: true, stderr: '' }),
+    nudgeRefresh: vi.fn(async () => ({ ok: true, stderr: '' })),
     buildConfig: vi.fn(),
     ensureLeaf: vi.fn().mockReturnValue('reused leaf for 1 host(s)'),
     startLogStream: vi.fn((_color: string, cb: (raw: string) => void) => {
@@ -112,10 +131,9 @@ function makeHarness(
     log: vi.fn(),
     error: vi.fn(),
   };
+  const channelConfig = claudeChannelConfig(creds, mocks);
   const deps: RunProxyDeps = {
-    readCredentials: () => creds.value,
     readAllowlist: () => allowlist.value,
-    writeSecret: mocks.writeSecret,
     buildConfig: mocks.buildConfig,
     ensureLeaf: mocks.ensureLeaf,
     allocatePorts: mocks.allocatePorts,
@@ -124,10 +142,9 @@ function makeHarness(
     setActiveBackend: mocks.setActiveBackend,
     drainBackend: mocks.drainBackend,
     stopColor: mocks.stopColor,
-    nudgeRefresh: mocks.nudgeRefresh,
     watch: (path, onEvent) => {
-      if (path.endsWith('.credentials.json')) credentialsCb = onEvent;
-      else allowlistCb = onEvent;
+      if (path.endsWith('allowlist.txt')) allowlistCb = onEvent;
+      else credentialCbs.set(path, onEvent);
       return { close: watchClose };
     },
     startLogStream: mocks.startLogStream,
@@ -143,7 +160,8 @@ function makeHarness(
     deps,
     creds,
     allowlist,
-    fireCredentials: () => credentialsCb?.(),
+    channelConfig,
+    fireCredentials: (path = '/fake/.credentials.json') => credentialCbs.get(path)?.(),
     fireAllowlist: () => allowlistCb?.(),
     fireSigint: () => sigintCb?.(),
     feedLogLine: (raw) => onLine?.(raw),
@@ -168,7 +186,7 @@ afterEach(() => {
 describe('runProxyLoop startup', () => {
   it('builds config, ensures leaf, writes secret, brings up blue, sets backend, logs', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-    void runProxyLoop(baseConfig(), h.deps);
+    void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush();
 
     expect(h.mocks.ensureLeaf).toHaveBeenCalledWith(['api.anthropic.com']);
@@ -187,7 +205,7 @@ describe('runProxyLoop startup', () => {
 
   it('warns but still brings up the proxy on an invalid-syntax allowlist', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN }, INVALID_ALLOWLIST);
-    const exit = runProxyLoop(baseConfig(), h.deps);
+    const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush();
 
     expect(h.mocks.error).toHaveBeenCalledWith(
@@ -207,7 +225,7 @@ describe('runProxyLoop startup', () => {
 
   it('warns and resolves a collision, then brings up the proxy from the resolved config', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN }, COLLISION_ALLOWLIST);
-    void runProxyLoop(baseConfig(), h.deps);
+    void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush();
 
     expect(h.mocks.error).toHaveBeenCalledWith(
@@ -226,7 +244,7 @@ describe('runProxyLoop startup', () => {
 
   it('exits 1 when the allowlist is unreadable', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN }, null);
-    const exit = runProxyLoop(baseConfig(), h.deps);
+    const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush();
 
     await expect(exit).resolves.toBe(1);
@@ -236,7 +254,7 @@ describe('runProxyLoop startup', () => {
   it('exits 1 when blue never becomes ready on startup', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
     h.mocks.waitColorReady.mockResolvedValue({ ready: false, reason: 'timeout' });
-    const exit = runProxyLoop(baseConfig(), h.deps);
+    const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush();
 
     await expect(exit).resolves.toBe(1);
@@ -249,7 +267,7 @@ describe('runProxyLoop startup', () => {
   it('exits 1 with the exit hint when blue exits during startup', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
     h.mocks.waitColorReady.mockResolvedValue({ ready: false, reason: 'exited' });
-    const exit = runProxyLoop(baseConfig(), h.deps);
+    const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush();
 
     await expect(exit).resolves.toBe(1);
@@ -266,7 +284,7 @@ describe('runProxyLoop startup', () => {
           release = resolve;
         }),
     );
-    void runProxyLoop(baseConfig(), h.deps);
+    void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush(); // startup bring-up in flight; both watchers already armed
 
     h.allowlist.value = VALID_ALLOWLIST.replace(
@@ -289,7 +307,7 @@ describe('runProxyLoop startup', () => {
 describe('runProxyLoop inline logging', () => {
   it('prints each parsed host+handling once and ignores non-CFGM lines', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-    void runProxyLoop(baseConfig(), h.deps);
+    void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush();
     h.mocks.log.mockClear();
 
@@ -308,7 +326,7 @@ describe('runProxyLoop inline logging', () => {
 describe('runProxyLoop allowlist changes', () => {
   it('rebuilds config, reissues leaf, swaps to green, and clears unique tracking', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-    void runProxyLoop(baseConfig(), h.deps);
+    void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush();
     h.feedLogLine(PASS_LINE); // pypi.org now tracked as seen
     h.mocks.buildConfig.mockClear();
@@ -341,7 +359,7 @@ describe('runProxyLoop allowlist changes', () => {
 
   it('applies the resolved config on a flawed edit and warns instead of keeping previous', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-    void runProxyLoop(baseConfig(), h.deps);
+    void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush();
     h.mocks.buildConfig.mockClear();
     h.mocks.bringUpColor.mockClear();
@@ -364,7 +382,7 @@ describe('runProxyLoop allowlist changes', () => {
 describe('runProxyLoop credential changes', () => {
   it('propagates a changed token via a swap, preserving unique tracking', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-    void runProxyLoop(baseConfig(), h.deps);
+    void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush();
     h.feedLogLine(PASS_LINE); // pypi.org tracked as seen
     h.mocks.writeSecret.mockClear();
@@ -377,7 +395,9 @@ describe('runProxyLoop credential changes', () => {
 
     expect(h.mocks.writeSecret).toHaveBeenCalledWith('B', '/fake/sds-secret.yaml');
     expect(h.mocks.bringUpColor).toHaveBeenCalledWith('green', expect.anything());
-    expect(h.mocks.log).toHaveBeenCalledWith('run-proxy: restarting proxy — credentials changed');
+    expect(h.mocks.log).toHaveBeenCalledWith(
+      'run-proxy: restarting proxy — claude credentials changed',
+    );
     expect(h.mocks.log).toHaveBeenCalledWith('run-proxy: swap complete — now serving green');
 
     // Unique tracking survived the credential swap.
@@ -390,7 +410,7 @@ describe('runProxyLoop credential changes', () => {
 
   it('alternates the active color across successive swaps', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-    void runProxyLoop(baseConfig(), h.deps);
+    void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush();
 
     h.creds.value = { accessToken: 'B', expiresAt: 60 * MIN };
@@ -407,7 +427,7 @@ describe('runProxyLoop credential changes', () => {
 
   it('does not swap when the token is unchanged', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-    void runProxyLoop(baseConfig(), h.deps);
+    void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush();
     h.mocks.bringUpColor.mockClear();
 
@@ -420,7 +440,7 @@ describe('runProxyLoop credential changes', () => {
 
   it('keeps the old color serving (non-fatal) when the new color never becomes ready', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-    const exit = runProxyLoop(baseConfig(), h.deps);
+    const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush();
     h.mocks.setActiveBackend.mockClear();
 
@@ -445,7 +465,7 @@ describe('runProxyLoop credential changes', () => {
 
   it('keeps the previous proxy and logs the exit hint when a swap color exits during startup', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-    const exit = runProxyLoop(baseConfig(), h.deps);
+    const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush();
 
     h.mocks.waitColorReady.mockResolvedValueOnce({ ready: false, reason: 'exited' });
@@ -465,7 +485,7 @@ describe('runProxyLoop credential changes', () => {
 
   it('keeps the old color serving when docker fails to bring up the new color', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-    const exit = runProxyLoop(baseConfig(), h.deps);
+    const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush();
     h.mocks.setActiveBackend.mockClear();
 
@@ -490,7 +510,7 @@ describe('runProxyLoop credential changes', () => {
 describe('runProxyLoop coalescing', () => {
   it('collapses events during an in-flight swap into exactly one follow-up swap', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-    void runProxyLoop(baseConfig(), h.deps);
+    void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush();
     h.mocks.bringUpColor.mockClear();
 
@@ -518,7 +538,7 @@ describe('runProxyLoop coalescing', () => {
 
   it('clears unique tracking when both sources changed during an in-flight swap', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-    void runProxyLoop(baseConfig(), h.deps);
+    void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush();
     h.feedLogLine(PASS_LINE); // tracked
     h.mocks.bringUpColor.mockClear();
@@ -559,7 +579,8 @@ describe('runProxyLoop coalescing', () => {
 describe('runProxyLoop refresh nudging', () => {
   it('exits non-zero after maxAttempts consecutive no-advance nudges', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 1 * MIN });
-    const exit = runProxyLoop(baseConfig({ maxAttempts: 3 }), h.deps);
+    const channel = claudeChannelConfig(h.creds, h.mocks, { maxAttempts: 3 });
+    const exit = runProxyLoop(baseConfig([channel]), h.deps);
     await flush();
 
     await vi.advanceTimersByTimeAsync(2 * MIN);
@@ -575,7 +596,8 @@ describe('runProxyLoop refresh nudging', () => {
 
   it('resets the failure counter when a refresh succeeds mid-sequence', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 1 * MIN });
-    const exit = runProxyLoop(baseConfig({ maxAttempts: 3 }), h.deps);
+    const channel = claudeChannelConfig(h.creds, h.mocks, { maxAttempts: 3 });
+    const exit = runProxyLoop(baseConfig([channel]), h.deps);
     await flush();
     await vi.advanceTimersByTimeAsync(2 * MIN);
 
@@ -598,7 +620,7 @@ describe('runProxyLoop refresh nudging', () => {
 describe('runProxyLoop shutdown', () => {
   it('SIGINT tears everything down once and exits 0; a second SIGINT is a no-op', async () => {
     const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-    const exit = runProxyLoop(baseConfig(), h.deps);
+    const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush();
     h.mocks.log.mockClear();
     h.mocks.bringUpColor.mockClear();
@@ -625,7 +647,7 @@ describe('runProxyLoop shutdown', () => {
           });
         }),
     );
-    const exit = runProxyLoop(baseConfig(), h.deps);
+    const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
     await flush(); // parked in the startup waitColorReady
 
     h.fireSigint();
@@ -633,5 +655,99 @@ describe('runProxyLoop shutdown', () => {
 
     await expect(exit).resolves.toBe(0);
     expect(h.mocks.setActiveBackend).not.toHaveBeenCalled();
+  });
+});
+
+describe('runProxyLoop multi-channel', () => {
+  it('coalesces two dirty channels into one swap, writes both secrets, commits both', async () => {
+    const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+    const codexCreds = { value: { accessToken: 'X', expiresAt: 60 * MIN } as Credentials };
+    const codexWrite = vi.fn();
+    const codexChannel: CredentialChannelConfig = {
+      name: 'codex',
+      credentialsPath: '/fake/auth.json',
+      secretPath: '/fake/codex-secret.yaml',
+      readCredentials: () => codexCreds.value,
+      writeSecret: codexWrite,
+      nudgeRefresh: vi.fn().mockResolvedValue({ ok: true, stderr: '' }),
+      refreshWindowMs: 3 * MIN,
+      retryIntervalMs: 2 * MIN,
+      maxAttempts: 3,
+      refreshEnabled: true,
+    };
+    void runProxyLoop(baseConfig([h.channelConfig, codexChannel]), h.deps);
+    await flush();
+    h.mocks.bringUpColor.mockClear();
+    h.mocks.writeSecret.mockClear();
+    codexWrite.mockClear();
+
+    // Block the in-flight swap so both credential events land mid-restart — the
+    // window where the loop's coalescing guarantee actually applies (a pass's
+    // dirty set is captured synchronously, before any awaited step; two watcher
+    // callbacks fired back-to-back in the same tick land in *separate* passes
+    // unless a restart is already in flight to hold them as pending).
+    let release!: () => void;
+    h.mocks.bringUpColor.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+
+    h.fireAllowlist(); // swap begins; its bring-up is blocked
+    await flush();
+    expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1);
+
+    // Both credentials change while the swap is in flight.
+    h.creds.value = { accessToken: 'B', expiresAt: 60 * MIN };
+    codexCreds.value = { accessToken: 'Y', expiresAt: 60 * MIN };
+    h.fireCredentials('/fake/.credentials.json');
+    h.fireCredentials('/fake/auth.json');
+    await flush();
+    expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1); // still just the blocked one
+
+    release();
+    await flush();
+
+    // One coalesced follow-up swap serves both credential changes.
+    expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(2); // blocked swap + one follow-up
+    expect(h.mocks.writeSecret).toHaveBeenCalledWith('B', '/fake/sds-secret.yaml');
+    expect(codexWrite).toHaveBeenCalledWith('Y', '/fake/codex-secret.yaml');
+    expect(h.mocks.log).toHaveBeenCalledWith('run-proxy: swap complete — now serving blue');
+
+    // Both are committed: presenting the same tokens again needs no further swap.
+    h.mocks.bringUpColor.mockClear();
+    h.fireCredentials('/fake/.credentials.json');
+    h.fireCredentials('/fake/auth.json');
+    await flush();
+    expect(h.mocks.bringUpColor).not.toHaveBeenCalled();
+  });
+
+  it('one channel exhausting its nudges fatals the whole loop and closes both watchers', async () => {
+    const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+    const codexChannel: CredentialChannelConfig = {
+      name: 'codex',
+      credentialsPath: '/fake/auth.json',
+      secretPath: '/fake/codex-secret.yaml',
+      readCredentials: () => ({ accessToken: 'X', expiresAt: 1 * MIN }),
+      writeSecret: vi.fn(),
+      nudgeRefresh: vi.fn().mockResolvedValue({ ok: false, stderr: 'codex boom' }),
+      refreshWindowMs: 3 * MIN,
+      retryIntervalMs: 2 * MIN,
+      maxAttempts: 3,
+      refreshEnabled: true,
+    };
+    const exit = runProxyLoop(baseConfig([h.channelConfig, codexChannel]), h.deps);
+    await flush();
+
+    // Codex's token is inside the refresh window and every nudge fails -> exhaustion.
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+
+    await expect(exit).resolves.toBe(1);
+    expect(h.mocks.error).toHaveBeenCalledWith(expect.stringContaining('codex boom'));
+    // Both credentials watchers + the allowlist watcher were closed (3 total).
+    expect(h.mocks.watchClose).toHaveBeenCalledTimes(3);
   });
 });

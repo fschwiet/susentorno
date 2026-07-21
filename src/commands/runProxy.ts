@@ -7,6 +7,7 @@ import { writeSecret } from '../runProxy/writeSecret';
 import { nudgeRefresh } from '../runProxy/nudgeRefresh';
 import { watchFile } from '../runProxy/watchFile';
 import { runProxyLoop, type RunProxyDeps } from '../runProxy/runProxyLoop';
+import type { CredentialChannelConfig } from '../runProxy/credentialChannel';
 import { writeEnvoyConfig } from '../runProxy/buildConfig';
 import { startLogStream, type LogStreamHandle } from '../runProxy/logStream';
 import { ensureLeaf } from '../leaf';
@@ -135,7 +136,6 @@ export function registerRunProxy(program: Command): void {
       );
 
       const deps: RunProxyDeps = {
-        readCredentials,
         readAllowlist: (path) => {
           try {
             return readFileSync(path, 'utf8');
@@ -143,7 +143,6 @@ export function registerRunProxy(program: Command): void {
             return null;
           }
         },
-        writeSecret: (token: string, path: string) => writeSecret(token, path, 'sandbox_bearer_token'),
         buildConfig: (allowlist) =>
           writeEnvoyConfig(
             allowlist,
@@ -173,7 +172,6 @@ export function registerRunProxy(program: Command): void {
             signal,
           ),
         stopColor: (color: Color) => stopColor(color, paths.proxy),
-        nudgeRefresh,
         watch: watchFile,
         startLogStream: (color: Color, onLine) => {
           logHandle = startLogStream(`envoy_${color}`, paths.proxy, onLine);
@@ -189,18 +187,26 @@ export function registerRunProxy(program: Command): void {
         now: () => Date.now(),
       };
 
+      const claudeChannel: CredentialChannelConfig = {
+        name: 'claude',
+        credentialsPath: options.credentials,
+        secretPath,
+        readCredentials,
+        writeSecret: (token, path) => writeSecret(token, path, 'sandbox_bearer_token'),
+        nudgeRefresh,
+        refreshWindowMs: Number(options.refreshWindow) * 60_000,
+        retryIntervalMs: Number(options.retryInterval) * 60_000,
+        maxAttempts: Number(options.maxAttempts),
+        refreshEnabled: options.refresh,
+      };
+
       try {
         const exitCode = await runProxyLoop(
           {
-            credentialsPath: options.credentials,
+            channels: [claudeChannel],
             allowlistPath: paths.allowlist,
-            secretPath,
             readyTimeoutMs: 60_000,
             drainTimeoutMs: 30_000,
-            refreshWindowMs: Number(options.refreshWindow) * 60_000,
-            retryIntervalMs: Number(options.retryInterval) * 60_000,
-            maxAttempts: Number(options.maxAttempts),
-            refreshEnabled: options.refresh,
           },
           deps,
         );
