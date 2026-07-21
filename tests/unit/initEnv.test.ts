@@ -42,6 +42,7 @@ describe('initEnvironment', () => {
       'vm-shared/07-setup-persistence.sh',
       'vm-shared/configamatron-egress.service',
       'vm-shared/credentials.json',
+      'vm-shared/09-codex-config.sh',
       'proxy/docker-compose.yml',
       'proxy/gate.lua',
       'proxy/host-allow-vm-inbound.ps1',
@@ -51,6 +52,7 @@ describe('initEnvironment', () => {
       'vm-shared-windows/verify-config.ps1',
       'vm-shared-windows/dns-responder/Program.cs',
       'vm-shared-windows/credentials.json',
+      'vm-shared-windows/09-codex-config.ps1',
     ]) {
       expect(existsSync(join(root, file)), file).toBe(true);
     }

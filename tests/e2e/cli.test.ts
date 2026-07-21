@@ -39,7 +39,11 @@ describe('configamatron CLI', () => {
   it('run-proxy names the missing prerequisite command', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
     try {
-      await execa('node', [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture], { cwd: dir });
+      await execa(
+        'node',
+        [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
+        { cwd: dir },
+      );
       const { exitCode, stderr } = await execa('node', [cliPath, 'run-proxy'], {
         cwd: dir,
         reject: false,
@@ -118,7 +122,11 @@ describe('write-github-config', () => {
     );
 
     try {
-      await execa('node', [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture], { cwd: dir });
+      await execa(
+        'node',
+        [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
+        { cwd: dir },
+      );
       const { exitCode, stdout } = await execa('node', [cliPath, 'write-github-config'], {
         cwd: dir,
         input: `${validToken}\n`,
@@ -173,7 +181,11 @@ describe('write-github-config', () => {
     );
 
     try {
-      await execa('node', [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture], { cwd: dir });
+      await execa(
+        'node',
+        [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
+        { cwd: dir },
+      );
       const { exitCode, stderr } = await execa('node', [cliPath, 'write-github-config'], {
         cwd: dir,
         input: 'not-a-real-token\n',
@@ -201,7 +213,11 @@ describe('write-github-config', () => {
     writeFixtureGitConfig(gitConfigPath, '');
 
     try {
-      await execa('node', [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture], { cwd: dir });
+      await execa(
+        'node',
+        [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
+        { cwd: dir },
+      );
       const { exitCode, stderr } = await execa('node', [cliPath, 'write-github-config'], {
         cwd: dir,
         input: `${validToken}\n`,

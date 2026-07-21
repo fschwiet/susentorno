@@ -30,8 +30,7 @@ export function readCodexCredentials(path: string): Credentials | null {
   if ((parsed as { auth_mode?: unknown } | null)?.auth_mode !== 'chatgpt') return null;
 
   const tokens = (parsed as { tokens?: unknown } | null)?.tokens as
-    | { access_token?: unknown }
-    | undefined;
+    { access_token?: unknown } | undefined;
   if (!tokens || typeof tokens.access_token !== 'string') return null;
 
   const expiresAt = jwtExpMs(tokens.access_token);
