@@ -34,6 +34,10 @@ const expectedTemplateFiles = [
   'vm-shared-windows/dns-responder/ConfigamatronDnsResponder.csproj',
   'vm-shared-windows/dns-responder/Program.cs',
   'vm-shared-windows/verify-config.ps1',
+  'home-jq-transforms/manifest.yaml',
+  'home-jq-transforms/vscode-settings.jq',
+  'home-jq-transforms/claude-onboarding.jq',
+  'configamatron.gitignore',
 ];
 
 describe('templates', () => {
@@ -188,5 +192,32 @@ describe('templates', () => {
     );
     expect(s).toContain('jq . $vscodeSettings');
     expect(s).not.toContain('ConvertTo-Json');
+  });
+
+  it('seed transforms reproduce the extracted inline jq programs', () => {
+    const vscode = readFileSync(
+      join(templatesDir(), 'home-jq-transforms', 'vscode-settings.jq'),
+      'utf8',
+    );
+    expect(vscode).toContain('.["editor.defaultFormatter"] = "esbenp.prettier-vscode"');
+    const claude = readFileSync(
+      join(templatesDir(), 'home-jq-transforms', 'claude-onboarding.jq'),
+      'utf8',
+    );
+    expect(claude).toContain('.hasCompletedOnboarding = true');
+  });
+
+  it('env gitignore template excludes secrets and build artifacts', () => {
+    const gi = readFileSync(join(templatesDir(), 'configamatron.gitignore'), 'utf8');
+    for (const p of [
+      'proxy/secrets/',
+      'proxy/ca/key.pem',
+      'proxy/ca/leaf-key.pem',
+      'vm-shared/github-config.txt',
+      'proxy/envoy.yaml',
+      'vm-shared-windows/dns-responder/bin',
+    ]) {
+      expect(gi, p).toContain(p);
+    }
   });
 });
