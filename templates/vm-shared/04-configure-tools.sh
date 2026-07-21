@@ -15,24 +15,8 @@ code --install-extension esbenp.prettier-vscode
 code --install-extension csharpier.csharpier-vscode
 code --install-extension JakubKozera.csharp-dev-tools
 
-# VS Code configuration
-
-vscode_settings_dir="$HOME/.config/Code/User"
-mkdir -p "$vscode_settings_dir"
-vscode_settings="$vscode_settings_dir/settings.json"
-
-# Merge our required settings into any existing file with jq rather than
-# clobbering it, starting fresh only if the file is missing or unparsable. Write
-# to a temp file and move it into place so a failure never truncates the target.
-base=$(jq . "$vscode_settings" 2> /dev/null || echo '{}')
-tmp=$(mktemp)
-printf '%s' "$base" | jq '
-  .["files.autoSave"] = "afterDelay"
-  | .["editor.formatOnSave"] = true
-  | .["editor.defaultFormatter"] = "esbenp.prettier-vscode"
-  | .["[csharp]"] = {"editor.defaultFormatter": "csharpier.csharpier-vscode"}
-' > "$tmp"
-mv "$tmp" "$vscode_settings"
+# VS Code settings (files.autoSave, formatter, etc.) are applied later by
+# 07-apply-home-jq-transforms.sh from home-jq-transforms/, so users can customize them.
 
 # codebase-memory-mcp
 # - install is idempotent, must install after coding agents for it to be configured

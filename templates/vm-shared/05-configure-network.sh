@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+host_ip="${1:?usage: 05-configure-network.sh <host-ip> [cert-path]}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cert_path="${1:-${script_dir}/cert.pem}"
+cert_path="${2:-${script_dir}/cert.pem}"
+
+## --- Trust the proxy CA ---
 
 sudo cp "$cert_path" /usr/local/share/ca-certificates/configamatron-proxy-certificate-authority.crt
 sudo update-ca-certificates
@@ -13,7 +16,7 @@ sudo update-ca-certificates
 echo 'export NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/configamatron-proxy-certificate-authority.crt' | sudo tee /etc/profile.d/node-extra-ca-certs.sh > /dev/null
 sudo chmod 644 /etc/profile.d/node-extra-ca-certs.sh
 
-echo "06-trust-ca: installed and trusted $cert_path; NODE_EXTRA_CA_CERTS configured for new shells"
+echo "05-configure-network: installed and trusted $cert_path; NODE_EXTRA_CA_CERTS configured for new shells"
 
 # Firefox keeps its own trust store (an NSS cert9.db per profile) and ignores
 # both the system CA bundle and NODE_EXTRA_CA_CERTS, so the CA must be registered
@@ -25,10 +28,7 @@ echo "06-trust-ca: installed and trusted $cert_path; NODE_EXTRA_CA_CERTS configu
 # The cert itself must live in /etc/firefox/policies too: the snap build runs
 # strictly confined and its mount namespace shadows /usr/local, so a
 # Certificates.Install entry pointing at /usr/local/share/ca-certificates/*
-# fails silently (policy shows Active in about:policies, import never happens,
-# terminated hosts die with SEC_ERROR_UNKNOWN_ISSUER). /etc/firefox/policies is
-# the one sanctioned path all builds can read — verified from inside the snap
-# sandbox with `snap run --shell firefox`.
+# fails silently. /etc/firefox/policies is the one sanctioned path all builds read.
 if command -v firefox > /dev/null 2>&1 || snap list firefox > /dev/null 2>&1; then
   policy_dir=/etc/firefox/policies
   policy_file="${policy_dir}/policies.json"
@@ -38,12 +38,6 @@ if command -v firefox > /dev/null 2>&1 || snap list firefox > /dev/null 2>&1; th
   sudo cp "$cert_path" "$ca_for_firefox"
   sudo chmod 644 "$ca_for_firefox"
 
-  # Merge our CA into any existing policy with jq rather than clobbering it, and
-  # drop the snap-unreadable /usr/local path earlier revisions of this script
-  # wrote. The policy file is root-owned, so read and write it under sudo; jq's
-  # merge itself runs as the normal user (it only reads stdin). Removing then
-  # re-appending the CA keeps it present exactly once and makes the update
-  # idempotent. Start fresh only if the file is missing or unparsable.
   base=$(sudo jq . "$policy_file" 2> /dev/null || echo '{}')
   tmp=$(mktemp)
   printf '%s' "$base" | jq \
@@ -54,7 +48,40 @@ if command -v firefox > /dev/null 2>&1 || snap list firefox > /dev/null 2>&1; th
   sudo cp "$tmp" "$policy_file"
   rm -f "$tmp"
   sudo chmod 644 "$policy_file"
-  echo "06-trust-ca: registered CA with Firefox via $policy_file"
+  echo "05-configure-network: registered CA with Firefox via $policy_file"
 else
-  echo "06-trust-ca: Firefox not found; skipped browser CA registration"
+  echo "05-configure-network: Firefox not found; skipped browser CA registration"
 fi
+
+## --- Persistence: dnsmasq + egress + netplan DNS override ---
+
+sudo apt-get install -y dnsmasq
+
+sudo cp "${script_dir}/dnsmasq-stub.conf" /etc/dnsmasq.d/sandbox-stub.conf
+
+sed "s|__HOST_IP__|${host_ip}|g" "${script_dir}/configamatron-egress.service" \
+  | sudo tee /etc/systemd/system/configamatron-egress.service > /dev/null
+
+# Discover the primary network interface (physical NIC name, e.g. ens33) so the
+# netplan DNS override merges into the active profile. Prefer the default-route
+# interface; fall back to the first up, globally-scoped IPv4 interface.
+iface="$(ip -o -4 route show default | awk '{print $5}' | head -n1)"
+if [[ -z "${iface}" ]]; then
+  iface="$(ip -o -4 addr show up scope global | awk '{print $2}' | head -n1)"
+fi
+if [[ -z "${iface}" ]]; then
+  echo "05-configure-network: could not determine the VM's network interface." >&2
+  echo "  Bring the VM's network up before running this (NAT or bridged both work)." >&2
+  exit 1
+fi
+
+sed "s|__IFACE__|${iface}|g" "${script_dir}/60-dns-override.yaml" | sudo tee /etc/netplan/60-dns-override.yaml > /dev/null
+sudo chmod 600 /etc/netplan/60-dns-override.yaml
+sudo netplan apply
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now dnsmasq
+sudo systemctl enable configamatron-egress.service
+sudo systemctl restart configamatron-egress.service
+
+echo "05-configure-network: dnsmasq and configamatron-egress.service enabled and started; netplan DNS override applied"

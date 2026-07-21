@@ -9,11 +9,9 @@ const expectedTemplateFiles = [
   'vm-shared/02-install-pnpm.sh',
   'vm-shared/03-install-tools.sh',
   'vm-shared/04-configure-tools.sh',
-  'vm-shared/05-github-auth.sh',
-  'vm-shared/06-trust-ca.sh',
-  'vm-shared/07-setup-persistence.sh',
-  'vm-shared/08-claude-config.sh',
-  'vm-shared/09-codex-config.sh',
+  'vm-shared/05-configure-network.sh',
+  'vm-shared/06-auth-config.sh',
+  'vm-shared/07-apply-home-jq-transforms.sh',
   'vm-shared/dnsmasq-stub.conf',
   'vm-shared/60-dns-override.yaml',
   'vm-shared/configamatron-egress.service',
@@ -149,27 +147,14 @@ describe('templates', () => {
     expect(v).toContain('curl.exe'); // live egress via bundled curl
   });
 
-  it('ubuntu 01-apt-packages installs jq for JSON edits', () => {
+  it('ubuntu 01-apt-packages installs jq and gh', () => {
     const s = readFileSync(join(templatesDir(), 'vm-shared', '01-apt-packages.sh'), 'utf8');
-    expect(s).toContain('jq');
+    expect(s).toMatch(/apt install -y .*\bjq\b/);
+    expect(s).toMatch(/apt install -y .*\bgh\b/);
   });
 
-  it('ubuntu 08-claude-config writes .claude.json with jq, not python3', () => {
-    const s = readFileSync(join(templatesDir(), 'vm-shared', '08-claude-config.sh'), 'utf8');
-    expect(s).toContain('jq . "$claude_json"');
-    expect(s).toContain('.hasCompletedOnboarding = true');
-    expect(s).not.toContain('python3');
-  });
-
-  it('ubuntu 04-configure-tools writes settings.json with jq, not python3', () => {
-    const s = readFileSync(join(templatesDir(), 'vm-shared', '04-configure-tools.sh'), 'utf8');
-    expect(s).toContain('jq . "$vscode_settings"');
-    expect(s).toContain('.["editor.defaultFormatter"] = "esbenp.prettier-vscode"');
-    expect(s).not.toContain('python3');
-  });
-
-  it('ubuntu 06-trust-ca merges the Firefox CA with jq, not python3', () => {
-    const s = readFileSync(join(templatesDir(), 'vm-shared', '06-trust-ca.sh'), 'utf8');
+  it('ubuntu 05-configure-network merges the Firefox CA with jq, not python3', () => {
+    const s = readFileSync(join(templatesDir(), 'vm-shared', '05-configure-network.sh'), 'utf8');
     expect(s).toContain('sudo jq . "$policy_file"');
     expect(s).toContain('.policies.Certificates.Install');
     expect(s).not.toContain('python3');

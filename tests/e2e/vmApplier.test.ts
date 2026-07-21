@@ -1,7 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { execa } from 'execa';
 import { fileURLToPath } from 'node:url';
-import { existsSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  writeFileSync,
+  readFileSync,
+  rmSync,
+} from 'node:fs';
 import { tmpdir, platform } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -20,6 +28,7 @@ const seedDir = join(repoRoot, 'templates', 'home-jq-transforms');
 // than failing on a machine that lacks it. (The bash-wrapper test, which also
 // needs bash, lives in Task 10 alongside the 07-*.sh wrapper it exercises.)
 const hasJq = spawnSync('jq', ['--version']).status === 0;
+const hasBash = spawnSync('bash', ['--version']).status === 0;
 
 describe('vm applier bundle', () => {
   it('is built into both shares', () => {
@@ -74,6 +83,32 @@ describe('vm applier bundle', () => {
     expect(JSON.parse(claude.stdout)).toEqual({ hasCompletedOnboarding: true });
   });
 
-  // The bash-wrapper test that exercises 07-apply-home-jq-transforms.sh is added
-  // to this file in Task 10, once that wrapper script exists.
+  // Proves the bash wrapper resolves paths from the script dir, not the caller's
+  // cwd. Windows-path handling under Git Bash is finicky, so this runs on
+  // POSIX only; CI/Linux covers the wrapper contract. Requires the applier
+  // bundle from Task 6 (build before running).
+  it.skipIf(!hasBash || !hasJq || process.platform === 'win32')(
+    'bash wrapper resolves its sibling mjs and transforms regardless of cwd',
+    async () => {
+      const share = mkdtempSync(join(tmpdir(), 'share-'));
+      try {
+        const out = join(share, 'out.json');
+        copyFileSync(applierUbuntu, join(share, 'apply-home-jq-transforms.mjs'));
+        copyFileSync(
+          join(repoRoot, 'templates', 'vm-shared', '07-apply-home-jq-transforms.sh'),
+          join(share, '07-apply-home-jq-transforms.sh'),
+        );
+        mkdirSync(join(share, 'home-jq-transforms'));
+        writeFileSync(join(share, 'home-jq-transforms', 't.jq'), '.applied = true');
+        writeFileSync(
+          join(share, 'home-jq-transforms', 'manifest.yaml'),
+          `- transform: t.jq\n  linux: ${out}\n`,
+        );
+        await execa('bash', [join(share, '07-apply-home-jq-transforms.sh')], { cwd: tmpdir() });
+        expect(JSON.parse(readFileSync(out, 'utf8'))).toEqual({ applied: true });
+      } finally {
+        rmSync(share, { recursive: true, force: true });
+      }
+    },
+  );
 });

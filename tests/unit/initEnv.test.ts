@@ -38,11 +38,11 @@ describe('initEnvironment', () => {
     const root = join(dir, ENV_DIR_NAME);
     for (const file of [
       'vm-shared/01-apt-packages.sh',
-      'vm-shared/06-trust-ca.sh',
-      'vm-shared/07-setup-persistence.sh',
+      'vm-shared/05-configure-network.sh',
+      'vm-shared/06-auth-config.sh',
+      'vm-shared/07-apply-home-jq-transforms.sh',
       'vm-shared/configamatron-egress.service',
       'vm-shared/credentials.json',
-      'vm-shared/09-codex-config.sh',
       'proxy/docker-compose.yml',
       'proxy/gate.lua',
       'proxy/host-allow-vm-inbound.ps1',
