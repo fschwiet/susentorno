@@ -49,5 +49,10 @@ export function registerInit(program: Command): void {
         `  Then share ${ENV_DIR_NAME}/vm-shared (Ubuntu, see README.md) or ` +
           `${ENV_DIR_NAME}/vm-shared-windows (Windows, see usage-windows-vm.md) into the VM`,
       );
+      console.log(
+        `  Customize settings transforms in ${ENV_DIR_NAME}/home-jq-transforms (commit them; ` +
+          `re-run 'configamatron update-shares' after edits). ${ENV_DIR_NAME} is source-controlled ` +
+          `except the files its .gitignore excludes.`,
+      );
     });
 }

@@ -20,6 +20,8 @@ describe('configamatron init', () => {
       );
       expect(exitCode).toBe(0);
       expect(stdout).toContain('generate-ca');
+      expect(stdout).toContain('update-shares');
+      expect(stdout).toContain('home-jq-transforms');
       expect(existsSync(join(dir, '.configamatron', 'proxy', 'allowlist.txt'))).toBe(true);
       expect(existsSync(join(dir, '.configamatron', 'vm-shared', 'credentials.json'))).toBe(true);
     } finally {
