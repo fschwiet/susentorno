@@ -176,16 +176,35 @@ describe('loadManifest', () => {
     expect(() => loadManifest(dir)).toThrow('not found');
   });
 
-  it('rejects a symlink that escapes the folder', () => {
+  it('rejects a symlink that escapes the folder', (ctx) => {
     const outside = mkdtempSync(join(tmpdir(), 'hjt-out-'));
     writeFileSync(join(outside, 'real.jq'), '.');
-    symlinkSync(join(outside, 'real.jq'), join(dir, 'link.jq'));
+    try {
+      symlinkSync(join(outside, 'real.jq'), join(dir, 'link.jq'));
+    } catch {
+      // Windows without Developer Mode/elevation cannot create symlinks.
+      rmSync(outside, { recursive: true, force: true });
+      ctx.skip();
+      return;
+    }
     write('manifest.yaml', '- transform: link.jq\n  linux: ~/a.json\n');
     try {
       expect(() => loadManifest(dir)).toThrow('outside the transforms folder');
     } finally {
       rmSync(outside, { recursive: true, force: true });
     }
+  });
+
+  it('allows a symlink that resolves inside the folder', (ctx) => {
+    writeFileSync(join(dir, 'real.jq'), '.');
+    try {
+      symlinkSync(join(dir, 'real.jq'), join(dir, 'alias.jq'));
+    } catch {
+      ctx.skip();
+      return;
+    }
+    write('manifest.yaml', '- transform: alias.jq\n  linux: ~/a.json\n');
+    expect(loadManifest(dir)).toHaveLength(1);
   });
 });
 ```
@@ -198,7 +217,7 @@ Run: `pnpm test:unit -- homeJqTransforms` Expected: FAIL (module not found).
 
 ```ts
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { parse } from 'yaml';
 
 export interface TransformEntry {
@@ -228,9 +247,11 @@ function validateEntry(entry: unknown, index: number, dir: string): TransformEnt
   if (!existsSync(abs)) {
     throw new Error(`manifest entry ${index}: transform file not found: ${transform}`);
   }
+  // Containment check on the *real* path so a symlink escaping the folder is
+  // rejected, while a symlink resolving inside it is allowed.
   const realDir = realpathSync(resolve(dir));
-  const real = realpathSync(abs);
-  if (real !== join(realDir, transform)) {
+  const rel = relative(realDir, realpathSync(abs));
+  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) {
     throw new Error(`manifest entry ${index}: '${transform}' resolves outside the transforms folder`);
   }
   const linux = e.linux;
@@ -493,13 +514,21 @@ Run: `pnpm test:unit -- homeJqTransforms` Expected: FAIL (`applyTransforms` not 
 Add imports at the top (merge with existing `node:fs` import):
 
 ```ts
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 ```
 
-(This widens the existing `node:fs` and `node:path` imports from Task 2 — replace those two import lines with the four lines above.)
+(This widens the existing `node:fs` and `node:path` imports from Task 2 — replace those two import lines with the block above. `parse` from `yaml` stays.)
 
 Append:
 
@@ -577,9 +606,21 @@ export function applyTransforms(opts: {
       continue;
     }
     mkdirSync(dirname(target), { recursive: true });
-    const tmp = `${target}.tmp-${process.pid}`;
-    writeFileSync(tmp, r.stdout);
-    renameSync(tmp, target);
+    const tmp = `${target}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      writeFileSync(tmp, r.stdout);
+      renameSync(tmp, target);
+    } catch (writeError) {
+      rmSync(tmp, { force: true });
+      results.push({
+        transform: entry.transform,
+        target,
+        created,
+        ok: false,
+        error: (writeError as Error).message,
+      });
+      continue;
+    }
     results.push({ transform: entry.transform, target, created, ok: true });
   }
   return results;
@@ -769,13 +810,20 @@ git commit -m "feat(templates): seed home-jq-transforms and env gitignore"
 import { describe, it, expect } from 'vitest';
 import { execa } from 'execa';
 import { fileURLToPath } from 'node:url';
-import { existsSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir, platform } from 'node:os';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
 const applierUbuntu = join(repoRoot, 'templates', 'vm-shared', 'apply-home-jq-transforms.mjs');
 const applierWindows = join(repoRoot, 'templates', 'vm-shared-windows', 'apply-home-jq-transforms.mjs');
+const seedDir = join(repoRoot, 'templates', 'home-jq-transforms');
+
+// jq/bash are external prerequisites; skip the tests that need them when absent
+// rather than failing on a machine that lacks them.
+const hasJq = spawnSync('jq', ['--version']).status === 0;
+const hasBash = spawnSync('bash', ['--version']).status === 0;
 
 describe('vm applier bundle', () => {
   it('is built into both shares', () => {
@@ -783,7 +831,16 @@ describe('vm applier bundle', () => {
     expect(existsSync(applierWindows)).toBe(true);
   });
 
-  it('applies a transform to its target on this platform (real jq)', async () => {
+  it('is listed in the npm package', async () => {
+    const { stdout } = await execa('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+      cwd: repoRoot,
+    });
+    const files: string[] = JSON.parse(stdout)[0].files.map((f: { path: string }) => f.path);
+    expect(files).toContain('templates/vm-shared/apply-home-jq-transforms.mjs');
+    expect(files).toContain('templates/vm-shared-windows/apply-home-jq-transforms.mjs');
+  });
+
+  it.skipIf(!hasJq)('applies a transform to its target on this platform (real jq)', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'applier-'));
     try {
       const out = join(dir, 'out.json');
@@ -798,14 +855,45 @@ describe('vm applier bundle', () => {
     }
   });
 
-  it('is listed in the npm package', async () => {
-    const { stdout } = await execa('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
-      cwd: repoRoot,
+  it.skipIf(!hasJq)('seed transforms reproduce the former inline settings (real jq)', () => {
+    const vscode = spawnSync('jq', ['-f', join(seedDir, 'vscode-settings.jq')], { input: '{}', encoding: 'utf8' });
+    expect(JSON.parse(vscode.stdout)).toEqual({
+      'files.autoSave': 'afterDelay',
+      'editor.formatOnSave': true,
+      'editor.defaultFormatter': 'esbenp.prettier-vscode',
+      '[csharp]': { 'editor.defaultFormatter': 'csharpier.csharpier-vscode' },
     });
-    const files: string[] = JSON.parse(stdout)[0].files.map((f: { path: string }) => f.path);
-    expect(files).toContain('templates/vm-shared/apply-home-jq-transforms.mjs');
-    expect(files).toContain('templates/vm-shared-windows/apply-home-jq-transforms.mjs');
+    const claude = spawnSync('jq', ['-f', join(seedDir, 'claude-onboarding.jq')], { input: '{}', encoding: 'utf8' });
+    expect(JSON.parse(claude.stdout)).toEqual({ hasCompletedOnboarding: true });
   });
+
+  // Proves the bash wrapper resolves paths from the script dir, not the caller's
+  // cwd. Windows-path handling under Git Bash is finicky, so this runs on
+  // POSIX only; CI/Linux covers the wrapper contract.
+  it.skipIf(!hasBash || !hasJq || process.platform === 'win32')(
+    'bash wrapper resolves its sibling mjs and transforms regardless of cwd',
+    async () => {
+      const share = mkdtempSync(join(tmpdir(), 'share-'));
+      try {
+        const out = join(share, 'out.json');
+        copyFileSync(applierUbuntu, join(share, 'apply-home-jq-transforms.mjs'));
+        copyFileSync(
+          join(repoRoot, 'templates', 'vm-shared', '07-apply-home-jq-transforms.sh'),
+          join(share, '07-apply-home-jq-transforms.sh'),
+        );
+        mkdirSync(join(share, 'home-jq-transforms'));
+        writeFileSync(join(share, 'home-jq-transforms', 't.jq'), '.applied = true');
+        writeFileSync(
+          join(share, 'home-jq-transforms', 'manifest.yaml'),
+          `- transform: t.jq\n  linux: ${out}\n`,
+        );
+        await execa('bash', [join(share, '07-apply-home-jq-transforms.sh')], { cwd: tmpdir() });
+        expect(JSON.parse(readFileSync(out, 'utf8'))).toEqual({ applied: true });
+      } finally {
+        rmSync(share, { recursive: true, force: true });
+      }
+    },
+  );
 });
 ```
 
@@ -1005,17 +1093,19 @@ import { execa } from 'execa';
 import { fileURLToPath } from 'node:url';
 import { existsSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
 const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
+const hasJq = spawnSync('jq', ['--version']).status === 0;
 
 async function initEnv(dir: string) {
   await execa('node', [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture], { cwd: dir });
 }
 
-describe('configamatron update-shares', () => {
+describe.skipIf(!hasJq)('configamatron update-shares', () => {
   it('previews transforms and refreshes both share copies', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'update-shares-'));
     try {
@@ -1073,7 +1163,8 @@ Run: `pnpm build && pnpm test:e2e -- updateShares` Expected: FAIL (unknown comma
 Create `src/commands/updateShares.ts`:
 
 ```ts
-import { cpSync, renameSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, renameSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import type { Command } from 'commander';
 import { requireEnvPathsOrExit } from '../envPaths';
 import { previewTransforms } from '../homeJqTransforms';
@@ -1090,6 +1181,16 @@ export function registerUpdateShares(program: Command): void {
     .action((options: UpdateSharesOptions) => {
       const paths = requireEnvPathsOrExit('update-shares');
       if (!paths) return;
+
+      // Explicit jq preflight: previewTransforms only touches jq once it has an
+      // entry to run, so an empty manifest would otherwise pass without jq.
+      if (spawnSync('jq', ['--version']).status !== 0) {
+        console.error(
+          'update-shares: jq is required on the host for the transform preview — install jq and re-run.',
+        );
+        process.exitCode = 1;
+        return;
+      }
 
       let previews;
       try {
@@ -1125,19 +1226,31 @@ export function registerUpdateShares(program: Command): void {
       }
 
       for (const target of paths.vmSharedTargets) {
-        const staging = `${target.homeJqTransforms}.staging`;
+        const live = target.homeJqTransforms;
+        const staging = `${live}.staging-${process.pid}`;
+        const backup = `${live}.backup-${process.pid}`;
         rmSync(staging, { recursive: true, force: true });
+        rmSync(backup, { recursive: true, force: true });
         try {
+          // Stage the new copy fully, then swap: move live -> backup, staging ->
+          // live, and only then drop the backup. If the promotion throws, restore
+          // the backup so the guest is never left without transforms.
           cpSync(paths.homeJqTransforms, staging, { recursive: true });
-          rmSync(target.homeJqTransforms, { recursive: true, force: true });
-          renameSync(staging, target.homeJqTransforms);
+          if (existsSync(live)) renameSync(live, backup);
+          try {
+            renameSync(staging, live);
+          } catch (promoteError) {
+            if (existsSync(backup)) renameSync(backup, live);
+            throw promoteError;
+          }
+          rmSync(backup, { recursive: true, force: true });
         } catch (error) {
           rmSync(staging, { recursive: true, force: true });
-          console.error(`update-shares: failed to update ${target.homeJqTransforms}: ${(error as Error).message}`);
+          console.error(`update-shares: failed to update ${live}: ${(error as Error).message}`);
           process.exitCode = 1;
           return;
         }
-        console.log(`update-shares: copied transforms into ${target.homeJqTransforms}`);
+        console.log(`update-shares: copied transforms into ${live}`);
       }
     });
 }
@@ -1825,16 +1938,109 @@ blocks the copy.
 8. `.\07-apply-home-jq-transforms.ps1` — run last. Applies every transform in `home-jq-transforms/` to its target settings file.
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Update `usage-hyper-v-host.md`** — line ~183 references `07-setup-persistence.sh` / `07-setup-network.ps1`:
+
+Change:
+
+```markdown
+When a script asks for `<host-ip>` (`07-setup-persistence.sh` / `07-setup-network.ps1`), it is the Internal-switch host IP from step 1 (`192.168.67.1` here).
+```
+
+to:
+
+```markdown
+When a script asks for `<host-ip>` (`05-configure-network.sh` / `05-configure-network.ps1`), it is the Internal-switch host IP from step 1 (`192.168.67.1` here).
+```
+
+- [ ] **Step 6: Update `technical-notes.md`** — line ~38 references `07-setup-persistence.sh`:
+
+Change `` `07-setup-persistence.sh` installs two persistent units: `` to `` `05-configure-network.sh` installs two persistent units: ``.
+
+- [ ] **Step 7: Note the jq dev prerequisite in `README.md`** — in the verify/testing section (near "Run these commands in order to verify a change is correct"), add:
+
+```markdown
+> The e2e suite shells out to `jq`; install it on the dev host (and CI) or the jq-dependent
+> tests self-skip.
+```
+
+- [ ] **Step 8: Confirm no stale references remain in committed docs/scripts**
+
+Run: `grep -rn '05-github-auth\|06-trust-ca\|07-setup-persistence\|07-setup-network\|08-claude-config\|09-codex-config' README.md usage-windows-vm.md usage-hyper-v-host.md technical-notes.md templates/ | grep -v apply-home-jq-transforms` Expected: no output.
+
+- [ ] **Step 9: Commit**
 
 ```bash
-git add README.md usage-windows-vm.md
-git commit -m "docs: new run order, source-control note, and transform customization"
+git add README.md usage-windows-vm.md usage-hyper-v-host.md technical-notes.md
+git commit -m "docs: new run order, source-control note, transform customization, jq note"
 ```
 
 ---
 
-### Task 14: Full-suite verification
+### Task 14: Migrate the VM harness tests
+
+**Files:**
+
+- Modify: `tests/vm/vm.test.ts`
+
+**Context:** `test:vm` (WSL + multipass harness, run via `pnpm test:vm`, not part of `pnpm test`) drives the numbered scripts inside real guests. It references three deleted scripts and one behavior (claude onboarding) that moved to the applier. These edits must be validated by running the harness, which the executor should do on a machine with the harness available. This task keeps `pnpm test` green regardless (that suite never runs `test:vm`).
+
+- [ ] **Step 1: S1 — combine the CA + persistence run.** Replace the `S1: setup during NAT phase` test at lines ~102–109:
+
+```ts
+  it('runs 05-configure-network.sh from the read-only share', async () => {
+    const { stdout } = await guest('g1', `bash /mnt/vm-shared/05-configure-network.sh ${BRIDGE_IP}`);
+    expect(stdout).toContain('05-configure-network:');
+  });
+```
+
+- [ ] **Step 2: S1b — onboarding now comes from the applier.** The `08 sets hasCompletedOnboarding ...` and `08 merges ... idempotently` tests must drive `07-apply-home-jq-transforms.sh` instead (it applies `claude-onboarding.jq` to `~/.claude.json`, seeding `{}` when missing and merging otherwise). This requires `node` in the guest and the built `apply-home-jq-transforms.mjs` + `home-jq-transforms/` present under `/mnt/vm-shared` (init provides both). Rewrite them:
+
+```ts
+  it('applier sets hasCompletedOnboarding on a fresh ~/.claude.json', async () => {
+    await guest('g1', 'rm -f "$HOME/.claude.json" && bash /mnt/vm-shared/07-apply-home-jq-transforms.sh');
+    const { stdout } = await guest(
+      'g1',
+      `python3 -c "import json,os;print(json.load(open(os.path.expanduser('~/.claude.json')))['hasCompletedOnboarding'])"`,
+    );
+    expect(stdout.trim()).toBe('True');
+  });
+
+  it('applier merges into an existing ~/.claude.json without clobbering', async () => {
+    await guest(
+      'g1',
+      `printf '%s' '{"someExisting": 123}' > "$HOME/.claude.json" && bash /mnt/vm-shared/07-apply-home-jq-transforms.sh`,
+    );
+    const { stdout } = await guest(
+      'g1',
+      `python3 -c "import json,os;d=json.load(open(os.path.expanduser('~/.claude.json')));print(d['hasCompletedOnboarding'], d['someExisting'])"`,
+    );
+    expect(stdout.trim()).toBe('True 123');
+  });
+```
+
+- [ ] **Step 3: S1b — firefox policy merge now lives in `05-configure-network.sh`.** Update the firefox test at lines ~165–175 to invoke the combined script (the CA/firefox logic runs first; the persistence steps are idempotent re-runs). Change the trailing `bash /mnt/vm-shared/06-trust-ca.sh` in the setup command to `bash /mnt/vm-shared/05-configure-network.sh ${BRIDGE_IP}` and leave the assertion unchanged.
+
+- [ ] **Step 4: S1b — the credential-symlink test.** The claude placeholder symlink moved from `08-claude-config.sh` into `06-auth-config.sh`, which also runs `gh auth login` (network, post-isolation). Two options — pick the one the harness supports:
+  - **(a, preferred)** Delete the `08 symlinks the placeholder credential ...` case here and assert the symlink in a post-isolation phase where the harness already runs the combined auth step. If no such phase exists, add one that runs `06-auth-config.sh` after isolation with a real/stubbed `gh`.
+  - **(b)** Keep an offline check by stubbing `gh` on PATH before running `06-auth-config.sh` (mirroring how this file stubs `firefox`): `printf '#!/bin/sh\\nexit 0\\n' | sudo tee /usr/local/bin/gh >/dev/null && sudo chmod +x /usr/local/bin/gh`, ensure a `github-config.txt` exists in the share, then run `06-auth-config.sh` and assert `readlink "$HOME/.claude/.credentials.json"` equals `/mnt/vm-shared/credentials.json`.
+
+- [ ] **Step 5: S-later — update the second persistence invocation** at line ~369: replace `bash /mnt/vm-shared/07-setup-persistence.sh ${BRIDGE_IP}` with `bash /mnt/vm-shared/05-configure-network.sh ${BRIDGE_IP}` and the assertion `07-setup-persistence:` with `05-configure-network:`. Update the `describe` block title `S1b: claude config (08) and firefox policy merge (06), offline` to reflect the new step numbers.
+
+- [ ] **Step 6: Validate (harness required)**
+
+Run: `pnpm test:vm` Expected: PASS. If the harness is unavailable, at minimum run `grep -n '0[5-9]-\(github-auth\|trust-ca\|setup-persistence\|setup-network\|claude-config\|codex-config\)' tests/vm/vm.test.ts` Expected: no output, and defer the live run to a machine with the harness.
+
+- [ ] **Step 7: Commit**
+
+```bash
+pnpm format
+git add tests/vm/vm.test.ts
+git commit -m "test(vm): drive combined 05/06/07 scripts and applier-based onboarding"
+```
+
+---
+
+### Task 15: Full-suite verification
 
 **Files:** none (verification only).
 
@@ -1870,17 +2076,18 @@ git commit -m "chore: formatting" || echo "nothing to format"
 
 **Spec coverage:**
 
-- Source-control `.gitignore` (secrets/keys/placeholders/build artifacts) → Task 5 (template) + Task 7 (init writes it) + Task 14 (verify).
-- Manifest format + validation (basename `.jq`, containment, traversal, unset var, `~name`) → Tasks 2, 3.
+- Source-control `.gitignore` (secrets/keys/placeholders/build artifacts) → Task 5 (template) + Task 7 (init writes it) + Task 15 (verify).
+- Manifest format + validation (basename `.jq`, real-path containment allowing internal symlinks, traversal, unset var, `~name`) → Tasks 2, 3.
 - Path expansion `~` / `%NAME%`, core-implemented → Task 3.
-- Core `applyTransforms` (seed `{}`, unparsable→`{}`, valid-wrong-shape leaves intact, atomic write, mkdir, manifest order) + `previewTransforms` + injectable argv jq runner → Task 4.
-- In-VM applier bundle, tsup entry, `noExternal: yaml`, emit into both shares, gitignore artifact, `prepack` build, packaging test → Task 6.
-- Path-safe wrappers (`$BASH_SOURCE`/`$PSScriptRoot`, absolute paths) → Tasks 10 (step 6), 11 (step 5).
+- Core `applyTransforms` (seed `{}`, unparsable→`{}`, valid-wrong-shape leaves intact, unique-temp atomic write, mkdir, manifest order) + `previewTransforms` + injectable argv jq runner → Task 4.
+- In-VM applier bundle, tsup entry, `noExternal: yaml`, emit into both shares, gitignore artifact, `prepack` build, packaging test, seed-default behavior → Task 6.
+- Path-safe wrappers (`$BASH_SOURCE`/`$PSScriptRoot`, absolute paths) + bash wrapper test → Tasks 10 (step 6), 11 (step 5), 6.
 - Script consolidation + gh in step 01 + new run order + Windows `#Requires`/named params → Tasks 10, 11.
 - `init` seeds three locations + writes `.gitignore` + next-steps message → Tasks 7, 9.
-- `update-shares` preview, stage-then-swap, jq-error blocks copy, `-n/--dry-run`, host-jq check → Task 8.
-- verify-config + docs updates → Tasks 12, 13.
-- Testing (unit stubbed, e2e real jq, packaging, wrapper) → Tasks 2–8, 14.
+- `update-shares` explicit host-jq preflight, preview, stage-then-swap-with-backup, jq-error blocks copy, `-n/--dry-run` → Task 8.
+- verify-config + README/usage/hyper-v/technical-notes doc updates → Tasks 12, 13.
+- VM harness (`test:vm`) migrated off deleted scripts and onto the applier → Task 14.
+- Testing (unit stubbed, e2e real jq with skip-if-absent guards, packaging, wrapper) → Tasks 2–9, 14, 15.
 
 **Placeholder scan:** none — every code step shows complete content.
 

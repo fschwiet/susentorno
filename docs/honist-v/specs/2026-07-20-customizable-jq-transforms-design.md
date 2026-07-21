@@ -318,9 +318,11 @@ Refreshes the share copies after a user edits transforms.
 
 1. Require `.configamatron` (standard missing-environment error otherwise); load and validate
    the manifest; verify `jq` is available on the host (clear install-jq message otherwise).
-2. **Preview**: for each transform, print its name, resolved `linux` and `windows` target
-   paths, and the result of applying it to `{}`. Both platforms are shown because the host
-   does not know which guest will consume the transforms. A jq error in a `{}` preview is
+2. **Preview**: for each transform, print its name, its declared `linux` and `windows` target
+   paths (shown as authored — the host cannot resolve `~`/`%NAME%` to the guest's home), and
+   the result of applying it to `{}`. Both platforms are shown because the host does not know
+   which guest will consume the transforms. The command first verifies `jq` is on the host
+   PATH (so an empty manifest still fails fast without jq). A jq error in a `{}` preview is
    fatal and blocks the copy — this catches syntax and empty-object-runtime errors, though it
    is **validation, not a guarantee** that the transform will succeed against every real guest
    file (the per-target atomic write is the actual safety net in the guest).
@@ -337,9 +339,13 @@ Refreshes the share copies after a user edits transforms.
 - Flip the source-control guidance: `.configamatron/` is now committed except for the files the
   bundled `.gitignore` excludes; add a short "Customizing settings transforms" section
   explaining `home-jq-transforms/`, the manifest format, and `update-shares`.
-- Update `verify-config.sh` / `verify-config.ps1` and any references to old script
-  numbers/names (`05-github-auth`, `06-trust-ca`, `07-setup-*`, `08-claude-config`,
-  `09-codex-config`) to the new numbering.
+- Update every committed reference to old script numbers/names (`05-github-auth`,
+  `06-trust-ca`, `07-setup-*`, `08-claude-config`, `09-codex-config`) to the new numbering:
+  `verify-config.sh` / `verify-config.ps1`, `README.md`, `usage-windows-vm.md`,
+  `usage-hyper-v-host.md`, `technical-notes.md`, and the VM harness tests
+  `tests/vm/vm.test.ts` (`test:vm`), which must also move claude-onboarding coverage from the
+  old `08` script to the new applier step. Historical `docs/**/plans|specs` records are left
+  as-is. Note `jq` as a host prerequisite for the e2e suite (jq-dependent tests self-skip).
 
 ## Edge cases
 
