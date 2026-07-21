@@ -5,6 +5,7 @@ export interface MockUpstream {
   port: number;
   server: Server;
   receivedAuthorizationHeaders: string[];
+  receivedUpgradeAuthorizationHeaders: string[];
 }
 
 function generateSelfSignedCert(): { key: string; cert: string } {
@@ -34,13 +35,27 @@ export function startMockUpstream(): Promise<MockUpstream> {
     res.end('mock upstream ok');
   });
 
+  const receivedUpgradeAuthorizationHeaders: string[] = [];
+  server.on('upgrade', (req, socket) => {
+    receivedUpgradeAuthorizationHeaders.push(req.headers.authorization ?? '');
+    socket.write(
+      'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n',
+    );
+    socket.end();
+  });
+
   return new Promise((resolve) => {
     server.listen(0, '0.0.0.0', () => {
       const address = server.address();
       if (address === null || typeof address === 'string') {
         throw new Error('failed to bind mock upstream');
       }
-      resolve({ port: address.port, server, receivedAuthorizationHeaders });
+      resolve({
+        port: address.port,
+        server,
+        receivedAuthorizationHeaders,
+        receivedUpgradeAuthorizationHeaders,
+      });
     });
   });
 }
