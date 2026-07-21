@@ -22,8 +22,9 @@ wire capture against `chatgpt.com`:
 ```
 
 - Codex calls `https://chatgpt.com/backend-api/codex...` with
-  `Authorization: Bearer <access_token>` (a JWT) and a `chatgpt-account-id:
-  <account_id>` header. `account_id` is not itself a credential — it's an
+  `Authorization: Bearer <access_token>` (a JWT) and a `ChatGPT-Account-Id:
+  <account_id>` header (HTTP headers are case-insensitive; the client emits
+  this casing internally). `account_id` is not itself a credential — it's an
   account UUID, not a bearer secret — so it needs no gating or injection,
   only to pass through as sent by the VM's placeholder file.
 - Codex also sends a `Cookie: __cf_bm=...` (Cloudflare bot-management
