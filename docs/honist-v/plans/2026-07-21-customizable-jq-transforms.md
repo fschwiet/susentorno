@@ -13,7 +13,7 @@
 - jq is invoked argv-based (`jq -f <absolute path>` with the JSON on stdin) — never by building a shell string.
 - Path expansion vocabulary is exactly: a leading `~` or `~/` → `os.homedir()`; `%NAME%` → `process.env.NAME`. An unset `%NAME%` and a `~name` form are hard errors.
 - Atomic writes only: write a temp file then `rename` over the target; never truncate a target on failure.
-- Manifest `transform` values are bare `.jq` basenames contained within the transforms folder (reject separators, `..`, absolute paths, symlink escapes).
+- Manifest `transform` values reference a file in the transforms folder; validation only checks the referenced file exists (the folder is user-authored and trusted — no path-traversal/symlink hardening).
 - Secrets that must never be committed and must appear in `.configamatron/.gitignore`: `proxy/secrets/`, `proxy/ca/key.pem`, `proxy/ca/leaf-key.pem`.
 - New `src/` and `tests/` files are eslint+prettier-checked (templates and docs are ignored). Run `pnpm format` before each commit; the `test` script gates on `format:check`, `lint`, `typecheck`.
 - Spec: `docs/honist-v/specs/2026-07-20-customizable-jq-transforms-design.md`.
@@ -123,7 +123,7 @@ git commit -m "feat(envPaths): add home-jq-transforms and gitignore paths"
 
 ```ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadManifest } from '../../src/homeJqTransforms';
@@ -161,50 +161,9 @@ describe('loadManifest', () => {
     expect(() => loadManifest(dir)).toThrow("at least one of 'linux'/'windows'");
   });
 
-  it('rejects a transform that is not a .jq basename', () => {
-    write('manifest.yaml', '- transform: sub/a.jq\n  linux: ~/a.json\n');
-    expect(() => loadManifest(dir)).toThrow('bare filename');
-  });
-
-  it('rejects a path-traversing transform', () => {
-    write('manifest.yaml', '- transform: ../a.jq\n  linux: ~/a.json\n');
-    expect(() => loadManifest(dir)).toThrow('bare filename');
-  });
-
   it('rejects a missing transform file', () => {
     write('manifest.yaml', '- transform: nope.jq\n  linux: ~/a.json\n');
     expect(() => loadManifest(dir)).toThrow('not found');
-  });
-
-  it('rejects a symlink that escapes the folder', (ctx) => {
-    const outside = mkdtempSync(join(tmpdir(), 'hjt-out-'));
-    writeFileSync(join(outside, 'real.jq'), '.');
-    try {
-      symlinkSync(join(outside, 'real.jq'), join(dir, 'link.jq'));
-    } catch {
-      // Windows without Developer Mode/elevation cannot create symlinks.
-      rmSync(outside, { recursive: true, force: true });
-      ctx.skip();
-      return;
-    }
-    write('manifest.yaml', '- transform: link.jq\n  linux: ~/a.json\n');
-    try {
-      expect(() => loadManifest(dir)).toThrow('outside the transforms folder');
-    } finally {
-      rmSync(outside, { recursive: true, force: true });
-    }
-  });
-
-  it('allows a symlink that resolves inside the folder', (ctx) => {
-    writeFileSync(join(dir, 'real.jq'), '.');
-    try {
-      symlinkSync(join(dir, 'real.jq'), join(dir, 'alias.jq'));
-    } catch {
-      ctx.skip();
-      return;
-    }
-    write('manifest.yaml', '- transform: alias.jq\n  linux: ~/a.json\n');
-    expect(loadManifest(dir)).toHaveLength(1);
   });
 });
 ```
@@ -216,8 +175,8 @@ Run: `pnpm test:unit -- homeJqTransforms` Expected: FAIL (module not found).
 - [ ] **Step 3: Implement** — create `src/homeJqTransforms.ts`:
 
 ```ts
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { parse } from 'yaml';
 
 export interface TransformEntry {
@@ -226,6 +185,8 @@ export interface TransformEntry {
   windows?: string;
 }
 
+// The transforms folder is authored by the user and trusted, so validation only
+// catches honest mistakes (missing file, no target) — no path-traversal hardening.
 function validateEntry(entry: unknown, index: number, dir: string): TransformEntry {
   if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
     throw new Error(`manifest entry ${index}: must be a mapping`);
@@ -235,24 +196,8 @@ function validateEntry(entry: unknown, index: number, dir: string): TransformEnt
   if (typeof transform !== 'string' || transform.length === 0) {
     throw new Error(`manifest entry ${index}: 'transform' is required`);
   }
-  if (
-    !transform.endsWith('.jq') ||
-    transform.includes('/') ||
-    transform.includes('\\') ||
-    transform.includes('..')
-  ) {
-    throw new Error(`manifest entry ${index}: 'transform' must be a bare .jq filename (got '${transform}')`);
-  }
-  const abs = join(dir, transform);
-  if (!existsSync(abs)) {
+  if (!existsSync(join(dir, transform))) {
     throw new Error(`manifest entry ${index}: transform file not found: ${transform}`);
-  }
-  // Containment check on the *real* path so a symlink escaping the folder is
-  // rejected, while a symlink resolving inside it is allowed.
-  const realDir = realpathSync(resolve(dir));
-  const rel = relative(realDir, realpathSync(abs));
-  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) {
-    throw new Error(`manifest entry ${index}: '${transform}' resolves outside the transforms folder`);
   }
   const linux = e.linux;
   const windows = e.windows;
@@ -288,8 +233,6 @@ export function loadManifest(dir: string): TransformEntry[] {
   return parsed.map((entry, i) => validateEntry(entry, i, dir));
 }
 ```
-
-Note: the symlink test relies on `realpathSync(abs)` differing from `join(realDir, transform)` when the file is a link pointing outside the folder.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -514,16 +457,8 @@ Run: `pnpm test:unit -- homeJqTransforms` Expected: FAIL (`applyTransforms` not 
 Add imports at the top (merge with existing `node:fs` import):
 
 ```ts
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  realpathSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 ```
@@ -2077,7 +2012,7 @@ git commit -m "chore: formatting" || echo "nothing to format"
 **Spec coverage:**
 
 - Source-control `.gitignore` (secrets/keys/placeholders/build artifacts) → Task 5 (template) + Task 7 (init writes it) + Task 15 (verify).
-- Manifest format + validation (basename `.jq`, real-path containment allowing internal symlinks, traversal, unset var, `~name`) → Tasks 2, 3.
+- Manifest format + validation (referenced file exists, at least one target, unset var, `~name`; trusted folder so no traversal/symlink hardening) → Tasks 2, 3.
 - Path expansion `~` / `%NAME%`, core-implemented → Task 3.
 - Core `applyTransforms` (seed `{}`, unparsable→`{}`, valid-wrong-shape leaves intact, unique-temp atomic write, mkdir, manifest order) + `previewTransforms` + injectable argv jq runner → Task 4.
 - In-VM applier bundle, tsup entry, `noExternal: yaml`, emit into both shares, gitignore artifact, `prepack` build, packaging test, seed-default behavior → Task 6.

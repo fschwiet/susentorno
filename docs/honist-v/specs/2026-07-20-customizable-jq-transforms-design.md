@@ -154,18 +154,17 @@ Source of truth:
 
 Entry fields:
 
-- `transform` (required) — the **basename** of a `.jq` file in the transforms folder. Must end
-  in `.jq`, must exist, and must resolve to a path contained within the transforms folder.
+- `transform` (required) — the filename of a `.jq` file in the transforms folder. Must exist.
 - `linux` (optional) — target path applied when running on Ubuntu.
 - `windows` (optional) — target path applied when running on Windows.
 - At least one of `linux` / `windows` must be present. Omitting one skips that transform on
   that OS (supports platform-specific transforms).
 
-**Manifest validation** (fail loudly with a clear message on any violation):
+**Manifest validation** (fail loudly with a clear message on any violation). The transforms
+folder is authored by the user and trusted, so validation catches honest mistakes rather than
+hardening against traversal/symlink attacks:
 
-- `transform` rejected if it is not a plain basename ending in `.jq`, if it contains path
-  separators or `..`, if the resolved path escapes the transforms folder (e.g. via a symlink),
-  or if the file does not exist.
+- `transform` rejected if the referenced file does not exist.
 - An entry with neither `linux` nor `windows` is rejected.
 - A target that references an environment variable which is unset at apply time is a hard
   error (never silently expands to an empty path).
@@ -366,8 +365,8 @@ Refreshes the share copies after a user edits transforms.
 ## Testing
 
 - **Unit (vitest, stubbed jq runner):**
-  - manifest parse/validate: valid; malformed YAML; missing `.jq` file; entry with no target;
-    path traversal (`../x.jq`, absolute path, separator in `transform`).
+  - manifest parse/validate: valid; malformed YAML; non-list; missing `.jq` file; entry with
+    no target.
   - `resolveTarget`: `~` / `~/` and `%APPDATA%` expansion for both platforms; `null` when no
     target; error on unset `%NAME%`; rejection of `~name`.
   - `applyTransforms`: seeds `{}` for a missing target; treats unparsable as `{}`; leaves a
