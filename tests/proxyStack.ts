@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { startMockUpstream, stopMockUpstream, type MockUpstream } from './integration/mockUpstream';
 import { killProcessTree } from '../src/runProxy/killProcessTree';
 import { rmEnvRoot } from './rmEnvRoot';
+import { buildJwt } from '../src/jwt';
 
 export const HTTPS_PORT = 18443;
 export const HTTP_PORT = 18080;
@@ -41,6 +42,22 @@ function writeCredentialsFile(path: string, token: string): void {
     path,
     JSON.stringify({
       claudeAiOauth: { accessToken: token, expiresAt: Date.now() + 24 * 60 * 60 * 1000 },
+    }),
+  );
+}
+
+function writeCodexAuthFile(path: string, accessToken: string): void {
+  writeFileSync(
+    path,
+    JSON.stringify({
+      OPENAI_API_KEY: null,
+      tokens: {
+        id_token: buildJwt({ exp: Math.floor(Date.now() / 1000) + 86400 }),
+        access_token: accessToken,
+        refresh_token: 'itest-codex-refresh',
+        account_id: 'acct-itest',
+      },
+      auth_mode: 'chatgpt',
     }),
   );
 }
@@ -122,6 +139,12 @@ export async function startProxyStack(): Promise<ProxyStack> {
   const credentialsPath = join(envRoot, 'run-proxy-credentials.json');
   writeCredentialsFile(credentialsPath, REAL_TOKEN);
 
+  const codexCredentialsPath = join(envRoot, 'run-proxy-auth.json');
+  writeCodexAuthFile(
+    codexCredentialsPath,
+    buildJwt({ exp: Math.floor(Date.now() / 1000) + 86400 }),
+  );
+
   const proxyProc = execa(
     'node',
     [
@@ -131,6 +154,8 @@ export async function startProxyStack(): Promise<ProxyStack> {
       '--no-forward',
       '--credentials',
       credentialsPath,
+      '--codex-credentials',
+      codexCredentialsPath,
       '--upstream-override',
       `api.anthropic.com=host.docker.internal:${mockUpstream.port}`,
       '--upstream-override',

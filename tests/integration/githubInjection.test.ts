@@ -11,10 +11,12 @@ import { rmEnvRoot } from '../rmEnvRoot';
 import { formatGithubBasicSecret, formatGithubApiTokenSecret } from '../../src/githubSecret';
 import { GITHUB_PLACEHOLDER_PAT } from '../../src/githubPlaceholder';
 import { startMockUpstream, stopMockUpstream, type MockUpstream } from './mockUpstream';
+import { buildJwt } from '../../src/jwt';
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
+const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
 const envRoot = join(repoRoot, '.configamatron');
 const proxyDir = join(envRoot, 'proxy');
 
@@ -35,6 +37,7 @@ const basicOf = (user: string, pass: string) =>
 let mockUpstream: MockUpstream;
 let tempDir: string;
 let credentialsPath: string;
+let codexCredentialsPath: string;
 let caCertPem: string;
 let proxyProc: ResultPromise | null = null;
 const stdoutLines: string[] = [];
@@ -44,6 +47,22 @@ function writeCredentials(token: string): void {
     credentialsPath,
     JSON.stringify({
       claudeAiOauth: { accessToken: token, expiresAt: Date.now() + 24 * 60 * 60 * 1000 },
+    }),
+  );
+}
+
+function writeCodexAuthFile(path: string, accessToken: string): void {
+  writeFileSync(
+    path,
+    JSON.stringify({
+      OPENAI_API_KEY: null,
+      tokens: {
+        id_token: buildJwt({ exp: Math.floor(Date.now() / 1000) + 86400 }),
+        access_token: accessToken,
+        refresh_token: 'itest-codex-refresh',
+        account_id: 'acct-itest',
+      },
+      auth_mode: 'chatgpt',
     }),
   );
 }
@@ -89,10 +108,19 @@ beforeAll(async () => {
   mockUpstream = await startMockUpstream();
   tempDir = mkdtempSync(join(tmpdir(), 'github-inj-'));
   credentialsPath = join(tempDir, '.credentials.json');
+  codexCredentialsPath = join(tempDir, 'auth.json');
   writeCredentials('token-github-int');
+  writeCodexAuthFile(
+    codexCredentialsPath,
+    buildJwt({ exp: Math.floor(Date.now() / 1000) + 86400 }),
+  );
 
   await rmEnvRoot(envRoot);
-  await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: repoRoot });
+  await execa(
+    'node',
+    [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
+    { cwd: repoRoot },
+  );
 
   // Stage an allowlist with both github hosts under the new pragma so generate-ca
   // puts them in the leaf SANs and run-proxy builds the two injection chains.
@@ -123,6 +151,8 @@ beforeAll(async () => {
       '--no-forward',
       '--credentials',
       credentialsPath,
+      '--codex-credentials',
+      codexCredentialsPath,
       '--upstream-override',
       `github.com=host.docker.internal:${mockUpstream.port}`,
       '--upstream-override',

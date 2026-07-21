@@ -32,6 +32,7 @@ describe('configamatron CLI', () => {
     const { stdout, exitCode } = await execa('node', [cliPath, 'run-proxy', '--help']);
     expect(exitCode).toBe(0);
     expect(stdout).toContain('--credentials');
+    expect(stdout).toContain('--codex-credentials');
     expect(stdout).toContain('--no-refresh');
     expect(stdout).toContain('--upstream-override');
   });

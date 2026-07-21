@@ -8,11 +8,13 @@ import { join } from 'node:path';
 import { killProcessTree } from '../../src/runProxy/killProcessTree';
 import { isColorRunning } from '../../src/runProxy/isColorRunning';
 import { rmEnvRoot } from '../rmEnvRoot';
+import { buildJwt } from '../../src/jwt';
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
 const allowlistFixture = fileURLToPath(new URL('./fixtures/allowlist.txt', import.meta.url));
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
+const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
 const envRoot = join(repoRoot, '.configamatron');
 const proxyDir = join(envRoot, 'proxy');
 
@@ -26,6 +28,7 @@ const envoyEnv = {
 
 let tempDir: string;
 let credentialsPath: string;
+let codexCredentialsPath: string;
 let proxyProc: ResultPromise | null = null;
 let lines: string[] = [];
 
@@ -34,6 +37,22 @@ function writeCredentials(token: string): void {
     credentialsPath,
     JSON.stringify({
       claudeAiOauth: { accessToken: token, expiresAt: Date.now() + 24 * 60 * 60 * 1000 },
+    }),
+  );
+}
+
+function writeCodexAuthFile(path: string, accessToken: string): void {
+  writeFileSync(
+    path,
+    JSON.stringify({
+      OPENAI_API_KEY: null,
+      tokens: {
+        id_token: buildJwt({ exp: Math.floor(Date.now() / 1000) + 86400 }),
+        access_token: accessToken,
+        refresh_token: 'itest-codex-refresh',
+        account_id: 'acct-itest',
+      },
+      auth_mode: 'chatgpt',
     }),
   );
 }
@@ -49,6 +68,8 @@ function spawnProxy(fault: 'crash-config' | 'never-ready'): ResultPromise {
       '--no-forward',
       '--credentials',
       credentialsPath,
+      '--codex-credentials',
+      codexCredentialsPath,
       '--inject-fault',
       fault,
     ],
@@ -65,7 +86,16 @@ function spawnProxyPlain(): ResultPromise {
   lines = [];
   const proc = execa(
     'node',
-    [cliPath, 'run-proxy', '--no-refresh', '--no-forward', '--credentials', credentialsPath],
+    [
+      cliPath,
+      'run-proxy',
+      '--no-refresh',
+      '--no-forward',
+      '--credentials',
+      credentialsPath,
+      '--codex-credentials',
+      codexCredentialsPath,
+    ],
     { cwd: repoRoot, env: { ...process.env, ...envoyEnv }, buffer: false, reject: false },
   );
   for (const stream of [proc.stdout, proc.stderr]) {
@@ -101,10 +131,19 @@ async function waitFor(cond: () => Promise<boolean>, timeoutMs: number): Promise
 beforeAll(async () => {
   tempDir = mkdtempSync(join(tmpdir(), 'run-proxy-robust-'));
   credentialsPath = join(tempDir, '.credentials.json');
+  codexCredentialsPath = join(tempDir, 'auth.json');
   writeCredentials('token-robust');
+  writeCodexAuthFile(
+    codexCredentialsPath,
+    buildJwt({ exp: Math.floor(Date.now() / 1000) + 86400 }),
+  );
 
   await rmEnvRoot(envRoot);
-  await execa('node', [cliPath, 'init', '--credentials', credentialsFixture], { cwd: repoRoot });
+  await execa(
+    'node',
+    [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
+    { cwd: repoRoot },
+  );
   copyFileSync(allowlistFixture, join(proxyDir, 'allowlist.txt'));
   await execa('node', [cliPath, 'generate-ca'], { cwd: repoRoot });
 }, 120000);

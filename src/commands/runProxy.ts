@@ -3,8 +3,10 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Command } from 'commander';
 import { readCredentials } from '../runProxy/readCredentials';
+import { readCodexCredentials } from '../runProxy/readCodexCredentials';
 import { writeSecret } from '../runProxy/writeSecret';
 import { nudgeRefresh } from '../runProxy/nudgeRefresh';
+import { nudgeCodexRefresh } from '../runProxy/nudgeCodexRefresh';
 import { watchFile } from '../runProxy/watchFile';
 import { runProxyLoop, type RunProxyDeps } from '../runProxy/runProxyLoop';
 import type { CredentialChannelConfig } from '../runProxy/credentialChannel';
@@ -24,6 +26,8 @@ import type { Color, ColorPorts } from '../runProxy/types';
 interface RunProxyOptions {
   credentials: string;
   secret?: string;
+  codexCredentials: string;
+  codexSecret?: string;
   refreshWindow: string;
   retryInterval: string;
   maxAttempts: string;
@@ -58,6 +62,15 @@ export function registerRunProxy(program: Command): void {
     .option(
       '--secret <path>',
       'SDS secret output path (default: .configamatron/proxy/secrets/sds-secret.yaml)',
+    )
+    .option(
+      '--codex-credentials <path>',
+      'Codex auth.json to watch',
+      join(homedir(), '.codex', 'auth.json'),
+    )
+    .option(
+      '--codex-secret <path>',
+      'Codex SDS secret output path (default: .configamatron/proxy/secrets/codex-secret.yaml)',
     )
     .option('--refresh-window <minutes>', 'nudge this many minutes before expiry', '3')
     .option('--retry-interval <minutes>', 'wait this many minutes for a nudge to take', '2')
@@ -187,6 +200,10 @@ export function registerRunProxy(program: Command): void {
         now: () => Date.now(),
       };
 
+      const refreshWindowMs = Number(options.refreshWindow) * 60_000;
+      const retryIntervalMs = Number(options.retryInterval) * 60_000;
+      const maxAttempts = Number(options.maxAttempts);
+
       const claudeChannel: CredentialChannelConfig = {
         name: 'claude',
         credentialsPath: options.credentials,
@@ -194,16 +211,29 @@ export function registerRunProxy(program: Command): void {
         readCredentials,
         writeSecret: (token, path) => writeSecret(token, path, 'sandbox_bearer_token'),
         nudgeRefresh,
-        refreshWindowMs: Number(options.refreshWindow) * 60_000,
-        retryIntervalMs: Number(options.retryInterval) * 60_000,
-        maxAttempts: Number(options.maxAttempts),
+        refreshWindowMs,
+        retryIntervalMs,
+        maxAttempts,
+        refreshEnabled: options.refresh,
+      };
+
+      const codexChannel: CredentialChannelConfig = {
+        name: 'codex',
+        credentialsPath: options.codexCredentials,
+        secretPath: options.codexSecret ?? paths.codexSecret,
+        readCredentials: readCodexCredentials,
+        writeSecret: (token, path) => writeSecret(token, path, 'codex_bearer_token'),
+        nudgeRefresh: nudgeCodexRefresh,
+        refreshWindowMs,
+        retryIntervalMs,
+        maxAttempts,
         refreshEnabled: options.refresh,
       };
 
       try {
         const exitCode = await runProxyLoop(
           {
-            channels: [claudeChannel],
+            channels: [claudeChannel, codexChannel],
             allowlistPath: paths.allowlist,
             readyTimeoutMs: 60_000,
             drainTimeoutMs: 30_000,
