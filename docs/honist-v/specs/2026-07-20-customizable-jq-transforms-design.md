@@ -105,10 +105,14 @@ Entry fields:
 - At least one of `linux` / `windows` must be present. Omitting one skips that transform on
   that OS (supports platform-specific transforms).
 
-**Target path expansion** — the entire vocabulary:
+**Target path expansion** — the entire vocabulary. Expansion is performed by the
+TypeScript core itself (not the OS shell), so it behaves identically on Ubuntu and Windows:
 
-- A leading `~` (or `~/`) expands to the guest user's home directory.
-- `%NAME%` expands to environment variable `NAME` (e.g. `%APPDATA%`).
+- A leading `~` (or `~/`) expands to the guest user's home directory (via `os.homedir()`).
+- `%NAME%` expands to environment variable `NAME` (a regex replace of `%NAME%` →
+  `process.env.NAME`, e.g. `%APPDATA%`). This is our own portable convention, not the OS
+  shell's syntax, so `%APPDATA%` on a Windows target and `~` on both platforms resolve the
+  same way regardless of the shell that launched the applier.
 
 The two seeded `.jq` files reproduce the current inline transforms exactly:
 
