@@ -10,6 +10,11 @@ packages:
   - network-manager
   - dnsmasq
   - bind9-dnsutils
+  # 07's applier runs `node apply-home-jq-transforms.mjs` off the share. In
+  # production node arrives via 03-install-tools.sh (pnpm runtime); the tests
+  # exercise 07 without running 01-03, so the golden image supplies it. The
+  # bundle targets node18 and apt's nodejs is newer, so distro node is enough.
+  - nodejs
 write_files:
   # Mimic the Ubuntu Desktop installer: netplan renders through NetworkManager,
   # and the base profile carries only the renderer (no per-device config), so
