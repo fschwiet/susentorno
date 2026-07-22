@@ -1,15 +1,17 @@
 # configamatron
 
-configamatron sets up isolated environments for coding agents. A Windows and/or Ubuntu VM is isolated behind an Envoy proxy running in Docker on the host; the proxy restricts network access to an allow list and injects credentials so the VM never holds them. Each environment lives in a `.configamatron` folder inside whatever working directory you find appropriate.
+configamatron sets up isolated environments for coding agents. A Windows and/or Linux VM is isolated behind an Envoy proxy running in Docker on the host; the proxy restricts network access to an allow list and injects credentials so the VM never holds them. Each environment lives in a `.configamatron` folder inside whatever working directory you find appropriate.
 
 Only one proxy container can run on the host at a time (it binds ports 80/443). Starting any environment's proxy — or running this repo's test suite — replaces whichever proxy container was running. Run one environment at a time; running `configamatron run-proxy` in an environment's directory restores its proxy.
 
 ## Host prerequisites
 
-- Windows host with **Hyper-V** for the isolated VM (see `usage-hyper-v.md`).
+- Windows host
+- **Hyper-V** for the isolated VM (see `usage-hyper-v.md`).
 - Docker and Docker Compose.
 - Node.js >= 18 and pnpm.
 - The `claude` CLI installed and logged in (so `~/.claude/.credentials.json` exists).
+- The `codex` CLI installed and logged in (so `~/.codex/auth.json` exists).
 - The host firewall's ports 80 and 443 for the VM's Internal-switch adapter are opened by a supplied script. Running on other platforms may work but is untested; you would need those same ports reachable from the host to the VM.
 
 ## Installation
