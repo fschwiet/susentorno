@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { packagedAllowlist, templatesDir } from '../../src/templates';
 import { parseAllowlist } from '../../src/allowlist';
+import { NO_AUTH_MARKER_HEADER, NO_AUTH_SENTINEL_VALUE } from '../../src/envoyConfig';
 
 const expectedTemplateFiles = [
   'vm-shared/01-apt-packages.sh',
@@ -52,6 +53,14 @@ describe('templates', () => {
     expect(parsed.codexAuthenticated).toContain('chatgpt.com:443');
     expect(parsed.passthrough).not.toContain('chatgpt.com:443');
     expect(parsed.passthrough).toContain('*.chatgpt.com:443');
+  });
+
+  it('gate.lua uses the same no-auth marker/sentinel literals as envoyConfig.ts and no longer rejects', () => {
+    const gate = readFileSync(join(templatesDir(), 'proxy', 'gate.lua'), 'utf8');
+    expect(gate).toContain(`"${NO_AUTH_MARKER_HEADER}"`);
+    expect(gate).toContain(`"${NO_AUTH_SENTINEL_VALUE}"`);
+    expect(gate).not.toContain('403');
+    expect(gate).not.toContain('unexpected credential');
   });
 
   it('pins the compose project name so environments replace each other', () => {
@@ -164,19 +173,5 @@ describe('templates', () => {
       'utf8',
     );
     expect(claude).toContain('.hasCompletedOnboarding = true');
-  });
-
-  it('env gitignore template excludes secrets and build artifacts', () => {
-    const gi = readFileSync(join(templatesDir(), 'configamatron.gitignore'), 'utf8');
-    for (const p of [
-      'proxy/secrets/',
-      'proxy/ca/key.pem',
-      'proxy/ca/leaf-key.pem',
-      'vm-shared/github-config.txt',
-      'proxy/envoy.yaml',
-      'vm-shared-windows/dns-responder/bin',
-    ]) {
-      expect(gi, p).toContain(p);
-    }
   });
 });

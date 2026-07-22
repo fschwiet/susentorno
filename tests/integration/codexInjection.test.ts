@@ -65,18 +65,14 @@ async function waitForLine(needle: string, timeoutMs: number): Promise<void> {
 
 function requestThrough(
   servername: string,
-  authorization: string,
+  authorization?: string,
+  extraHeaders: Record<string, string> = {},
 ): Promise<{ statusCode?: number }> {
   return new Promise((resolve, reject) => {
+    const headers: Record<string, string> = { ...extraHeaders };
+    if (authorization !== undefined) headers.authorization = authorization;
     const req = httpsRequest(
-      {
-        host: '127.0.0.1',
-        port: HTTPS_PORT,
-        servername,
-        ca: caCertPem,
-        path: '/',
-        headers: { authorization },
-      },
+      { host: '127.0.0.1', port: HTTPS_PORT, servername, ca: caCertPem, path: '/', headers },
       (res) => {
         res.resume();
         res.on('end', () => resolve({ statusCode: res.statusCode }));
@@ -199,11 +195,44 @@ describe('chatgpt.com codex Bearer injection', () => {
     expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_CODEX_BEARER]);
   });
 
-  it('403s a leaked real Bearer that is not the placeholder', async () => {
+  it('passes a leaked real Bearer that is not the placeholder through unmodified', async () => {
     const before = mockUpstream.receivedAuthorizationHeaders.length;
     const { statusCode } = await requestThrough('chatgpt.com', 'Bearer some-other-real-token');
-    expect(statusCode).toBe(403);
-    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([]);
+    expect(statusCode).toBe(200);
+    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([
+      'Bearer some-other-real-token',
+    ]);
+  });
+
+  it('passes a request through with no Authorization header when the client sent none', async () => {
+    const before = mockUpstream.receivedHeaders.length;
+    const { statusCode } = await requestThrough('chatgpt.com');
+    expect(statusCode).toBe(200);
+    const received = mockUpstream.receivedHeaders.slice(before);
+    expect(received[0].authorization).toBeUndefined();
+    expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+  });
+
+  it('strips a client-forged no-auth marker header instead of trusting it', async () => {
+    const before = mockUpstream.receivedHeaders.length;
+    const { statusCode } = await requestThrough('chatgpt.com', 'Bearer some-other-real-token', {
+      'x-configamatron-no-auth': '1',
+    });
+    expect(statusCode).toBe(200);
+    const received = mockUpstream.receivedHeaders.slice(before);
+    expect(received[0].authorization).toBe('Bearer some-other-real-token');
+    expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+  });
+
+  it('still injects the real credential when the placeholder is presented alongside a forged no-auth marker header', async () => {
+    const before = mockUpstream.receivedAuthorizationHeaders.length;
+    const { statusCode } = await requestThrough(
+      'chatgpt.com',
+      `Bearer ${CODEX_PLACEHOLDER_ACCESS_TOKEN}`,
+      { 'x-configamatron-no-auth': '1' },
+    );
+    expect(statusCode).toBe(200);
+    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_CODEX_BEARER]);
   });
 
   it('still injects on the claude chain (both channels live)', async () => {

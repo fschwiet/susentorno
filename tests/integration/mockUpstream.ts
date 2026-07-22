@@ -1,4 +1,5 @@
 import { createServer, type Server } from 'node:https';
+import type { IncomingHttpHeaders } from 'node:http';
 import forge from 'node-forge';
 
 export interface MockUpstream {
@@ -6,6 +7,9 @@ export interface MockUpstream {
   server: Server;
   receivedAuthorizationHeaders: string[];
   receivedUpgradeAuthorizationHeaders: string[];
+  /** Full headers object for every request, in order — for asserting on headers
+   * other than Authorization (e.g. that no internal marker header ever leaks). */
+  receivedHeaders: IncomingHttpHeaders[];
 }
 
 function generateSelfSignedCert(): { key: string; cert: string } {
@@ -28,9 +32,11 @@ function generateSelfSignedCert(): { key: string; cert: string } {
 export function startMockUpstream(): Promise<MockUpstream> {
   const pems = generateSelfSignedCert();
   const receivedAuthorizationHeaders: string[] = [];
+  const receivedHeaders: IncomingHttpHeaders[] = [];
 
   const server = createServer({ key: pems.key, cert: pems.cert }, (req, res) => {
     receivedAuthorizationHeaders.push(req.headers.authorization ?? '');
+    receivedHeaders.push(req.headers);
     res.writeHead(200, { 'content-type': 'text/plain' });
     res.end('mock upstream ok');
   });
@@ -55,6 +61,7 @@ export function startMockUpstream(): Promise<MockUpstream> {
         server,
         receivedAuthorizationHeaders,
         receivedUpgradeAuthorizationHeaders,
+        receivedHeaders,
       });
     });
   });
