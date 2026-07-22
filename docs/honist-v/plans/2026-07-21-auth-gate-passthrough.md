@@ -108,7 +108,7 @@ In `tests/unit/envoyConfig.test.ts`, replace the `'builds a codex filter chain w
   });
 ```
 
-Add the two new imports at the top of the file, alongside the existing `generateEnvoyConfig` import:
+Add the new imports at the top of the file, alongside the existing `generateEnvoyConfig` import:
 
 ```ts
 import {
@@ -991,14 +991,17 @@ Replace the `'rejects a non-placeholder Authorization header before reaching the
 with:
 
 ```ts
-  it('passes a non-placeholder Authorization header through to the upstream unmodified', async () => {
-    const before = mockUpstream.receivedAuthorizationHeaders.length;
-    const { statusCode } = await requestThroughClaudeHost('Bearer something-else');
+  it('passes a non-placeholder Authorization header through to the upstream unmodified, with no marker leak or unrelated-header changes', async () => {
+    const before = mockUpstream.receivedHeaders.length;
+    const { statusCode } = await requestThroughClaudeHost('Bearer something-else', {
+      'x-test-probe': 'keep-me',
+    });
 
     expect(statusCode).toBe(200);
-    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([
-      'Bearer something-else',
-    ]);
+    const received = mockUpstream.receivedHeaders.slice(before);
+    expect(received[0].authorization).toBe('Bearer something-else');
+    expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+    expect(received[0]['x-test-probe']).toBe('keep-me');
   });
 
   it('passes a request through with no Authorization header when the client sent none', async () => {
@@ -1033,6 +1036,32 @@ with:
 
     expect(statusCode).toBe(200);
     expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_AUTH]);
+  });
+```
+
+Also strengthen the pre-existing happy-path test so the placeholder-match branch is checked for marker leaks too, not just the new adversarial branches. Replace:
+
+```ts
+  it('injects the real credential when the placeholder Authorization header is presented', async () => {
+    const before = mockUpstream.receivedAuthorizationHeaders.length;
+    const { statusCode } = await requestThroughClaudeHost(PLACEHOLDER_AUTH);
+
+    expect(statusCode).toBe(200);
+    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_AUTH]);
+  });
+```
+
+with:
+
+```ts
+  it('injects the real credential when the placeholder Authorization header is presented, with no marker leak', async () => {
+    const before = mockUpstream.receivedHeaders.length;
+    const { statusCode } = await requestThroughClaudeHost(PLACEHOLDER_AUTH);
+
+    expect(statusCode).toBe(200);
+    const received = mockUpstream.receivedHeaders.slice(before);
+    expect(received[0].authorization).toBe(REAL_AUTH);
+    expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
   });
 ```
 
@@ -1541,6 +1570,40 @@ with:
     const received = mockUpstream.receivedHeaders.slice(before);
     expect(received[0].authorization).toBeUndefined();
     expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+  });
+
+  it('strips a client-forged no-auth marker header on a non-matching credential instead of trusting it', async () => {
+    const before = mockUpstream.receivedHeaders.length;
+    const { statusCode } = await requestThrough('api.github.com', 'Bearer wrong-token', {
+      'x-configamatron-no-auth': '1',
+    });
+    expect(statusCode).toBe(200);
+    const received = mockUpstream.receivedHeaders.slice(before);
+    expect(received[0].authorization).toBe('Bearer wrong-token');
+    expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+  });
+
+  it('still injects the real credential when the placeholder is presented alongside a forged no-auth marker header', async () => {
+    const before = mockUpstream.receivedAuthorizationHeaders.length;
+    const { statusCode } = await requestThrough(
+      'api.github.com',
+      `token ${GITHUB_PLACEHOLDER_PAT}`,
+      { 'x-configamatron-no-auth': '1' },
+    );
+    expect(statusCode).toBe(200);
+    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_API_AUTH]);
+  });
+```
+
+Also add a GitHub Basic lowercase-scheme edge case. In the `describe('github.com Basic injection', ...)` block added above, add one more test after `'passes a malformed-base64 Basic credential through unmodified without crashing'`:
+
+```ts
+  it('passes a lowercase "bearer" scheme through unmodified (only exact "Basic " is decoded)', async () => {
+    const before = mockUpstream.receivedAuthorizationHeaders.length;
+    const sent = `bearer ${GITHUB_PLACEHOLDER_PAT}`;
+    const { statusCode } = await requestThrough('github.com', sent);
+    expect(statusCode).toBe(200);
+    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([sent]);
   });
 ```
 
