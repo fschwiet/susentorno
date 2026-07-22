@@ -1,2 +1,4 @@
+pmOnFail: warn
+
 allowBuilds:
   esbuild: true
