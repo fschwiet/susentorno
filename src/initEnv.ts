@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { envPaths } from './envPaths';
 import { sanitizeCredentials } from './sanitizeCredentials';
 import { sanitizeCodexCredentials } from './sanitizeCodexCredentials';
+import { isDnsResponderBuildArtifact } from './dnsResponder';
 
 export interface InitOptions {
   cwd: string;
@@ -10,18 +11,6 @@ export interface InitOptions {
   codexCredentialsPath: string;
   templatesDir: string;
   allowlistSource: string;
-}
-
-/**
- * Reject dns-responder build artifacts (bin/obj) so a developer's local build output
- * never gets copied onto the read-only VM share. cpSync copies straight off disk and
- * ignores gitignore, so the filter is the only guard.
- */
-export function isDnsResponderBuildArtifact(source: string): boolean {
-  const segments = source.split(/[\\/]/);
-  const dnsIdx = segments.indexOf('dns-responder');
-  if (dnsIdx === -1) return false;
-  return segments.slice(dnsIdx + 1).some((s) => s === 'bin' || s === 'obj');
 }
 
 /**
