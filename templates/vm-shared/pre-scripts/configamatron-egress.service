@@ -1,5 +1,5 @@
 [Unit]
-Description=Configamatron egress: DNAT 80/443 to host proxy + host-only default route (host IP: __HOST_IP__)
+Description=Configamatron egress: DNAT 80/443 to host proxy + gateway-less Internal-switch default route (host IP: __HOST_IP__)
 After=network-online.target
 Wants=network-online.target
 

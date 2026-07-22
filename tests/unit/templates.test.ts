@@ -74,8 +74,8 @@ describe('templates', () => {
       'utf8',
     );
     // networkd honors use-dns; NetworkManager needs the keyfile passthrough.
-    // Without both, VMware's host-only DHCP adds the (dead) VMnet host IP as a
-    // second resolver and lookups stall intermittently.
+    // Without both, the Hyper-V Default Switch's DHCP adds a dead resolver as a
+    // second nameserver and lookups stall intermittently.
     expect(netplan).toContain('use-dns: false');
     expect(netplan).toContain('ipv4.ignore-auto-dns: "true"');
   });

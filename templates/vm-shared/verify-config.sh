@@ -158,11 +158,11 @@ fi
 
 route="$(ip -4 route show default 2>/dev/null)"
 if [ -z "$route" ]; then
-  bad 'default route present' 'no default route (host-only mode needs the unit-installed route)'
+  bad 'default route present' 'no default route (the isolated Internal-switch network needs the unit-installed route)'
 elif printf '%s' "$route" | grep -q 'proto dhcp'; then
   ok "default route present (DHCP/NAT mode: $(printf '%s' "$route" | head -n1))"
 elif [ -n "$host_ip" ] && printf '%s' "$route" | grep -q "via $host_ip"; then
-  ok "host-only default route via $host_ip"
+  ok "Internal-switch default route via $host_ip"
 else
   adv 'default route present' "unexpected route: $(printf '%s' "$route" | head -n1)"
 fi
