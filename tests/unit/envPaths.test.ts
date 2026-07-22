@@ -41,6 +41,8 @@ describe('envPaths', () => {
       authJson: join(root, 'vm-shared', 'auth.json'),
       githubConfig: join(root, 'vm-shared', 'github-config.txt'),
       homeJqTransforms: join(root, 'vm-shared', 'home-jq-transforms'),
+      preScripts: join(root, 'vm-shared', 'pre-scripts'),
+      postScripts: join(root, 'vm-shared', 'post-scripts'),
     });
     expect(paths.vmSharedTargets[1]).toEqual({
       dir: join(root, 'vm-shared-windows'),
@@ -49,6 +51,8 @@ describe('envPaths', () => {
       authJson: join(root, 'vm-shared-windows', 'auth.json'),
       githubConfig: join(root, 'vm-shared-windows', 'github-config.txt'),
       homeJqTransforms: join(root, 'vm-shared-windows', 'home-jq-transforms'),
+      preScripts: join(root, 'vm-shared-windows', 'pre-scripts'),
+      postScripts: join(root, 'vm-shared-windows', 'post-scripts'),
     });
   });
 
@@ -80,6 +84,12 @@ describe('envPaths', () => {
 });
 
 describe('envPaths home-jq-transforms', () => {
+  it('locates the user-edited custom script source folders', () => {
+    const p = envPaths('/work');
+    expect(p.preScripts).toBe(join('/work', '.configamatron', 'pre-scripts'));
+    expect(p.postScripts).toBe(join('/work', '.configamatron', 'post-scripts'));
+  });
+
   it('locates the source transforms folder and the env gitignore', () => {
     const p = envPaths('/work');
     expect(p.homeJqTransforms).toBe(join('/work', '.configamatron', 'home-jq-transforms'));

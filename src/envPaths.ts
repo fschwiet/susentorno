@@ -10,6 +10,8 @@ export interface VmSharedPaths {
   authJson: string;
   githubConfig: string;
   homeJqTransforms: string;
+  preScripts: string;
+  postScripts: string;
 }
 
 export interface EnvPaths {
@@ -18,6 +20,8 @@ export interface EnvPaths {
   vmSharedWindows: string;
   vmSharedTargets: VmSharedPaths[];
   homeJqTransforms: string;
+  preScripts: string;
+  postScripts: string;
   gitignore: string;
   proxy: string;
   allowlist: string;
@@ -49,6 +53,8 @@ export function envPaths(cwd: string): EnvPaths {
     authJson: join(dir, 'auth.json'),
     githubConfig: join(dir, 'github-config.txt'),
     homeJqTransforms: join(dir, 'home-jq-transforms'),
+    preScripts: join(dir, 'pre-scripts'),
+    postScripts: join(dir, 'post-scripts'),
   });
   const vmSharedTargets = [target(vmShared), target(vmSharedWindows)];
   return {
@@ -57,6 +63,8 @@ export function envPaths(cwd: string): EnvPaths {
     vmSharedWindows,
     vmSharedTargets,
     homeJqTransforms: join(root, 'home-jq-transforms'),
+    preScripts: join(root, 'pre-scripts'),
+    postScripts: join(root, 'post-scripts'),
     gitignore: join(root, '.gitignore'),
     proxy,
     allowlist: join(proxy, 'allowlist.txt'),
