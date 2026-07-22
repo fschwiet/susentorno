@@ -7,6 +7,36 @@ export interface UpstreamOverride {
   target: string;
 }
 
+/**
+ * Proxy-internal marker header. A pre-filter sets it (alongside a sentinel
+ * `Authorization` value) only when the client sent no Authorization header at all,
+ * so the credential_injector (overwrite:false) sees a header present and skips
+ * injecting. The shared post-filter strips both back off before the router. Every
+ * pre-filter must remove any inbound copy of this header first — it must never be
+ * something a client-sent request can forge.
+ */
+export const NO_AUTH_MARKER_HEADER = 'x-configamatron-no-auth';
+
+/** Placeholder Authorization value used only to make the header non-absent for the
+ * injector's benefit; its content is never inspected — only NO_AUTH_MARKER_HEADER
+ * controls whether the post-filter strips it. */
+export const NO_AUTH_SENTINEL_VALUE = 'sandbox-no-credential';
+
+// Shared by every authenticated chain (Claude, Codex, both GitHub gates): runs after
+// credential_injector to undo the marker/sentinel a pre-filter sets for a genuinely
+// absent Authorization header, so "no credential sent" reaches the real upstream as
+// absent rather than as the sentinel. Host-agnostic — never inspects any placeholder.
+export const AUTH_POST_FILTER_LUA = `local NO_AUTH_MARKER = "${NO_AUTH_MARKER_HEADER}"
+
+function envoy_on_request(request_handle)
+  local headers = request_handle:headers()
+  if headers:get(NO_AUTH_MARKER) ~= nil then
+    headers:remove(NO_AUTH_MARKER)
+    headers:remove("authorization")
+  end
+end
+`;
+
 /** Test-only config faults, applied as render-time mutations of envoy.yaml. */
 export type InjectFault = 'crash-config' | 'never-ready';
 
@@ -466,14 +496,20 @@ function buildClaudeEntry(entry: string, overrides: UpstreamOverride[]) {
 // (GitHub's precedent) so docker-compose.yml needs no new mounted gate file. Cookie is
 // never read here, so it passes through untouched in both directions.
 const CODEX_GATE_LUA = `local PLACEHOLDER = "Bearer ${CODEX_PLACEHOLDER_ACCESS_TOKEN}"
+local NO_AUTH_MARKER = "${NO_AUTH_MARKER_HEADER}"
+local NO_AUTH_SENTINEL = "${NO_AUTH_SENTINEL_VALUE}"
 
 function envoy_on_request(request_handle)
-  local auth = request_handle:headers():get("authorization")
+  local headers = request_handle:headers()
+  headers:remove(NO_AUTH_MARKER)
+  local auth = headers:get("authorization")
   if auth == nil then
+    headers:replace("authorization", NO_AUTH_SENTINEL)
+    headers:replace(NO_AUTH_MARKER, "1")
     return
   end
-  if auth ~= PLACEHOLDER then
-    request_handle:respond({[":status"] = "403"}, "sandbox: unexpected credential")
+  if auth == PLACEHOLDER then
+    headers:remove("authorization")
   end
 end
 `;
@@ -526,7 +562,7 @@ function buildCodexEntry(entry: string, overrides: UpstreamOverride[]) {
           },
           http_filters: [
             {
-              name: 'envoy.filters.http.lua',
+              name: 'configamatron.auth_pre',
               typed_config: {
                 '@type': 'type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua',
                 default_source_code: { inline_string: CODEX_GATE_LUA },
@@ -537,7 +573,7 @@ function buildCodexEntry(entry: string, overrides: UpstreamOverride[]) {
               typed_config: {
                 '@type':
                   'type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector',
-                overwrite: true,
+                overwrite: false,
                 credential: {
                   name: 'envoy.http.injected_credentials.generic',
                   typed_config: {
@@ -556,6 +592,13 @@ function buildCodexEntry(entry: string, overrides: UpstreamOverride[]) {
                     },
                   },
                 },
+              },
+            },
+            {
+              name: 'configamatron.auth_post',
+              typed_config: {
+                '@type': 'type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua',
+                default_source_code: { inline_string: AUTH_POST_FILTER_LUA },
               },
             },
             {
