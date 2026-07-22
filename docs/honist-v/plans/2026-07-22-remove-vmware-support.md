@@ -901,14 +901,27 @@ Replace line 109's path:
 - **VM (configuration):** inside the VM, run `/mnt/vm-shared/verify-config.sh [host-ip]`. Pass the `<host-ip>` from proxy setup to assert the rules point at it; omit it to have the script discover and report the IP from the installed rules.
 ```
 
-- [ ] **Step 5: Verify no residue and the link resolves**
+- [ ] **Step 5: Fix the VMware reference in the Development "Prequisites" list**
+
+This bullet lives in the `## Development` → `### Prequisites` section (near line 125), outside the ranges edited above; Task 9's grep would flag it if left.
+
+Replace:
+```
+- all host prereuisites except VMWare
+```
+→
+```
+- all host prerequisites except a VM guest (the dev test suite uses WSL2/QEMU, not a Hyper-V guest)
+```
+
+- [ ] **Step 6: Verify no residue and the link resolves**
 
 Run: `git grep -niE '(vmware|vmnet|hgfs|host-only|open-vm-tools)' -- README.md`
 Expected: no output.
 Run: `grep -q 'usage-hyper-v.md' README.md && test -e usage-hyper-v.md && echo "link-ok"`
 Expected: prints `link-ok`.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add README.md
