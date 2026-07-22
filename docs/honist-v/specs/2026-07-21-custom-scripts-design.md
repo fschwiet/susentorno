@@ -47,24 +47,26 @@ regenerated, the same problem `home-jq-transforms/` already solved for settings 
   01_dotfiles.ps1
 ```
 
-- Only files directly inside `.configamatron/pre-scripts/` / `.configamatron/post-scripts/`
-  matching `^(nn|[0-9]{2})[-_].*\.(sh|ps1)$` are treated as runnable steps — the same uniform
-  pattern the weave applies to every folder (see "Weaving algorithm"). Both `-` and `_`
-  separators are accepted; built-ins conventionally use `-`, and these custom examples use `_`.
-  Validated up front — any `.sh`/`.ps1` file in the folder that doesn't match is a hard error
-  (fail loud, list every offending filename), not a silent skip.
-- Anything else in the folder — other extensions, subfolders and their contents — is passed
-  through untouched, so a numbered script can reference it by relative path (e.g.
-  `lib/helper.sh` above).
-- `.sh` and `.ps1` files are ordered independently by their own two-digit prefix. A folder can
-  hold both platforms' version of the "same" conceptual step side by side.
-- Prefixes don't need to be contiguous — they only establish sort order.
-- The `nn` sentinel ("run last within this phase") is accepted in a custom folder too, but is
-  rarely needed: because the built-in `nn-configure-network` already sentinels network isolation
-  to the very end, every *normally-numbered* custom pre-script automatically runs before
-  isolation — which is exactly the network-access guarantee in Goals. Naming a custom `nn` opts
-  it into the final block alongside network-config (order among multiple `nn` scripts falls back
-  to their prefix/name sort), which is usually not what you want.
+- A file directly inside `.configamatron/pre-scripts/` / `.configamatron/post-scripts/` is a
+  runnable step if it matches `^[0-9]{2}[-_].+\.(sh|ps1)$` — a two-digit prefix, a `-` or `_`
+  separator, a **non-empty** name, and a **lowercase** `.sh`/`.ps1` extension. Validated up
+  front: any `.sh`/`.ps1` file that doesn't match is a hard error (fail loud, list every
+  offending filename), not a silent skip. This catches an empty name (`01-.sh`), an uppercase
+  `.SH`/`.PS1` (use lowercase), and the reserved `nn` sentinel below.
+- The `nn` sentinel prefix is **reserved for built-in scripts** and is a hard error in a custom
+  folder. Custom scripts never need it: because the built-in `nn-configure-network` sentinels
+  network isolation to the very end of the pre phase, every custom pre-script (any normal `NN`
+  number) automatically runs *before* isolation — exactly the network-access guarantee in Goals.
+  Reserving `nn` from custom folders is also what keeps configure-network unambiguously last
+  (see "Weaving algorithm").
+- Anything that isn't a runnable step — other extensions, subfolders and their contents — is
+  passed through untouched. A script must reference such a resource **relative to its own file
+  location** (via `$script_dir`, e.g. `$script_dir/lib/helper.sh`), never relative to the
+  caller's working directory — that isn't guaranteed for a manually-invoked script.
+- `.sh` and `.ps1` files are ordered independently by their own two-digit prefix; a tie (two
+  same-extension files sharing a prefix) breaks by full filename, byte-ordinal ascending. A
+  folder can hold both platforms' version of the "same" conceptual step side by side. Prefixes
+  need not be contiguous — they only establish sort order.
 
 ## Built-in template layout
 
@@ -111,22 +113,36 @@ network access.
 
 ## Weaving algorithm
 
-One function orders a single folder's scripts: validate every `.sh`/`.ps1` name against the
-uniform pattern `^(nn|[0-9]{2})[-_].*\.(sh|ps1)$` (hard error on any that don't match), sort by
-numeric prefix, then pull any `nn` sentinel to the end. It has no notion of "built-in" vs.
-"custom" — it just orders whatever folder it's given with the one pattern, which is what lets
-built-in scripts be renamed/renumbered/reordered later without touching this code.
+One function orders a single folder's scripts, taking an `allowSentinel` flag:
+
+- **Classify** each file: a name matching `^(nn|[0-9]{2})[-_].+\.(sh|ps1)$` (lowercase
+  extension) is a script; everything else is passthrough.
+- **Validate** (hard error, listing offenders): any `.sh`/`.ps1` file that isn't a valid script
+  name, any uppercase `.SH`/`.PS1`, and — when `allowSentinel` is false — any `nn` sentinel.
+- **Sort** scripts by two-digit prefix ascending, ties broken by full filename (byte-ordinal);
+  the `nn` sentinel sorts after all numbered scripts.
+
+It has no built-in/custom knowledge beyond the `allowSentinel` knob, so built-in scripts can be
+renamed/renumbered/reordered later without touching this code.
 
 Assembly for one phase (pre or post) and one platform (extension `.sh` or `.ps1`):
 
-1. Run the weave function over the platform's built-in template phase folder
-   (`templates/vm-shared/<phase>` for `.sh`, `templates/vm-shared-windows/<phase>` for `.ps1`),
-   filtered to the target extension.
-2. Run the weave function over the user's `.configamatron/pre-scripts/` or
-   `.configamatron/post-scripts/` folder, filtered to the same extension.
-3. Concatenate: built-in list, then custom list.
-4. Re-run the sentinel-to-end pass and contiguous renumbering (`01`, `02`, `03`, ...) over the
-   concatenated result.
+1. Weave the platform's built-in template phase folder (`templates/vm-shared/<phase>` for `.sh`,
+   `templates/vm-shared-windows/<phase>` for `.ps1`) with `allowSentinel: true`, filtered to the
+   target extension. A built-in platform folder must contain only its own platform's script
+   extension; an opposite-extension script there is a template authoring error (hard error, not
+   a silent drop).
+2. Weave the user's `.configamatron/pre-scripts/` or `.configamatron/post-scripts/` folder with
+   `allowSentinel: false`, filtered to the same extension.
+3. Concatenate: built-in list, then custom list. Because only built-in folders may carry an `nn`
+   sentinel (step 2 forbids custom ones), the built-in `nn-configure-network` is the sole
+   sentinel and lands **strictly last** in the pre phase — after every built-in and custom step
+   — which is the network-isolation-runs-last guarantee. Custom pre-scripts, being normal
+   numbers, always precede it.
+4. Renumber the concatenated list contiguously (`01`, `02`, `03`, ...). Each output filename is
+   the new two-digit number + `-` + the original text after the source prefix-and-separator (the
+   separator normalizes to `-`). If the combined count exceeds 99, the generator fails loud
+   rather than overflow two digits.
 5. Write the renumbered scripts into **exactly one share** — the one that owns the extension:
    `.sh` → `vm-shared/<phase>/`, `.ps1` → `vm-shared-windows/<phase>/`. A script is never
    duplicated across platforms.
@@ -134,7 +150,7 @@ Assembly for one phase (pre or post) and one platform (extension `.sh` or `.ps1`
 ## Resource split and collision handling
 
 Passthrough files (everything that is not a validated script under the
-`^(nn|[0-9]{2})[-_].*\.(sh|ps1)$` pattern — other extensions, subfolders and their contents)
+`^(nn|[0-9]{2})[-_].+\.(sh|ps1)$` pattern — other extensions, subfolders and their contents)
 split by **origin**, because origin is what tells us whether the platform is known:
 
 - **Built-in passthrough** (from `templates/vm-shared/<phase>` or
@@ -151,17 +167,26 @@ split by **origin**, because origin is what tells us whether the platform is kno
 Scripts resolve their resources with `$script_dir/<name>`, and after the weave all of a phase's
 scripts sit flat at the top of the output `<phase>/` folder, so resources sit flat beside them.
 
-**Collision rule (this resolves the previously-deferred open issue).** Within a given share's
-`<phase>/` folder, if a custom passthrough name collides with a built-in passthrough name, the
-weave is a **hard error**: list every colliding name and copy nothing (no partial output) —
-the same fail-loud discipline used for bad script names and bad jq transforms. Rationale:
+**Collision rule (this resolves the previously-deferred open issue).** Collisions are evaluated
+per share, on the **normalized destination-relative path** each item would occupy under that
+share's `<phase>/` folder — not merely top-level filenames, since whole subtrees pass through.
+The Windows share is compared **case-insensitively** (its guest filesystem is), so
+`DNS-Responder/` and `dns-responder/` collide there; the Linux share compares case-sensitively.
+A **hard error** (list every conflict, copy nothing — no partial output) is raised when, at the
+same destination path:
 
-- Collisions are checked **per share**, so a built-in Linux resource and a built-in Windows
-  resource can never conflict (they land in different shares). The only conflict possible is a
-  custom name equal to a built-in name within one share.
-- Last-writer-wins would silently clobber a security-relevant file (e.g. `dnsmasq-stub.conf`,
-  which configures network isolation). Failing loud forces the user to rename their file, and
-  the error message names the built-in it collided with so the fix is obvious.
+- two files land — built-in vs. custom, or a custom passthrough vs. a generated renumbered
+  script name; or
+- a file and a directory land (either order), or an ancestor conflicts (e.g. a built-in file
+  `lib` vs. a custom `lib/helper.sh`).
+
+Two **directories** at the same path **merge** — their contents recurse and are re-checked by
+this same rule — which is what lets a custom `lib/` coexist with a future built-in `lib/`. So
+the possible conflicts are broader than "a custom name equal to a built-in name": they include
+file-vs-directory, ancestor, resource-vs-generated-script, and case-only clashes on Windows.
+Failing loud rather than last-writer-wins matters because a clobber could silently replace a
+security-relevant file (e.g. `dnsmasq-stub.conf`, which configures network isolation); the error
+names both sides so the fix is obvious.
 
 ## Environment-specific share-root files
 
@@ -170,12 +195,15 @@ A separate class of file lives once at the **share root** and is written there d
 `pre-scripts/`/`post-scripts/`:
 
 ```
-vm-shared/cert.pem  credentials.json  auth.json  github-config.txt  home-jq-transforms/
+vm-shared/          cert.pem  credentials.json  auth.json  github-config.txt  home-jq-transforms/
+vm-shared-windows/  cert.pem  credentials.json  auth.json  github-config.txt  home-jq-transforms/
 ```
 
 Today the built-in scripts live at the share root too, so they read these as
 `$script_dir/<file>`. Under this design the scripts move one level down into `<phase>/`, so the
-built-in scripts that consume them change to read from the **script's parent directory**:
+built-in scripts that consume them — **in both shares, in both the `.sh` and `.ps1`
+implementation** — change to read from the **script's parent directory**. Each row below is one
+conceptual step with two implementations that change identically:
 
 | File | Consuming built-in script (phase) | Old reference | New reference |
 |---|---|---|---|
@@ -215,12 +243,21 @@ vm-shared/post-scripts/           vm-shared-windows/post-scripts/
   script woven, every resource copied, credentials seeded), so they are ignored wholesale by the
   new allowlist `.gitignore` (see below) — there are no longer per-folder ignore lines to
   maintain.
-- `init` runs the same weave-and-copy logic as `update-shares` (against an initially empty
-  `.configamatron/pre-scripts/` / `.configamatron/post-scripts/`), so a freshly initialized
-  environment is runnable without an extra manual step.
-- `update-shares` validates `.configamatron/pre-scripts/` and `.configamatron/post-scripts/`
-  naming up front and fails loud — no partial copy — on a naming violation or a resource
-  collision, consistent with how it already blocks the copy on a bad jq transform.
+- `init` scaffolds empty `.configamatron/pre-scripts/` and `.configamatron/post-scripts/`
+  folders — each seeded with a short placeholder `README.md`, since git does not track empty
+  directories and the customization points must survive commit/clone and stay discoverable —
+  then runs the same weave-and-copy logic as `update-shares`. With the custom folders empty the
+  generated shares contain only the woven built-ins, so a freshly initialized environment is
+  runnable without an extra manual step. (`init` still refuses to run over an existing
+  `.configamatron/`, so these folders only ever come into being through `init` itself.)
+- **Whole-transaction regeneration.** `update-shares`/`init` run *all* preflight first — script
+  naming, resource collisions, and the jq-transform previews — across both phases and both
+  platforms, and mutate nothing until every check passes; a violation aborts the whole run
+  before any share is touched. Each generated `<phase>/` directory is then **replaced**
+  (stage-then-swap, as `update-shares` already does for `home-jq-transforms`), not overlaid, so a
+  script or resource the user deletes disappears from the output instead of lingering. Swaps
+  happen only after all staging succeeds, minimizing the window; a failure mid-swap restores
+  from the staged backup, matching the existing per-target recovery.
 
 ## `.gitignore` strategy (inverted to an allowlist)
 
@@ -265,6 +302,15 @@ Two mechanics worth noting:
 Everything else — the fully-generated shares, credential placeholders, public/private certs,
 `envoy.yaml`, the bundled applier `.mjs` — is ignored by default.
 
+**Migration note.** A `.gitignore` never untracks files already in the git index. A user who
+committed an older, denylist-era `.configamatron/` has generated share scripts tracked, and
+shipping the new allowlist alone won't drop them from future commits. Because environments are
+rebuilt fresh via `init` (which refuses to run over an existing `.configamatron/`), the clean
+path is delete-and-re-init; for an in-place upgrade the README should instruct
+`git rm -r --cached .configamatron && git add .configamatron` (then commit), which re-applies the
+new `.gitignore` so previously-tracked generated files leave the index while staying on disk and
+only the allowlisted inputs are re-added.
+
 ## Run order changes
 
 Today's `01`–`07` become, per share:
@@ -281,19 +327,31 @@ is no longer fixed, since customs may add more.
 
 ## Testing / documentation impact
 
-- New unit tests for the weave function (naming validation, sentinel handling, contiguous
-  renumbering, independent `.sh`/`.ps1` ordering) and for `update-shares`/`init` writing the
-  four generated locations correctly.
+- New unit tests for the weave function: naming validation (empty name, uppercase extension,
+  bad prefix), `nn` rejected when `allowSentinel:false` and honored when true, tie-break by
+  filename, contiguous renumbering + output-name construction, `>99` overflow error,
+  opposite-extension script in a built-in platform folder rejected, independent `.sh`/`.ps1`
+  ordering, and `nn-configure-network` landing strictly last even with custom pre-scripts
+  present.
 - New tests for resource routing and collision handling: built-in resources land only in their
-  own platform share; custom resources land in both; a custom-vs-built-in name collision fails
-  loud (no partial copy) and names the offending file(s).
+  own platform share, custom resources land in both, and each collision class fails loud (no
+  partial copy, names both sides) — file-vs-file, file-vs-directory, ancestor conflict,
+  passthrough-vs-generated-script, and a case-only clash on the Windows share; two same-named
+  directories merge instead of colliding.
+- New tests for whole-transaction regeneration: a naming/collision/jq violation aborts before
+  any share is mutated; a resource or script the user deletes disappears from the regenerated
+  `<phase>/` (replace, not overlay).
+- New tests for `init` scaffolding: it creates empty `pre-scripts/`/`post-scripts/` with
+  placeholder READMEs, and a freshly initialized environment is runnable with built-ins only.
 - Re-introduce a `.gitignore` content-assertion test. The old one was removed for being
   unstable against the churning denylist; the allowlist only names the rarely-changing
   user-authored inputs, so it is stable enough to assert on again.
 - Update the built-in scripts' environment-file references to the script's parent directory
-  (`cert.pem`, `github-config.txt`, `credentials.json`, `auth.json`, `home-jq-transforms/`), and
-  cover that the woven scripts resolve them correctly from `<phase>/`.
+  (`cert.pem`, `github-config.txt`, `credentials.json`, `auth.json`, `home-jq-transforms/`) in
+  both the `.sh` and `.ps1` implementations, and cover that the woven scripts resolve them
+  correctly from `<phase>/`.
 - `tests/vm/vm.test.ts` and other VM-harness references to `01-apt-packages.sh` etc. move to the
   new `pre-scripts/`/`post-scripts/` paths.
 - `README.md`, `usage-windows-vm.md`, `technical-notes.md` updated for the new folder structure,
-  restart-at-01 numbering, and the inverted `.gitignore` guidance.
+  restart-at-01 numbering, the inverted `.gitignore` guidance, and the index-migration step for
+  users upgrading an already-committed denylist-era environment.
