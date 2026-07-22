@@ -30,6 +30,7 @@ afterAll(async () => {
 
 function requestThroughClaudeHost(
   authorization: string | undefined,
+  extraHeaders: Record<string, string> = {},
 ): Promise<{ statusCode?: number }> {
   return new Promise((resolve, reject) => {
     const req = httpsRequest(
@@ -39,7 +40,7 @@ function requestThroughClaudeHost(
         servername: 'api.anthropic.com',
         ca: caCertPem,
         path: '/',
-        headers: authorization ? { authorization } : {},
+        headers: { ...(authorization ? { authorization } : {}), ...extraHeaders },
       },
       (res) => {
         res.resume();
@@ -73,20 +74,61 @@ function requestThroughAuthCandidate(authorization: string): Promise<{ statusCod
 }
 
 describe('Envoy sandbox proxy stack', () => {
-  it('injects the real credential when the placeholder Authorization header is presented', async () => {
-    const before = mockUpstream.receivedAuthorizationHeaders.length;
+  it('injects the real credential when the placeholder Authorization header is presented, with no marker leak', async () => {
+    const before = mockUpstream.receivedHeaders.length;
     const { statusCode } = await requestThroughClaudeHost(PLACEHOLDER_AUTH);
 
     expect(statusCode).toBe(200);
-    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_AUTH]);
+    const received = mockUpstream.receivedHeaders.slice(before);
+    expect(received[0].authorization).toBe(REAL_AUTH);
+    expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
   });
 
-  it('rejects a non-placeholder Authorization header before reaching the upstream', async () => {
-    const before = mockUpstream.receivedAuthorizationHeaders.length;
-    const { statusCode } = await requestThroughClaudeHost('Bearer something-else');
+  it('passes a non-placeholder Authorization header through to the upstream unmodified, with no marker leak or unrelated-header changes', async () => {
+    const before = mockUpstream.receivedHeaders.length;
+    const { statusCode } = await requestThroughClaudeHost('Bearer something-else', {
+      'x-test-probe': 'keep-me',
+    });
 
-    expect(statusCode).toBe(403);
-    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([]);
+    expect(statusCode).toBe(200);
+    const received = mockUpstream.receivedHeaders.slice(before);
+    expect(received[0].authorization).toBe('Bearer something-else');
+    expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+    expect(received[0]['x-test-probe']).toBe('keep-me');
+  });
+
+  it('passes a request through with no Authorization header when the client sent none', async () => {
+    const before = mockUpstream.receivedHeaders.length;
+    const { statusCode } = await requestThroughClaudeHost(undefined);
+
+    expect(statusCode).toBe(200);
+    const received = mockUpstream.receivedHeaders.slice(before);
+    expect(received).toHaveLength(1);
+    expect(received[0].authorization).toBeUndefined();
+    expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+  });
+
+  it('strips a client-forged no-auth marker header instead of trusting it', async () => {
+    const before = mockUpstream.receivedHeaders.length;
+    const { statusCode } = await requestThroughClaudeHost('Bearer something-else', {
+      'x-configamatron-no-auth': '1',
+    });
+
+    expect(statusCode).toBe(200);
+    const received = mockUpstream.receivedHeaders.slice(before);
+    // The forged marker must not cause the post-filter to strip this credential.
+    expect(received[0].authorization).toBe('Bearer something-else');
+    expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+  });
+
+  it('still injects the real credential when the placeholder is presented alongside a forged no-auth marker header', async () => {
+    const before = mockUpstream.receivedAuthorizationHeaders.length;
+    const { statusCode } = await requestThroughClaudeHost(PLACEHOLDER_AUTH, {
+      'x-configamatron-no-auth': '1',
+    });
+
+    expect(statusCode).toBe(200);
+    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_AUTH]);
   });
 
   it('allows a real, allow-listed passthrough TLS host', async () => {
