@@ -12,6 +12,7 @@ import {
   HTTP_PORT,
   HTTPS_PORT,
   PLACEHOLDER_AUTH,
+  REAL_AUTH,
   type ProxyStack,
 } from '../proxyStack';
 
@@ -211,26 +212,36 @@ describe('S2: switch to host-only and reboot', () => {
     expect(stdout.trim()).toBe('203.0.113.1');
   });
 
-  it('terminated :443 host works and the CA is trusted', async () => {
-    // Either response arriving at all proves the TLS handshake succeeded, i.e.
-    // 06 installed and trusted the proxy CA. The gate (gate.lua) then rejects an
-    // *unexpected* credential — a present, non-placeholder Authorization header —
-    // with 403, and passes the placeholder, which the credential injector swaps
-    // for the real token → 200. (A request with no Authorization header is
-    // deliberately not rejected: the injector supplies the credential. That
-    // matches the integration suite's auth cases, which likewise never assert on
-    // a missing header.)
+  it('terminated :443 host: CA trusted, unexpected auth passes through, placeholder injected', async () => {
+    // Any response arriving at all proves the TLS handshake succeeded, i.e. 06
+    // installed and trusted the proxy CA. api.anthropic.com is redirected to the
+    // stack's mock upstream (startProxyStack's --upstream-override), which returns
+    // 200 for every request and records the Authorization header it received.
+    //
+    // The gate (gate.lua) no longer rejects an *unexpected* credential: a present,
+    // non-placeholder Authorization header now passes THROUGH to the upstream
+    // unmodified, while the placeholder is swapped by the credential injector for
+    // the real token. Both reach the mock (200) — the meaningful distinction is
+    // what the mock receives, so assert on that, not just the status code.
+    const beforeWrong = stack.mockUpstream.receivedAuthorizationHeaders.length;
     const wrongAuth = await guest(
       'g1',
       `curl -s -o /dev/null -w '%{http_code}' --max-time 20 -H 'Authorization: Bearer not-the-placeholder' https://api.anthropic.com/`,
     );
-    expect(wrongAuth.stdout.trim()).toBe('403');
+    expect(wrongAuth.stdout.trim()).toBe('200');
+    expect(stack.mockUpstream.receivedAuthorizationHeaders.slice(beforeWrong)).toEqual([
+      'Bearer not-the-placeholder',
+    ]);
 
+    const beforePlaceholder = stack.mockUpstream.receivedAuthorizationHeaders.length;
     const withAuth = await guest(
       'g1',
       `curl -s -o /dev/null -w '%{http_code}' --max-time 20 -H 'Authorization: ${PLACEHOLDER_AUTH}' https://api.anthropic.com/`,
     );
     expect(withAuth.stdout.trim()).toBe('200');
+    expect(stack.mockUpstream.receivedAuthorizationHeaders.slice(beforePlaceholder)).toEqual([
+      REAL_AUTH,
+    ]);
   });
 
   it('passthrough :443 host works end-to-end', async () => {
