@@ -6,14 +6,11 @@ Only one proxy container can run on the host at a time (it binds ports 80/443). 
 
 ## Host prerequisites
 
-- Running on platforms besides Windows and/or VM hosts besides VMWare may work fine. In those cases though you'll need to open http/https ports 80/443 for the proxy host to your VM.
-
-- Windows
+- Windows host with **Hyper-V** for the isolated VM (see `usage-hyper-v.md`).
 - Docker and Docker Compose.
 - Node.js >= 18 and pnpm.
 - The `claude` CLI installed and logged in (so `~/.claude/.credentials.json` exists).
-- Tested with a Windows host and VMWare Workstation for the isolated VM.
-  - Host's firewall's ports 80 and 443 for VMWare's network adapter will be opened by a supplied script. Using another OS or VM platform will require the same ports be available for the VM to reach the host.
+- The host firewall's ports 80 and 443 for the VM's Internal-switch adapter are opened by a supplied script. Running on other platforms may work but is untested; you would need those same ports reachable from the host to the VM.
 
 ## Installation
 
@@ -30,56 +27,19 @@ Usually done once per environment. Run every command from the environment direct
 1. `configamatron init` — creates `.configamatron/` scaffolding. Its `.gitignore` is an allowlist: commit only `.gitignore`, `pre-scripts/`, `post-scripts/`, `home-jq-transforms/`, and `proxy/allowlist.txt`; generated files and secrets remain ignored. Run `configamatron update-shares` after changing authored inputs.
 2. `configamatron generate-ca` — writes the root certificate authority the proxy's https certificates chain to. Run once per environment; `run-proxy` reissues the per-host leaf certificate automatically as the allow list changes.
 3. `configamatron write-github-config` — prompts for a GitHub fine-grained personal access token and writes `vm-shared/github-config.txt` (username/email come from your global git config). Create the token at https://github.com/settings/personal-access-tokens/new, scoped to the repositories the agent should use, with read/write permission to 'Contents'.
-4. `configamatron run-proxy` — builds `proxy/envoy.yaml` from `proxy/allowlist.txt` and launches the proxy in a docker container with the latest Claude credentials. While it runs it watches both files: editing the allow list takes effect live (config rebuilt, leaf certificate reissued if the TLS-terminated hosts changed, proxy restarted), and credential rotations propagate automatically. It also streams the proxy's access log inline (see "Watching proxy traffic" below) and forwards the VMware host-only interface's `:80`/`:443` to Envoy on loopback, so it must stay running for the VM to reach the proxy (Envoy is published on `127.0.0.1` only). Pass `--no-forward` to disable forwarding, or `--forward-listen <ip>` to override the bind address.
-5. **Windows hosts only:** in an **Administrator** PowerShell, run `powershell -File .configamatron\proxy\host-allow-vm-inbound.ps1`. This opens inbound TCP 80/443 (Envoy) from the VM's host-only network adapter, and _prints the host IP you need to use in VM-side setup_.
+4. `configamatron run-proxy` — builds `proxy/envoy.yaml` from `proxy/allowlist.txt` and launches the proxy in a docker container with the latest Claude credentials. While it runs it watches both files: editing the allow list takes effect live (config rebuilt, leaf certificate reissued if the TLS-terminated hosts changed, proxy restarted), and credential rotations propagate automatically. It also streams the proxy's access log inline (see "Watching proxy traffic" below) and forwards the Hyper-V Internal-switch interface's `:80`/`:443` to Envoy on loopback, so it must stay running for the VM to reach the proxy (Envoy is published on `127.0.0.1` only). Pass `--no-forward` to disable forwarding, or `--forward-listen <ip>` to override the bind address.
+5. **Windows hosts only:** in an **Administrator** PowerShell, run `powershell -File .configamatron\proxy\host-allow-vm-inbound.ps1`. This opens inbound TCP 80/443 (Envoy) from the VM's Internal-switch adapter, and _prints the host IP you need to use in VM-side setup_.
 
-- It defaults to the `VMware Network Adapter VMnet1` interface; pass `-AdapterAlias` if your host-only network uses a different adapter (`Get-NetIPConfiguration` lists them). Safe to re-run if the host's IP on that network changes.
+- It defaults to the `vEthernet (configamatron-internal)` adapter; pass `-AdapterAlias` if your Internal switch uses a different name (`Get-NetIPConfiguration` lists them). Safe to re-run if the host's IP on that network changes.
 
 ## VM setup
 
 May be repeated for any number of VMs; each VM pairs with one environment via its shared folder.
 
-> For a **Windows** guest instead of Ubuntu, follow `usage-windows-vm.md` and share the `.configamatron\vm-shared-windows` folder. The steps below cover the Ubuntu guest.
->
-> To run either guest under **Hyper-V** instead of VMware, follow `usage-hyper-v.md` — it covers the switch, static-IP, and SMB-share differences, then hands back to the numbered scripts here (Ubuntu) or in `usage-windows-vm.md` (Windows).
+VM creation, the Internal virtual switch, static IPs, and the SMB share are covered in **`usage-hyper-v.md`** — for both guests:
 
-### Create the VM and install the OS
-
-- In VMware Workstation, create a new virtual machine:
-  - Set a recent Ubuntu release as the installer image (ubuntu-26.04-desktop-amd64.iso is known to work).
-  - 120 GB of dynamic disk space (or ask google for values for your intended use cases).
-  - Select "Customize Hardware" before finishing: 12288 MB of static memory (or no more than half of the host machine's memory), 1 processor with 6 cores (or ask google for values for your specific processor). Leave the network as NAT for initial setup, pre-isolation.
-- Start the VM and install the OS. Pick the defaults, except:
-  - Uncheck "Require my password to log in" — anyone with access to the VM already has access to the host, and it is easier this way. Your password is still required for sudo.
-  - Do not select "Install third-party apps for graphics and wi-fi hardware"; it may stall OS installation.
-  - Do not enable Shared Folders before the OS is installed; it may stall OS installation.
-
-### Enable open-vm-tools and share the environment folder
-
-Run in the VM's terminal ('-desktop' helps with screen resolution on top of open-vm-tools' shared folders and copy'n'paste integration).
-
-```
-sudo apt update && sudo apt install -y open-vm-tools-desktop
-```
-
-Shut the VM down, then in VM -> Settings -> Options:
-
-- "Shared Folders": enable only the environment's `.configamatron\vm-shared` folder, read-only.
-- "Guest Isolation": consider disabling drag'n'drop and copy'n'paste sharing.
-
-### Fix Shared Folders
-
-#### The Inevitable Fix
-
-Add the following line to '/etc/fstab' and restart the VM.
-
-```
-vmhgfs-fuse   /mnt/hgfs    fuse    defaults,allow_other    0    0
-```
-
-#### Not Sure The Inevitable Fix Is Right For You?
-
-Maybe someday the fix above won't make sense. Is today that day? Start the VM and verify the share appears under `/mnt/hgfs/`. If there is no `/mnt/hgfs`, stop and restart folder sharing. If `/mnt/hgfs` doesn't contain your shared drive then do The Inevitable Fix above.
+- **Ubuntu guest:** follow `usage-hyper-v.md` to create the VM and mount the share at `/mnt/vm-shared`, then run the numbered scripts below.
+- **Windows guest:** follow `usage-hyper-v.md` for the VM and share, then `usage-windows-vm.md` for the guest-side scripts.
 
 ### Run the numbered scripts from the VM
 
@@ -88,7 +48,7 @@ Complete "Proxy setup" first, so `vm-shared` contains `cert.pem`, `github-config
 Run without `sudo`; each script elevates internally where needed. The exact count may vary when custom steps are present.
 
 1. `cd` into `vm-shared/pre-scripts/` and run every script in number order. The last step is `05-configure-network.sh <host-ip>` when there are no custom scripts.
-2. Switch the VM network from NAT to host-only, then reboot.
+2. Isolate the VM's network — remove the temporary Default Switch adapter (see `usage-hyper-v.md`), then reboot.
 3. `cd` into `vm-shared/post-scripts/` and run every script in order: normally `01-auth-config.sh`, then `02-apply-home-jq-transforms.sh`.
 
 ## Customizing settings transforms
@@ -106,7 +66,7 @@ When upgrading an older environment, remember that `.gitignore` does not untrack
 Two read-only diagnostic scripts report whether the proxy and the VM are set up correctly. Neither changes any state; each prints a `PASS`/`FAIL`/`WARN` line per check and exits non-zero if anything failed.
 
 - **Host (proxy):** from the environment directory, with the proxy up, run `.configamatron\proxy\verify-proxy.ps1`.
-- **VM (configuration):** inside the VM, run `./mnt/hgfs/vm-shared/verify-config.sh [host-ip]`. Pass the `<host-ip>` from proxy setup to assert the rules point at it; omit it to have the script discover and report the IP from the installed rules.
+- **VM (configuration):** inside the VM, run `/mnt/vm-shared/verify-config.sh [host-ip]`. Pass the `<host-ip>` from proxy setup to assert the rules point at it; omit it to have the script discover and report the IP from the installed rules.
 
 ## Watching proxy traffic
 
@@ -122,7 +82,7 @@ Two read-only diagnostic scripts report whether the proxy and the VM are set up 
 
 ### Prequisites
 
-- all host prereuisites except VMWare
+- all host prerequisites except a VM guest (the dev test suite uses WSL2/QEMU, not a Hyper-V guest)
 - A real Ubuntu (or other Debian-based) WSL2 distro must be installed and set as the **default** distro (`wsl --install -d Ubuntu`, then `wsl --set-default Ubuntu` if needed). `wsl.exe` is invoked without `-d` throughout the harness, so it runs whatever distro is default — if Docker Desktop's own minimal `docker-desktop` distro ends up default (e.g. on a fresh machine with no other distro registered), `wsl.exe -u root -e bash ...` fails with `execvpe(bash) failed: No such file or directory`, since that distro is BusyBox-based with no bash or apt. Check with `wsl -l -v`.
 - wsl2 is used to spin up a vm for testing purposes. The ~/.wslconfig must contain:
 
