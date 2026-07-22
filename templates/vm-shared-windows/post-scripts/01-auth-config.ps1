@@ -1,9 +1,10 @@
 $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$shareRoot = Split-Path -Parent $scriptDir
 
 # --- GitHub auth (GitHub.cli is installed in 01-install-packages.ps1) ---
 
-$configPath = Join-Path $scriptDir 'github-config.txt'
+$configPath = Join-Path $shareRoot 'github-config.txt'
 if (-not (Test-Path $configPath)) {
   Write-Error "06-auth-config: $configPath not found. Run 'configamatron write-github-config' on the host first."
   exit 1
@@ -31,12 +32,12 @@ if ($LASTEXITCODE -ne 0) { Write-Error "06-auth-config: gh auth setup-git failed
 
 $claudeDir = Join-Path $env:USERPROFILE '.claude'
 New-Item -ItemType Directory -Force -Path $claudeDir | Out-Null
-Copy-Item -Force (Join-Path $scriptDir 'credentials.json') (Join-Path $claudeDir '.credentials.json')
+Copy-Item -Force (Join-Path $shareRoot 'credentials.json') (Join-Path $claudeDir '.credentials.json')
 
 # --- Codex placeholder credential ---
 
 $codexDir = Join-Path $env:USERPROFILE '.codex'
 New-Item -ItemType Directory -Force -Path $codexDir | Out-Null
-Copy-Item -Force (Join-Path $scriptDir 'auth.json') (Join-Path $codexDir 'auth.json')
+Copy-Item -Force (Join-Path $shareRoot 'auth.json') (Join-Path $codexDir 'auth.json')
 
 Write-Host "06-auth-config: gh auth configured for $($cfg['GITHUB_USERNAME']) <$($cfg['GITHUB_EMAIL'])>; placeholder claude + codex credentials installed"

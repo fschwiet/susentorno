@@ -37,22 +37,22 @@ describe('initEnvironment', () => {
 
     const root = join(dir, ENV_DIR_NAME);
     for (const file of [
-      'vm-shared/01-apt-packages.sh',
-      'vm-shared/05-configure-network.sh',
-      'vm-shared/06-auth-config.sh',
-      'vm-shared/07-apply-home-jq-transforms.sh',
-      'vm-shared/configamatron-egress.service',
+      'vm-shared/pre-scripts/01-apt-packages.sh',
+      'vm-shared/pre-scripts/05-configure-network.sh',
+      'vm-shared/post-scripts/01-auth-config.sh',
+      'vm-shared/post-scripts/02-apply-home-jq-transforms.sh',
+      'vm-shared/pre-scripts/configamatron-egress.service',
       'vm-shared/credentials.json',
       'proxy/docker-compose.yml',
       'proxy/gate.lua',
       'proxy/host-allow-vm-inbound.ps1',
       'proxy/allowlist.txt',
-      'vm-shared-windows/01-install-packages.ps1',
-      'vm-shared-windows/05-configure-network.ps1',
-      'vm-shared-windows/06-auth-config.ps1',
-      'vm-shared-windows/07-apply-home-jq-transforms.ps1',
+      'vm-shared-windows/pre-scripts/01-install-packages.ps1',
+      'vm-shared-windows/pre-scripts/05-configure-network.ps1',
+      'vm-shared-windows/post-scripts/01-auth-config.ps1',
+      'vm-shared-windows/post-scripts/02-apply-home-jq-transforms.ps1',
       'vm-shared-windows/verify-config.ps1',
-      'vm-shared-windows/dns-responder/Program.cs',
+      'vm-shared-windows/pre-scripts/dns-responder/Program.cs',
       'vm-shared-windows/credentials.json',
     ]) {
       expect(existsSync(join(root, file)), file).toBe(true);
@@ -105,7 +105,12 @@ describe('initEnvironment', () => {
   });
 
   it('does not copy dns-responder bin/obj build artifacts into vm-shared-windows', () => {
-    const templateDnsDir = join(templatesDir(), 'vm-shared-windows', 'dns-responder');
+    const templateDnsDir = join(
+      templatesDir(),
+      'vm-shared-windows',
+      'pre-scripts',
+      'dns-responder',
+    );
     const binFixture = join(templateDnsDir, 'bin');
     const objFixture = join(templateDnsDir, 'obj');
     // bin/ and obj/ are gitignored, so creating them here does not dirty the repo.
@@ -115,7 +120,13 @@ describe('initEnvironment', () => {
     writeFileSync(join(objFixture, 'stale.json'), 'x');
     try {
       initEnvironment(options());
-      const copiedDns = join(dir, ENV_DIR_NAME, 'vm-shared-windows', 'dns-responder');
+      const copiedDns = join(
+        dir,
+        ENV_DIR_NAME,
+        'vm-shared-windows',
+        'pre-scripts',
+        'dns-responder',
+      );
       expect(existsSync(join(copiedDns, 'bin')), 'bin should not be copied').toBe(false);
       expect(existsSync(join(copiedDns, 'obj')), 'obj should not be copied').toBe(false);
       // The source files must still be copied.
@@ -165,5 +176,12 @@ describe('initEnvironment', () => {
     initEnvironment(options());
     const root = join(dir, ENV_DIR_NAME);
     expect(existsSync(join(root, '.gitignore')), '.gitignore').toBe(true);
+  });
+
+  it('scaffolds empty custom pre/post script folders with placeholder READMEs', () => {
+    initEnvironment(options());
+    const root = join(dir, ENV_DIR_NAME);
+    expect(existsSync(join(root, 'pre-scripts', 'README.md'))).toBe(true);
+    expect(existsSync(join(root, 'post-scripts', 'README.md'))).toBe(true);
   });
 });

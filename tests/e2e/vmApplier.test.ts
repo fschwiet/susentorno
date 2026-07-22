@@ -15,11 +15,18 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
-const applierUbuntu = join(repoRoot, 'templates', 'vm-shared', 'apply-home-jq-transforms.mjs');
+const applierUbuntu = join(
+  repoRoot,
+  'templates',
+  'vm-shared',
+  'post-scripts',
+  'apply-home-jq-transforms.mjs',
+);
 const applierWindows = join(
   repoRoot,
   'templates',
   'vm-shared-windows',
+  'post-scripts',
   'apply-home-jq-transforms.mjs',
 );
 const seedDir = join(repoRoot, 'templates', 'home-jq-transforms');
@@ -43,8 +50,10 @@ describe('vm applier bundle', () => {
       { cwd: repoRoot },
     );
     const files: string[] = JSON.parse(stdout).files.map((f: { path: string }) => f.path);
-    expect(files).toContain('templates/vm-shared/apply-home-jq-transforms.mjs');
-    expect(files).toContain('templates/vm-shared-windows/apply-home-jq-transforms.mjs');
+    expect(files).toContain('templates/vm-shared/post-scripts/apply-home-jq-transforms.mjs');
+    expect(files).toContain(
+      'templates/vm-shared-windows/post-scripts/apply-home-jq-transforms.mjs',
+    );
   });
 
   it.skipIf(!hasJq)('applies a transform to its target on this platform (real jq)', async () => {
@@ -93,10 +102,17 @@ describe('vm applier bundle', () => {
       const share = mkdtempSync(join(tmpdir(), 'share-'));
       try {
         const out = join(share, 'out.json');
-        copyFileSync(applierUbuntu, join(share, 'apply-home-jq-transforms.mjs'));
+        mkdirSync(join(share, 'post-scripts'));
+        copyFileSync(applierUbuntu, join(share, 'post-scripts', 'apply-home-jq-transforms.mjs'));
         copyFileSync(
-          join(repoRoot, 'templates', 'vm-shared', '07-apply-home-jq-transforms.sh'),
-          join(share, '07-apply-home-jq-transforms.sh'),
+          join(
+            repoRoot,
+            'templates',
+            'vm-shared',
+            'post-scripts',
+            '02-apply-home-jq-transforms.sh',
+          ),
+          join(share, 'post-scripts', '02-apply-home-jq-transforms.sh'),
         );
         mkdirSync(join(share, 'home-jq-transforms'));
         writeFileSync(join(share, 'home-jq-transforms', 't.jq'), '.applied = true');
@@ -104,7 +120,9 @@ describe('vm applier bundle', () => {
           join(share, 'home-jq-transforms', 'manifest.yaml'),
           `- transform: t.jq\n  linux: ${out}\n`,
         );
-        await execa('bash', [join(share, '07-apply-home-jq-transforms.sh')], { cwd: tmpdir() });
+        await execa('bash', [join(share, 'post-scripts', '02-apply-home-jq-transforms.sh')], {
+          cwd: tmpdir(),
+        });
         expect(JSON.parse(readFileSync(out, 'utf8'))).toEqual({ applied: true });
       } finally {
         rmSync(share, { recursive: true, force: true });

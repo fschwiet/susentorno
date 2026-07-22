@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+dir="$(dirname "$script_dir")"
 
 ## --- GitHub auth (gh is installed in 01-apt-packages.sh, pre-isolation) ---
 

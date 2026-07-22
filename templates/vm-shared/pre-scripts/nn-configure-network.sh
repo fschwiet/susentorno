@@ -3,7 +3,8 @@ set -euo pipefail
 
 host_ip="${1:?usage: 05-configure-network.sh <host-ip> [cert-path]}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cert_path="${2:-${script_dir}/cert.pem}"
+share_root="$(dirname "$script_dir")"
+cert_path="${2:-${share_root}/cert.pem}"
 
 ## --- Trust the proxy CA ---
 

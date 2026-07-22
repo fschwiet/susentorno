@@ -24,6 +24,12 @@ describe('configamatron init', () => {
       expect(stdout).toContain('home-jq-transforms');
       expect(existsSync(join(dir, '.configamatron', 'proxy', 'allowlist.txt'))).toBe(true);
       expect(existsSync(join(dir, '.configamatron', 'vm-shared', 'credentials.json'))).toBe(true);
+      expect(
+        existsSync(
+          join(dir, '.configamatron', 'vm-shared', 'pre-scripts', '05-configure-network.sh'),
+        ),
+      ).toBe(true);
+      expect(existsSync(join(dir, '.configamatron', 'pre-scripts', 'README.md'))).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

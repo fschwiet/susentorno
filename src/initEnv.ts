@@ -1,9 +1,24 @@
-import { copyFileSync, cpSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { envPaths } from './envPaths';
 import { sanitizeCredentials } from './sanitizeCredentials';
 import { sanitizeCodexCredentials } from './sanitizeCodexCredentials';
 import { isDnsResponderBuildArtifact } from './dnsResponder';
+import { planAllPhases, executePlans } from './weaveShares';
+
+const PRE_SCRIPTS_README = `# pre-scripts
+
+Your own VM setup scripts go here. Name runnable steps \`NN-name.sh\` or
+\`NN-name.ps1\`. They run before network isolation. Reference sibling resources
+relative to the script, then run \`configamatron update-shares\` after editing.
+`;
+
+const POST_SCRIPTS_README = `# post-scripts
+
+Your own VM setup scripts go here. Name runnable steps \`NN-name.sh\` or
+\`NN-name.ps1\`. They run after network isolation and reboot. Reference sibling
+resources relative to the script, then run \`configamatron update-shares\` after editing.
+`;
 
 export interface InitOptions {
   cwd: string;
@@ -63,6 +78,12 @@ export function initEnvironment(options: InitOptions): void {
     );
   }
 
+  mkdirSync(paths.preScripts, { recursive: true });
+  writeFileSync(join(paths.preScripts, 'README.md'), PRE_SCRIPTS_README);
+  mkdirSync(paths.postScripts, { recursive: true });
+  writeFileSync(join(paths.postScripts, 'README.md'), POST_SCRIPTS_README);
+  const plans = planAllPhases({ templatesDir: options.templatesDir, paths });
+
   cpSync(join(options.templatesDir, 'vm-shared'), paths.vmShared, { recursive: true });
   cpSync(join(options.templatesDir, 'vm-shared-windows'), paths.vmSharedWindows, {
     recursive: true,
@@ -81,4 +102,5 @@ export function initEnvironment(options: InitOptions): void {
     cpSync(templateTransforms, target.homeJqTransforms, { recursive: true });
   }
   copyFileSync(join(options.templatesDir, 'configamatron.gitignore'), paths.gitignore);
+  executePlans(plans);
 }

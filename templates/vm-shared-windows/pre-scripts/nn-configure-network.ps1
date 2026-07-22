@@ -2,7 +2,8 @@
 param([Parameter(Mandatory = $true)][string]$HostIp, [string]$CertPath)
 $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-if (-not $CertPath) { $CertPath = Join-Path $scriptDir 'cert.pem' }
+$shareRoot = Split-Path -Parent $scriptDir
+if (-not $CertPath) { $CertPath = Join-Path $shareRoot 'cert.pem' }
 
 if (-not (Test-Path $CertPath)) {
   Write-Error "05-configure-network: $CertPath not found. Run 'configamatron generate-ca' on the host first."

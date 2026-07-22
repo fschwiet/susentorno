@@ -6,30 +6,30 @@ import { parseAllowlist } from '../../src/allowlist';
 import { NO_AUTH_MARKER_HEADER, NO_AUTH_SENTINEL_VALUE } from '../../src/envoyConfig';
 
 const expectedTemplateFiles = [
-  'vm-shared/01-apt-packages.sh',
-  'vm-shared/02-install-pnpm.sh',
-  'vm-shared/03-install-tools.sh',
-  'vm-shared/04-configure-tools.sh',
-  'vm-shared/05-configure-network.sh',
-  'vm-shared/06-auth-config.sh',
-  'vm-shared/07-apply-home-jq-transforms.sh',
-  'vm-shared/dnsmasq-stub.conf',
-  'vm-shared/60-dns-override.yaml',
-  'vm-shared/configamatron-egress.service',
+  'vm-shared/pre-scripts/01-apt-packages.sh',
+  'vm-shared/pre-scripts/02-install-pnpm.sh',
+  'vm-shared/pre-scripts/03-install-tools.sh',
+  'vm-shared/pre-scripts/04-configure-tools.sh',
+  'vm-shared/pre-scripts/nn-configure-network.sh',
+  'vm-shared/post-scripts/01-auth-config.sh',
+  'vm-shared/post-scripts/02-apply-home-jq-transforms.sh',
+  'vm-shared/pre-scripts/dnsmasq-stub.conf',
+  'vm-shared/pre-scripts/60-dns-override.yaml',
+  'vm-shared/pre-scripts/configamatron-egress.service',
   'vm-shared/verify-config.sh',
   'proxy/docker-compose.yml',
   'proxy/gate.lua',
   'proxy/host-allow-vm-inbound.ps1',
   'proxy/verify-proxy.ps1',
-  'vm-shared-windows/01-install-packages.ps1',
-  'vm-shared-windows/02-install-pnpm.ps1',
-  'vm-shared-windows/03-install-tools.ps1',
-  'vm-shared-windows/04-configure-tools.ps1',
-  'vm-shared-windows/05-configure-network.ps1',
-  'vm-shared-windows/06-auth-config.ps1',
-  'vm-shared-windows/07-apply-home-jq-transforms.ps1',
-  'vm-shared-windows/dns-responder/ConfigamatronDnsResponder.csproj',
-  'vm-shared-windows/dns-responder/Program.cs',
+  'vm-shared-windows/pre-scripts/01-install-packages.ps1',
+  'vm-shared-windows/pre-scripts/02-install-pnpm.ps1',
+  'vm-shared-windows/pre-scripts/03-install-tools.ps1',
+  'vm-shared-windows/pre-scripts/04-configure-tools.ps1',
+  'vm-shared-windows/pre-scripts/nn-configure-network.ps1',
+  'vm-shared-windows/post-scripts/01-auth-config.ps1',
+  'vm-shared-windows/post-scripts/02-apply-home-jq-transforms.ps1',
+  'vm-shared-windows/pre-scripts/dns-responder/ConfigamatronDnsResponder.csproj',
+  'vm-shared-windows/pre-scripts/dns-responder/Program.cs',
   'vm-shared-windows/verify-config.ps1',
   'home-jq-transforms/manifest.yaml',
   'home-jq-transforms/vscode-settings.jq',
@@ -69,7 +69,10 @@ describe('templates', () => {
   });
 
   it('suppresses DHCP-supplied DNS on both renderers so the stub is the only resolver', () => {
-    const netplan = readFileSync(join(templatesDir(), 'vm-shared', '60-dns-override.yaml'), 'utf8');
+    const netplan = readFileSync(
+      join(templatesDir(), 'vm-shared', 'pre-scripts', '60-dns-override.yaml'),
+      'utf8',
+    );
     // networkd honors use-dns; NetworkManager needs the keyfile passthrough.
     // Without both, VMware's host-only DHCP adds the (dead) VMnet host IP as a
     // second resolver and lookups stall intermittently.
@@ -90,7 +93,7 @@ describe('templates', () => {
 
   it('windows 06-auth-config parses the double-quoted github-config format', () => {
     const script = readFileSync(
-      join(templatesDir(), 'vm-shared-windows', '06-auth-config.ps1'),
+      join(templatesDir(), 'vm-shared-windows', 'post-scripts', '01-auth-config.ps1'),
       'utf8',
     );
     expect(script).toContain('GITHUB_USERNAME');
@@ -99,7 +102,7 @@ describe('templates', () => {
 
   it('windows 06-auth-config fails loudly when gh auth login or setup-git fails', () => {
     const script = readFileSync(
-      join(templatesDir(), 'vm-shared-windows', '06-auth-config.ps1'),
+      join(templatesDir(), 'vm-shared-windows', 'post-scripts', '01-auth-config.ps1'),
       'utf8',
     );
     expect(script).toMatch(/gh auth login --with-token\r?\n\s*if \(\$LASTEXITCODE -ne 0\)/);
@@ -108,14 +111,14 @@ describe('templates', () => {
 
   it('windows 05-configure-network covers CA trust surfaces; 06-auth-config installs the placeholder', () => {
     const net = readFileSync(
-      join(templatesDir(), 'vm-shared-windows', '05-configure-network.ps1'),
+      join(templatesDir(), 'vm-shared-windows', 'pre-scripts', 'nn-configure-network.ps1'),
       'utf8',
     );
     expect(net).toContain('certutil');
     expect(net).toContain('NODE_EXTRA_CA_CERTS');
     expect(net).toContain('http.sslBackend schannel');
     const auth = readFileSync(
-      join(templatesDir(), 'vm-shared-windows', '06-auth-config.ps1'),
+      join(templatesDir(), 'vm-shared-windows', 'post-scripts', '01-auth-config.ps1'),
       'utf8',
     );
     expect(auth).toContain('.credentials.json');
@@ -123,7 +126,7 @@ describe('templates', () => {
 
   it('windows DNS redirect wires responder to the host IP and adapter DNS', () => {
     const net = readFileSync(
-      join(templatesDir(), 'vm-shared-windows', '05-configure-network.ps1'),
+      join(templatesDir(), 'vm-shared-windows', 'pre-scripts', 'nn-configure-network.ps1'),
       'utf8',
     );
     expect(net).toContain('Register-ScheduledTask');
@@ -135,7 +138,7 @@ describe('templates', () => {
     expect(net).toContain('Copy-Item');
 
     const prog = readFileSync(
-      join(templatesDir(), 'vm-shared-windows', 'dns-responder', 'Program.cs'),
+      join(templatesDir(), 'vm-shared-windows', 'pre-scripts', 'dns-responder', 'Program.cs'),
       'utf8',
     );
     expect(prog).toContain('responder-config.txt');
@@ -150,13 +153,19 @@ describe('templates', () => {
   });
 
   it('ubuntu 01-apt-packages installs jq and gh', () => {
-    const s = readFileSync(join(templatesDir(), 'vm-shared', '01-apt-packages.sh'), 'utf8');
+    const s = readFileSync(
+      join(templatesDir(), 'vm-shared', 'pre-scripts', '01-apt-packages.sh'),
+      'utf8',
+    );
     expect(s).toMatch(/apt install -y .*\bjq\b/);
     expect(s).toMatch(/apt install -y .*\bgh\b/);
   });
 
   it('ubuntu 05-configure-network merges the Firefox CA with jq, not python3', () => {
-    const s = readFileSync(join(templatesDir(), 'vm-shared', '05-configure-network.sh'), 'utf8');
+    const s = readFileSync(
+      join(templatesDir(), 'vm-shared', 'pre-scripts', 'nn-configure-network.sh'),
+      'utf8',
+    );
     expect(s).toContain('sudo jq . "$policy_file"');
     expect(s).toContain('.policies.Certificates.Install');
     expect(s).not.toContain('python3');
