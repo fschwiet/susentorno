@@ -1,8 +1,9 @@
-import { cpSync, existsSync, renameSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import type { Command } from 'commander';
 import { requireEnvPathsOrExit } from '../envPaths';
 import { previewTransforms } from '../homeJqTransforms';
+import { planAllPhases, executePlans, type PhasePlan } from '../weaveShares';
+import { templatesDir } from '../templates';
 
 interface UpdateSharesOptions {
   dryRun: boolean;
@@ -57,37 +58,28 @@ export function registerUpdateShares(program: Command): void {
         return;
       }
 
+      let plans: PhasePlan[];
+      try {
+        plans = planAllPhases({ templatesDir: templatesDir(), paths });
+      } catch (error) {
+        console.error(`update-shares: ${(error as Error).message}`);
+        process.exitCode = 1;
+        return;
+      }
+
+      const homeJqPlans: PhasePlan[] = paths.vmSharedTargets.map((target) => ({
+        livePhaseDir: target.homeJqTransforms,
+        actions: [{ kind: 'dir', src: paths.homeJqTransforms, destRel: '.' }],
+      }));
+
       if (options.dryRun) {
         console.log('\nupdate-shares: dry run — no files copied.');
         return;
       }
 
-      for (const target of paths.vmSharedTargets) {
-        const live = target.homeJqTransforms;
-        const staging = `${live}.staging-${process.pid}`;
-        const backup = `${live}.backup-${process.pid}`;
-        rmSync(staging, { recursive: true, force: true });
-        rmSync(backup, { recursive: true, force: true });
-        try {
-          // Stage the new copy fully, then swap: move live -> backup, staging ->
-          // live, and only then drop the backup. If the promotion throws, restore
-          // the backup so the guest is never left without transforms.
-          cpSync(paths.homeJqTransforms, staging, { recursive: true });
-          if (existsSync(live)) renameSync(live, backup);
-          try {
-            renameSync(staging, live);
-          } catch (promoteError) {
-            if (existsSync(backup)) renameSync(backup, live);
-            throw promoteError;
-          }
-          rmSync(backup, { recursive: true, force: true });
-        } catch (error) {
-          rmSync(staging, { recursive: true, force: true });
-          console.error(`update-shares: failed to update ${live}: ${(error as Error).message}`);
-          process.exitCode = 1;
-          return;
-        }
-        console.log(`update-shares: copied transforms into ${live}`);
-      }
+      executePlans([...plans, ...homeJqPlans]);
+      console.log(
+        'update-shares: rewove pre/post scripts and refreshed home-jq-transforms in both shares',
+      );
     });
 }

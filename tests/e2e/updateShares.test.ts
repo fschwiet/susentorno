@@ -89,4 +89,47 @@ describe.skipIf(!hasJq)('configamatron update-shares', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('reweaves pre/post scripts, adding a custom step and dropping deleted ones', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'update-shares-'));
+    try {
+      await initEnv(dir);
+      const preSrc = join(dir, '.configamatron', 'pre-scripts');
+      writeFileSync(join(preSrc, '01-docker.sh'), 'echo docker\n');
+      await execa('node', [cliPath, 'update-shares'], { cwd: dir });
+      const wovenPre = join(dir, '.configamatron', 'vm-shared', 'pre-scripts');
+      expect(existsSync(join(wovenPre, '05-docker.sh'))).toBe(true);
+      expect(existsSync(join(wovenPre, '06-configure-network.sh'))).toBe(true);
+      rmSync(join(preSrc, '01-docker.sh'));
+      await execa('node', [cliPath, 'update-shares'], { cwd: dir });
+      expect(existsSync(join(wovenPre, '05-docker.sh'))).toBe(false);
+      expect(existsSync(join(wovenPre, '05-configure-network.sh'))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('aborts the whole run on an invalid custom script name', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'update-shares-'));
+    try {
+      await initEnv(dir);
+      writeFileSync(join(dir, '.configamatron', 'post-scripts', 'bad.sh'), 'oops\n');
+      const existing = join(
+        dir,
+        '.configamatron',
+        'vm-shared',
+        'post-scripts',
+        '02-apply-home-jq-transforms.sh',
+      );
+      const { exitCode, stderr } = await execa('node', [cliPath, 'update-shares'], {
+        cwd: dir,
+        reject: false,
+      });
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain('bad.sh');
+      expect(existsSync(existing)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
