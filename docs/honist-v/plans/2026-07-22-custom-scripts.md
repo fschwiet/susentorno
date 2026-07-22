@@ -887,8 +887,8 @@ describe('weaveShares', () => {
       message = (e as Error).message;
     }
     expect(message).toContain('02-network.sh');
-    // Both sides are labeled so the fix is obvious.
-    expect(message).toMatch(/generated script/);
+    // Both sides are labeled built-in vs custom so the fix is obvious.
+    expect(message).toMatch(/built-in script/);
     expect(message).toMatch(/custom resource/);
   });
 
@@ -938,7 +938,7 @@ import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, renameSync, r
 import { dirname, join } from 'node:path';
 import type { EnvPaths } from './envPaths';
 import { isDnsResponderBuildArtifact } from './dnsResponder';
-import { readFolderContents, renumber, type ScriptExtension } from './weaveScripts';
+import { readFolderContents, renumber, type OrderedScript, type ScriptExtension } from './weaveScripts';
 import { detectCollisions, type Collision, type WeaveItem } from './collisions';
 
 export interface WeaveAction {
@@ -1029,21 +1029,28 @@ function planPhase(opts: {
 
   // Two solid blocks — built-in then custom — with the reserved 'nn' sentinel
   // (built-in only) floated to the very end so network isolation always runs last,
-  // after every custom pre-script. Custom folders never contain a sentinel.
+  // after every custom pre-script. Custom folders never contain a sentinel. Each
+  // script carries its origin label so a collision message names both sides.
   const builtinNonSentinel = builtin.scripts.filter((s) => !s.sentinel);
   const builtinSentinel = builtin.scripts.filter((s) => s.sentinel);
-  const renumbered = renumber([...builtinNonSentinel, ...custom.scripts, ...builtinSentinel]);
+  const labeled: { script: OrderedScript; label: 'built-in' | 'custom' }[] = [
+    ...builtinNonSentinel.map((script) => ({ script, label: 'built-in' as const })),
+    ...custom.scripts.map((script) => ({ script, label: 'custom' as const })),
+    ...builtinSentinel.map((script) => ({ script, label: 'built-in' as const })),
+  ];
+  // renumber preserves order and length, so the two arrays zip index-for-index.
+  const renumbered = renumber(labeled.map((l) => l.script));
 
-  const actions: WeaveAction[] = renumbered.map((s): WeaveAction => ({
-    kind: 'file',
-    src: s.sourcePath,
-    destRel: s.outputName,
-  }));
-  const items: WeaveItem[] = renumbered.map((s): WeaveItem => ({
-    destPath: s.outputName,
-    kind: 'file',
-    origin: `generated script ${s.outputName} (from ${s.sourcePath})`,
-  }));
+  const actions: WeaveAction[] = [];
+  const items: WeaveItem[] = [];
+  renumbered.forEach((r, i) => {
+    actions.push({ kind: 'file', src: r.sourcePath, destRel: r.outputName });
+    items.push({
+      destPath: r.outputName,
+      kind: 'file',
+      origin: `${labeled[i].label} script ${r.outputName}`,
+    });
+  });
 
   // Passthrough resources: built-in first, then custom. Origin labels distinguish
   // built-in vs custom so a collision message names both sides unambiguously.
@@ -1092,6 +1099,8 @@ export function executePlans(plans: PhasePlan[]): void {
       const staging = `${plan.livePhaseDir}.staging-${process.pid}`;
       rmSync(staging, { recursive: true, force: true });
       mkdirSync(staging, { recursive: true });
+      // Record before copying so a mid-copy failure still cleans this partial dir.
+      staged.push({ live: plan.livePhaseDir, staging });
       for (const action of plan.actions) {
         const dest = join(staging, action.destRel);
         mkdirSync(dirname(dest), { recursive: true });
@@ -1104,7 +1113,6 @@ export function executePlans(plans: PhasePlan[]): void {
           copyFileSync(action.src, dest);
         }
       }
-      staged.push({ live: plan.livePhaseDir, staging });
     }
   } catch (error) {
     for (const s of staged) rmSync(s.staging, { recursive: true, force: true });
