@@ -1,6 +1,6 @@
 #requires -Modules NetSecurity, NetTCPIP
 <#
-Opens inbound TCP 80/443 (Envoy) from the VM's host-only network adapter,
+Opens inbound TCP 80/443 (Envoy) from the VM's Hyper-V Internal-switch adapter,
 and prints the host IP to pass to vm/vm-setup-persistence.sh.
 
 Also removes the stale UDP/53 DNS-stub firewall rule created by versions of
@@ -9,15 +9,15 @@ docs/superpowers/specs/2026-07-04-vm-dns-stub-design.md) - safe to re-run
 even if that rule was never created on this machine.
 
 Scoped by -InterfaceAlias rather than a hardcoded subnet CIDR, since
-VMware assigns the host-only network's subnet per-machine (e.g.
-192.168.241.0/24 on one machine, something else on another) - this rule
+the Internal switch's subnet is assigned per-machine (e.g.
+192.168.67.0/24 on one machine, something else on another) - this rule
 keeps working whatever that subnet turns out to be.
 
 Safe to re-run: replaces any existing rules with the same names.
 #>
 [CmdletBinding()]
 param(
-    [string]$AdapterAlias = "VMware Network Adapter VMnet1"
+    [string]$AdapterAlias = "vEthernet (configamatron-internal)"
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,7 +26,7 @@ $config = Get-NetIPConfiguration -InterfaceAlias $AdapterAlias
 $hostIp = ($config.IPv4Address | Select-Object -First 1).IPAddress
 
 if (-not $hostIp) {
-    throw "No IPv4 address on adapter '$AdapterAlias'. Confirm the VM's network mode is Host-only and this is the right adapter (Get-NetIPConfiguration lists all adapters)."
+    throw "No IPv4 address on adapter '$AdapterAlias'. Confirm the VM is on the Internal switch and this is the right adapter (Get-NetIPConfiguration lists all adapters)."
 }
 
 $tcpRuleName = "Envoy Sandbox Proxy (VM inbound)"

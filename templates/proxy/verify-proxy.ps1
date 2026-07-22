@@ -13,16 +13,17 @@ but never spends a real credential: the injection path is checked structurally
 (SDS secret freshness) and via a wrong-Authorization request that gate.lua
 rejects locally with 403.
 
-The VM-path checks probe the host-only adapter the forwarder listens on.
--AdapterAlias defaults to the VMware host-only NIC; on a Hyper-V host pass the
-Internal-switch adapter instead, matching host-allow-vm-inbound.ps1, e.g.:
+The VM-path checks probe the Internal-switch adapter the forwarder listens on.
+-AdapterAlias defaults to the Hyper-V Internal-switch NIC "vEthernet
+(configamatron-internal)"; pass a different alias if your switch is named
+differently, matching host-allow-vm-inbound.ps1, e.g.:
 
-    ... -File .configamatron\proxy\verify-proxy.ps1 -AdapterAlias "vEthernet (configamatron-internal)"
+    ... -File .configamatron\proxy\verify-proxy.ps1 -AdapterAlias "vEthernet (my-switch)"
 #>
 [CmdletBinding()]
 param(
     [string]$EnvDir = (Get-Location).Path,
-    [string]$AdapterAlias = 'VMware Network Adapter VMnet1'
+    [string]$AdapterAlias = 'vEthernet (configamatron-internal)'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -143,7 +144,7 @@ Write-Section 'VM-path (forwarder -> loopback)'
 $vmIpCfg = Get-NetIPConfiguration -InterfaceAlias $AdapterAlias -ErrorAction SilentlyContinue
 $vmIp = ($vmIpCfg.IPv4Address | Select-Object -First 1).IPAddress
 if (-not $vmIp) {
-    Add-Warn 'VM-path checks' "no IPv4 on '$AdapterAlias' -- skipping (is the host-only adapter up?)"
+    Add-Warn 'VM-path checks' "no IPv4 on '$AdapterAlias' -- skipping (is the Internal-switch adapter up?)"
 }
 else {
     foreach ($port in 80, 443) {
@@ -164,13 +165,13 @@ else {
 Write-Section 'VM reachability'
 
 $rule = Get-NetFirewallRule -DisplayName 'Envoy Sandbox Proxy (VM inbound)' -ErrorAction SilentlyContinue
-if ($rule) { Add-Pass 'host-only inbound firewall rule present' }
-else { Add-Warn 'host-only inbound firewall rule present' "not found -- run host-allow-vm-inbound.ps1 (as admin) once the VM is host-only" }
+if ($rule) { Add-Pass 'Internal-switch inbound firewall rule present' }
+else { Add-Warn 'Internal-switch inbound firewall rule present' "not found -- run host-allow-vm-inbound.ps1 (as admin) once the VM is on the Internal switch" }
 
 $cfg = Get-NetIPConfiguration -InterfaceAlias $AdapterAlias -ErrorAction SilentlyContinue
 $hostIp = ($cfg.IPv4Address | Select-Object -First 1).IPAddress
 if ($hostIp) { Add-Pass "$AdapterAlias host IP: $hostIp (use as <host-ip> in VM setup)" }
-else { Add-Warn 'host-only adapter IP' "no IPv4 on '$AdapterAlias' -- is the host-only adapter up?" }
+else { Add-Warn 'Internal-switch adapter IP' "no IPv4 on '$AdapterAlias' -- is the Internal-switch adapter up?" }
 
 Write-Host ''
 Write-Host "$($script:pass) passed, $($script:fail) failed, $($script:warn) warnings"
