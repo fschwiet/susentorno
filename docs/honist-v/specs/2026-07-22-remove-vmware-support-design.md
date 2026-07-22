@@ -82,9 +82,10 @@ term is added to the verification grep (below).
 
 ## Implementation changes
 
-Two categories: **intentional default changes** (items 1–4 below — these
-deliberately change which adapter is selected) and **behavior-preserving edits**
-(comments, help text, labels, test fixtures/names). Nothing changes guest
+Two categories: **intentional default changes** (the three adapter defaults
+below — these deliberately change which adapter is selected) and
+**behavior-preserving edits** (comments, help text, labels, test
+fixtures/names). Nothing changes guest
 networking behavior or the runtime logic of the forwarder, the firewall script,
 the verify scripts, or the VM harness.
 
