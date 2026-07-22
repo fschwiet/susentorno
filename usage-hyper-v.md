@@ -92,6 +92,7 @@ New-NetFirewallRule -DisplayName "Configamatron VM share (SMB inbound)" `
     - Set "Virtual Switch" to "configamatron-internal" (this is the VM's permanent network, used even when its switch to isolated mode)
 
   - Hardware -> Network Adapter 2
+    - You may want to leave this one unconnected if you are installing Windows so the OS installation won't box you into creating a putting credentials for a Microsoft account on your isolated VM.
     - Set "Virtual Switch" to "Default Switch" (Hyper-V's built-in NAT switch, added **temporarily** to provide internet during setup. This will be removed later.)
 
   - Hardware -> Security => Secure Boot
@@ -112,6 +113,8 @@ New-NetFirewallRule -DisplayName "Configamatron VM share (SMB inbound)" `
     - Consider setting to "shut down" to mimic the host's behavior- that which isn't saved on shutdown was not worth saving
 
 ### OS installation
+
+- If you left the second network adapter unconnected for a Windows install, configure it to use the "Default switch" now in VM settings.
 
 - Go ahead and start the machine and install any pending updates.
   - It can be tricky to initiate booting from CD/DVD before it tries a network install. You need to press a key quickly after starting the VM to catch the "press any key to install from CD or DVD" message before it opts to try the network.
