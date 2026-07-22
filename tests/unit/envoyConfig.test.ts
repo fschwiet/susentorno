@@ -39,10 +39,18 @@ describe('generateEnvoyConfig', () => {
     // docs/investigations/2026-07-12-streaming-response-cut-by-envoy-route-timeout.md
     expect(hcm.route_config.virtual_hosts[0].routes[0].route.timeout).toBe('0s');
     expect(hcm.http_filters.map((f: any) => f.name)).toEqual([
-      'envoy.filters.http.lua',
+      'configamatron.auth_pre',
       'envoy.filters.http.credential_injector',
+      'configamatron.auth_post',
       'envoy.filters.http.router',
     ]);
+    expect(hcm.http_filters[0].typed_config.default_source_code.filename).toBe(
+      '/etc/envoy/gate.lua',
+    );
+    expect(hcm.http_filters[1].typed_config.overwrite).toBe(false);
+    expect(hcm.http_filters[2].typed_config.default_source_code.inline_string).toBe(
+      AUTH_POST_FILTER_LUA,
+    );
 
     const cluster = config.static_resources.clusters.find(
       (c: any) => c.name === 'cluster_claude_api_anthropic_com',

@@ -460,7 +460,7 @@ function buildClaudeEntry(entry: string, overrides: UpstreamOverride[]) {
           },
           http_filters: [
             {
-              name: 'envoy.filters.http.lua',
+              name: 'configamatron.auth_pre',
               typed_config: {
                 '@type': 'type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua',
                 default_source_code: { filename: '/etc/envoy/gate.lua' },
@@ -471,7 +471,7 @@ function buildClaudeEntry(entry: string, overrides: UpstreamOverride[]) {
               typed_config: {
                 '@type':
                   'type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector',
-                overwrite: true,
+                overwrite: false,
                 credential: {
                   name: 'envoy.http.injected_credentials.generic',
                   typed_config: {
@@ -490,6 +490,13 @@ function buildClaudeEntry(entry: string, overrides: UpstreamOverride[]) {
                     },
                   },
                 },
+              },
+            },
+            {
+              name: 'configamatron.auth_post',
+              typed_config: {
+                '@type': 'type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua',
+                default_source_code: { inline_string: AUTH_POST_FILTER_LUA },
               },
             },
             {
