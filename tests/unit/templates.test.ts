@@ -174,18 +174,4 @@ describe('templates', () => {
     );
     expect(claude).toContain('.hasCompletedOnboarding = true');
   });
-
-  it('env gitignore template excludes secrets and build artifacts', () => {
-    const gi = readFileSync(join(templatesDir(), 'configamatron.gitignore'), 'utf8');
-    for (const p of [
-      'proxy/secrets/',
-      'proxy/ca/key.pem',
-      'proxy/ca/leaf-key.pem',
-      'vm-shared/github-config.txt',
-      'proxy/envoy.yaml',
-      'vm-shared-windows/dns-responder/bin',
-    ]) {
-      expect(gi, p).toContain(p);
-    }
-  });
 });

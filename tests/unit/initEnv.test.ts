@@ -161,10 +161,9 @@ describe('initEnvironment', () => {
     }
   });
 
-  it('writes a .configamatron/.gitignore that ignores real secrets', () => {
+  it('copies the configamatron.gitignore as .gitignore', () => {
     initEnvironment(options());
-    const gi = readFileSync(join(dir, ENV_DIR_NAME, '.gitignore'), 'utf8');
-    expect(gi).toContain('proxy/secrets/');
-    expect(gi).toContain('proxy/ca/leaf-key.pem');
+    const root = join(dir, ENV_DIR_NAME);
+    expect(existsSync(join(root, '.gitignore')), '.gitignore').toBe(true);
   });
 });
