@@ -80,7 +80,7 @@ beforeAll(async () => {
   }
 
   // Stage the environment's real vm-shared folder (numbered scripts + the
-  // generate-ca cert.pem) as the guest's read-only share, mimicking hgfs.
+  // generate-ca cert.pem) as the guest's read-only share, mimicking the SMB mount.
   const wslVmShared = await wslPath(join(repoRoot, '.configamatron', 'vm-shared'));
   shareDir = (await harness('share.sh', wslVmShared)).stdout.trim();
 
@@ -115,7 +115,7 @@ describe('S1: setup during NAT phase', () => {
 
   it('netplan override registered the stub as the interface resolver', async () => {
     // In gateway mode the DHCP DNS is still present too, so assert
-    // containment; host-only S2 asserts the stub is the effective resolver.
+    // containment; the gateway-less S2 asserts the stub is the effective resolver.
     const { stdout } = await guest('g1', 'resolvectl dns');
     expect(stdout).toContain('127.0.0.1');
   });
@@ -190,8 +190,8 @@ describe('S1b: applier onboarding (07), auth-config symlink (06), firefox policy
   });
 });
 
-describe('S2: switch to host-only and reboot', () => {
-  it('reboots into host-only mode with both units active', async () => {
+describe('S2: switch to gateway-less and reboot', () => {
+  it('reboots into gateway-less mode with both units active', async () => {
     await harness('net.sh', 'dhcp', 'hostonly');
     await harness('guest.sh', 'reboot', 'g1');
 
@@ -201,7 +201,7 @@ describe('S2: switch to host-only and reboot', () => {
     ).toBe('active');
   }, 600_000);
 
-  it('installed the guarded host-only default route', async () => {
+  it('installed the guarded gateway-less default route', async () => {
     const { stdout } = await guest('g1', 'ip -4 route show default');
     expect(stdout).toContain(`default via ${BRIDGE_IP}`);
     expect(stdout).not.toContain('proto dhcp'); // static, installed by the unit
@@ -383,7 +383,7 @@ describe('S2b: run-proxy inline logging', () => {
 
 describe('S3: fresh setup with no default route', () => {
   it('05 discovers the interface via the fallback and installs the route', async () => {
-    // DHCP is still in host-only mode (S2), so g2 boots gateway-less: the
+    // DHCP is still in gateway-less mode (S2), so g2 boots gateway-less: the
     // interface-discovery fallback branch in 05 is the only path that works.
     await harness('guest.sh', 'start', 'g2', '--share', shareDir);
     await harness('guest.sh', 'wait-ssh', 'g2');

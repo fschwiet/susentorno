@@ -33,13 +33,13 @@ case "${1:?usage: net.sh up|down|dhcp <gateway|hostonly>}" in
       echo "dhcp-leasefile=$RUN/dnsmasq.leases"
       echo "pid-file=$RUN/dnsmasq.pid"
       if [ "$mode" = gateway ]; then
-        # Mimic VMware NAT: the lease carries a router and DNS (this host),
+        # Gateway mode: the lease carries a router and DNS (this host),
         # and MASQUERADE (net.sh up) provides real internet for apt etc.
         echo "port=53"
         echo "dhcp-option=option:router,$BRIDGE_IP"
         echo "dhcp-option=option:dns-server,$BRIDGE_IP"
       else
-        # Mimic VMware host-only: DHCP answers but the lease carries no
+        # Gateway-less mode: DHCP answers but the lease carries no
         # router and no DNS (empty dhcp-option = suppress the option).
         echo "port=0"
         echo "dhcp-option=option:router"
