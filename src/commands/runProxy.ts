@@ -76,10 +76,10 @@ export function registerRunProxy(program: Command): void {
     .option('--retry-interval <minutes>', 'wait this many minutes for a nudge to take', '2')
     .option('--max-attempts <n>', 'consecutive failed refreshes before exiting', '3')
     .option('--no-refresh', 'watch and propagate only; never nudge the CLI to refresh')
-    .option('--no-forward', 'do not forward the VMware host-only interface to loopback')
+    .option('--no-forward', 'do not forward the Hyper-V Internal-switch interface to loopback')
     .option(
       '--forward-listen <ip>',
-      'IP to forward from (default: the VMware host-only adapter IP)',
+      'IP to forward from (default: the Hyper-V Internal-switch adapter IP)',
     )
     .option(
       '--forward-ports <http,https>',
@@ -116,20 +116,20 @@ export function registerRunProxy(program: Command): void {
         : [Number(process.env.ENVOY_HTTP_PORT ?? 80), Number(process.env.ENVOY_HTTPS_PORT ?? 443)];
 
       // The gateway always owns the public ports on loopback; when forwarding is
-      // enabled it also listens on the VMware host-only adapter. Both point at the
-      // active color's backend ports.
+      // enabled it also listens on the Hyper-V Internal-switch adapter. Both point
+      // at the active color's backend ports.
       const listenAddresses = ['127.0.0.1'];
       if (options.forward) {
-        const vmnet = options.forwardListen ?? resolveForwardListenAddress();
-        if (!vmnet) {
+        const forwardIp = options.forwardListen ?? resolveForwardListenAddress();
+        if (!forwardIp) {
           console.error(
-            'run-proxy: could not find the VMware host-only adapter IP to forward from. ' +
+            'run-proxy: could not find the Hyper-V Internal-switch adapter IP to forward from. ' +
               'Pass --forward-listen <ip>, or --no-forward to disable forwarding.',
           );
           process.exitCode = 1;
           return;
         }
-        listenAddresses.push(vmnet);
+        listenAddresses.push(forwardIp);
       }
 
       let gateway: GatewayHandle;
