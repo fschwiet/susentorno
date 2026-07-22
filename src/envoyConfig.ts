@@ -208,14 +208,20 @@ function buildAuthCandidateEntry(entry: string, overrides: UpstreamOverride[]) {
 // placeholder strings instead of one.
 const GITHUB_API_TOKEN_GATE_LUA = `local TOKEN_PLACEHOLDER = "token ${GITHUB_PLACEHOLDER_PAT}"
 local BEARER_PLACEHOLDER = "Bearer ${GITHUB_PLACEHOLDER_PAT}"
+local NO_AUTH_MARKER = "${NO_AUTH_MARKER_HEADER}"
+local NO_AUTH_SENTINEL = "${NO_AUTH_SENTINEL_VALUE}"
 
 function envoy_on_request(request_handle)
-  local auth = request_handle:headers():get("authorization")
+  local headers = request_handle:headers()
+  headers:remove(NO_AUTH_MARKER)
+  local auth = headers:get("authorization")
   if auth == nil then
+    headers:replace("authorization", NO_AUTH_SENTINEL)
+    headers:replace(NO_AUTH_MARKER, "1")
     return
   end
-  if auth ~= TOKEN_PLACEHOLDER and auth ~= BEARER_PLACEHOLDER then
-    request_handle:respond({[":status"] = "403"}, "sandbox: unexpected credential")
+  if auth == TOKEN_PLACEHOLDER or auth == BEARER_PLACEHOLDER then
+    headers:remove("authorization")
   end
 end
 `;
@@ -225,6 +231,8 @@ end
 // and checks ONLY the password half against the placeholder PAT, ignoring the user.
 // Envoy's Lua has no base64 decoder, so one is embedded inline.
 const GITHUB_BASIC_GATE_LUA = `local PLACEHOLDER_PAT = "${GITHUB_PLACEHOLDER_PAT}"
+local NO_AUTH_MARKER = "${NO_AUTH_MARKER_HEADER}"
+local NO_AUTH_SENTINEL = "${NO_AUTH_SENTINEL_VALUE}"
 local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
 local function b64decode(data)
@@ -253,23 +261,25 @@ local function b64decode(data)
 end
 
 function envoy_on_request(request_handle)
-  local auth = request_handle:headers():get("authorization")
+  local headers = request_handle:headers()
+  headers:remove(NO_AUTH_MARKER)
+  local auth = headers:get("authorization")
   if auth == nil then
+    headers:replace("authorization", NO_AUTH_SENTINEL)
+    headers:replace(NO_AUTH_MARKER, "1")
     return
   end
   local encoded = string.match(auth, "^Basic (.+)$")
   if encoded == nil then
-    request_handle:respond({[":status"] = "403"}, "sandbox: unexpected credential")
     return
   end
   local decoded = b64decode(encoded)
   if decoded == nil then
-    request_handle:respond({[":status"] = "403"}, "sandbox: unexpected credential")
     return
   end
   local password = string.match(decoded, "^[^:]*:(.*)$")
-  if password ~= PLACEHOLDER_PAT then
-    request_handle:respond({[":status"] = "403"}, "sandbox: unexpected credential")
+  if password == PLACEHOLDER_PAT then
+    headers:remove("authorization")
   end
 end
 `;
@@ -342,7 +352,7 @@ function buildGithubEntry(
           },
           http_filters: [
             {
-              name: 'envoy.filters.http.lua',
+              name: 'configamatron.auth_pre',
               typed_config: {
                 '@type': 'type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua',
                 default_source_code: { inline_string: gateSource },
@@ -353,7 +363,7 @@ function buildGithubEntry(
               typed_config: {
                 '@type':
                   'type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector',
-                overwrite: true,
+                overwrite: false,
                 credential: {
                   name: 'envoy.http.injected_credentials.generic',
                   typed_config: {
@@ -372,6 +382,13 @@ function buildGithubEntry(
                     },
                   },
                 },
+              },
+            },
+            {
+              name: 'configamatron.auth_post',
+              typed_config: {
+                '@type': 'type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua',
+                default_source_code: { inline_string: AUTH_POST_FILTER_LUA },
               },
             },
             {

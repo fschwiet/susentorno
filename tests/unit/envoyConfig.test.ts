@@ -364,23 +364,30 @@ describe('generateEnvoyConfig github authenticated', () => {
     );
   }
 
-  it('builds a github.com Basic chain: inline lua gate, injector, router', () => {
+  it('builds a github.com Basic chain: inline lua pre-filter, injector, shared post-filter, router', () => {
     const chain = githubChain('github.com');
     expect(chain).toBeDefined();
     const hcm = chain.filters[0].typed_config;
     expect(hcm.http_filters.map((f: any) => f.name)).toEqual([
-      'envoy.filters.http.lua',
+      'configamatron.auth_pre',
       'envoy.filters.http.credential_injector',
+      'configamatron.auth_post',
       'envoy.filters.http.router',
     ]);
     // Gate is inline (no mounted file) and embeds a base64 decoder + placeholder check.
     const lua = hcm.http_filters[0].typed_config.default_source_code.inline_string;
     expect(lua).toContain('ghp-SANDBOX-PLACEHOLDER');
     expect(lua).toContain('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/');
+    expect(lua).toContain(NO_AUTH_MARKER_HEADER);
+    expect(lua).toContain(NO_AUTH_SENTINEL_VALUE);
+    expect(lua).not.toContain('403');
     expect(hcm.http_filters[0].typed_config.default_source_code.filename).toBeUndefined();
+    expect(hcm.http_filters[2].typed_config.default_source_code.inline_string).toBe(
+      AUTH_POST_FILTER_LUA,
+    );
     // Injector reads the Basic SDS resource from its own single-resource secret file.
     const injector = hcm.http_filters[1].typed_config;
-    expect(injector.overwrite).toBe(true);
+    expect(injector.overwrite).toBe(false);
     const cred = injector.credential.typed_config.credential;
     expect(cred.name).toBe('github_basic_auth');
     expect(cred.sds_config.path_config_source.path).toBe(
@@ -397,12 +404,20 @@ describe('generateEnvoyConfig github authenticated', () => {
     const chain = githubChain('api.github.com');
     expect(chain).toBeDefined();
     const hcm = chain.filters[0].typed_config;
+    expect(hcm.http_filters.map((f: any) => f.name)).toEqual([
+      'configamatron.auth_pre',
+      'envoy.filters.http.credential_injector',
+      'configamatron.auth_post',
+      'envoy.filters.http.router',
+    ]);
     const lua = hcm.http_filters[0].typed_config.default_source_code.inline_string;
     expect(lua).toContain('token ghp-SANDBOX-PLACEHOLDER');
     expect(lua).toContain('Bearer ghp-SANDBOX-PLACEHOLDER');
     // Still a plain exact match — no base64 decoder embedded (that's the Basic gate only).
     expect(lua).not.toContain('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz');
-    const cred = hcm.http_filters[1].typed_config.credential.typed_config.credential;
+    const injector = hcm.http_filters[1].typed_config;
+    expect(injector.overwrite).toBe(false);
+    const cred = injector.credential.typed_config.credential;
     expect(cred.name).toBe('github_api_token');
     expect(cred.sds_config.path_config_source.path).toBe(
       '/etc/envoy/secrets/github-api-token-secret.yaml',
