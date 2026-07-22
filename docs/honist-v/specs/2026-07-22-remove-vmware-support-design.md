@@ -20,8 +20,10 @@ from both so Hyper-V is the single, first-class path.
 - `src/runProxy/forwarder.ts`, `src/commands/runProxy.ts`
 - `templates/proxy/host-allow-vm-inbound.ps1`, `templates/proxy/verify-proxy.ps1`
 - `templates/vm-shared/pre-scripts/60-dns-override.yaml`
+- `templates/vm-shared/pre-scripts/configamatron-egress.service`
+- `templates/vm-shared/verify-config.sh`
 - `tests/unit/runProxy/forwarder.test.ts`, `tests/unit/templates.test.ts`,
-  `tests/vm/harness/net.sh`
+  `tests/vm/harness/net.sh`, `tests/vm/vm.test.ts`
 
 **Explicitly out of scope:**
 
@@ -66,45 +68,77 @@ numbered scripts, verify) run against the mounted `\\<host-ip>\vm-shared-windows
 path, and it links to `usage-hyper-v.md` for the host/network/share setup. This
 avoids duplicating the switch/IP/share steps across two docs.
 
-## Implementation changes (behavior-preserving)
+### 3. Scrub "host-only" terminology (decided)
 
-### `src/runProxy/forwarder.ts`
-- Rename constant and update the default value and doc-comment per decision 1.
+"Host-only" is VMware's name for the VM-reaches-host-not-internet network type;
+Hyper-V calls the equivalent an **Internal switch** (and the isolated state is
+**gateway-less**). The term is pervasive in living files — the egress unit's
+description, `verify-config.sh` output, `verify-proxy.ps1` warnings/labels, the
+`host-allow-vm-inbound.ps1` error, `vm.test.ts` `describe`/`it` names, and the
+usage docs. All of it is reworded to Hyper-V terminology ("Internal-switch
+adapter" for the NIC, "gateway-less" / "the isolated Internal-switch network" for
+the mode). These are string/label/comment edits with **no behavior change**. The
+term is added to the verification grep (below).
 
-### `src/commands/runProxy.ts`
-- Reword `--forward-listen` and `--no-forward` help text from "VMware host-only
-  adapter" to "Hyper-V Internal-switch adapter". Update the inline comment about
-  the forward/listen addresses and the "could not find the ... adapter IP" error
-  string.
+## Implementation changes
 
-### `templates/proxy/host-allow-vm-inbound.ps1`
-- Change the `$AdapterAlias` default to `vEthernet (configamatron-internal)`.
-- Rewrite the header comment: the rule is scoped by `-InterfaceAlias` because the
-  Internal switch's subnet is assigned per-machine; drop the VMware framing.
+Two categories: **intentional default changes** (items 1–4 below — these
+deliberately change which adapter is selected) and **behavior-preserving edits**
+(comments, help text, labels, test fixtures/names). Nothing changes guest
+networking behavior or the runtime logic of the forwarder, the firewall script,
+the verify scripts, or the VM harness.
 
-### `templates/proxy/verify-proxy.ps1`
-- Change the `$AdapterAlias` default to `vEthernet (configamatron-internal)`.
-- Rewrite the comment block so the Hyper-V Internal-switch adapter is the primary
-  case (currently it documents VMware as default and Hyper-V as the override).
+### Intentional default changes (the only runtime-affecting edits)
 
-### `templates/vm-shared/pre-scripts/60-dns-override.yaml`
-- Reword the comment that explains DHCP-DNS suppression in terms of "VMware's
-  host-only DHCP". The behavior is unchanged and still required: during setup the
-  Hyper-V **Default Switch** hands out a DNS server that must be suppressed so the
-  `127.0.0.1` stub wins. Describe it in Hyper-V terms (or generically as "the
-  setup-phase DHCP network").
+Each swaps a VMware default for the Hyper-V Internal-switch adapter. Following
+the guide (switch named `configamatron-internal`) now works with no override.
 
-### Tests (comment / fixture renames only; no behavior change)
-- `tests/unit/runProxy/forwarder.test.ts` — replace the
-  `VMware Network Adapter VMnet1` fixture keys with the new default adapter alias,
-  keeping the same assertions (named adapter resolves; internal/IPv6 skipped;
-  missing adapter → null).
-- `tests/unit/templates.test.ts` — update the comment that references VMware's
-  host-only DHCP; keep the `use-dns: false` / passthrough assertions.
-- `tests/vm/harness/net.sh` — rebrand the "Mimic VMware NAT" / "Mimic VMware
-  host-only" comments to describe the emulated network shape generically (a
-  NAT/gateway network and a gateway-less DHCP network). Harness behavior is
+- **`src/runProxy/forwarder.ts`** — rename `DEFAULT_VMNET_ADAPTER` →
+  `DEFAULT_INTERNAL_SWITCH_ADAPTER`; value → `vEthernet (configamatron-internal)`.
+- **`templates/proxy/host-allow-vm-inbound.ps1`** — `$AdapterAlias` default →
+  `vEthernet (configamatron-internal)`.
+- **`templates/proxy/verify-proxy.ps1`** — `$AdapterAlias` default →
+  `vEthernet (configamatron-internal)`.
+
+### Behavior-preserving edits (comments, help text, labels, fixtures)
+
+- **`src/runProxy/forwarder.ts`** — reword the "VMware host-only adapter"
+  doc-comment to the Hyper-V Internal-switch adapter.
+- **`src/commands/runProxy.ts`** — reword `--forward-listen` / `--no-forward`
+  help text, the inline forward/listen-addresses comment, and the "could not find
+  the ... adapter IP" error string (VMware host-only → Internal switch).
+- **`templates/proxy/host-allow-vm-inbound.ps1`** — rewrite the header comment
+  (scoped by `-InterfaceAlias` because the Internal switch's subnet is assigned
+  per-machine; drop VMware framing) **and** the `throw` error string that tells
+  users to confirm "Host-only" mode → Internal-switch/isolated.
+- **`templates/proxy/verify-proxy.ps1`** — rewrite the header comment block so the
+  Internal-switch adapter is the primary case, **and** all user-facing "host-only
+  adapter / host-only inbound firewall rule / is the host-only adapter up?"
+  warnings and pass/warn labels throughout the script.
+- **`templates/vm-shared/pre-scripts/60-dns-override.yaml`** — reword the comment
+  that explains DHCP-DNS suppression in terms of "VMware's host-only DHCP". The
+  behavior is unchanged and still required: during setup the Hyper-V **Default
+  Switch** hands out a DNS server that must be suppressed so the `127.0.0.1` stub
+  wins. Describe it in Hyper-V terms.
+- **`templates/vm-shared/pre-scripts/configamatron-egress.service`** — reword the
+  `Description=` line ("host-only default route" → "gateway-less Internal-switch
+  default route"). Unit behavior unchanged.
+- **`templates/vm-shared/verify-config.sh`** — reword the two user-facing
+  "host-only mode / host-only default route" result strings. Check logic
   unchanged.
+- **`tests/unit/runProxy/forwarder.test.ts`** — update the imported constant name
+  and replace the `VMware Network Adapter VMnet1` fixture keys with the new
+  default adapter alias, keeping the same assertions (named adapter resolves;
+  internal/IPv6 skipped; missing adapter → null).
+- **`tests/unit/templates.test.ts`** — update the comment referencing VMware's
+  host-only DHCP; keep the `use-dns: false` / passthrough assertions.
+- **`tests/vm/harness/net.sh`** — rebrand the "Mimic VMware NAT" / "Mimic VMware
+  host-only" comments to describe the emulated network shape generically (a
+  NAT/gateway network and a gateway-less DHCP network). Harness behavior unchanged.
+- **`tests/vm/vm.test.ts`** — reword the "mimicking hgfs" comment and the
+  `describe`/`it` names and comments that say "host-only" (e.g. "switch to
+  host-only and reboot", "guarded host-only default route") to gateway-less /
+  Internal-switch phrasing. Test logic and assertions unchanged.
 
 ## Documentation changes
 
@@ -129,7 +163,11 @@ avoids duplicating the switch/IP/share steps across two docs.
   drop the mandatory `--forward-listen` / `-AdapterAlias` overrides from the
   isolate/verify steps; replace with a note that they exist for non-standard
   switch names.
-- Update all internal references and the filename in `README.md`.
+- Update all internal references and the filename in `README.md`. The rename also
+  breaks the `usage-hyper-v-host.md` reference in
+  `docs/investigations/2026-07-22-host-side-dns-consolidation.md` — update it to
+  `usage-hyper-v.md` (this investigation doc is a living file, in scope for the
+  reference fix only).
 
 ### `usage-windows-vm.md`
 - Replace VMware create / VMware Tools / `\\vmware-host\Shared Folders` / host-only
@@ -153,16 +191,21 @@ avoids duplicating the switch/IP/share steps across two docs.
 
 ## Verification
 
-After the changes, the standard pipeline must pass (README "Verification
-Pipeline"): `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test:unit`,
-`pnpm build`, `pnpm test:e2e`. `pnpm test:vm` is run if the harness comment
-changes touch anything load-bearing (they should not).
+After the changes, `pnpm test` must pass — this is the full pipeline as defined
+in `package.json`: `format:check`, `lint`, `typecheck`, `test:unit`, `build`,
+`test:e2e`, `test:integration` (the last needs Docker running). `pnpm test:vm`
+(not part of `pnpm test`) should also be run, since the harness comment/name
+changes touch `tests/vm/`; it must still pass, confirming behavior is unchanged.
 
-Additionally, a repo-wide grep for VMware terms
-(`vmware`, `vmnet`, `hgfs`, `vmrun`, `vmx`, `open-vm-tools`, `vmware-host`) must
-return matches **only** under `docs/superpowers/**`, `docs/honist-v/**`,
-`legacy/**`, and the new investigation doc — nothing in the living docs, `src/`,
-`templates/`, or `tests/`.
+Additionally, a repo-wide grep for VMware/host-only terms
+(`vmware`, `vmnet`, `hgfs`, `vmrun`, `vmx`, `open-vm-tools`, `vmware-host`,
+`host-only`) must return matches **only** under `docs/superpowers/**`,
+`docs/honist-v/**`, `legacy/**`, and `docs/investigations/**` — nothing in the
+living docs, `src/`, `templates/`, or `tests/`. The excluded paths are
+history/planning docs (including the host-side-DNS investigation, which
+intentionally explains the VMware-era rationale and the current `host-only`
+Ubuntu mechanics); only their broken filename references are fixed, not their
+terminology.
 
 ## Success criteria
 
