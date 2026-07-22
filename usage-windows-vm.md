@@ -15,20 +15,15 @@ Shut the VM down, then in VM → Settings → Options → Shared Folders: enable
 
 ## Run the numbered scripts
 
-Open an **elevated (Administrator) PowerShell**, `cd` to the shared folder, and run the scripts in order. Open a **new terminal** where noted so PATH changes take effect.
+Open an **elevated (Administrator) PowerShell**. The exact script count may vary when custom steps are present.
 
 > cd "\\vmware-host\Shared Folders\vm-shared-windows\"
 
 > Set-ExecutionPolicy RemoteSigned
 
-1. `.\01-install-packages.ps1`
-2. `.\02-install-pnpm.ps1`
-3. New terminal, then `.\03-install-tools.ps1`
-4. New terminal, then `.\04-configure-tools.ps1`
-5. `.\05-configure-network.ps1 -HostIp <ip>` — `<ip>` is printed by proxy setup. Trusts the proxy CA (`-CertPath` overrides the default `cert.pem` beside the script), publishes the DNS responder as a startup task, and points the VM's DNS at it. Requires an elevated PowerShell.
-6. Switch the VM's network from NAT to **host-only**, then reboot so isolation takes effect.
-7. `.\06-auth-config.ps1` — run **after** isolation + reboot. Configures git/gh from the placeholder PAT and installs the placeholder claude and codex credentials.
-8. `.\07-apply-home-jq-transforms.ps1` — run last. Applies every transform in `home-jq-transforms/` to its target settings file.
+1. `cd .\pre-scripts` and run every script in order. With no custom steps, the last is `.\05-configure-network.ps1 -HostIp <ip>`.
+2. Switch the VM network from NAT to **host-only**, then reboot.
+3. `cd ..\post-scripts` and run every script in order: normally `.\01-auth-config.ps1`, then `.\02-apply-home-jq-transforms.ps1`.
 
 ## Verify
 

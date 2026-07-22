@@ -103,7 +103,7 @@ describe('S1: setup during NAT phase', () => {
   it('runs 05-configure-network.sh from the read-only share', async () => {
     const { stdout } = await guest(
       'g1',
-      `bash /mnt/vm-shared/05-configure-network.sh ${BRIDGE_IP}`,
+      `bash /mnt/vm-shared/pre-scripts/05-configure-network.sh ${BRIDGE_IP}`,
     );
     expect(stdout).toContain('05-configure-network:');
   });
@@ -137,7 +137,7 @@ describe('S1b: applier onboarding (07), auth-config symlink (06), firefox policy
   it('applier sets hasCompletedOnboarding on a fresh ~/.claude.json', async () => {
     await guest(
       'g1',
-      'rm -f "$HOME/.claude.json" && bash /mnt/vm-shared/07-apply-home-jq-transforms.sh',
+      'rm -f "$HOME/.claude.json" && bash /mnt/vm-shared/post-scripts/02-apply-home-jq-transforms.sh',
     );
     const { stdout } = await guest(
       'g1',
@@ -149,7 +149,7 @@ describe('S1b: applier onboarding (07), auth-config symlink (06), firefox policy
   it('applier merges into an existing ~/.claude.json without clobbering', async () => {
     await guest(
       'g1',
-      `printf '%s' '{"someExisting": 123}' > "$HOME/.claude.json" && bash /mnt/vm-shared/07-apply-home-jq-transforms.sh`,
+      `printf '%s' '{"someExisting": 123}' > "$HOME/.claude.json" && bash /mnt/vm-shared/post-scripts/02-apply-home-jq-transforms.sh`,
     );
     const { stdout } = await guest(
       'g1',
@@ -169,7 +169,7 @@ describe('S1b: applier onboarding (07), auth-config symlink (06), firefox policy
     );
     await guest(
       'g1',
-      `printf '#!/bin/sh\\nexit 0\\n' | sudo tee /usr/local/bin/gh >/dev/null && sudo chmod +x /usr/local/bin/gh && bash /mnt/vm-shared/06-auth-config.sh`,
+      `printf '#!/bin/sh\\nexit 0\\n' | sudo tee /usr/local/bin/gh >/dev/null && sudo chmod +x /usr/local/bin/gh && bash /mnt/vm-shared/post-scripts/01-auth-config.sh`,
     );
     const link = await guest('g1', 'readlink "$HOME/.claude/.credentials.json"');
     expect(link.stdout.trim()).toBe('/mnt/vm-shared/credentials.json');
@@ -180,7 +180,7 @@ describe('S1b: applier onboarding (07), auth-config symlink (06), firefox policy
   it('06 merges the CA into an existing firefox policies.json, preserving other keys', async () => {
     await guest(
       'g1',
-      `printf '#!/bin/sh\\n' | sudo tee /usr/local/bin/firefox >/dev/null && sudo chmod +x /usr/local/bin/firefox && sudo mkdir -p /etc/firefox/policies && printf '%s' '{"policies":{"SomeOther":true,"Certificates":{"Install":["/usr/local/share/ca-certificates/configamatron-proxy-certificate-authority.crt"]}}}' | sudo tee /etc/firefox/policies/policies.json >/dev/null && bash /mnt/vm-shared/05-configure-network.sh ${BRIDGE_IP}`,
+      `printf '#!/bin/sh\\n' | sudo tee /usr/local/bin/firefox >/dev/null && sudo chmod +x /usr/local/bin/firefox && sudo mkdir -p /etc/firefox/policies && printf '%s' '{"policies":{"SomeOther":true,"Certificates":{"Install":["/usr/local/share/ca-certificates/configamatron-proxy-certificate-authority.crt"]}}}' | sudo tee /etc/firefox/policies/policies.json >/dev/null && bash /mnt/vm-shared/pre-scripts/05-configure-network.sh ${BRIDGE_IP}`,
     );
     const { stdout } = await guest(
       'g1',
@@ -391,7 +391,10 @@ describe('S3: fresh setup with no default route', () => {
     const before = await guest('g2', 'ip -4 route show default');
     expect(before.stdout.trim()).toBe(''); // precondition: no default route
 
-    const run = await guest('g2', `bash /mnt/vm-shared/05-configure-network.sh ${BRIDGE_IP}`);
+    const run = await guest(
+      'g2',
+      `bash /mnt/vm-shared/pre-scripts/05-configure-network.sh ${BRIDGE_IP}`,
+    );
     expect(run.stdout).toContain('05-configure-network:');
 
     const after = await guest('g2', 'ip -4 route show default');

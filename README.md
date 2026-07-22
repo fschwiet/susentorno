@@ -27,7 +27,7 @@ pnpm install -g .
 
 Usually done once per environment. Run every command from the environment directory (the folder that owns the environment, e.g. `e:\repo`):
 
-1. `configamatron init` — creates `.configamatron/` scaffolding. It is meant to be committed **except** for the files its bundled `.gitignore` excludes (real credentials, private keys, and regenerable build artifacts). Customize `.configamatron/home-jq-transforms/` to change settings transforms, then run `configamatron update-shares`.
+1. `configamatron init` — creates `.configamatron/` scaffolding. Its `.gitignore` is an allowlist: commit only `.gitignore`, `pre-scripts/`, `post-scripts/`, `home-jq-transforms/`, and `proxy/allowlist.txt`; generated files and secrets remain ignored. Run `configamatron update-shares` after changing authored inputs.
 2. `configamatron generate-ca` — writes the root certificate authority the proxy's https certificates chain to. Run once per environment; `run-proxy` reissues the per-host leaf certificate automatically as the allow list changes.
 3. `configamatron write-github-config` — prompts for a GitHub fine-grained personal access token and writes `vm-shared/github-config.txt` (username/email come from your global git config). Create the token at https://github.com/settings/personal-access-tokens/new, scoped to the repositories the agent should use, with read/write permission to 'Contents'.
 4. `configamatron run-proxy` — builds `proxy/envoy.yaml` from `proxy/allowlist.txt` and launches the proxy in a docker container with the latest Claude credentials. While it runs it watches both files: editing the allow list takes effect live (config rebuilt, leaf certificate reissued if the TLS-terminated hosts changed, proxy restarted), and credential rotations propagate automatically. It also streams the proxy's access log inline (see "Watching proxy traffic" below) and forwards the VMware host-only interface's `:80`/`:443` to Envoy on loopback, so it must stay running for the VM to reach the proxy (Envoy is published on `127.0.0.1` only). Pass `--no-forward` to disable forwarding, or `--forward-listen <ip>` to override the bind address.
@@ -85,20 +85,21 @@ Maybe someday the fix above won't make sense. Is today that day? Start the VM an
 
 Complete "Proxy setup" first, so `vm-shared` contains `cert.pem`, `github-config.txt`, and `credentials.json`.
 
-Run the scripts from the shared folder in number order. Run them without `sudo` — each script uses `sudo` internally where it needs root. Open a **new terminal** where noted so the shell picks up PATH changes written to `~/.bashrc`:
+Run without `sudo`; each script elevates internally where needed. The exact count may vary when custom steps are present.
 
-1. `01-apt-packages.sh`
-2. `02-install-pnpm.sh`
-3. Open a new terminal, then `03-install-tools.sh`
-4. Open a new terminal, then `04-configure-tools.sh` — a browser opens for context7 login; close it and cancel the script if you don't want to use credentials.
-5. `05-configure-network.sh <host-ip>` — `<host-ip>` is printed by proxy setup. Trusts the proxy CA (defaults to the `cert.pem` beside the script; pass a path as the 2nd argument to override), installs dnsmasq + the `configamatron-egress.service` DNAT rules, and points the VM's resolver at the local stub.
-6. Switch the VM's network from NAT to host-only, then reboot so the boot-time rules take effect.
-7. `06-auth-config.sh` — run after isolation + reboot. Configures git/gh from the placeholder PAT (validated against api.github.com through the proxy) and links the placeholder claude and codex credentials.
-8. `07-apply-home-jq-transforms.sh` — run last. Applies every transform in `home-jq-transforms/` to its target settings file (VS Code settings, claude onboarding, and anything you added).
+1. `cd` into `vm-shared/pre-scripts/` and run every script in number order. The last step is `05-configure-network.sh <host-ip>` when there are no custom scripts.
+2. Switch the VM network from NAT to host-only, then reboot.
+3. `cd` into `vm-shared/post-scripts/` and run every script in order: normally `01-auth-config.sh`, then `02-apply-home-jq-transforms.sh`.
 
 ## Customizing settings transforms
 
-`.configamatron/home-jq-transforms/` holds a `manifest.yaml` plus `.jq` files that edit settings files in the guest's home directory. Each manifest entry names a `.jq` transform and its `linux` and/or `windows` target path (a leading `~` is the home dir; `%NAME%` is an environment variable). Step 07 applies them all, seeding an empty `{}` when a target is missing. Add or edit transforms, then run `configamatron update-shares` to copy them into the VM shares (`-n`/`--dry-run` previews without copying). A transform whose `{}` preview fails blocks the copy.
+`.configamatron/home-jq-transforms/` holds a `manifest.yaml` plus `.jq` files that edit settings files in the guest's home directory. The post-script applier seeds an empty `{}` when a target is missing. Add or edit transforms, then run `configamatron update-shares` (`--dry-run` previews only).
+
+## Customizing setup scripts
+
+Put `NN-name.sh` and/or `NN-name.ps1` steps in `.configamatron/pre-scripts/` or `.configamatron/post-scripts/`. Pre-scripts run with full network access before isolation; post-scripts run after the reboot. Run `configamatron update-shares` after editing. Each folder's `README.md` documents naming and sibling-resource rules.
+
+When upgrading an older environment, remember that `.gitignore` does not untrack indexed files. Either delete and re-run `init`, or run `git rm -r --cached .configamatron && git add .configamatron`, then commit, to re-apply the allowlist while keeping files on disk.
 
 ## Verifying an environment
 

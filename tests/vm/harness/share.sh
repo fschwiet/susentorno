@@ -6,5 +6,5 @@ src="${1:?usage: share.sh <src-dir>}"
 rm -rf "$RUN/share"
 mkdir -p "$RUN/share"
 cp -r "$src"/. "$RUN/share/"
-chmod +x "$RUN/share"/*.sh
+find "$RUN/share" -name '*.sh' -exec chmod +x {} +
 echo "$RUN/share"
