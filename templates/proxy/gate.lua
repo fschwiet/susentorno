@@ -6,7 +6,7 @@ function envoy_on_request(request_handle)
     return
   end
   if auth ~= PLACEHOLDER then
-    request_handle:logInfo("sandbox: rejected credential prefix=" .. auth:sub(1, 12))
+    request_handle:logInfo("sandbox: rejected credential len=" .. tostring(#auth) .. " prefix=" .. auth:sub(1, 24))
     request_handle:respond({[":status"] = "403"}, "sandbox: unexpected credential")
   end
 end
