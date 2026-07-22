@@ -62,9 +62,7 @@ New-NetFirewallRule -DisplayName "Configamatron VM share (SMB inbound)" `
     -InterfaceAlias "vEthernet (configamatron-internal)" -Profile Any -Action Allow
 ```
 
-## 4. Create the VM
-
-Create a **Generation 2** VM in Hyper-V Manager.
+## 4. Prepare the VM
 
 ### Image options
 
@@ -79,36 +77,37 @@ Create a **Generation 2** VM in Hyper-V Manager.
 - Observations:
   - The included Windows 11 dev VM used 54.6 gb for Windows with updates and its included applications, then took 71.5 gb after running the configamatron install scripts.
 
-### Edit Settings
+### VM Creation
 
-- Hardware -> Add Hardware
-  - Add a second network adapter.
+- Initial Creation Wizard
+  - Select Generation 2 for the VM generation
+  - I've been using 12288 mb of memory and 127 gb of disk space
 
-- Hardware -> Network Adapter 1
-  - Set "Virtual Switch" to "configamatron-internal" (this is the VM's permanent network, used even when its switch to isolated mode)
+- Modify the "Settings" scoped to the VM before starting the VM
 
-- Hardware -> Network Adapter 2
-  - Set "Virtual Switch" to "Default Switch" (Hyper-V's built-in NAT switch, added **temporarily** to provide internet during setup. You remove it in the isolate step.)
+  - Hardware -> Add Hardware
+    - Add a second network adapter.
 
-- Hardware -> Security => Secure Boot
-  - **for Windows** (no change) Enable Secure Boot should be checked, use the default "Microsoft Windows" template
-  - **for Ubuntu** set the Secure Boot template to "Microsoft UEFI Certificate Authority" or disable Secure Boot.
+  - Hardware -> Network Adapter 1
+    - Set "Virtual Switch" to "configamatron-internal" (this is the VM's permanent network, used even when its switch to isolated mode)
 
-- Hardware -> Memory
-  - I've been using 12288 MB
+  - Hardware -> Network Adapter 2
+    - Set "Virtual Switch" to "Default Switch" (Hyper-V's built-in NAT switch, added **temporarily** to provide internet during setup. This will be removed later.)
 
-- Management -> Checkpoints
-  - Consider disabling "Use automatic checkpoints" because its annoying
+  - Hardware -> Security => Secure Boot
+    - **for Windows** (no change) Enable Secure Boot should be checked, use the default "Microsoft Windows" template
+    - **for Ubuntu** set the Secure Boot template to "Microsoft UEFI Certificate Authority" or disable Secure Boot.
 
-- Management -> Automatic Start Action
-  - Consider setting to "nothing" because starting the VM everytime the host is started is insane
+  - Management -> Checkpoints
+    - Consider disabling "Use automatic checkpoints" because its annoying
 
-- Management -> Automatic Stop Action
-  - Consider setting to "shut down" to mimic the host's behavior- that which isn't saved on shutdown was not worth saving
+  - Management -> Automatic Start Action
+    - Consider setting to "nothing" because starting the VM everytime the host is started is insane
 
-### Finish Creation
+  - Management -> Automatic Stop Action
+    - Consider setting to "shut down" to mimic the host's behavior- that which isn't saved on shutdown was not worth saving
 
-This concludes the pre-startup portion of VM creation.
+### OS installation
 
 - Go ahead and start the machine and install any pending updates.
   - Restart the machine and check for updates, repeat until none are found.
