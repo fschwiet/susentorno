@@ -95,14 +95,18 @@ New-NetFirewallRule -DisplayName "Configamatron VM share (SMB inbound)" `
     - Set "Virtual Switch" to "Default Switch" (Hyper-V's built-in NAT switch, added **temporarily** to provide internet during setup. This will be removed later.)
 
   - Hardware -> Security => Secure Boot
-    - **for Windows** (no change) Enable Secure Boot should be checked, use the default "Microsoft Windows" template
-    - **for Ubuntu** set the Secure Boot template to "Microsoft UEFI Certificate Authority" or disable Secure Boot.
+    - For Windows
+      - "Enable Secure Boot" should be checked, use the default "Microsoft Windows" template
+      - "Enable Trusted Platform Module" should be checked if your OS requires it (True for Windows 11 Enterprise)
+        - "Encrypt state and virtual machine migration traffic" seems safe to check
+    - For Ubuntu
+      - set the Secure Boot template to "Microsoft UEFI Certificate Authority" or disable Secure Boot.
 
   - Management -> Checkpoints
     - Consider disabling "Use automatic checkpoints" because its annoying
 
   - Management -> Automatic Start Action
-    - Consider setting to "nothing" because starting the VM everytime the host is started is insane
+    - Consider setting to "nothing" to avoid starting the VM everytime you log into the host
 
   - Management -> Automatic Stop Action
     - Consider setting to "shut down" to mimic the host's behavior- that which isn't saved on shutdown was not worth saving
@@ -110,6 +114,7 @@ New-NetFirewallRule -DisplayName "Configamatron VM share (SMB inbound)" `
 ### OS installation
 
 - Go ahead and start the machine and install any pending updates.
+  - It can be tricky to initiate booting from CD/DVD before it tries a network install. You need to press a key quickly after starting the VM to catch the "press any key to install from CD or DVD" message before it opts to try the network.
   - Restart the machine and check for updates, repeat until none are found.
 
 - Consider shutting down the VM and creating a checkpoint before continuing, call it "Windows Installed and Updated". This will provide a baseline you can return to if your network setup changes.
