@@ -118,7 +118,7 @@ unify the two guests on the single simpler "resolve-to-host-IP, no DNAT" model
 - **VM test harness (`tests/vm/`):** currently models a DHCP host-only network
   with an in-guest resolver; it would need reworking toward the static-IP,
   host-resolver model. This is the largest and riskiest piece.
-- **Docs:** `README.md`, `usage-hyper-v-host.md`, `usage-windows-vm.md`,
+- **Docs:** `README.md`, `usage-hyper-v.md`, `usage-windows-vm.md`,
   `technical-notes.md` guest-network sections.
 
 ## Recommendation

@@ -1,19 +1,19 @@
 # Hosting with Hyper-V
 
-Run a Windows or Ubuntu guest under **Hyper-V Manager** instead of VMware, isolated behind the host proxy. This doc covers only what Hyper-V does differently — creating the VM, virtual switches, static IPs, sharing the environment folder, and isolating the network. Once the shared folder is mounted, the guest follows the existing numbered-script flow unchanged:
+Run a Windows or Ubuntu guest under **Hyper-V Manager**, isolated behind the host proxy. This doc covers the full host + VM setup — creating the VM, the virtual switch, static IPs, sharing the environment folder, and isolating the network. Once the shared folder is mounted, the guest follows the numbered-script flow:
 
 - **Ubuntu guest:** the numbered scripts and verification in `README.md` ("VM setup" onward).
 - **Windows guest:** the numbered scripts in `usage-windows-vm.md`.
 
-The host side needs no code changes. `configamatron run-proxy` and `host-allow-vm-inbound.ps1` both take parameters that point them at the Hyper-V adapter instead of the VMware one; those substitutions are called out below.
+The host side needs no code changes: both `configamatron run-proxy` and `host-allow-vm-inbound.ps1` default to the `vEthernet (configamatron-internal)` adapter, so no overrides are needed when you name the switch `configamatron-internal` as below.
 
 Complete the host "Proxy setup" (`README.md`) first, so the environment's `vm-shared/` and `vm-shared-windows/` folders contain `cert.pem`, `github-config.txt`, and `credentials.json`.
 
-## Why this is different from VMware
+## Networking and file sharing
 
-Hyper-V has no transparent Shared Folders mechanism (`/mnt/hgfs`, `\\vmware-host\Shared Folders`). The only way to keep a host folder **live** in the guest — which we need, because the guest's `~/.claude/.credentials.json` is symlinked to the shared `credentials.json` and the proxy rotates that file — is a network file share (SMB). A one-time copy-in (ISO, `Copy-VMFile`) would freeze the credential and is not an option. Note that these credential files sync'd to the VM do not contain the actual credentials but rather a placeholder- the proxy injects the real credentials. What is being sync'd is the rest of the information in ~/.claude/.credentials.json.
+Hyper-V has no transparent shared-folder mechanism, so we keep the host's environment folder **live** in the guest over a network file share (SMB). This matters because the guest's `~/.claude/.credentials.json` is symlinked to the shared `credentials.json` and the proxy rotates that file; a one-time copy-in (ISO, `Copy-VMFile`) would freeze the credential and is not an option. Note that these credential files sync'd to the VM do not contain the actual credentials but rather a placeholder — the proxy injects the real credentials. What is being sync'd is the rest of the information in ~/.claude/.credentials.json.
 
-Hyper-V's analog of VMware's host-only network is an **Internal virtual switch** (host + VMs, no internet). Unlike VMware host-only, an Internal switch runs **no DHCP**, so the host adapter and the guest both get **static IPs**. That host IP is stable, and it is the one value that threads through the entire setup:
+The isolated network is an **Internal virtual switch** (host + VMs, no internet). An Internal switch runs **no DHCP**, so the host adapter and the guest both get **static IPs**. That host IP is stable, and it is the one value that threads through the entire setup:
 
 > **One host IP, used everywhere:** the static IPv4 you assign to the host's `vEthernet (<SwitchName>)` adapter is simultaneously the SMB server address, the IP that `host-allow-vm-inbound.ps1` reports, the `run-proxy --forward-listen` target, and the `<host-ip>` argument to the `07-*` scripts. This configuration remains stable during VM setup when network access is direct to the internet and after the VM is isolated and network traffic must go through the proxy.
 
@@ -152,7 +152,7 @@ echo '//192.168.67.1/vm-shared  /mnt/vm-shared  cifs  ro,credentials=/etc/config
 sudo systemctl daemon-reload && sudo mount -a
 ```
 
-The share now lives at `/mnt/vm-shared` — this is the Hyper-V substitute for `/mnt/hgfs/vm-shared` used with the VMWare setup.
+The share now lives at `/mnt/vm-shared` — the numbered scripts run from there.
 
 **Windows guest** — static IP and a saved credential so UNC access works without prompting:
 
@@ -161,7 +161,7 @@ New-NetIPAddress -InterfaceAlias "Ethernet 2" -IPAddress 192.168.67.3 -PrefixLen
 cmdkey /add:192.168.67.1 /user:configamatron-share /pass:<the password from step 2>
 ```
 
-The share is then reachable at `\\192.168.67.1\vm-shared-windows` — this is the Hyper-V substitute for `/mnt/hgfs/vm-shared-windows` used with the VMWare setup.
+The share is then reachable at `\\192.168.67.1\vm-shared-windows` — the numbered scripts run from there.
 
 ## 6. Run the numbered scripts
 
@@ -177,30 +177,32 @@ Once done, set a more reasonable policy:
 
 | Guest | Existing doc | Run scripts from |
 | --- | --- | --- |
-| Ubuntu | `README.md` ("Run the numbered scripts from the VM") | `/mnt/vm-shared` instead of `/mnt/hgfs/vm-shared` |
-| Windows | `usage-windows-vm.md` ("Run the numbered scripts") | `\\192.168.67.1\vm-shared-windows` instead of `\\vmware-host\Shared Folders\vm-shared-windows` |
+| Ubuntu | `README.md` ("Run the numbered scripts from the VM") | `/mnt/vm-shared` |
+| Windows | `usage-windows-vm.md` ("Run the numbered scripts") | `\\192.168.67.1\vm-shared-windows` |
 
 When a script asks for `<host-ip>` (`05-configure-network.sh` / `05-configure-network.ps1`), it is the Internal-switch host IP from step 1 (`192.168.67.1` here).
 
 ## 7. Isolate
 
-On the **host**, point the proxy's networking at the Hyper-V adapter (the auto-detection defaults to the VMware adapter):
+On the **host**, open the firewall and start forwarding. Both default to the `vEthernet (configamatron-internal)` adapter, so no overrides are needed when the switch is named `configamatron-internal`:
 
 ```powershell
 # Firewall for Envoy 80/443, scoped to the Internal adapter; prints the host IP:
-powershell -File .configamatron\proxy\host-allow-vm-inbound.ps1 -AdapterAlias "vEthernet (configamatron-internal)"
+powershell -File .configamatron\proxy\host-allow-vm-inbound.ps1
 
 # Forward that adapter's :80/:443 to Envoy on loopback:
-configamatron run-proxy --forward-listen 192.168.67.1
+configamatron run-proxy
 ```
+
+(If your switch has a different name, pass `-AdapterAlias "vEthernet (<SwitchName>)"` to the firewall script and `--forward-listen <host-ip>` to `run-proxy`.)
 
 Then isolate the VM: in VM → Settings, **remove the temporary Default Switch adapter**, leaving only the Internal-switch adapter. Reboot the VM so the boot-time DNS/DNAT rules take effect. The VM can now reach only the host.
 
 ## 8. Verify
 
-Unchanged from the VMware flow, just from the new mount path — except the host check needs `-AdapterAlias` so its VM-path probes hit the Internal-switch adapter instead of the (still-present, unused) VMware one:
+Run the read-only checks (`-AdapterAlias` defaults to the Internal-switch adapter, so no override is needed when the switch is named `configamatron-internal`):
 
-- **Host (proxy):** with the proxy up, run `.configamatron\proxy\verify-proxy.ps1 -AdapterAlias "vEthernet (configamatron-internal)"`.
+- **Host (proxy):** with the proxy up, run `.configamatron\proxy\verify-proxy.ps1`.
 - **Ubuntu guest:** `/mnt/vm-shared/verify-config.sh 192.168.67.1`.
 - **Windows guest:** `.\verify-config.ps1 192.168.67.1` from the mounted `vm-shared-windows` share.
 
