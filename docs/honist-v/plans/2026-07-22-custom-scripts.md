@@ -880,7 +880,30 @@ describe('weaveShares', () => {
     // A custom passthrough directory named exactly like the generated network script.
     mkdirSync(join(paths.preScripts, '02-network.sh'));
     writeFileSync(join(paths.preScripts, '02-network.sh', 'inner'), 'x');
-    expect(() => planAllPhases({ templatesDir: templates, paths })).toThrow(/02-network\.sh/);
+    let message = '';
+    try {
+      planAllPhases({ templatesDir: templates, paths });
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toContain('02-network.sh');
+    // Both sides are labeled so the fix is obvious.
+    expect(message).toMatch(/generated script/);
+    expect(message).toMatch(/custom resource/);
+  });
+
+  it('aggregates errors from both phases in one throw', () => {
+    const paths = envPaths(work);
+    writeFileSync(join(paths.preScripts, 'bad-pre.sh'), 'x'); // no prefix (pre)
+    writeFileSync(join(paths.postScripts, 'bad-post.sh'), 'x'); // no prefix (post)
+    let message = '';
+    try {
+      planAllPhases({ templatesDir: templates, paths });
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toContain('bad-pre.sh');
+    expect(message).toContain('bad-post.sh');
   });
 
   it('replaces a phase folder, dropping files the user deleted', () => {
@@ -939,7 +962,11 @@ interface PlatformSpec {
 
 const PHASE_DIRS = ['pre-scripts', 'post-scripts'] as const;
 
-/** Build (and fully validate) a plan for every phase × platform. Throws on the first failure. */
+/**
+ * Build (and fully validate) a plan for every phase × platform. Accumulates every
+ * phase's error (naming, overflow, collisions) rather than stopping at the first,
+ * so a single run reports all offenders across both phases and both platforms.
+ */
 export function planAllPhases(opts: { templatesDir: string; paths: EnvPaths }): PhasePlan[] {
   const { templatesDir, paths } = opts;
   const platforms: PlatformSpec[] = [
@@ -958,19 +985,25 @@ export function planAllPhases(opts: { templatesDir: string; paths: EnvPaths }): 
   ];
 
   const plans: PhasePlan[] = [];
+  const errors: string[] = [];
   for (const phaseDir of PHASE_DIRS) {
     for (const platform of platforms) {
-      plans.push(
-        planPhase({
-          builtinPhaseDir: join(platform.builtinShareDir, phaseDir),
-          customPhaseDir: join(paths.root, phaseDir),
-          outPhaseDir: join(platform.outShareDir, phaseDir),
-          extension: platform.extension,
-          caseInsensitive: platform.caseInsensitive,
-        }),
-      );
+      try {
+        plans.push(
+          planPhase({
+            builtinPhaseDir: join(platform.builtinShareDir, phaseDir),
+            customPhaseDir: join(paths.root, phaseDir),
+            outPhaseDir: join(platform.outShareDir, phaseDir),
+            extension: platform.extension,
+            caseInsensitive: platform.caseInsensitive,
+          }),
+        );
+      } catch (error) {
+        errors.push((error as Error).message);
+      }
     }
   }
+  if (errors.length > 0) throw new Error(errors.join('\n\n'));
   return plans;
 }
 
@@ -1000,28 +1033,29 @@ function planPhase(opts: {
   const builtinNonSentinel = builtin.scripts.filter((s) => !s.sentinel);
   const builtinSentinel = builtin.scripts.filter((s) => s.sentinel);
   const renumbered = renumber([...builtinNonSentinel, ...custom.scripts, ...builtinSentinel]);
-  const passthrough = [...builtin.passthrough, ...custom.passthrough];
 
-  const actions: WeaveAction[] = [
-    ...renumbered.map((s): WeaveAction => ({ kind: 'file', src: s.sourcePath, destRel: s.outputName })),
-    ...passthrough.map((p): WeaveAction => ({
-      kind: p.isDirectory ? 'dir' : 'file',
-      src: p.sourcePath,
-      destRel: p.name,
-    })),
-  ];
+  const actions: WeaveAction[] = renumbered.map((s): WeaveAction => ({
+    kind: 'file',
+    src: s.sourcePath,
+    destRel: s.outputName,
+  }));
+  const items: WeaveItem[] = renumbered.map((s): WeaveItem => ({
+    destPath: s.outputName,
+    kind: 'file',
+    origin: `generated script ${s.outputName} (from ${s.sourcePath})`,
+  }));
 
-  // Expand the destination tree (directories fully walked) and check for collisions.
-  const items: WeaveItem[] = [
-    ...renumbered.map((s): WeaveItem => ({
-      destPath: s.outputName,
-      kind: 'file',
-      origin: `generated script ${s.outputName}`,
-    })),
-  ];
-  for (const p of passthrough) {
-    if (p.isDirectory) expandDir(p.sourcePath, p.name, items);
-    else items.push({ destPath: p.name, kind: 'file', origin: `resource ${p.name}` });
+  // Passthrough resources: built-in first, then custom. Origin labels distinguish
+  // built-in vs custom so a collision message names both sides unambiguously.
+  for (const [label, list] of [
+    ['built-in', builtin.passthrough],
+    ['custom', custom.passthrough],
+  ] as const) {
+    for (const p of list) {
+      actions.push({ kind: p.isDirectory ? 'dir' : 'file', src: p.sourcePath, destRel: p.name });
+      if (p.isDirectory) expandDir(p.sourcePath, p.name, label, items);
+      else items.push({ destPath: p.name, kind: 'file', origin: `${label} resource ${p.name}` });
+    }
   }
 
   const collisions = detectCollisions(items, { caseInsensitive: opts.caseInsensitive });
@@ -1030,12 +1064,12 @@ function planPhase(opts: {
   return { livePhaseDir: opts.outPhaseDir, actions };
 }
 
-function expandDir(absDir: string, relBase: string, out: WeaveItem[]): void {
-  out.push({ destPath: relBase, kind: 'dir', origin: `resource ${relBase}/` });
+function expandDir(absDir: string, relBase: string, label: string, out: WeaveItem[]): void {
+  out.push({ destPath: relBase, kind: 'dir', origin: `${label} resource ${relBase}/` });
   for (const entry of readdirSync(absDir, { withFileTypes: true })) {
     const childRel = `${relBase}/${entry.name}`;
-    if (entry.isDirectory()) expandDir(join(absDir, entry.name), childRel, out);
-    else out.push({ destPath: childRel, kind: 'file', origin: `resource ${childRel}` });
+    if (entry.isDirectory()) expandDir(join(absDir, entry.name), childRel, label, out);
+    else out.push({ destPath: childRel, kind: 'file', origin: `${label} resource ${childRel}` });
   }
 }
 
@@ -1045,9 +1079,11 @@ function formatCollisions(outPhaseDir: string, collisions: Collision[]): string 
 }
 
 /**
- * Stage every plan into a sibling ".staging" dir; only once all staging succeeds,
- * swap each into place (moving the live dir to a backup and restoring on failure).
- * This minimizes the window and matches update-shares' existing recovery.
+ * Stage every plan into a sibling ".staging" dir; only once ALL staging succeeds,
+ * swap each into place (moving the live dir to a backup and restoring every swap
+ * on any failure). Recording the swap before the promotion rename means a failure
+ * there still rolls the entry back. This minimizes the window and matches the
+ * existing per-target recovery.
  */
 export function executePlans(plans: PhasePlan[]): void {
   const staged: { live: string; staging: string }[] = [];
@@ -1075,19 +1111,21 @@ export function executePlans(plans: PhasePlan[]): void {
     throw error;
   }
 
-  const swapped: { live: string; backup: string }[] = [];
+  const swapped: { live: string; backup: string; hadLive: boolean }[] = [];
   try {
     for (const { live, staging } of staged) {
       const backup = `${live}.backup-${process.pid}`;
       rmSync(backup, { recursive: true, force: true });
-      if (existsSync(live)) renameSync(live, backup);
+      const hadLive = existsSync(live);
+      if (hadLive) renameSync(live, backup);
+      // Record BEFORE the promotion rename so a failure there is still rolled back.
+      swapped.push({ live, backup, hadLive });
       renameSync(staging, live);
-      swapped.push({ live, backup });
     }
   } catch (error) {
-    for (const { live, backup } of swapped) {
+    for (const { live, backup, hadLive } of swapped) {
       rmSync(live, { recursive: true, force: true });
-      if (existsSync(backup)) renameSync(backup, live);
+      if (hadLive && existsSync(backup)) renameSync(backup, live);
     }
     for (const { staging } of staged) rmSync(staging, { recursive: true, force: true });
     throw error;
@@ -1220,7 +1258,7 @@ Move the built-in scripts into `pre-scripts/`/`post-scripts/`, rename `05-config
 - Modify: `templates/vm-shared/pre-scripts/nn-configure-network.sh`, `templates/vm-shared/post-scripts/01-auth-config.sh`, `templates/vm-shared/post-scripts/02-apply-home-jq-transforms.sh`, and the three `.ps1` equivalents (env-file references → parent dir).
 - Modify: `scripts/copy-vm-applier.mjs`, `.gitignore` (root — applier artifact path)
 - Modify: `src/initEnv.ts`
-- Test: `tests/unit/templates.test.ts`, `tests/unit/initEnv.test.ts`, `tests/e2e/init.test.ts`
+- Test: `tests/unit/templates.test.ts`, `tests/unit/initEnv.test.ts`, `tests/e2e/init.test.ts`, `tests/e2e/vmApplier.test.ts`
 
 **Interfaces:**
 
@@ -1393,9 +1431,9 @@ rm -f templates/vm-shared/apply-home-jq-transforms.mjs templates/vm-shared-windo
 
 - [ ] **Step 4: Scaffold custom folders and weave, in `initEnvironment`**
 
-In `src/initEnv.ts`, add `mkdirSync` to the `node:fs` import, import the weave, and append scaffolding + weave to the end of `initEnvironment`.
+In `src/initEnv.ts`, add `mkdirSync` to the `node:fs` import and import the weave. The weave must be **validated before any share is written** (Global Constraints: no share touched until all checks pass), so plan first, mutate last.
 
-Update the imports at the top (the `./dnsResponder` import was already added in Task 4 Step 0; add `mkdirSync` and the `weaveShares` line):
+Update the imports at the top (the `./dnsResponder` import was already added in Task 4 Step 0; add `mkdirSync` and the weave functions):
 
 ```ts
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -1404,7 +1442,7 @@ import { envPaths } from './envPaths';
 import { sanitizeCredentials } from './sanitizeCredentials';
 import { sanitizeCodexCredentials } from './sanitizeCodexCredentials';
 import { isDnsResponderBuildArtifact } from './dnsResponder';
-import { weaveShares } from './weaveShares';
+import { planAllPhases, executePlans } from './weaveShares';
 ```
 
 Add these placeholder constants near the top of the file (after the imports):
@@ -1436,22 +1474,32 @@ step (other extensions, subfolders) is copied through untouched. Run
 `;
 ```
 
-At the very end of `initEnvironment` (after the `copyFileSync(... paths.gitignore)` line), append:
+Insert the scaffolding **and the weave preflight** immediately **before** the first `cpSync(join(options.templatesDir, 'vm-shared'), …)` line (i.e. after the codex sanitization block, before any share is created):
 
 ```ts
-  // Scaffold the user-editable custom script folders. git does not track empty
-  // dirs, so seed each with a placeholder README that survives commit/clone.
+  // Scaffold the user-editable custom script folders first. git does not track
+  // empty dirs, so seed each with a placeholder README that survives commit/clone.
+  // (These are source folders under .configamatron/, not shares.)
   mkdirSync(paths.preScripts, { recursive: true });
   writeFileSync(join(paths.preScripts, 'README.md'), PRE_SCRIPTS_README);
   mkdirSync(paths.postScripts, { recursive: true });
   writeFileSync(join(paths.postScripts, 'README.md'), POST_SCRIPTS_README);
 
-  // Weave built-ins (plus the just-created, empty custom folders) into the shares
-  // so a freshly initialized environment is runnable without a separate step.
-  weaveShares({ templatesDir: options.templatesDir, paths });
+  // Validate the weave (built-ins + the just-scaffolded custom folders) before
+  // touching any share, so a template/naming/collision fault aborts with nothing
+  // half-written into vm-shared/.
+  const plans = planAllPhases({ templatesDir: options.templatesDir, paths });
 ```
 
-Note: `initEnvironment` still `cpSync`s each whole template share first (bringing in `verify-config.*` at the share root and the built-in phase folders verbatim); `weaveShares` then replaces each `<phase>/` folder with the woven, renumbered output. The verbatim phase-folder copy is transient and immediately superseded.
+Then, at the very end of `initEnvironment` (after the `copyFileSync(… paths.gitignore)` line), execute the already-validated plans:
+
+```ts
+  // Replace each generated <phase>/ folder with the woven, renumbered output so a
+  // freshly initialized environment is runnable without a separate update-shares.
+  executePlans(plans);
+```
+
+Note: `initEnvironment` still `cpSync`s each whole template share (bringing in `verify-config.*` at the share root and the built-in phase folders verbatim); `executePlans` then replaces each `<phase>/` folder with the woven output. The verbatim phase-folder copy is transient and immediately superseded. Because `planAllPhases` ran before the first `cpSync`, a weave fault leaves no share partially written.
 
 - [ ] **Step 5: Update `tests/unit/templates.test.ts`**
 
@@ -1558,19 +1606,47 @@ The existing assertions (`allowlist.txt`, `vm-shared/credentials.json`, stdout c
       expect(existsSync(join(dir, '.configamatron', 'pre-scripts', 'README.md'))).toBe(true);
 ```
 
-- [ ] **Step 8: Run unit tests, typecheck, then build + e2e**
+- [ ] **Step 8: Update `tests/e2e/vmApplier.test.ts` for the relocated bundle**
+
+This packaging test asserts the applier's template path, which moved into `post-scripts/`. Update the two path constants near the top of the file:
+
+```ts
+const applierUbuntu = join(
+  repoRoot,
+  'templates',
+  'vm-shared',
+  'post-scripts',
+  'apply-home-jq-transforms.mjs',
+);
+const applierWindows = join(
+  repoRoot,
+  'templates',
+  'vm-shared-windows',
+  'post-scripts',
+  'apply-home-jq-transforms.mjs',
+);
+```
+
+And update the two `pnpm pack --dry-run` assertions in the `'is listed in the npm package'` test:
+
+```ts
+    expect(files).toContain('templates/vm-shared/post-scripts/apply-home-jq-transforms.mjs');
+    expect(files).toContain('templates/vm-shared-windows/post-scripts/apply-home-jq-transforms.mjs');
+```
+
+- [ ] **Step 9: Run unit tests, typecheck, then build + e2e**
 
 Run: `pnpm vitest run tests/unit/templates.test.ts tests/unit/initEnv.test.ts && pnpm typecheck`
 Expected: PASS.
 
 Run: `pnpm build && pnpm test:e2e`
-Expected: PASS — `pnpm build` runs `copy-vm-applier.mjs` (now targeting `post-scripts/`), and the init e2e produces a woven share.
+Expected: PASS — `pnpm build` runs `copy-vm-applier.mjs` (now targeting `post-scripts/`), and the init e2e + `vmApplier` packaging test see the relocated bundle.
 
-- [ ] **Step 9: Format, then commit**
+- [ ] **Step 10: Format, then commit**
 
 ```bash
 pnpm format
-git add templates/ scripts/copy-vm-applier.mjs .gitignore src/initEnv.ts tests/unit/templates.test.ts tests/unit/initEnv.test.ts tests/e2e/init.test.ts
+git add templates/ scripts/copy-vm-applier.mjs .gitignore src/initEnv.ts tests/unit/templates.test.ts tests/unit/initEnv.test.ts tests/e2e/init.test.ts tests/e2e/vmApplier.test.ts
 git commit -m "feat: reorganize built-in scripts into pre/post folders and weave them in init"
 ```
 
@@ -1652,18 +1728,32 @@ Expected: FAIL — `update-shares` does not yet weave, so `05-docker.sh` is abse
 
 - [ ] **Step 3: Write the implementation**
 
-In `src/commands/updateShares.ts`, add imports for the weave and templates dir:
+The existing command does its own stage-then-swap loop for `home-jq-transforms`, then would swap the weave separately — two transactions, so a weave failure could leave the jq copies already changed. Fold both into a **single** `executePlans` batch (all staging succeeds before any swap), which also deletes the bespoke copy loop.
+
+In `src/commands/updateShares.ts`, replace the imports so `cpSync`/`renameSync`/`existsSync` (only used by the old loop) are dropped and the weave is added:
 
 ```ts
+import { spawnSync } from 'node:child_process';
+import type { Command } from 'commander';
 import { requireEnvPathsOrExit } from '../envPaths';
 import { previewTransforms } from '../homeJqTransforms';
 import { planAllPhases, executePlans, type PhasePlan } from '../weaveShares';
 import { templatesDir } from '../templates';
 ```
 
-Then, **after** the jq preview loop and the `if (hasError)` guard but **before** the home-jq-transforms copy loop, build the weave plans (this is preflight — it validates naming and collisions without mutating). Insert:
+(Remove the old `import { cpSync, existsSync, renameSync, rmSync } from 'node:fs';` line — none are needed anymore.)
+
+Then replace everything from the `if (hasError) { … }` guard's end through the end of the old copy loop with:
 
 ```ts
+      if (hasError) {
+        console.error(
+          '\nupdate-shares: a transform failed its preview; not copying. Fix the .jq and re-run.',
+        );
+        process.exitCode = 1;
+        return;
+      }
+
       // Preflight the script weave alongside the jq previews: validate naming and
       // resource collisions across both phases and platforms before mutating anything.
       let plans: PhasePlan[];
@@ -1675,22 +1765,25 @@ Then, **after** the jq preview loop and the `if (hasError)` guard but **before**
         return;
       }
 
+      // The home-jq-transforms refresh joins the same transaction: each share's
+      // copy is modeled as a directory-replacement plan (destRel '.' copies the
+      // source folder's contents into the staged dir), so all staging completes
+      // before any swap.
+      const homeJqPlans: PhasePlan[] = paths.vmSharedTargets.map((target) => ({
+        livePhaseDir: target.homeJqTransforms,
+        actions: [{ kind: 'dir', src: paths.homeJqTransforms, destRel: '.' }],
+      }));
+
       if (options.dryRun) {
         console.log('\nupdate-shares: dry run — no files copied.');
         return;
       }
+
+      executePlans([...plans, ...homeJqPlans]);
+      console.log('update-shares: rewove pre/post scripts and refreshed home-jq-transforms in both shares');
 ```
 
-Remove the now-duplicated existing `if (options.dryRun) { … return; }` block that sat before the copy loop (there must be exactly one dry-run early return, the one just added, so plan validation still runs under `--dry-run`).
-
-Finally, after the existing home-jq-transforms copy loop completes, execute the weave:
-
-```ts
-      executePlans(plans);
-      console.log('update-shares: rewove pre/post scripts into both shares');
-```
-
-The resulting order in the action: jq preflight → jq preview loop → weave preflight (`planAllPhases`) → dry-run return → home-jq-transforms stage/swap → `executePlans`. All validation happens before any mutation.
+The resulting order: jq preflight → jq preview loop → `hasError` guard → weave preflight (`planAllPhases`) → build home-jq plans → dry-run return → single `executePlans` (stage all, then swap all). All validation happens before any mutation, and every mutation is one atomic batch.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
