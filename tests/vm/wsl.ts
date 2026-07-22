@@ -60,7 +60,7 @@ export async function checkWslMirroredNetworking(): Promise<void> {
     throw new Error(
       `WSL networking mode is '${mode.stdout.trim()}', not 'mirrored'. ` +
         `In %USERPROFILE%\\.wslconfig using powershell run\n ` +
-        `  echo "\`n[wsl2]\`nnetworkingMode=mirrored\`n" >> .wslconfig\n ` +
+        `  echo "\`n[wsl2]\`nnetworkingMode=mirrored\`n" >> ~/.wslconfig\n ` +
         `  wsl --shutdown\n` +
         `(Docker will be forced to restart since it runs in WSL).`,
     );
@@ -83,7 +83,7 @@ export async function checkWslDhcpPortIgnored(): Promise<void> {
     throw new Error(
       `WSL cannot bind UDP 0.0.0.0:67, so dnsmasq's DHCP bind will fail (got: ${probe.all}). ` +
         `In %USERPROFILE%\\.wslconfig using powershell run\n ` +
-        `  echo "\`n[experimental]\`nignoredPorts=67\`n" >> .wslconfig\n ` +
+        `  echo "\`n[experimental]\`nignoredPorts=67\`n" >> ~/.wslconfig\n ` +
         `  wsl --shutdown\n` +
         `(Docker will be forced to restart since it runs in WSL).`,
     );
