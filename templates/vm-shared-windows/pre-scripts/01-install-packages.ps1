@@ -23,7 +23,8 @@ $packages = @(
   'GitHub.cli',                # gh
   'Microsoft.WindowsTerminal',
   'Microsoft.VisualStudioCode',
-  'Docker.DockerDesktop'
+  'Docker.DockerDesktop',
+  'Python.Python',              # codex comes bundles with some python helper scripts
 )
 
 foreach ($id in $packages) {
