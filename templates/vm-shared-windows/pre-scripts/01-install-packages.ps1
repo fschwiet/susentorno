@@ -24,7 +24,7 @@ $packages = @(
   'Microsoft.WindowsTerminal',
   'Microsoft.VisualStudioCode',
   'Docker.DockerDesktop',
-  'Python.Python'              # codex comes bundles with some python helper scripts
+  'Python.Python.3.14'         # codex comes bundles with some python helper scripts
 )
 
 foreach ($id in $packages) {
