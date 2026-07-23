@@ -17,6 +17,8 @@ import { requireEnvPathsOrExit } from '../envPaths';
 import type { UpstreamOverride, InjectFault } from '../envoyConfig';
 import { resolveForwardListenAddress } from '../runProxy/forwarder';
 import { startGateway, type GatewayHandle } from '../runProxy/gateway';
+import { startDnsResponder } from '../runProxy/dnsResponder';
+import { createServiceStack } from '../runProxy/serviceStack';
 import { allocateColorPorts } from '../runProxy/allocateColorPorts';
 import { bringUpColor, stopColor } from '../runProxy/colorContainer';
 import { waitColorReady } from '../runProxy/waitColorReady';
@@ -132,13 +134,10 @@ export function registerRunProxy(program: Command): void {
         listenAddresses.push(forwardIp);
       }
 
+      const services = createServiceStack();
       let gateway: GatewayHandle;
       try {
-        gateway = await startGateway({
-          listenAddresses,
-          httpsListenPort: httpsPort,
-          httpListenPort: httpPort,
-        });
+        gateway = await services.add(() => startGateway({ listenAddresses, httpsListenPort: httpsPort, httpListenPort: httpPort }));
       } catch (err) {
         console.error(`run-proxy: failed to start the gateway forwarder: ${String(err)}`);
         process.exitCode = 1;
@@ -147,6 +146,18 @@ export function registerRunProxy(program: Command): void {
       console.log(
         `run-proxy: gateway listening on ${listenAddresses.join(', ')} :${httpPort}/${httpsPort}`,
       );
+
+      if (options.forward) {
+        const dnsIp = listenAddresses[listenAddresses.length - 1];
+        try {
+          await services.add(() => startDnsResponder({ listenAddress: dnsIp, answerIp: dnsIp, onError: (message) => console.error(`run-proxy: ${message}`) }));
+        } catch (err) {
+          console.error(`run-proxy: failed to bind DNS on ${dnsIp}:53 — ${String(err)}. Another process may hold that specific address; a wildcard 0.0.0.0:53 holder (e.g. the ICS service) is expected and does not conflict.`);
+          process.exitCode = 1;
+          return;
+        }
+        console.log(`run-proxy: DNS responder listening on ${dnsIp}:53 (all A -> ${dnsIp})`);
+      }
 
       const deps: RunProxyDeps = {
         readAllowlist: (path) => {
@@ -242,7 +253,7 @@ export function registerRunProxy(program: Command): void {
         );
         process.exitCode = exitCode;
       } finally {
-        await gateway.close();
+        await services.closeAll();
       }
     });
 }
