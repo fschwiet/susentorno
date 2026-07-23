@@ -2545,7 +2545,7 @@ git commit -m "feat: serve DHCP from run-proxy on the Internal-switch adapter"
 
 **Files:**
 
-- Modify: `usage-hyper-v.md` (host sections only — lines 8, 16-29, 49-57, 194-204)
+- Modify: `usage-hyper-v.md` (host sections only — lines 8, 16-29, 49-57, 221-235)
 - Modify: `templates/proxy/host-allow-vm-inbound.ps1` (SMB scope)
 
 **Interfaces:**
@@ -2585,7 +2585,7 @@ and add the parameter:
 
 - [ ] **Step 2: Move host readiness ahead of the guest scripts**
 
-In `usage-hyper-v.md`, move the "open the firewall and start forwarding" step (currently around line 194) to immediately after the switch/IP creation section, and introduce it with:
+In `usage-hyper-v.md`, move the "open the firewall and start forwarding" step (currently around line 223, under `## 7. Isolate`) to immediately after the switch/IP creation section, and introduce it with:
 
 ```markdown
 ### Start the host services before booting the VM into the isolated network
@@ -2740,7 +2740,7 @@ git commit -m "feat: remove the in-guest Windows DNS responder"
 **Files:**
 
 - Modify: `usage-windows-vm.md`
-- Modify: `usage-hyper-v.md` (Windows guest section, around lines 89-96, 117, 164-171, 206)
+- Modify: `usage-hyper-v.md` (Windows guest section, around lines 89-96, 117, 193-200, 235)
 
 **Interfaces:**
 
@@ -2759,7 +2759,7 @@ In `usage-hyper-v.md`, replace the "Add a second network adapter" instructions (
 
 - [ ] **Step 2: Replace the static-IP section with DHCP**
 
-Replace the Windows guest static-IP block (around lines 164-171) with:
+Replace the Windows guest static-IP block (around lines 193-200) with:
 
 ```markdown
 **Windows guest** — leave the adapter on **DHCP**. That is the whole network
@@ -2780,7 +2780,7 @@ host IP afterwards; `cmdkey` entries are per-address, so add both.
 
 - [ ] **Step 3: Replace the isolate step**
 
-Replace the "remove the temporary Default Switch adapter" step (around line 206) with:
+Replace the "remove the temporary Default Switch adapter" step (around line 235) with:
 
 ```markdown
 ### Isolate the VM
@@ -3071,7 +3071,7 @@ git commit -m "test: model the host-resolver topology in the VM harness"
 
 **Files:**
 
-- Modify: `usage-hyper-v.md` (Ubuntu guest section, around lines 129-162)
+- Modify: `usage-hyper-v.md` (Ubuntu guest section, around lines 158-191)
 
 **Interfaces:**
 
@@ -3080,7 +3080,7 @@ git commit -m "test: model the host-resolver topology in the VM harness"
 
 - [ ] **Step 1: Replace the Ubuntu static-IP instructions**
 
-Replace the netplan static-IP block (around lines 133-145) with:
+Replace the netplan static-IP block (around lines 162-175) with:
 
 ```markdown
 **Ubuntu guest** — leave the interface on **DHCP**; the installer's default

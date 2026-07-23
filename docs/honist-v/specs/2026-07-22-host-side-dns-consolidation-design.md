@@ -509,7 +509,7 @@ configamatron setup applied — notably, it does not trust the proxy CA.
   Mounting the share itself did not succeed, for a reason unrelated to this
   design: the share grants access only to the `configamatron-share` account, and
   this throwaway guest had never been given that saved credential (the step at
-  `usage-hyper-v.md:164-167` in normal setup). A credentials gap on an
+  `usage-hyper-v.md:193-198` in normal setup). A credentials gap on an
   unconfigured guest, not a transport or firewall problem.
 
   A4 as originally written claimed the share would be *mountable*, so recording it

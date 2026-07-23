@@ -149,7 +149,7 @@ A reference on setting up nested virtualization with Hyper-V https://learn.micro
 
 ### Recommended Save Point
 
-- Shut down the VM a checkpoint before continuing, call it "Windows Installed and Updated". This will provide a baseline you can return to if your network setup changes.
+- Shut down the VM and create a checkpoint before continuing, call it "Windows Installed and Updated". This will provide a baseline you can return to if your network setup changes.
 
 Hyper-V tip on **managing UI focus**: When the VM is selected it will capture keyboard controls, for instance alt-tab will enumerate applications in the VM. Use Ctrl+Alt+UpArrow to return focus to the host level, such that alt-tab enumerates host applications.
 
