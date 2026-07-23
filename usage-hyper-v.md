@@ -1,6 +1,6 @@
 # Hosting with Hyper-V
 
-Run a Windows or Ubuntu guest under **Hyper-V Manager**, isolated behind the host proxy. This doc covers the full host + VM setup — creating the VM, the virtual switch, static IPs, sharing the environment folder, and isolating the network. Once the shared folder is mounted, the guest follows the numbered-script flow:
+Run a Windows or Ubuntu guest under **Hyper-V Manager**, isolated behind the host proxy. This doc covers the full host + VM setup — creating the VM, the virtual switch, the host's static IP, sharing the environment folder, and isolating the network. Guests themselves stay on DHCP throughout. Once the shared folder is mounted, the guest follows the numbered-script flow:
 
 - **Ubuntu guest:** the numbered scripts and verification in `README.md` ("VM setup" onward).
 - **Windows guest:** the numbered scripts in `usage-windows-vm.md`.
@@ -88,14 +88,8 @@ New-NetFirewallRule -DisplayName "Configamatron VM share (SMB inbound)" `
 - Modify the "Settings" scoped to the VM before starting the VM
 
   - Hardware -> Network Adapter
-    - Set "Virtual Switch" to **"Default Switch"** for now. The VM uses one adapter throughout; only the switch changes.
-
-  - Hardware -> Network Adapter 1
-    - Set "Virtual Switch" to "configamatron-internal" (this is the VM's permanent network, used even when its switch to isolated mode)
-
-  - Hardware -> Network Adapter 2
-    - You may want to leave this one unconnected if you are installing Windows so the OS installation won't box you into creating a putting credentials for a Microsoft account on your isolated VM.
-    - Keep the single adapter on "Default Switch" during setup.
+    - Set "Virtual Switch" to **"Default Switch"** for now. The VM uses **one** adapter throughout; only which switch it is attached to changes. Do not add a second adapter — an earlier revision of this guide used two, and a guest with legs on both networks defeats the isolation the Internal switch exists to provide.
+    - If you are installing Windows, you may prefer to leave the adapter **unconnected** for the install itself, so the OS setup cannot push you into signing in with a Microsoft account. Reconnect it to "Default Switch" afterwards.
 
   - Hardware -> Security => Secure Boot
     - For Windows
@@ -116,7 +110,7 @@ New-NetFirewallRule -DisplayName "Configamatron VM share (SMB inbound)" `
 
 ### OS installation
 
-- If you left the second network adapter unconnected for a Windows install, configure it to use the "Default switch" now in VM settings.
+- If you left the network adapter unconnected for a Windows install, connect it to the "Default Switch" now in VM settings.
 
 - Go ahead and start the machine and install any pending updates.
   - It can be tricky to initiate booting from CD/DVD before it tries a network install. You need to press a key quickly after starting the VM to catch the "press any key to install from CD or DVD" message before it opts to try the network.
@@ -157,24 +151,11 @@ Hyper-V tip on **managing UI focus**: When the VM is selected it will capture ke
 
 ## 5. Configure the guest network and mount the share
 
-Give the guest's **Internal-switch** interface a static IP in the same subnet, with **no gateway** — egress leaves through the proxy DNAT rules that the `07-*` script installs later. During setup the **Default Switch** adapter supplies the gateway and DNS (internet); it goes away when you isolate.
+Both guests stay on **DHCP** — that is the entire network configuration. On the Default Switch they lease from Hyper-V's ICS (real gateway and DNS, so packages install); on `configamatron-internal` they lease from `run-proxy`, which supplies the host as both router and DNS. Nothing inside the guest changes between the two, which is exactly what makes switching networks a purely host-side operation.
 
-This guide continues as if 192.168.67.x was chosen as the subnet and the host was already assigned 192.168.67.1. In this guide we'll use 192.168.67.2 for the Ubuntu VM and 192.168.67.3 for the Windows VM. Feel free to adjust according to the subnet you're using.
+This guide continues as if 192.168.67.x was chosen as the subnet and the host was already assigned 192.168.67.1. Guests take their addresses from `run-proxy`'s pool (`.10`–`.209`) rather than being assigned by hand, and a given guest normally lands on the same address each time.
 
-**Ubuntu guest** — static IP via netplan (use a filename that won't collide with the `60-dns-override.yaml` that script 07 writes), then a boot-time CIFS mount:
-
-```yaml
-# /etc/netplan/50-internal-static.yaml  (set the interface name to the Internal-switch NIC)
-network:
-  version: 2
-  ethernets:
-    eth1:
-      addresses: [192.168.67.2/24]
-```
-
-```bash
-sudo netplan apply # bring the static IP up before mounting
-```
+**Ubuntu guest** — leave the interface on **DHCP**; the installer's default configuration is already correct and no netplan drop-in is needed. Then mount the share:
 
 ```bash
 # Credentials file, readable only by root:
@@ -190,7 +171,7 @@ echo '//192.168.67.1/vm-shared  /mnt/vm-shared  cifs  ro,credentials=/etc/config
 sudo systemctl daemon-reload && sudo mount -a
 ```
 
-The share now lives at `/mnt/vm-shared` — the numbered scripts run from there.
+Use the **Default Switch** host IP in that `fstab` line during the NAT phase and the Internal-switch host IP afterwards. The share then lives at `/mnt/vm-shared` — the numbered scripts run from there.
 
 **Windows guest** — leave the adapter on DHCP. Default Switch uses Hyper-V ICS; `configamatron-internal` uses `run-proxy` with the host as router and DNS. Save credentials with:
 
@@ -198,7 +179,9 @@ The share now lives at `/mnt/vm-shared` — the numbered scripts run from there.
 cmdkey /add:192.168.67.1 /user:configamatron-share /pass:<the password from step 2>
 ```
 
-The share is then reachable at `\\192.168.67.1\vm-shared-windows` — the numbered scripts run from there.
+`cmdkey` entries are **per-address**, so add one for the Default Switch host IP as well if you mount the share during the NAT phase. The share is then reachable at `\\192.168.67.1\vm-shared-windows` — the numbered scripts run from there.
+
+> **If a guest ever comes up with no address**, `run-proxy` was not running when it booted. Start `run-proxy` and the guest will pick up a lease on its next retry — no action is needed inside the guest, though Windows can take up to ~5 minutes to retry once it has fallen back to a `169.254.x.x` self-assigned address. As a last resort, the Hyper-V console plus a static address (an IP in the Internal-switch subnet, no gateway, `nameserver = <host-ip>`) still works and is a supported fallback.
 
 ## 6. Run the numbered scripts
 

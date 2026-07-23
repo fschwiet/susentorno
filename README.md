@@ -38,7 +38,7 @@ Usually done once per environment. Run every command from the environment direct
 
 May be repeated for any number of VMs; each VM pairs with one environment via its shared folder.
 
-VM creation, the Internal virtual switch, static IPs, and the SMB share are covered in **`usage-hyper-v.md`** — for both guests:
+VM creation, the Internal virtual switch, the host IP, and the SMB share are covered in **`usage-hyper-v.md`** — for both guests (which stay on DHCP):
 
 - **Ubuntu guest:** follow `usage-hyper-v.md` to create the VM and mount the share at `/mnt/vm-shared`, then run the numbered scripts below.
 - **Windows guest:** follow `usage-hyper-v.md` for the VM and share, then `usage-windows-vm.md` for the guest-side scripts.
