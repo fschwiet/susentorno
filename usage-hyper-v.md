@@ -120,7 +120,36 @@ New-NetFirewallRule -DisplayName "Configamatron VM share (SMB inbound)" `
   - It can be tricky to initiate booting from CD/DVD before it tries a network install. You need to press a key quickly after starting the VM to catch the "press any key to install from CD or DVD" message before it opts to try the network.
   - Restart the machine and check for updates, repeat until none are found.
 
-- Consider shutting down the VM and creating a checkpoint before continuing, call it "Windows Installed and Updated". This will provide a baseline you can return to if your network setup changes.
+### Nested Virtualization
+
+A reference on setting up nested virtualization with Hyper-V https://learn.microsoft.com/en-us/windows-server/virtualization/hyper-v/enable-nested-virtualization#enable-nested-virtualization
+
+- Make sure you have the right features enabled in BIOS for the host: Intel VT-x (Virtualization Technology) with EPT (Extended Page Tables) or AMD-V (AMD Virtualization) with NPT (Nested Page Tables)
+
+- Make sure you're host has the relevant optional Windows features enabled.
+  - To check if they're enabled (run elevated):
+    ```cmd/powershell
+    dism /online /get-featureinfo /featurename:HypervisorPlatform
+    dism /online /get-featureinfo /featurename:VirtualMachinePlatform
+    ```
+  - To enable them (run elevated):
+
+    ```cmd/powershell
+    dism /online /enable-feature /featurename:HypervisorPlatform /all /norestart
+    dism /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
+    ```
+
+  - While the VM is off, run (elevated):
+
+    ```powershell
+    Set-VMProcessor -ExposeVirtualizationExtensions $true
+    ```
+
+  - Start the VM so it can run some updates sometimes needed after enabling nested virtualization.
+
+### Recommended Save Point
+
+- Shut down the VM a checkpoint before continuing, call it "Windows Installed and Updated". This will provide a baseline you can return to if your network setup changes.
 
 Hyper-V tip on **managing UI focus**: When the VM is selected it will capture keyboard controls, for instance alt-tab will enumerate applications in the VM. Use Ctrl+Alt+UpArrow to return focus to the host level, such that alt-tab enumerates host applications.
 
@@ -214,16 +243,6 @@ Run the read-only checks (`-AdapterAlias` defaults to the Internal-switch adapte
 - **Windows guest:** `.\verify-config.ps1 192.168.67.1` from the mounted `vm-shared-windows` share.
 
 Each prints a `PASS`/`FAIL`/`WARN` line per check and exits non-zero if anything failed. Omit the host IP to have the script discover and report it from the installed config.
-
-## 9. Enable Nested Virtualization
-
-ref: https://learn.microsoft.com/en-us/windows-server/virtualization/hyper-v/enable-nested-virtualization#enable-nested-virtualization
-
-Run the following to enable nested virtualization. This requires turning on a thing in BIOS. You will be prompted for the VM name.
-
-```powershell
-Set-VMProcessor -ExposeVirtualizationExtensions $true
-```
 
 ## Security note: the share account
 
