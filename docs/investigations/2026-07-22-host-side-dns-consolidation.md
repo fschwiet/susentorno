@@ -1,7 +1,9 @@
 # Investigation: host-side DNS consolidation (Hyper-V)
 
 **Date:** 2026-07-22
-**Status:** Deferred — captured for a separate future effort. Not part of the VMware-removal cleanup.
+**Status:** **Closed 2026-07-23 — pursued and implemented.** The body below is
+preserved as written; see "Outcome" at the end for what actually happened, and
+where reality diverged from what this note predicted.
 
 ## Summary
 
@@ -126,3 +128,66 @@ unify the two guests on the single simpler "resolve-to-host-IP, no DNAT" model
 Pursue as its own brainstorm → spec → plan cycle **after** the VMware-removal
 cleanup lands, and **after** confirming the host `:53` bind. Do not fold it into
 the VMware-removal work — it is a guest-networking rewrite, not a rename.
+
+---
+
+## Outcome (2026-07-23)
+
+Pursued as recommended, through its own spec and plan:
+
+- Spec: `docs/honist-v/specs/2026-07-22-host-side-dns-consolidation-design.md`
+- Plan: `docs/honist-v/plans/2026-07-22-host-side-dns-consolidation.md`
+
+**The blocking risk cleared.** A specific-IP UDP bind to `<host-ip>:53` does
+coexist with a wildcard `0.0.0.0:53` holder on Windows, and — the part that
+actually mattered — packets addressed to the specific IP are delivered to the
+**specific** socket, not intercepted by the wildcard holder. The wildcard holder
+was confirmed to be ICS (`SharedAccess`), as this note guessed. Measured
+properly on the host this time, not from inside a guest: see
+`docs/investigations/2026-07-22-windows-specific-ip-port-53-bind.md`.
+
+### Where the outcome differed from this note
+
+Four things, all in the direction of a simpler result than proposed:
+
+1. **Guests ended up on DHCP, not "static IP + nameserver".** This note proposed
+   pointing each guest's resolver at the host "via its static network config".
+   Phase 0 validation killed that: static configuration does not follow the
+   network, so a guest moved between the Default and Internal switches carried a
+   dead address and resolver with it. `run-proxy` therefore serves **DHCP as well
+   as DNS**, handing out the host as both router (option 3) and DNS (option 6).
+   A DHCP server was not in this note's scope at all, and became the largest
+   piece of host-side work.
+2. **The end state is simpler than "static IP + nameserver + trust the CA".** It
+   is **"DHCP + trust the proxy CA"** — the guest has no network configuration to
+   speak of, and switching networks became a purely host-side operation with no
+   guest-side change in either direction.
+3. **`60-dns-override.yaml` was deleted outright, not collapsed.** This note
+   expected it to shrink to "set nameserver = host IP". It existed solely to
+   arbitrate between two simultaneous resolvers; with one adapter active at a
+   time there is never more than one, so nothing remained to configure.
+4. **The VM harness was the predicted risk, but not in the predicted way.** It
+   was reworked toward a DHCP host-resolver model rather than the static-IP one,
+   and it deliberately does **not** exercise the production DHCP/DNS servers:
+   those are Windows-targeted, and running them under WSL would test Linux socket
+   behaviour instead. The harness keeps its own dnsmasq standing in for
+   `run-proxy` — which is also its control channel, since `guest.sh` derives every
+   guest's SSH address from that lease file.
+
+### Validated on real hardware
+
+The Windows guest checkpoint confirmed full DORA to an address-less client,
+renewal, lease adoption across a `run-proxy` restart, unattended recovery when
+the host starts late, and an authenticated SMB mount over the Default Switch.
+Results and the incidental findings are recorded in the spec's "Validation
+results — Phase 4 checkpoint (2026-07-23)".
+
+One follow-on concern surfaced that this note did not anticipate: because the
+guest now reaches host services through a small set of firewall-allowed ports on
+a multi-homed host, the confinement to the Internal-switch address depends on
+the Windows **strong host model** rather than on the firewall rules. See
+`docs/investigations/2026-07-23-host-model-lets-guest-reach-other-host-ips.md`.
+
+**Not yet closed:** the Ubuntu guest half has been implemented but never run on a
+real Ubuntu VM. The rewritten `templates/vm-shared/verify-config.sh` has only
+been syntax-checked.
