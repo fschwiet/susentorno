@@ -344,12 +344,23 @@ configamatron setup applied — notably, it does not trust the proxy CA.
 - **A2 — CONFIRMED.** From the guest, `example.com`, `api.anthropic.com`, and
   `totally-made-up.invalid` all resolved to `192.168.67.1` via the host responder,
   through an interface-scoped inbound UDP/53 firewall rule.
-- **A3 — CONFIRMED for transport.** An HTTPS request to `api.anthropic.com`
-  resolved, connected to `192.168.67.1:443`, and completed a TLS handshake in
-  which Envoy presented a certificate. It failed only at CA trust
-  (`Could not establish trust relationship`), which is expected on a guest that
-  never ran the CA-trust step and is unaffected by this design. Full end-to-end
-  confirmation is deferred to the Phase 4 checkpoint on a configured guest.
+- **A3 — CONFIRMED, including SNI.** Two connections were made from the guest
+  *by name*, so the host responder had to resolve them first. Both resolved to
+  `192.168.67.1` and connected to the same port:
+
+  | SNI sent | Outcome |
+  |---|---|
+  | `api.anthropic.com` (allow-listed) | handshake OK, `HTTP/1.1 404 Not Found` from upstream |
+  | `evil-not-allowed.example.com` | connection closed during handshake |
+
+  Same destination IP, same port, different outcome — SNI is the only thing Envoy
+  could have distinguished them by. **The guest's SNI survives the host-DNS path
+  intact**, which is the property the whole design rests on.
+
+  Separately, after importing the proxy CA into the guest's trusted roots, a
+  plain `Invoke-WebRequest` to `https://api.anthropic.com` returned a real HTTP
+  404 from the service — full end-to-end through resolution, TLS validation, and
+  upstream proxying.
 - **A5 — CONFIRMED.** Adapter identity survived the switch reassignment and reboot
   unchanged: alias `Ethernet 2`, MAC `00-15-5D-00-71-10`, `ifIndex 11`.
 
@@ -358,10 +369,22 @@ configamatron setup applied — notably, it does not trust the proxy CA.
   `192.168.67.1`, leaving it with no working connectivity on the NAT network.
   Static configuration does not follow the network — precisely the fragility that
   DHCP-on-both-networks removes.
-- **A4 — outstanding.** Two false starts, neither informative: the
-  `vm-shared-windows` SMB share was not published on the host at all, and the
-  guest still held a static address on the wrong subnet. Retest pending.
+- **A4 — CONFIRMED.** With the guest on the Default Switch (DHCP address
+  `172.17.224.36/20` from ICS) and the SMB rule scoped to that adapter, **TCP 445
+  on the host was reachable**. That is decision 6's actual requirement: routing
+  plus firewall scope permit the share to be served on the NAT network.
+
+  Mounting the share itself did not succeed, for a reason unrelated to this
+  design: the share grants access only to the `configamatron-share` account, and
+  this throwaway guest had never been given that saved credential (the step at
+  `usage-hyper-v.md:164-167` in normal setup). A credentials gap on an
+  unconfigured guest, not a transport or firewall problem.
+
 - **A6 — outstanding.** Cannot be tested until the DHCP server exists (Phase 2).
+  It is the only assumption still open.
+
+**Phase 0 is complete.** Every assumption that could be tested without new code
+has been retired, and none of them sent a decision back for revision.
 
 Incidental observation to verify during implementation: the guest's
 `Resolve-DnsName` reported `DNS server failure` for an AAAA query, where the
