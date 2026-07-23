@@ -19,7 +19,8 @@ Safe to re-run: replaces any existing rules with the same names.
 #>
 [CmdletBinding()]
 param(
-    [string]$AdapterAlias = "vEthernet (configamatron-internal)"
+    [string]$AdapterAlias = "vEthernet (configamatron-internal)",
+    [string]$NatAdapterAlias = "vEthernet (Default Switch)"
 )
 
 $ErrorActionPreference = "Stop"
@@ -46,6 +47,11 @@ New-NetFirewallRule -DisplayName $dnsRuleName -Direction Inbound -Protocol UDP `
     -LocalPort 53 -InterfaceAlias $AdapterAlias -Action Allow | Out-Null
 New-NetFirewallRule -DisplayName $dhcpRuleName -Direction Inbound -Protocol UDP `
     -LocalPort 67 -InterfaceAlias $AdapterAlias -Action Allow | Out-Null
+
+$smbRuleName = "Configamatron share (VM inbound)"
+Get-NetFirewallRule -DisplayName $smbRuleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+New-NetFirewallRule -DisplayName $smbRuleName -Direction Inbound -Protocol TCP `
+    -LocalPort 445 -InterfaceAlias $AdapterAlias, $NatAdapterAlias -Action Allow | Out-Null
 
 Write-Host "Firewall rules created, scoped to interface '$AdapterAlias'."
 Write-Host "Host IP for this network: $hostIp"

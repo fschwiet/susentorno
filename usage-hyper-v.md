@@ -13,9 +13,11 @@ Complete the host "Proxy setup" (`README.md`) first, so the environment's `vm-sh
 
 Hyper-V has no transparent shared-folder mechanism, so we keep the host's environment folder **live** in the guest over a network file share (SMB). This matters because the guest's `~/.claude/.credentials.json` is symlinked to the shared `credentials.json` and the proxy rotates that file; a one-time copy-in (ISO, `Copy-VMFile`) would freeze the credential and is not an option. Note that these credential files sync'd to the VM do not contain the actual credentials but rather a placeholder — the proxy injects the real credentials. What is being sync'd is the rest of the information in ~/.claude/.credentials.json.
 
-The isolated network is an **Internal virtual switch** (host + VMs, no internet). An Internal switch runs **no DHCP**, so the host adapter and the guest both get **static IPs**. That host IP is stable, and it is the one value that threads through the entire setup:
+The isolated network is an **Internal virtual switch** (host + VMs, no internet). `run-proxy` supplies DHCP and DNS on it. The host IP is stable, and it is the one value that threads through the entire setup:
 
 > **One host IP, used everywhere:** the static IPv4 you assign to the host's `vEthernet (<SwitchName>)` adapter is simultaneously the SMB server address, the IP that `host-allow-vm-inbound.ps1` reports, the `run-proxy --forward-listen` target, and the `<host-ip>` argument to the `07-*` scripts. This configuration remains stable during VM setup when network access is direct to the internet and after the VM is isolated and network traffic must go through the proxy.
+
+> **Two host addresses, only one stable.** The Default Switch address used during the NAT phase is regenerated across host reboots. Look it up with `Get-NetIPAddress -InterfaceAlias 'vEthernet (Default Switch)' -AddressFamily IPv4` when needed.
 
 ## 1. Create the Internal switch and assign the host IP
 
@@ -54,7 +56,7 @@ New-SmbShare -Name "vm-shared"         -Path "$env_dir\vm-shared"         -ReadA
 New-SmbShare -Name "vm-shared-windows" -Path "$env_dir\vm-shared-windows" -ReadAccess "configamatron-share"
 ```
 
-Scope SMB (TCP 445) to the Internal adapter only — never expose it on the external NIC — mirroring how `host-allow-vm-inbound.ps1` scopes 80/443:
+`host-allow-vm-inbound.ps1` scopes SMB (TCP 445) to the Internal-switch and Default Switch adapters. It is never exposed on the external NIC.
 
 ```powershell
 New-NetFirewallRule -DisplayName "Configamatron VM share (SMB inbound)" `
@@ -218,21 +220,30 @@ Once done, set a more reasonable policy:
 
 When a script asks for `<host-ip>` (`05-configure-network.sh` / `05-configure-network.ps1`), it is the Internal-switch host IP from step 1 (`192.168.67.1` here).
 
+### Start the host services before booting the VM into the isolated network
+
+Start the firewall and `run-proxy` before the first isolated boot; they provide the guest's DNS and DHCP.
+
+```powershell
+powershell -File .configamatron\proxy\host-allow-vm-inbound.ps1
+configamatron run-proxy
+```
+
 ## 7. Isolate
 
 On the **host**, open the firewall and start forwarding. Both default to the `vEthernet (configamatron-internal)` adapter, so no overrides are needed when the switch is named `configamatron-internal`:
 
 ```powershell
-# Firewall for Envoy 80/443, scoped to the Internal adapter; prints the host IP:
+# Firewall for Envoy 80/443, DNS 53, DHCP 67 and SMB; prints the host IP:
 powershell -File .configamatron\proxy\host-allow-vm-inbound.ps1
 
-# Forward that adapter's :80/:443 to Envoy on loopback:
+# Gateway + DNS + DHCP on that adapter:
 configamatron run-proxy
 ```
 
 (If your switch has a different name, pass `-AdapterAlias "vEthernet (<SwitchName>)"` to the firewall script and `--forward-listen <host-ip>` to `run-proxy`.)
 
-Then isolate the VM: in VM → Settings, **remove the temporary Default Switch adapter**, leaving only the Internal-switch adapter. Reboot the VM so the boot-time DNS/DNAT rules take effect. The VM can now reach only the host.
+Then isolate the VM: in VM → Settings, **remove the temporary Default Switch adapter**, leaving only the Internal-switch adapter. The guest remains on DHCP and can now reach only the host.
 
 ## 8. Verify
 

@@ -58,6 +58,10 @@ describe('resolveForwardListenAddress', () => {
 
 describe('resolveInternalSwitchNetwork', () => {
   it('returns address and netmask', () => {
-    expect(resolveInternalSwitchNetwork(DEFAULT_INTERNAL_SWITCH_ADAPTER, { [DEFAULT_INTERNAL_SWITCH_ADAPTER]: [ipv4('192.168.67.1')] })).toEqual({ address: '192.168.67.1', netmask: '255.255.255.0' });
+    expect(
+      resolveInternalSwitchNetwork(DEFAULT_INTERNAL_SWITCH_ADAPTER, {
+        [DEFAULT_INTERNAL_SWITCH_ADAPTER]: [ipv4('192.168.67.1')],
+      }),
+    ).toEqual({ address: '192.168.67.1', netmask: '255.255.255.0' });
   });
 });

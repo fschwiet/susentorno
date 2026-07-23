@@ -2,6 +2,58 @@ import dgram from 'node:dgram';
 import { parsePacket } from './dhcpMessage';
 import { handleDhcp } from './dhcpHandler';
 import { createLeaseTable } from './dhcpLeases';
-export interface DhcpServerOptions { listenAddress: string; netmask: string; leaseSeconds?: number; port?: number; clientPort?: number; onWarn?: (message: string) => void; onError?: (message: string) => void; }
-export interface DhcpServerHandle { readonly port: number; close(): Promise<void>; }
-export function startDhcpServer(opts: DhcpServerOptions): Promise<DhcpServerHandle> { const leaseSeconds = opts.leaseSeconds ?? 3600; const clientPort = opts.clientPort ?? 68; const leases = createLeaseTable({ hostIp: opts.listenAddress, netmask: opts.netmask, leaseSeconds }); const socket = dgram.createSocket({ type: 'udp4', reuseAddr: false }); socket.on('message', (msg) => { const pkt = parsePacket(msg); if (!pkt) return; const reply = handleDhcp(pkt, { hostIp: opts.listenAddress, netmask: opts.netmask, leaseSeconds, leases, onWarn: opts.onWarn }); if (!reply) return; socket.send(reply.buffer, clientPort, reply.destination, (err) => { if (err) opts.onError?.(`dhcp: send to ${reply.destination}:${clientPort} failed: ${err.message}`); }); }); return new Promise((resolve, reject) => { const onError = (err: Error) => { socket.removeListener('error', onError); reject(err); }; socket.once('error', onError); socket.bind(opts.port ?? 67, opts.listenAddress, () => { socket.removeListener('error', onError); socket.setBroadcast(true); socket.on('error', (err) => opts.onError?.(`dhcp: ${err.message}`)); resolve({ port: socket.address().port, close: () => new Promise<void>((r) => socket.close(() => r())) }); }); }); }
+export interface DhcpServerOptions {
+  listenAddress: string;
+  netmask: string;
+  leaseSeconds?: number;
+  port?: number;
+  clientPort?: number;
+  onWarn?: (message: string) => void;
+  onError?: (message: string) => void;
+}
+export interface DhcpServerHandle {
+  readonly port: number;
+  close(): Promise<void>;
+}
+export function startDhcpServer(opts: DhcpServerOptions): Promise<DhcpServerHandle> {
+  const leaseSeconds = opts.leaseSeconds ?? 3600;
+  const clientPort = opts.clientPort ?? 68;
+  const leases = createLeaseTable({
+    hostIp: opts.listenAddress,
+    netmask: opts.netmask,
+    leaseSeconds,
+  });
+  const socket = dgram.createSocket({ type: 'udp4', reuseAddr: false });
+  socket.on('message', (msg) => {
+    const pkt = parsePacket(msg);
+    if (!pkt) return;
+    const reply = handleDhcp(pkt, {
+      hostIp: opts.listenAddress,
+      netmask: opts.netmask,
+      leaseSeconds,
+      leases,
+      onWarn: opts.onWarn,
+    });
+    if (!reply) return;
+    socket.send(reply.buffer, clientPort, reply.destination, (err) => {
+      if (err)
+        opts.onError?.(`dhcp: send to ${reply.destination}:${clientPort} failed: ${err.message}`);
+    });
+  });
+  return new Promise((resolve, reject) => {
+    const onError = (err: Error) => {
+      socket.removeListener('error', onError);
+      reject(err);
+    };
+    socket.once('error', onError);
+    socket.bind(opts.port ?? 67, opts.listenAddress, () => {
+      socket.removeListener('error', onError);
+      socket.setBroadcast(true);
+      socket.on('error', (err) => opts.onError?.(`dhcp: ${err.message}`));
+      resolve({
+        port: socket.address().port,
+        close: () => new Promise<void>((r) => socket.close(() => r())),
+      });
+    });
+  });
+}

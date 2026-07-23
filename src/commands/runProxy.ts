@@ -138,7 +138,9 @@ export function registerRunProxy(program: Command): void {
       const services = createServiceStack();
       let gateway: GatewayHandle;
       try {
-        gateway = await services.add(() => startGateway({ listenAddresses, httpsListenPort: httpsPort, httpListenPort: httpPort }));
+        gateway = await services.add(() =>
+          startGateway({ listenAddresses, httpsListenPort: httpsPort, httpListenPort: httpPort }),
+        );
       } catch (err) {
         console.error(`run-proxy: failed to start the gateway forwarder: ${String(err)}`);
         process.exitCode = 1;
@@ -151,9 +153,17 @@ export function registerRunProxy(program: Command): void {
       if (options.forward) {
         const dnsIp = listenAddresses[listenAddresses.length - 1];
         try {
-          await services.add(() => startDnsResponder({ listenAddress: dnsIp, answerIp: dnsIp, onError: (message) => console.error(`run-proxy: ${message}`) }));
+          await services.add(() =>
+            startDnsResponder({
+              listenAddress: dnsIp,
+              answerIp: dnsIp,
+              onError: (message) => console.error(`run-proxy: ${message}`),
+            }),
+          );
         } catch (err) {
-          console.error(`run-proxy: failed to bind DNS on ${dnsIp}:53 — ${String(err)}. Another process may hold that specific address; a wildcard 0.0.0.0:53 holder (e.g. the ICS service) is expected and does not conflict.`);
+          console.error(
+            `run-proxy: failed to bind DNS on ${dnsIp}:53 — ${String(err)}. Another process may hold that specific address; a wildcard 0.0.0.0:53 holder (e.g. the ICS service) is expected and does not conflict.`,
+          );
           process.exitCode = 1;
           return;
         }
@@ -161,13 +171,24 @@ export function registerRunProxy(program: Command): void {
         const network = resolveInternalSwitchNetwork();
         const netmask = network?.address === dnsIp ? network.netmask : '255.255.255.0';
         try {
-          await services.add(() => startDhcpServer({ listenAddress: dnsIp, netmask, onWarn: (message) => console.warn(`run-proxy: ${message}`), onError: (message) => console.error(`run-proxy: ${message}`) }));
+          await services.add(() =>
+            startDhcpServer({
+              listenAddress: dnsIp,
+              netmask,
+              onWarn: (message) => console.warn(`run-proxy: ${message}`),
+              onError: (message) => console.error(`run-proxy: ${message}`),
+            }),
+          );
         } catch (err) {
-          console.error(`run-proxy: failed to bind DHCP on ${dnsIp}:67 — ${String(err)}. Guests on the Internal switch cannot get an address without this.`);
+          console.error(
+            `run-proxy: failed to bind DHCP on ${dnsIp}:67 — ${String(err)}. Guests on the Internal switch cannot get an address without this.`,
+          );
           process.exitCode = 1;
           return;
         }
-        console.log(`run-proxy: DHCP server listening on ${dnsIp}:67 (router and DNS -> ${dnsIp}, mask ${netmask})`);
+        console.log(
+          `run-proxy: DHCP server listening on ${dnsIp}:67 (router and DNS -> ${dnsIp}, mask ${netmask})`,
+        );
       }
 
       const deps: RunProxyDeps = {
