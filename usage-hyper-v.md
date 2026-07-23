@@ -87,15 +87,15 @@ New-NetFirewallRule -DisplayName "Configamatron VM share (SMB inbound)" `
 
 - Modify the "Settings" scoped to the VM before starting the VM
 
-  - Hardware -> Add Hardware
-    - Add a second network adapter.
+  - Hardware -> Network Adapter
+    - Set "Virtual Switch" to **"Default Switch"** for now. The VM uses one adapter throughout; only the switch changes.
 
   - Hardware -> Network Adapter 1
     - Set "Virtual Switch" to "configamatron-internal" (this is the VM's permanent network, used even when its switch to isolated mode)
 
   - Hardware -> Network Adapter 2
     - You may want to leave this one unconnected if you are installing Windows so the OS installation won't box you into creating a putting credentials for a Microsoft account on your isolated VM.
-    - Set "Virtual Switch" to "Default Switch" (Hyper-V's built-in NAT switch, added **temporarily** to provide internet during setup. This will be removed later.)
+    - Keep the single adapter on "Default Switch" during setup.
 
   - Hardware -> Security => Secure Boot
     - For Windows
@@ -192,10 +192,9 @@ sudo systemctl daemon-reload && sudo mount -a
 
 The share now lives at `/mnt/vm-shared` — the numbered scripts run from there.
 
-**Windows guest** — static IP and a saved credential so UNC access works without prompting:
+**Windows guest** — leave the adapter on DHCP. Default Switch uses Hyper-V ICS; `configamatron-internal` uses `run-proxy` with the host as router and DNS. Save credentials with:
 
 ```powershell
-New-NetIPAddress -InterfaceAlias "Ethernet 2" -IPAddress 192.168.67.3 -PrefixLength 24   # Internal-switch NIC
 cmdkey /add:192.168.67.1 /user:configamatron-share /pass:<the password from step 2>
 ```
 
@@ -243,7 +242,15 @@ configamatron run-proxy
 
 (If your switch has a different name, pass `-AdapterAlias "vEthernet (<SwitchName>)"` to the firewall script and `--forward-listen <host-ip>` to `run-proxy`.)
 
-Then isolate the VM: in VM → Settings, **remove the temporary Default Switch adapter**, leaving only the Internal-switch adapter. The guest remains on DHCP and can now reach only the host.
+Then isolate the VM by reassigning its single adapter:
+
+```powershell
+Stop-VM -Name '<VMName>'
+Connect-VMNetworkAdapter -VMName '<VMName>' -SwitchName 'configamatron-internal'
+Start-VM -Name '<VMName>'
+```
+
+Confirm `run-proxy` is running before booting. Reassign back to `Default Switch` to reverse isolation; no guest-side change is needed.
 
 ## 8. Verify
 
