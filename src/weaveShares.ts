@@ -9,7 +9,6 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { EnvPaths } from './envPaths';
-import { isDnsResponderBuildArtifact } from './dnsResponder';
 import {
   readFolderContents,
   renumber,
@@ -151,7 +150,7 @@ export function executePlans(plans: PhasePlan[]): void {
         if (action.kind === 'dir')
           cpSync(action.src, dest, {
             recursive: true,
-            filter: (source) => !isDnsResponderBuildArtifact(source),
+            filter: () => true,
           });
         else copyFileSync(action.src, dest);
       }

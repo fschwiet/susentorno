@@ -41,7 +41,6 @@ describe('initEnvironment', () => {
       'vm-shared/pre-scripts/05-configure-network.sh',
       'vm-shared/post-scripts/01-auth-config.sh',
       'vm-shared/post-scripts/02-apply-home-jq-transforms.sh',
-      'vm-shared/pre-scripts/configamatron-egress.service',
       'vm-shared/credentials.json',
       'proxy/docker-compose.yml',
       'proxy/gate.lua',
@@ -52,7 +51,6 @@ describe('initEnvironment', () => {
       'vm-shared-windows/post-scripts/01-auth-config.ps1',
       'vm-shared-windows/post-scripts/02-apply-home-jq-transforms.ps1',
       'vm-shared-windows/verify-config.ps1',
-      'vm-shared-windows/pre-scripts/dns-responder/Program.cs',
       'vm-shared-windows/credentials.json',
     ]) {
       expect(existsSync(join(root, file)), file).toBe(true);
@@ -102,40 +100,6 @@ describe('initEnvironment', () => {
       'invalid codex auth file',
     );
     expect(existsSync(join(dir, ENV_DIR_NAME))).toBe(false);
-  });
-
-  it('does not copy dns-responder bin/obj build artifacts into vm-shared-windows', () => {
-    const templateDnsDir = join(
-      templatesDir(),
-      'vm-shared-windows',
-      'pre-scripts',
-      'dns-responder',
-    );
-    const binFixture = join(templateDnsDir, 'bin');
-    const objFixture = join(templateDnsDir, 'obj');
-    // bin/ and obj/ are gitignored, so creating them here does not dirty the repo.
-    mkdirSync(binFixture, { recursive: true });
-    mkdirSync(objFixture, { recursive: true });
-    writeFileSync(join(binFixture, 'stale.dll'), 'x');
-    writeFileSync(join(objFixture, 'stale.json'), 'x');
-    try {
-      initEnvironment(options());
-      const copiedDns = join(
-        dir,
-        ENV_DIR_NAME,
-        'vm-shared-windows',
-        'pre-scripts',
-        'dns-responder',
-      );
-      expect(existsSync(join(copiedDns, 'bin')), 'bin should not be copied').toBe(false);
-      expect(existsSync(join(copiedDns, 'obj')), 'obj should not be copied').toBe(false);
-      // The source files must still be copied.
-      expect(existsSync(join(copiedDns, 'Program.cs'))).toBe(true);
-      expect(existsSync(join(copiedDns, 'ConfigamatronDnsResponder.csproj'))).toBe(true);
-    } finally {
-      rmSync(binFixture, { recursive: true, force: true });
-      rmSync(objFixture, { recursive: true, force: true });
-    }
   });
 
   it('refuses to run when .configamatron already exists', () => {

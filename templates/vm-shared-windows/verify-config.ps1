@@ -13,17 +13,8 @@ function Bad($m, $d) { $script:fail++; if ($d) { Write-Host "  FAIL  $m -- $d" }
 function Adv($m, $d) { $script:warn++; if ($d) { Write-Host "  WARN  $m -- $d" } else { Write-Host "  WARN  $m" } }
 
 $PLACEHOLDER = 'sk-ant-oat-SANDBOX-PLACEHOLDER'
-$installDir = 'C:\ProgramData\configamatron\dns-responder'
-$configFile = Join-Path $installDir 'responder-config.txt'
-
 Section 'Host IP'
-$configuredIp = if (Test-Path $configFile) { (Get-Content $configFile -Raw).Trim() } else { '' }
-if ($HostIp) {
-  if ($configuredIp -eq $HostIp) { Ok "responder config matches requested host IP ($HostIp)" }
-  else { Bad 'responder config matches requested host IP' "requested $HostIp, config has '$configuredIp'" }
-}
-elseif ($configuredIp) { $HostIp = $configuredIp; Ok "discovered host IP from responder config: $HostIp" }
-else { Bad 'host IP determinable' 'no responder config and no host-ip arg -- has 05-configure-network.ps1 run?' }
+if ($HostIp) { Ok "using host IP $HostIp" } else { Bad 'host IP supplied' 'pass the Internal-switch host IP' }
 
 Section 'CA trust (05)'
 $root = Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like '*configamatron-proxy-certificate-authority*' }
@@ -33,22 +24,14 @@ if ($nodeCa -and (Test-Path $nodeCa)) { Ok "NODE_EXTRA_CA_CERTS set ($nodeCa)" }
 $sslBackend = (git config --global http.sslBackend) 2>$null
 if ($sslBackend -eq 'schannel') { Ok 'git http.sslBackend=schannel' } else { Bad 'git http.sslBackend=schannel' "got '$sslBackend'" }
 
-Section 'DNS redirect (05)'
-$task = Get-ScheduledTask -TaskName 'ConfigamatronDnsResponder' -ErrorAction SilentlyContinue
-if ($task) { Ok 'responder scheduled task registered' } else { Bad 'responder scheduled task registered' 'Register-ScheduledTask not run?' }
-$listening = Get-NetUDPEndpoint -LocalPort 53 -LocalAddress 127.0.0.1 -ErrorAction SilentlyContinue
-if ($listening) { Ok 'responder listening on 127.0.0.1:53' } else { Bad 'responder listening on 127.0.0.1:53' 'responder process not running?' }
+Section 'Host DHCP/DNS (05)'
 $dnsServers = Get-DnsClientServerAddress -AddressFamily IPv4 | ForEach-Object { $_.ServerAddresses } | Where-Object { $_ } | Sort-Object -Unique
-if ($dnsServers -contains '127.0.0.1') { Ok 'adapter DNS includes 127.0.0.1' } else { Bad 'adapter DNS includes 127.0.0.1' "got '$($dnsServers -join ', ')'" }
-$extra = $dnsServers | Where-Object { $_ -ne '127.0.0.1' }
-if (-not $extra) { Ok 'no DNS server besides 127.0.0.1' } else { Bad 'no DNS server besides 127.0.0.1' "extra: $($extra -join ', ')" }
+if ($HostIp -and $dnsServers -contains $HostIp) { Ok "resolver points at the host ($HostIp)" } else { Bad "resolver points at the host ($HostIp)" "got '$($dnsServers -join ', ')'" }
 if ($HostIp) {
-  try {
-    $ans = (Resolve-DnsName -Name example.com -Server 127.0.0.1 -Type A -DnsOnly -ErrorAction Stop | Where-Object { $_.IPAddress } | Select-Object -First 1).IPAddress
-    if ($ans -eq $HostIp) { Ok "stub answers example.com -> $HostIp" } else { Bad 'stub answers example.com -> host IP' "got '$ans'" }
-  }
-  catch { Bad 'stub answers example.com -> host IP' $_.Exception.Message }
+  $ans = (Resolve-DnsName -Name example.com -Type A -DnsOnly -ErrorAction SilentlyContinue | Where-Object Type -eq 'A' | Select-Object -First 1).IPAddress
+  if ($ans -eq $HostIp) { Ok "names resolve to the host ($ans)" } else { Bad 'names resolve to the host' "example.com -> '$ans', expected $HostIp" }
 }
+if (-not (Get-ScheduledTask -TaskName 'ConfigamatronDnsResponder' -ErrorAction SilentlyContinue)) { Ok 'no in-guest DNS responder task' } else { Bad 'no in-guest DNS responder task' 'remove ConfigamatronDnsResponder' }
 
 Section 'Placeholder credential (06)'
 $cred = Join-Path $env:USERPROFILE '.claude\.credentials.json'

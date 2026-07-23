@@ -3,7 +3,6 @@ import { join } from 'node:path';
 import { envPaths } from './envPaths';
 import { sanitizeCredentials } from './sanitizeCredentials';
 import { sanitizeCodexCredentials } from './sanitizeCodexCredentials';
-import { isDnsResponderBuildArtifact } from './dnsResponder';
 import { planAllPhases, executePlans } from './weaveShares';
 
 const PRE_SCRIPTS_README = `# pre-scripts
@@ -87,7 +86,7 @@ export function initEnvironment(options: InitOptions): void {
   cpSync(join(options.templatesDir, 'vm-shared'), paths.vmShared, { recursive: true });
   cpSync(join(options.templatesDir, 'vm-shared-windows'), paths.vmSharedWindows, {
     recursive: true,
-    filter: (source) => !isDnsResponderBuildArtifact(source),
+    filter: () => true,
   });
   cpSync(join(options.templatesDir, 'proxy'), paths.proxy, { recursive: true });
   copyFileSync(options.allowlistSource, paths.allowlist);

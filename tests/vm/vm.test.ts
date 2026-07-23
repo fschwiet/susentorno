@@ -108,22 +108,16 @@ describe('S1: setup during NAT phase', () => {
     expect(stdout).toContain('05-configure-network:');
   });
 
-  it('dnsmasq stub answers every name with the placeholder IP', async () => {
-    const { stdout } = await guest('g1', 'dig +short example.com @127.0.0.1');
-    expect(stdout.trim()).toBe('203.0.113.1');
-  });
-
-  it('netplan override registered the stub as the interface resolver', async () => {
-    // In gateway mode the DHCP DNS is still present too, so assert
-    // containment; the gateway-less S2 asserts the stub is the effective resolver.
+  it('resolves every name to the host resolver', async () => {
+    const { stdout } = await guest('g1', 'getent hosts example.com');
+    expect(stdout.trim().split(/\s+/)[0]).toBe(BRIDGE_IP);
     const { stdout } = await guest('g1', 'resolvectl dns');
-    expect(stdout).toContain('127.0.0.1');
+    expect(stdout).toContain(BRIDGE_IP);
   });
 
-  it('installed both DNAT rules', async () => {
+  it('installed no DNAT rules', async () => {
     const { stdout } = await guest('g1', 'sudo iptables -t nat -S OUTPUT');
-    expect(stdout).toContain(`--dport 443 -j DNAT --to-destination ${BRIDGE_IP}:443`);
-    expect(stdout).toContain(`--dport 80 -j DNAT --to-destination ${BRIDGE_IP}:80`);
+    expect(stdout).not.toContain('DNAT');
   });
 
   it('left the DHCP default route untouched', async () => {
@@ -195,10 +189,9 @@ describe('S2: switch to gateway-less and reboot', () => {
     await harness('net.sh', 'dhcp', 'hostonly');
     await harness('guest.sh', 'reboot', 'g1');
 
-    expect((await guest('g1', 'systemctl is-active dnsmasq')).stdout.trim()).toBe('active');
-    expect(
-      (await guest('g1', 'systemctl is-active configamatron-egress.service')).stdout.trim(),
-    ).toBe('active');
+    expect((await guest('g1', 'systemctl is-active dnsmasq || true')).stdout.trim()).not.toBe(
+      'active',
+    );
   }, 600_000);
 
   it('installed the guarded gateway-less default route', async () => {
@@ -401,10 +394,9 @@ describe('S3: fresh setup with no default route', () => {
     expect(after.stdout).toContain(`default via ${BRIDGE_IP}`);
 
     const nat = await guest('g2', 'sudo iptables -t nat -S OUTPUT');
-    expect(nat.stdout).toContain(`--dport 443 -j DNAT --to-destination ${BRIDGE_IP}:443`);
-    expect(nat.stdout).toContain(`--dport 80 -j DNAT --to-destination ${BRIDGE_IP}:80`);
+    expect(nat.stdout).not.toContain('DNAT');
 
-    const dns = await guest('g2', 'dig +short example.com @127.0.0.1');
-    expect(dns.stdout.trim()).toBe('203.0.113.1');
+    const dns = await guest('g2', 'getent hosts example.com');
+    expect(dns.stdout.trim().split(/\s+/)[0]).toBe(BRIDGE_IP);
   }, 900_000);
 });

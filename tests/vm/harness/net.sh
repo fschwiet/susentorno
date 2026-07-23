@@ -39,11 +39,11 @@ case "${1:?usage: net.sh up|down|dhcp <gateway|hostonly>}" in
         echo "dhcp-option=option:router,$BRIDGE_IP"
         echo "dhcp-option=option:dns-server,$BRIDGE_IP"
       else
-        # Gateway-less mode: DHCP answers but the lease carries no
-        # router and no DNS (empty dhcp-option = suppress the option).
+        # Mirror run-proxy's host-side DHCP and DNS behavior.
         echo "port=0"
-        echo "dhcp-option=option:router"
-        echo "dhcp-option=option:dns-server"
+        echo "dhcp-option=option:router,$BRIDGE_IP"
+        echo "dhcp-option=option:dns-server,$BRIDGE_IP"
+        echo "address=/#/$BRIDGE_IP"
       fi
     } > "$RUN/dnsmasq.conf"
     dnsmasq --conf-file="$RUN/dnsmasq.conf"

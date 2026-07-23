@@ -13,9 +13,6 @@ const expectedTemplateFiles = [
   'vm-shared/pre-scripts/nn-configure-network.sh',
   'vm-shared/post-scripts/01-auth-config.sh',
   'vm-shared/post-scripts/02-apply-home-jq-transforms.sh',
-  'vm-shared/pre-scripts/dnsmasq-stub.conf',
-  'vm-shared/pre-scripts/60-dns-override.yaml',
-  'vm-shared/pre-scripts/configamatron-egress.service',
   'vm-shared/verify-config.sh',
   'proxy/docker-compose.yml',
   'proxy/gate.lua',
@@ -28,8 +25,6 @@ const expectedTemplateFiles = [
   'vm-shared-windows/pre-scripts/nn-configure-network.ps1',
   'vm-shared-windows/post-scripts/01-auth-config.ps1',
   'vm-shared-windows/post-scripts/02-apply-home-jq-transforms.ps1',
-  'vm-shared-windows/pre-scripts/dns-responder/ConfigamatronDnsResponder.csproj',
-  'vm-shared-windows/pre-scripts/dns-responder/Program.cs',
   'vm-shared-windows/verify-config.ps1',
   'home-jq-transforms/manifest.yaml',
   'home-jq-transforms/vscode-settings.jq',
@@ -66,18 +61,6 @@ describe('templates', () => {
   it('pins the compose project name so environments replace each other', () => {
     const compose = readFileSync(join(templatesDir(), 'proxy', 'docker-compose.yml'), 'utf8');
     expect(compose).toContain('name: configamatron');
-  });
-
-  it('suppresses DHCP-supplied DNS on both renderers so the stub is the only resolver', () => {
-    const netplan = readFileSync(
-      join(templatesDir(), 'vm-shared', 'pre-scripts', '60-dns-override.yaml'),
-      'utf8',
-    );
-    // networkd honors use-dns; NetworkManager needs the keyfile passthrough.
-    // Without both, the Hyper-V Default Switch's DHCP adds a dead resolver as a
-    // second nameserver and lookups stall intermittently.
-    expect(netplan).toContain('use-dns: false');
-    expect(netplan).toContain('ipv4.ignore-auto-dns: "true"');
   });
 
   it('defines both blue and green Envoy services publishing on loopback', () => {
@@ -124,27 +107,6 @@ describe('templates', () => {
     expect(auth).toContain('.credentials.json');
   });
 
-  it('windows DNS redirect wires responder to the host IP and adapter DNS', () => {
-    const net = readFileSync(
-      join(templatesDir(), 'vm-shared-windows', 'pre-scripts', 'nn-configure-network.ps1'),
-      'utf8',
-    );
-    expect(net).toContain('Register-ScheduledTask');
-    expect(net).toContain('ConfigamatronDnsResponder');
-    expect(net).toContain('responder-config.txt');
-    expect(net).toContain('Set-DnsClientServerAddress');
-    expect(net).toContain("'127.0.0.1'");
-    expect(net).toContain('dns-responder-build');
-    expect(net).toContain('Copy-Item');
-
-    const prog = readFileSync(
-      join(templatesDir(), 'vm-shared-windows', 'pre-scripts', 'dns-responder', 'Program.cs'),
-      'utf8',
-    );
-    expect(prog).toContain('responder-config.txt');
-    expect(prog).toContain('53');
-  });
-
   it('windows verify-config checks the placeholder invariant and gate', () => {
     const v = readFileSync(join(templatesDir(), 'vm-shared-windows', 'verify-config.ps1'), 'utf8');
     expect(v).toContain('sk-ant-oat-SANDBOX-PLACEHOLDER'); // no real token may live in the guest
@@ -161,13 +123,12 @@ describe('templates', () => {
     expect(s).toMatch(/apt install -y .*\bgh\b/);
   });
 
-  it('ubuntu 05-configure-network merges the Firefox CA with jq, not python3', () => {
+  it('ubuntu 05-configure-network leaves addressing and DNS to DHCP', () => {
     const s = readFileSync(
       join(templatesDir(), 'vm-shared', 'pre-scripts', 'nn-configure-network.sh'),
       'utf8',
     );
-    expect(s).toContain('sudo jq . "$policy_file"');
-    expect(s).toContain('.policies.Certificates.Install');
+    expect(s).toContain('come from the host via DHCP');
     expect(s).not.toContain('python3');
   });
 
