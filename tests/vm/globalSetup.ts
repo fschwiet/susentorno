@@ -1,4 +1,5 @@
 import {
+  checkNoRunningProxy,
   checkWslDhcpPortIgnored,
   checkWslDistro,
   checkWslMirroredNetworking,
@@ -6,6 +7,10 @@ import {
 } from './wsl';
 
 export default async function setup() {
+  // First: instant, needs nothing installed, and it is the most common
+  // self-inflicted failure — a live run-proxy fighting this suite for the Envoy
+  // containers. Everything below is slower and some of it is destructive.
+  await checkNoRunningProxy();
   await checkWslDistro();
   try {
     await harness('preflight.sh');
