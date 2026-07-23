@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# <host-ip> is still required, and still validated, even though nothing below reads
+# it any more: addressing and DNS now arrive via DHCP. Keeping it means the
+# documented invocation and every existing caller stay correct, and a caller that
+# has NOT been updated for the host-side design fails loudly here rather than
+# silently configuring nothing.
 host_ip="${1:?usage: 05-configure-network.sh <host-ip> [cert-path]}"
+readonly host_ip
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 share_root="$(dirname "$script_dir")"
 cert_path="${2:-${share_root}/cert.pem}"
@@ -54,35 +60,16 @@ else
   echo "05-configure-network: Firefox not found; skipped browser CA registration"
 fi
 
-## --- Persistence: dnsmasq + egress + netplan DNS override ---
+## --- Networking ---
 
-sudo apt-get install -y dnsmasq
+# Nothing to do. The adapter stays on DHCP for both networks: on the Default Switch
+# it leases from Hyper-V's ICS, and on configamatron-internal it leases from
+# run-proxy, which supplies the host as both router (option 3) and DNS (option 6).
+#
+# Deleted along with this section: the dnsmasq stub (names now resolve to the host,
+# not a placeholder), the iptables DNAT rules for 80/443 (nothing needs redirecting
+# once names already point at the proxy), the guarded default-route install (the
+# route arrives via DHCP), and the netplan DNS override with its DHCP-DNS
+# suppression (only one resolver is ever present now).
 
-sudo cp "${script_dir}/dnsmasq-stub.conf" /etc/dnsmasq.d/sandbox-stub.conf
-
-sed "s|__HOST_IP__|${host_ip}|g" "${script_dir}/configamatron-egress.service" \
-  | sudo tee /etc/systemd/system/configamatron-egress.service > /dev/null
-
-# Discover the primary network interface (physical NIC name, e.g. ens33) so the
-# netplan DNS override merges into the active profile. Prefer the default-route
-# interface; fall back to the first up, globally-scoped IPv4 interface.
-iface="$(ip -o -4 route show default | awk '{print $5}' | head -n1)"
-if [[ -z "${iface}" ]]; then
-  iface="$(ip -o -4 addr show up scope global | awk '{print $2}' | head -n1)"
-fi
-if [[ -z "${iface}" ]]; then
-  echo "05-configure-network: could not determine the VM's network interface." >&2
-  echo "  Bring the VM's network up before running this (NAT or bridged both work)." >&2
-  exit 1
-fi
-
-sed "s|__IFACE__|${iface}|g" "${script_dir}/60-dns-override.yaml" | sudo tee /etc/netplan/60-dns-override.yaml > /dev/null
-sudo chmod 600 /etc/netplan/60-dns-override.yaml
-sudo netplan apply
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now dnsmasq
-sudo systemctl enable configamatron-egress.service
-sudo systemctl restart configamatron-egress.service
-
-echo "05-configure-network: dnsmasq and configamatron-egress.service enabled and started; netplan DNS override applied"
+echo "05-configure-network: CA trusted; addressing and DNS come from the host via DHCP"

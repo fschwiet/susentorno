@@ -3,8 +3,8 @@
 #
 # Usage: bash verify-config.sh [host-ip]
 #   host-ip  Expected proxy host IP. If omitted, it is discovered from the
-#            installed DNAT rules and reported. If given, the installed rules and
-#            default route are asserted to match it.
+#            DHCP-supplied default route and reported. If given, the default
+#            route and resolver are asserted to match it.
 #
 # Prints one PASS/FAIL/WARN line per check, with the observed value on failure.
 # Exits non-zero if any check FAILs. WARN is advisory and never fails the run.
@@ -38,27 +38,27 @@ adv() {
 curl_code() { curl -s -o /dev/null -w '%{http_code}' --max-time "$1" "$2"; }
 
 PLACEHOLDER='sk-ant-oat-SANDBOX-PLACEHOLDER'
-STUB_IP='203.0.113.1'
 
 section 'Host IP'
 
-nat_dump="$(sudo iptables -t nat -S OUTPUT 2>/dev/null || true)"
-dnat_ip="$(printf '%s\n' "$nat_dump" | sed -n 's/.*--dport 443 -j DNAT --to-destination \([0-9.]*\):443.*/\1/p' | head -n1)"
+# The host is the DHCP-supplied router, so the default route names it. This
+# replaces reading the address out of the DNAT rules, which no longer exist.
+route_ip="$(ip -4 route show default 2>/dev/null | sed -n 's/^default via \([0-9.]*\).*/\1/p' | head -n1)"
 expected_ip="${1:-}"
 
 if [ -n "$expected_ip" ]; then
   host_ip="$expected_ip"
-  if [ "$dnat_ip" = "$expected_ip" ]; then
-    ok "DNAT target matches requested host IP ($host_ip)"
+  if [ "$route_ip" = "$expected_ip" ]; then
+    ok "default route matches requested host IP ($host_ip)"
   else
-    bad 'DNAT target matches requested host IP' "requested $expected_ip, rules point at '${dnat_ip:-none}'"
+    bad 'default route matches requested host IP' "requested $expected_ip, route points at '${route_ip:-none}'"
   fi
-elif [ -n "$dnat_ip" ]; then
-  host_ip="$dnat_ip"
-  ok "discovered host IP from DNAT rules: $host_ip"
+elif [ -n "$route_ip" ]; then
+  host_ip="$route_ip"
+  ok "discovered host IP from the default route: $host_ip"
 else
   host_ip=''
-  bad 'host IP determinable' 'no DNAT rule found and no host-ip argument given -- has 05-configure-network.sh run?'
+  bad 'host IP determinable' 'no default route and no host-ip argument given -- did the adapter get a DHCP lease?'
 fi
 
 section 'CA trust (05)'
@@ -113,65 +113,57 @@ else
   adv 'firefox CA checks' 'Firefox not found; skipped'
 fi
 
-section 'DNS stub (05)'
+section 'Host DNS (05)'
 
-if [ "$(systemctl is-active dnsmasq 2>/dev/null)" = 'active' ]; then ok 'dnsmasq active'; else bad 'dnsmasq active' "is-active=$(systemctl is-active dnsmasq 2>/dev/null)"; fi
-if [ "$(systemctl is-enabled dnsmasq 2>/dev/null)" = 'enabled' ]; then ok 'dnsmasq enabled at boot'; else bad 'dnsmasq enabled at boot' "is-enabled=$(systemctl is-enabled dnsmasq 2>/dev/null)"; fi
-
-if ! command -v dig >/dev/null 2>&1; then
-  adv 'dns resolution checks' 'dig not installed (dnsutils); skipping DNS answer checks'
+# Every name must resolve to the host: the responder there answers all A queries
+# with its own address. A placeholder answer (the old in-guest dnsmasq stub
+# returned 203.0.113.1) would mean a guest-side resolver survived the migration.
+resolved="$(getent hosts example.com 2>/dev/null | awk '{print $1}' | head -n1)"
+if [ -n "$host_ip" ] && [ "$resolved" = "$host_ip" ]; then
+  ok "names resolve to the host ($resolved)"
 else
-  stub_direct="$(dig +short example.com @127.0.0.1 2>/dev/null | head -n1)"
-  if [ "$stub_direct" = "$STUB_IP" ]; then ok "stub answers example.com -> $STUB_IP"; else bad 'stub answers via 127.0.0.1' "got '${stub_direct:-none}', want $STUB_IP"; fi
-
-  stub_eff="$(dig +short example.com 2>/dev/null | head -n1)"
-  if [ "$stub_eff" = "$STUB_IP" ]; then ok "stub is the effective resolver (example.com -> $STUB_IP)"; else bad 'stub is the effective resolver' "got '${stub_eff:-none}', want $STUB_IP"; fi
+  bad 'names resolve to the host' "example.com -> '${resolved:-none}', expected ${host_ip:-<host-ip>}"
 fi
 
-if resolvectl dns 2>/dev/null | grep -q '127.0.0.1'; then
-  ok 'resolvectl lists 127.0.0.1 as a resolver'
+if [ -n "$host_ip" ] && resolvectl dns 2>/dev/null | grep -q "$host_ip"; then
+  ok "resolver points at the host ($host_ip)"
 else
-  bad 'resolvectl lists 127.0.0.1 as a resolver' 'netplan DNS override not applied?'
+  bad 'resolver points at the host' "resolvectl dns: $(resolvectl dns 2>/dev/null | tr '\n' ' ')"
 fi
 
-# A second, unreachable upstream (e.g. DHCP-supplied host IP) makes resolved
-# stall intermittently on every lookup that lands on it, so the stub must be
-# the ONLY configured server, not merely present.
-extra_dns="$(resolvectl dns 2>/dev/null | sed 's/^[^:]*://' | tr ' \t' '\n\n' | grep -v '^$' | grep -Fxv '127.0.0.1' | sort -u | tr '\n' ' ')"
-if [ -z "$extra_dns" ]; then
-  ok 'resolvectl lists no resolver besides 127.0.0.1'
+if ! systemctl is-active --quiet dnsmasq 2>/dev/null; then
+  ok 'no in-guest dnsmasq (DNS is served by the host)'
 else
-  bad 'resolvectl lists no resolver besides 127.0.0.1' "extra DNS servers configured: $extra_dns(DHCP DNS not suppressed? intermittent lookup stalls likely)"
+  bad 'no in-guest dnsmasq' 'dnsmasq is still active -- remove it'
 fi
 
-section 'Routing / NAT (05)'
+section 'Routing (05)'
 
-if printf '%s\n' "$nat_dump" | grep -q -- "--dport 443 -j DNAT --to-destination ${host_ip}:443"; then
-  ok 'DNAT rule for :443 present'
+# The DNAT layer is gone: names already point at the proxy, so nothing needs
+# redirecting. Any NAT rule here is a leftover from the old configuration.
+nat_dump="$(sudo iptables -t nat -S OUTPUT 2>/dev/null || true)"
+if ! printf '%s\n' "$nat_dump" | grep -q DNAT; then
+  ok 'no DNAT rules (traffic goes straight to the proxy)'
 else
-  bad 'DNAT rule for :443 present' "no rule to ${host_ip:-<host-ip>}:443"
-fi
-if printf '%s\n' "$nat_dump" | grep -q -- "--dport 80 -j DNAT --to-destination ${host_ip}:80"; then
-  ok 'DNAT rule for :80 present'
-else
-  bad 'DNAT rule for :80 present' "no rule to ${host_ip:-<host-ip>}:80"
+  bad 'no DNAT rules' "$(printf '%s\n' "$nat_dump" | grep DNAT | tr '\n' ' ')"
 fi
 
+# The route arrives via DHCP now, rather than being installed by a systemd unit,
+# and it is the same on both networks -- which is what makes switching between
+# them a purely host-side operation.
 route="$(ip -4 route show default 2>/dev/null)"
 if [ -z "$route" ]; then
-  bad 'default route present' 'no default route (the isolated Internal-switch network needs the unit-installed route)'
-elif printf '%s' "$route" | grep -q 'proto dhcp'; then
-  ok "default route present (DHCP/NAT mode: $(printf '%s' "$route" | head -n1))"
+  bad 'default route present' 'no default route -- did the adapter get a DHCP lease?'
 elif [ -n "$host_ip" ] && printf '%s' "$route" | grep -q "via $host_ip"; then
-  ok "Internal-switch default route via $host_ip"
+  ok "default route via the host ($host_ip)"
 else
-  adv 'default route present' "unexpected route: $(printf '%s' "$route" | head -n1)"
+  adv 'default route via the host' "unexpected route: $(printf '%s' "$route" | head -n1)"
 fi
 
-svc="configamatron-egress.service"
-if [ -n "$host_ip" ]; then
-  if [ "$(systemctl is-active "$svc" 2>/dev/null)" = 'active' ]; then ok "$svc active"; else bad "$svc active" "is-active=$(systemctl is-active "$svc" 2>/dev/null)"; fi
-  if [ "$(systemctl is-enabled "$svc" 2>/dev/null)" = 'enabled' ]; then ok "$svc enabled at boot"; else bad "$svc enabled at boot" "is-enabled=$(systemctl is-enabled "$svc" 2>/dev/null)"; fi
+if ! systemctl is-active --quiet configamatron-egress.service 2>/dev/null; then
+  ok 'no configamatron-egress.service (routing comes from DHCP)'
+else
+  bad 'no configamatron-egress.service' 'the egress unit is still active -- remove it'
 fi
 
 section 'Placeholder credential'
