@@ -1,7 +1,8 @@
-# Investigation: binding a specific-IP `:53` on Windows alongside a wildcard `:53` holder
+# Investigation: specific-IP UDP service binds on Windows — DNS (`:53`) and DHCP (`:67`)
 
 **Date:** 2026-07-22
-**Status:** Complete — question answered empirically on a Windows 11 host.
+**Status:** Complete for the host-side questions. One question (guest-originated
+broadcast) is explicitly left open — see "What was NOT tested".
 
 This note is written to be **project-agnostic**. It records a general Windows
 networking question, the experiments run to answer it, and what each one
@@ -176,6 +177,65 @@ the packets. A wrong answer from the right socket is a different signal than no
 answer at all, and the distinction is what let the networking question be
 answered before the bug was fixed.
 
+## Test 4 — The same question for DHCP (`:67`), plus broadcast delivery
+
+Running a DHCP server on a specific interface raises a second, harder question.
+DNS queries are **unicast** to the server's address, but a DHCP client that has no
+address yet sends `DISCOVER` from `0.0.0.0` to the **limited broadcast** address
+`255.255.255.255`. So it is not enough to bind `<ip>:67` — the socket must also
+*receive broadcast traffic*.
+
+On Linux this is the reason DHCP servers bind `INADDR_ANY` (or use
+`SO_BINDTODEVICE`): a socket bound to a specific unicast address does not receive
+packets addressed to a broadcast address.
+
+Three binds were probed, then a listener was bound to `192.168.67.1:67` and a
+second socket — with `SO_BROADCAST` set and **pinned to the same interface IP** so
+packets left via that adapter — sent probes to three destinations on port 67.
+
+```powershell
+# Sender pinned to the internal-switch IP so the packet leaves that adapter
+$tx.SetSocketOption([System.Net.Sockets.SocketOptionLevel]::Socket,
+    [System.Net.Sockets.SocketOptionName]::Broadcast, $true)
+$tx.Bind((New-Object System.Net.IPEndPoint($hostIp, 0)))
+# ... SendTo 255.255.255.255:67, 192.168.67.255:67, 192.168.67.1:67
+```
+
+**Result:**
+
+```
+=== Part 1: can we bind :67 at all? ===
+OK    bind 192.168.67.1:67
+OK    bind 0.0.0.0:67
+
+=== Part 2: does a specific-IP bind receive broadcast to :67? ===
+  RECEIVED  limited broadcast 255.255.255.255
+  RECEIVED  subnet broadcast 192.168.67.255
+  RECEIVED  unicast 192.168.67.1 (control)
+```
+
+**Demonstrated:**
+
+- `<specific-ip>:67` binds cleanly. Note the contrast with Test 1: the same ICS
+  service that holds DNS on **wildcard** `0.0.0.0:53` holds DHCP on a **specific**
+  address (`172.17.224.1:67`). Because that bind is specific, even `0.0.0.0:67`
+  was still bindable here. Do not generalize one port's binding style from
+  another's, even within the same service.
+- **A socket bound to a specific unicast address received both limited broadcast
+  and subnet broadcast traffic.** This is the key finding, and it differs from
+  Linux. It means a DHCP server on Windows does not need a wildcard bind to hear
+  clients that have no address yet.
+- The unicast case is the control, confirming the listener was live and the
+  send path worked; without it, two "RECEIVED" lines would not distinguish
+  "broadcast was delivered" from "the test was measuring something else."
+
+**Important limitation on this result** — see the next section. The sender was on
+the **same host** as the listener and pinned to that host's own interface address.
+A real DHCP client is a separate machine broadcasting from `0.0.0.0` across a
+virtual switch, which is a different arrival path. This test removes the
+categorical objection ("Windows won't deliver broadcast to a specific bind") but
+does not prove the real path works.
+
 ## What was NOT tested
 
 - **Inbound reachability from another machine.** All queries above originated on
@@ -193,6 +253,20 @@ answered before the bug was fixed.
   profile `Any` were already present from container networking. These might
   incidentally permit the traffic, but relying on rules another component created
   and may remove is not advisable — create an explicit, interface-scoped rule.)
+
+- **Guest-originated broadcast across a virtual switch.** This is the most
+  significant gap. Test 4 established that a specific-IP bind receives broadcast,
+  but the sender was a process on the same host, pinned to that host's own
+  interface address. A DHCP client on another machine sends from source `0.0.0.0`
+  to `255.255.255.255`, arriving at the host from across the virtual switch. That
+  path was not exercised, and it is the one that matters for actually serving
+  DHCP.
+
+  A cheap way to close this without writing a DHCP server: bind a **passive
+  listener** to `<ip>:67` that logs any datagram it receives, then boot a
+  DHCP-configured client on the network and observe whether a `DISCOVER` arrives.
+  The client will fail to get an address — nothing is answering — but arrival of
+  the packet is the whole question.
 
 - **Behaviour when the wildcard holder starts second.** Only "wildcard first,
   specific second" was tested. The reverse ordering, and what happens across an
@@ -213,6 +287,14 @@ answered before the bug was fixed.
    disable or reconfigure ICS.
 4. The remaining practical obstacle is **Windows Firewall**, not port ownership.
    Plan for an explicit inbound allow rule scoped to the interface.
+5. The same holds for DHCP on `:67`, with the additional and more surprising
+   finding that **a specific-IP bind on Windows receives broadcast traffic** —
+   so a DHCP server does not need a wildcard bind. This is a genuine
+   platform difference from Linux. It is demonstrated only for a same-host
+   sender; the cross-machine path remains open (see above).
+6. Binding style is **per-port, not per-service**: the same ICS service held
+   `:53` on wildcard and `:67` on a specific address. Probe each port you care
+   about rather than inferring.
 
 ## Reproducing
 
