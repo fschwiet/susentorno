@@ -17,15 +17,29 @@ packages:
   - nodejs
 write_files:
   # Mimic the Ubuntu Desktop installer: netplan renders through NetworkManager,
-  # and the base profile carries only the renderer (no per-device config), so
-  # 07's 60-dns-override.yaml is the sole definition of the interface (which is
-  # exactly why that override must set dhcp4 itself — see 60-dns-override.yaml).
+  # and an installed system has a real per-NIC connection profile created by the
+  # installer. There is no installer here, so declare the equivalent explicitly.
+  #
+  # This definition used to come from 07's 60-dns-override.yaml, which was the
+  # sole definition of the interface. That file is gone — DNS and the route now
+  # arrive from the host via DHCP, so there is nothing left to override — but the
+  # NIC still has to be declared somewhere. Doing it here keeps the image
+  # deterministic rather than depending on NetworkManager's implicit "Wired
+  # connection 1" fallback, which is not what a real installed system uses.
+  #
+  # dhcp4 only: no nameservers and no dhcp4-overrides. Taking DNS from the lease
+  # is the whole point of the host-side design.
   - path: /etc/netplan/01-network-manager-all.yaml
     permissions: '0600'
     content: |
       network:
         version: 2
         renderer: NetworkManager
+        ethernets:
+          all-en:
+            match:
+              name: "en*"
+            dhcp4: true
   # Stop cloud-init regenerating its systemd-networkd profile on later boots.
   - path: /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
     content: |
@@ -34,16 +48,17 @@ runcmd:
   - rm -f /etc/netplan/50-cloud-init.yaml
   # The Ubuntu *cloud* image ships systemd-networkd enabled, and a match-all
   # /run/systemd/network/zzzz-dracut-default.network gives it ownership of the
-  # NIC even though the netplan renderer is NetworkManager. networkd then
-  # registers the DHCP-supplied DNS with systemd-resolved and holds the link, so
-  # the 127.0.0.1 stub that 07's netplan override pushes through NetworkManager is
-  # rejected LinkBusy and never becomes the resolver. A real Ubuntu Desktop runs
-  # NetworkManager exclusively; masking networkd makes this golden image behave
-  # the same. Plain `mask` (not `--now`) leaves the build boot's own networking
+  # NIC even though the netplan renderer is NetworkManager. Two renderers fighting
+  # over one link is what the LinkBusy failures came from. A real Ubuntu Desktop
+  # runs NetworkManager exclusively; masking networkd makes this golden image
+  # behave the same, so the netplan profile above is the only thing configuring
+  # the NIC. Plain `mask` (not `--now`) leaves the build boot's own networking
   # alone and only takes effect on the test overlays booted from this image.
   - systemctl mask systemd-networkd.service systemd-networkd.socket systemd-networkd-wait-online.service
-  # dnsmasq is pre-installed so 07's `apt-get install -y dnsmasq` is an offline
-  # no-op, but production has it absent-therefore-disabled before 07 runs.
+  # The guest scripts no longer install or enable dnsmasq — DNS is served by the
+  # host. It stays pre-installed and explicitly disabled so that the "no in-guest
+  # dnsmasq" assertion is meaningful: it proves nothing ENABLED it, rather than
+  # passing trivially because the package is absent.
   - systemctl disable --now dnsmasq || true
   - mkdir -p /mnt/vm-shared
   - printf 'vmshared /mnt/vm-shared 9p trans=virtio,ro,nofail,version=9p2000.L 0 0\n' >> /etc/fstab

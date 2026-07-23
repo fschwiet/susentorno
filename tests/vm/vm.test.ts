@@ -185,7 +185,7 @@ describe('S1b: applier onboarding (07), auth-config symlink (06), firefox policy
 });
 
 describe('S2: switch to gateway-less and reboot', () => {
-  it('reboots into gateway-less mode with both units active', async () => {
+  it('reboots into gateway-less mode with no in-guest DNS unit', async () => {
     await harness('net.sh', 'dhcp', 'hostonly');
     await harness('guest.sh', 'reboot', 'g1');
 
@@ -194,15 +194,18 @@ describe('S2: switch to gateway-less and reboot', () => {
     );
   }, 600_000);
 
-  it('installed the guarded gateway-less default route', async () => {
+  it('takes the default route from DHCP, not from a guest-side unit', async () => {
     const { stdout } = await guest('g1', 'ip -4 route show default');
     expect(stdout).toContain(`default via ${BRIDGE_IP}`);
-    expect(stdout).not.toContain('proto dhcp'); // static, installed by the unit
+    // The route now ARRIVES via DHCP (option 3). The guarded `ip route replace`
+    // that used to install a static one is gone with the egress unit, so seeing
+    // `proto dhcp` here is the assertion, not the absence of it.
+    expect(stdout).toContain('proto dhcp');
   });
 
-  it('stub is the effective resolver after reboot', async () => {
-    const { stdout } = await guest('g1', 'dig +short example.com');
-    expect(stdout.trim()).toBe('203.0.113.1');
+  it('the host is still the effective resolver after reboot', async () => {
+    const { stdout } = await guest('g1', 'getent hosts example.com');
+    expect(stdout.trim().split(/\s+/)[0]).toBe(BRIDGE_IP);
   });
 
   it('terminated :443 host: CA trusted, unexpected auth passes through, placeholder injected', async () => {
@@ -374,15 +377,23 @@ describe('S2b: run-proxy inline logging', () => {
   }, 300_000);
 });
 
-describe('S3: fresh setup with no default route', () => {
-  it('05 discovers the interface via the fallback and installs the route', async () => {
-    // DHCP is still in gateway-less mode (S2), so g2 boots gateway-less: the
-    // interface-discovery fallback branch in 05 is the only path that works.
+describe('S3: fresh guest on the isolated network', () => {
+  it('is fully configured by DHCP alone, and 05 leaves networking untouched', async () => {
+    // DHCP is still in gateway-less mode (S2), so g2 boots straight onto the
+    // isolated network. This replaces the old "05 installs the route" test: there
+    // is no interface-discovery fallback and no route install left to exercise,
+    // because the lease now carries the router and DNS.
     await harness('guest.sh', 'start', 'g2', '--share', shareDir);
     await harness('guest.sh', 'wait-ssh', 'g2');
 
+    // The whole network configuration must already be present BEFORE 05 runs.
+    // That is the design claim: a guest needs nothing but a DHCP lease.
     const before = await guest('g2', 'ip -4 route show default');
-    expect(before.stdout.trim()).toBe(''); // precondition: no default route
+    expect(before.stdout).toContain(`default via ${BRIDGE_IP}`);
+    expect(before.stdout).toContain('proto dhcp');
+
+    const beforeDns = await guest('g2', 'getent hosts example.com');
+    expect(beforeDns.stdout.trim().split(/\s+/)[0]).toBe(BRIDGE_IP);
 
     const run = await guest(
       'g2',
@@ -390,8 +401,11 @@ describe('S3: fresh setup with no default route', () => {
     );
     expect(run.stdout).toContain('05-configure-network:');
 
+    // ...and 05 must not have changed any of it. Same DHCP route, no DNAT layer
+    // reintroduced, host still the resolver.
     const after = await guest('g2', 'ip -4 route show default');
     expect(after.stdout).toContain(`default via ${BRIDGE_IP}`);
+    expect(after.stdout).toContain('proto dhcp');
 
     const nat = await guest('g2', 'sudo iptables -t nat -S OUTPUT');
     expect(nat.stdout).not.toContain('DNAT');
