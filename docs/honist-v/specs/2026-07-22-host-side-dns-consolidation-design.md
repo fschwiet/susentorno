@@ -331,6 +331,47 @@ Switch and `configamatron-internal`.
 | **A5** | Reassigning the adapter's virtual switch preserves the guest's NIC identity (same interface alias/name) across the flip. | Asserted from the fact that it is the same virtual adapter, not measured. If the guest renames the interface, interface-scoped configuration breaks. | Record the guest's adapter alias/MAC, reassign the switch, reboot, compare. |
 | **A6** | The Windows and Ubuntu DHCP clients interoperate with the deterministic-mapping server. | The server does not exist yet; DHCP clients are notoriously particular about option encoding and message sequencing. | Validate after Phase 2, against both guests. |
 
+### Validation results (2026-07-22)
+
+Run against a **fresh** Windows guest (`sus-windows`) that had never had any
+configamatron setup applied — notably, it does not trust the proxy CA.
+
+- **A1 — CONFIRMED.** A real guest's DHCP `DISCOVER`, sourced from `0.0.0.0:68`
+  and broadcast across the vSwitch, was delivered to a socket bound to
+  `192.168.67.1:67`. Observed repeatedly across two transaction IDs with the
+  client MAC parsed correctly. This retires the load-bearing unknown: **decision 5
+  (host DHCP) is viable.**
+- **A2 — CONFIRMED.** From the guest, `example.com`, `api.anthropic.com`, and
+  `totally-made-up.invalid` all resolved to `192.168.67.1` via the host responder,
+  through an interface-scoped inbound UDP/53 firewall rule.
+- **A3 — CONFIRMED for transport.** An HTTPS request to `api.anthropic.com`
+  resolved, connected to `192.168.67.1:443`, and completed a TLS handshake in
+  which Envoy presented a certificate. It failed only at CA trust
+  (`Could not establish trust relationship`), which is expected on a guest that
+  never ran the CA-trust step and is unaffected by this design. Full end-to-end
+  confirmation is deferred to the Phase 4 checkpoint on a configured guest.
+- **A5 — CONFIRMED.** Adapter identity survived the switch reassignment and reboot
+  unchanged: alias `Ethernet 2`, MAC `00-15-5D-00-71-10`, `ifIndex 11`.
+
+  This run also produced unplanned supporting evidence for decision 5: on the
+  Default Switch the guest still carried its static `192.168.67.50` and DNS
+  `192.168.67.1`, leaving it with no working connectivity on the NAT network.
+  Static configuration does not follow the network — precisely the fragility that
+  DHCP-on-both-networks removes.
+- **A4 — outstanding.** Two false starts, neither informative: the
+  `vm-shared-windows` SMB share was not published on the host at all, and the
+  guest still held a static address on the wrong subnet. Retest pending.
+- **A6 — outstanding.** Cannot be tested until the DHCP server exists (Phase 2).
+
+Incidental observation to verify during implementation: the guest's
+`Resolve-DnsName` reported `DNS server failure` for an AAAA query, where the
+intended behaviour is NOERROR with zero answer records. This is most likely how
+that cmdlet surfaces an empty answer rather than a genuine defect — the same run
+resolved `api.anthropic.com` successfully through the normal client path, which
+attempts AAAA before A, and the existing `ConfigamatronDnsResponder` ships these
+exact semantics today. The unit tests in Phase 1 must assert the response
+**bytes** (ANCOUNT=0, RCODE=0) rather than rely on cmdlet reporting.
+
 ## Phases
 
 One spec, one plan, implemented sequentially. The phases are execution structure,
