@@ -133,11 +133,21 @@ $block443 = Invoke-CurlCode @('--resolve', 'blocked.example.com:443:127.0.0.1', 
 if ($block443.Exit -ne 0) { Add-Pass "blocked :443 connection dropped (curlExit=$($block443.Exit))" }
 else { Add-Fail 'blocked :443 connection dropped' "expected a connection failure, but curl succeeded (code=$($block443.Code))" }
 
+# gate.lua substitutes the real token only for an exact placeholder match; any other
+# Authorization passes through to the upstream unmodified (it no longer 403s an
+# unexpected credential -- see docs/investigations/2026-07-22-remote-control-session-
+# token-rejected-by-claude-gate.md). So a foreign credential must reach the upstream
+# and be REJECTED there. /v1/models rather than "/", because "/" answers 404 whatever
+# the credential and so cannot distinguish rejection from injection. >=400 rather than
+# a specific code stays robust to upstream changes; a 2xx is the outcome that must
+# never happen, meaning the real token was substituted for a foreign one.
+#
 # --ssl-no-revoke: our leaf has no CRL/OCSP endpoint, so schannel's default
 # revocation check fails closed (curl error 60) even though the chain is valid.
-$gate = Invoke-CurlCode @('--ssl-no-revoke', '--cacert', $caCert, '--resolve', 'api.anthropic.com:443:127.0.0.1', '-H', 'Authorization: Bearer not-the-placeholder', '--max-time', '20', 'https://api.anthropic.com/')
-if ($gate.Code -eq '403') { Add-Pass 'credential gate: wrong Authorization -> 403 (rejected locally, no token spent)' }
-else { Add-Fail 'credential gate wrong-auth' "expected 403 from gate.lua, got code=$($gate.Code) curlExit=$($gate.Exit)" }
+$gate = Invoke-CurlCode @('--ssl-no-revoke', '--cacert', $caCert, '--resolve', 'api.anthropic.com:443:127.0.0.1', '-H', 'Authorization: Bearer not-the-placeholder', '-H', 'anthropic-version: 2023-06-01', '--max-time', '20', 'https://api.anthropic.com/v1/models')
+if ($gate.Exit -ne 0 -or -not $gate.Code -or $gate.Code -eq '000') { Add-Fail 'credential gate wrong-auth' "no response from upstream (code=$($gate.Code) curlExit=$($gate.Exit))" }
+elseif ([int]$gate.Code -lt 400) { Add-Fail 'credential gate wrong-auth' "got $($gate.Code) -- a foreign credential was upgraded; the real token must never be substituted" }
+else { Add-Pass "credential gate: foreign credential passed through and rejected upstream ($($gate.Code))" }
 
 Write-Section 'VM-path (forwarder -> loopback)'
 
@@ -157,9 +167,12 @@ else {
     if ($fwd80.Exit -eq 0 -and [int]($fwd80.Code) -lt 400) { Add-Pass "allow-listed :80 via ${vmIp} -> $($fwd80.Code)" }
     else { Add-Fail "allow-listed :80 via ${vmIp}" "code=$($fwd80.Code) curlExit=$($fwd80.Exit)" }
 
-    $fwdGate = Invoke-CurlCode @('--ssl-no-revoke', '--cacert', $caCert, '--resolve', "api.anthropic.com:443:$vmIp", '-H', 'Authorization: Bearer not-the-placeholder', '--max-time', '20', 'https://api.anthropic.com/')
-    if ($fwdGate.Code -eq '403') { Add-Pass "credential gate via ${vmIp} -> 403" }
-    else { Add-Fail "credential gate via ${vmIp}" "expected 403, got code=$($fwdGate.Code) curlExit=$($fwdGate.Exit)" }
+    # Same contract as the loopback gate check above: a foreign credential is passed
+    # through and must be rejected by the upstream, never upgraded to the real token.
+    $fwdGate = Invoke-CurlCode @('--ssl-no-revoke', '--cacert', $caCert, '--resolve', "api.anthropic.com:443:$vmIp", '-H', 'Authorization: Bearer not-the-placeholder', '-H', 'anthropic-version: 2023-06-01', '--max-time', '20', 'https://api.anthropic.com/v1/models')
+    if ($fwdGate.Exit -ne 0 -or -not $fwdGate.Code -or $fwdGate.Code -eq '000') { Add-Fail "credential gate via ${vmIp}" "no response from upstream (code=$($fwdGate.Code) curlExit=$($fwdGate.Exit))" }
+    elseif ([int]$fwdGate.Code -lt 400) { Add-Fail "credential gate via ${vmIp}" "got $($fwdGate.Code) -- a foreign credential was upgraded; the real token must never be substituted" }
+    else { Add-Pass "credential gate via ${vmIp}: rejected upstream ($($fwdGate.Code))" }
 }
 
 Write-Section 'VM reachability'

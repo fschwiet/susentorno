@@ -9,8 +9,9 @@
 # Prints one PASS/FAIL/WARN line per check, with the observed value on failure.
 # Exits non-zero if any check FAILs. WARN is advisory and never fails the run.
 # Uses sudo for iptables reads. Makes real outbound requests to allow-listed
-# hosts but never spends a real credential (wrong-auth to api.anthropic.com is
-# rejected locally by gate.lua with 403).
+# hosts but never spends a real credential: gate.lua substitutes the real token
+# only for an exact placeholder match, so the guest-supplied credential used
+# below passes through and is rejected by the upstream.
 
 set -uo pipefail # deliberately NOT -e: run every check even after a failure
 
@@ -199,8 +200,26 @@ fi
 c="$(curl_code 20 http://blocked.example.com/)"
 if [ "$c" = '403' ]; then ok 'blocked :80 -> 403 (default deny)'; else bad 'blocked :80 default deny' "expected 403, got $c"; fi
 
-c="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -H 'Authorization: Bearer not-the-placeholder' https://api.anthropic.com/)"
-if [ "$c" = '403' ]; then ok 'credential gate: wrong Authorization -> 403 (no token spent)'; else bad 'credential gate wrong-auth' "expected 403 from gate.lua, got $c"; fi
+# gate.lua swaps ONLY an exact placeholder match for the real token; any other
+# Authorization passes through to the upstream unmodified (it no longer 403s an
+# unexpected credential -- see docs/investigations/2026-07-22-remote-control-session-
+# token-rejected-by-claude-gate.md). So a guest-supplied credential must reach the
+# upstream and be REJECTED there.
+#
+# /v1/models, not "/": "/" answers 404 whatever the credential, so it cannot tell a
+# rejected credential from an injected one. Asserting >=400 rather than a specific
+# code keeps this robust to upstream changes -- the outcome that must never happen is
+# a 2xx, which would mean the real token had been substituted for a guest's own.
+c="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+  -H 'Authorization: Bearer not-the-placeholder' -H 'anthropic-version: 2023-06-01' \
+  https://api.anthropic.com/v1/models)"
+if [ -z "$c" ] || [ "$c" = '000' ]; then
+  bad 'credential gate wrong-auth' "no response from upstream (code=$c)"
+elif [ "$c" -lt 400 ] 2>/dev/null; then
+  bad 'credential gate wrong-auth' "got $c -- a guest-supplied credential was upgraded; the real token must never be substituted"
+else
+  ok "credential gate: guest credential passed through and rejected upstream ($c)"
+fi
 
 printf '\n%d passed, %d failed, %d warnings\n' "$pass" "$fail" "$warn"
 [ "$fail" -eq 0 ]
