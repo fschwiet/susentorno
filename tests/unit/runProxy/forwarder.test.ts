@@ -3,6 +3,7 @@ import type { NetworkInterfaceInfo } from 'node:os';
 import {
   DEFAULT_INTERNAL_SWITCH_ADAPTER,
   resolveForwardListenAddress,
+  resolveInternalSwitchNetwork,
 } from '../../../src/runProxy/forwarder';
 
 function ipv4(address: string, internal = false): NetworkInterfaceInfo {
@@ -52,5 +53,11 @@ describe('resolveForwardListenAddress', () => {
     expect(resolveForwardListenAddress(DEFAULT_INTERNAL_SWITCH_ADAPTER, interfaces)).toBe(
       '192.168.67.1',
     );
+  });
+});
+
+describe('resolveInternalSwitchNetwork', () => {
+  it('returns address and netmask', () => {
+    expect(resolveInternalSwitchNetwork(DEFAULT_INTERNAL_SWITCH_ADAPTER, { [DEFAULT_INTERNAL_SWITCH_ADAPTER]: [ipv4('192.168.67.1')] })).toEqual({ address: '192.168.67.1', netmask: '255.255.255.0' });
   });
 });
