@@ -18,6 +18,7 @@ guest half is written but **has never been run**. That is what remains.
 ## State of the branch
 
 ```
+9744811  fix: serve DNS from the harness bridge in gateway-less mode (+ this handoff)
 a4376e9  docs: close the host-side DNS consolidation investigation
 1866e3d  test: fail fast when run-proxy is holding the Envoy stack
 b0b03b1  docs: single-adapter DHCP flow for the Ubuntu guest        (Task 19, docs half)
@@ -27,11 +28,24 @@ b0b03b1  docs: single-adapter DHCP flow for the Ubuntu guest        (Task 19, do
 a810ee5  docs: record A6 validation results from the Windows checkpoint (Task 16)
 ```
 
-`pnpm test` was green at the last commit.
+Both suites were green at `9744811`: `pnpm test`, and `pnpm test:vm` at **22
+passed / 22**. So the Ubuntu guest-side changes *do* have automated coverage —
+what they lack is a run against a real Hyper-V guest.
 
-**Check first:** a `pnpm test:vm` run was started at the end of that session and
-its result was never seen. Re-run it before assuming Task 18 is good — it is the
-only automated coverage of the Ubuntu guest-side changes.
+Getting there took three fixes to the harness, all leftovers from the old
+in-guest-resolver topology, and worth knowing about if you touch `net.sh`:
+`port=0` had dnsmasq serving DHCP with **DNS disabled** while advertising itself
+as the resolver; no `no-resolv` meant AAAA queries were forwarded to WSL's real
+resolver, so an "isolated" guest received genuine public addresses; and the
+assertions used `getent hosts`, which lists AAAA first and so compared against an
+IPv6 address (all four call sites now use `ahostsv4`).
+
+> **If you follow plan Task 18 again, note it is internally inconsistent.** Step 1
+> adds the resolve-to-host catch-all to the `hostonly` branch only, but step 2
+> puts a `BRIDGE_IP` resolution assertion in the S1/NAT-phase block, which runs in
+> `gateway` mode and forwards upstream. S1 now asserts the opposite — that names
+> resolve for real and *not* to the bridge — which is what the real Windows guest
+> did on the Default Switch.
 
 ## The environment
 
