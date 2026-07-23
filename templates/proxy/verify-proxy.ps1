@@ -167,11 +167,19 @@ Write-Section 'VM reachability'
 $rule = Get-NetFirewallRule -DisplayName 'Envoy Sandbox Proxy (VM inbound)' -ErrorAction SilentlyContinue
 if ($rule) { Add-Pass 'Internal-switch inbound firewall rule present' }
 else { Add-Warn 'Internal-switch inbound firewall rule present' "not found -- run host-allow-vm-inbound.ps1 (as admin) once the VM is on the Internal switch" }
+$dnsRule = Get-NetFirewallRule -DisplayName 'Envoy Sandbox Proxy DNS stub (VM inbound)' -ErrorAction SilentlyContinue
+if ($dnsRule) { Add-Pass 'Internal-switch inbound DNS firewall rule present' }
+else { Add-Warn 'Internal-switch inbound DNS firewall rule present' "not found -- run host-allow-vm-inbound.ps1 (as admin)" }
 
 $cfg = Get-NetIPConfiguration -InterfaceAlias $AdapterAlias -ErrorAction SilentlyContinue
 $hostIp = ($cfg.IPv4Address | Select-Object -First 1).IPAddress
 if ($hostIp) { Add-Pass "$AdapterAlias host IP: $hostIp (use as <host-ip> in VM setup)" }
 else { Add-Warn 'Internal-switch adapter IP' "no IPv4 on '$AdapterAlias' -- is the Internal-switch adapter up?" }
+if ($hostIp) {
+    $dnsListener = Get-NetUDPEndpoint -LocalAddress $hostIp -LocalPort 53 -ErrorAction SilentlyContinue
+    if ($dnsListener) { Add-Pass "DNS responder listening on ${hostIp}:53" }
+    else { Add-Fail "DNS responder listening on ${hostIp}:53" "not found -- is run-proxy running? guests have no other resolver" }
+}
 
 Write-Host ''
 Write-Host "$($script:pass) passed, $($script:fail) failed, $($script:warn) warnings"

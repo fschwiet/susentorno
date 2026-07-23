@@ -1,12 +1,13 @@
 #requires -Modules NetSecurity, NetTCPIP
 <#
-Opens inbound TCP 80/443 (Envoy) from the VM's Hyper-V Internal-switch adapter,
-and prints the host IP to pass to vm/vm-setup-persistence.sh.
+Opens inbound traffic from the VM's Hyper-V Internal-switch adapter:
 
-Also removes the stale UDP/53 DNS-stub firewall rule created by versions of
-this script before DNS answering moved into the VM (see
-docs/superpowers/specs/2026-07-04-vm-dns-stub-design.md) - safe to re-run
-even if that rule was never created on this machine.
+  TCP 80/443  - Envoy, via run-proxy's gateway
+  UDP 53      - run-proxy's DNS responder
+
+and prints the host IP to pass to the guest setup scripts.
+
+DNS answering moved back to the host, so the UDP/53 rule is current again.
 
 Scoped by -InterfaceAlias rather than a hardcoded subnet CIDR, since
 the Internal switch's subnet is assigned per-machine (e.g.
@@ -30,13 +31,16 @@ if (-not $hostIp) {
 }
 
 $tcpRuleName = "Envoy Sandbox Proxy (VM inbound)"
-$staleDnsRuleName = "Envoy Sandbox Proxy DNS stub (VM inbound)"
+$dnsRuleName = "Envoy Sandbox Proxy DNS stub (VM inbound)"
 
 Get-NetFirewallRule -DisplayName $tcpRuleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-Get-NetFirewallRule -DisplayName $staleDnsRuleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+Get-NetFirewallRule -DisplayName $dnsRuleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 
 New-NetFirewallRule -DisplayName $tcpRuleName -Direction Inbound -Protocol TCP `
     -LocalPort 80, 443 -InterfaceAlias $AdapterAlias -Action Allow | Out-Null
+
+New-NetFirewallRule -DisplayName $dnsRuleName -Direction Inbound -Protocol UDP `
+    -LocalPort 53 -InterfaceAlias $AdapterAlias -Action Allow | Out-Null
 
 Write-Host "Firewall rules created, scoped to interface '$AdapterAlias'."
 Write-Host "Host IP for this network: $hostIp"
