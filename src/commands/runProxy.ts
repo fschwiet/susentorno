@@ -15,10 +15,11 @@ import { startLogStream, type LogStreamHandle } from '../runProxy/logStream';
 import { ensureLeaf } from '../leaf';
 import { requireEnvPathsOrExit } from '../envPaths';
 import type { UpstreamOverride, InjectFault } from '../envoyConfig';
-import { resolveForwardListenAddress } from '../runProxy/forwarder';
+import { resolveForwardListenAddress, resolveInternalSwitchNetwork } from '../runProxy/forwarder';
 import { startGateway, type GatewayHandle } from '../runProxy/gateway';
 import { startDnsResponder } from '../runProxy/dnsResponder';
 import { createServiceStack } from '../runProxy/serviceStack';
+import { startDhcpServer } from '../runProxy/dhcpServer';
 import { allocateColorPorts } from '../runProxy/allocateColorPorts';
 import { bringUpColor, stopColor } from '../runProxy/colorContainer';
 import { waitColorReady } from '../runProxy/waitColorReady';
@@ -157,6 +158,16 @@ export function registerRunProxy(program: Command): void {
           return;
         }
         console.log(`run-proxy: DNS responder listening on ${dnsIp}:53 (all A -> ${dnsIp})`);
+        const network = resolveInternalSwitchNetwork();
+        const netmask = network?.address === dnsIp ? network.netmask : '255.255.255.0';
+        try {
+          await services.add(() => startDhcpServer({ listenAddress: dnsIp, netmask, onWarn: (message) => console.warn(`run-proxy: ${message}`), onError: (message) => console.error(`run-proxy: ${message}`) }));
+        } catch (err) {
+          console.error(`run-proxy: failed to bind DHCP on ${dnsIp}:67 — ${String(err)}. Guests on the Internal switch cannot get an address without this.`);
+          process.exitCode = 1;
+          return;
+        }
+        console.log(`run-proxy: DHCP server listening on ${dnsIp}:67 (router and DNS -> ${dnsIp}, mask ${netmask})`);
       }
 
       const deps: RunProxyDeps = {

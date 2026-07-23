@@ -170,6 +170,9 @@ else { Add-Warn 'Internal-switch inbound firewall rule present' "not found -- ru
 $dnsRule = Get-NetFirewallRule -DisplayName 'Envoy Sandbox Proxy DNS stub (VM inbound)' -ErrorAction SilentlyContinue
 if ($dnsRule) { Add-Pass 'Internal-switch inbound DNS firewall rule present' }
 else { Add-Warn 'Internal-switch inbound DNS firewall rule present' "not found -- run host-allow-vm-inbound.ps1 (as admin)" }
+$dhcpRule = Get-NetFirewallRule -DisplayName 'Envoy Sandbox Proxy DHCP (VM inbound)' -ErrorAction SilentlyContinue
+if ($dhcpRule) { Add-Pass 'Internal-switch inbound DHCP firewall rule present' }
+else { Add-Warn 'Internal-switch inbound DHCP firewall rule present' "not found -- run host-allow-vm-inbound.ps1 (as admin)" }
 
 $cfg = Get-NetIPConfiguration -InterfaceAlias $AdapterAlias -ErrorAction SilentlyContinue
 $hostIp = ($cfg.IPv4Address | Select-Object -First 1).IPAddress
@@ -179,6 +182,9 @@ if ($hostIp) {
     $dnsListener = Get-NetUDPEndpoint -LocalAddress $hostIp -LocalPort 53 -ErrorAction SilentlyContinue
     if ($dnsListener) { Add-Pass "DNS responder listening on ${hostIp}:53" }
     else { Add-Fail "DNS responder listening on ${hostIp}:53" "not found -- is run-proxy running? guests have no other resolver" }
+    $dhcpListener = Get-NetUDPEndpoint -LocalAddress $hostIp -LocalPort 67 -ErrorAction SilentlyContinue
+    if ($dhcpListener) { Add-Pass "DHCP server listening on ${hostIp}:67" }
+    else { Add-Fail "DHCP server listening on ${hostIp}:67" "not found -- is run-proxy running? guests cannot get an address" }
 }
 
 Write-Host ''

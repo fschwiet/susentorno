@@ -4,6 +4,7 @@ Opens inbound traffic from the VM's Hyper-V Internal-switch adapter:
 
   TCP 80/443  - Envoy, via run-proxy's gateway
   UDP 53      - run-proxy's DNS responder
+  UDP 67      - run-proxy's DHCP server
 
 and prints the host IP to pass to the guest setup scripts.
 
@@ -32,15 +33,19 @@ if (-not $hostIp) {
 
 $tcpRuleName = "Envoy Sandbox Proxy (VM inbound)"
 $dnsRuleName = "Envoy Sandbox Proxy DNS stub (VM inbound)"
+$dhcpRuleName = "Envoy Sandbox Proxy DHCP (VM inbound)"
 
 Get-NetFirewallRule -DisplayName $tcpRuleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 Get-NetFirewallRule -DisplayName $dnsRuleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+Get-NetFirewallRule -DisplayName $dhcpRuleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 
 New-NetFirewallRule -DisplayName $tcpRuleName -Direction Inbound -Protocol TCP `
     -LocalPort 80, 443 -InterfaceAlias $AdapterAlias -Action Allow | Out-Null
 
 New-NetFirewallRule -DisplayName $dnsRuleName -Direction Inbound -Protocol UDP `
     -LocalPort 53 -InterfaceAlias $AdapterAlias -Action Allow | Out-Null
+New-NetFirewallRule -DisplayName $dhcpRuleName -Direction Inbound -Protocol UDP `
+    -LocalPort 67 -InterfaceAlias $AdapterAlias -Action Allow | Out-Null
 
 Write-Host "Firewall rules created, scoped to interface '$AdapterAlias'."
 Write-Host "Host IP for this network: $hostIp"
