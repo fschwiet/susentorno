@@ -108,11 +108,19 @@ describe('S1: setup during NAT phase', () => {
     expect(stdout).toContain('05-configure-network:');
   });
 
-  it('resolves every name to the host resolver', async () => {
-    const { stdout: hosts } = await guest('g1', 'getent hosts example.com');
-    expect(hosts.trim().split(/\s+/)[0]).toBe(BRIDGE_IP);
+  it('takes its resolver from DHCP and resolves real names', async () => {
+    // NAT phase: the lease points the guest at the harness host, which forwards
+    // upstream — mirroring the Default Switch's ICS resolver. Names resolve for
+    // REAL here. The catch-all to the proxy only exists on the isolated network
+    // (S2), so asserting BRIDGE_IP in this phase would assert the wrong topology.
     const { stdout: dns } = await guest('g1', 'resolvectl dns');
     expect(dns).toContain(BRIDGE_IP);
+
+    // ahostsv4, not `getent hosts`: the latter lists AAAA first, so it would
+    // compare against an IPv6 address.
+    const { stdout: hosts } = await guest('g1', 'getent ahostsv4 example.com');
+    expect(hosts.trim()).not.toBe('');
+    expect(hosts.trim().split(/\s+/)[0]).not.toBe(BRIDGE_IP);
   });
 
   it('installed no DNAT rules', async () => {
@@ -204,7 +212,7 @@ describe('S2: switch to gateway-less and reboot', () => {
   });
 
   it('the host is still the effective resolver after reboot', async () => {
-    const { stdout } = await guest('g1', 'getent hosts example.com');
+    const { stdout } = await guest('g1', 'getent ahostsv4 example.com');
     expect(stdout.trim().split(/\s+/)[0]).toBe(BRIDGE_IP);
   });
 
@@ -392,7 +400,7 @@ describe('S3: fresh guest on the isolated network', () => {
     expect(before.stdout).toContain(`default via ${BRIDGE_IP}`);
     expect(before.stdout).toContain('proto dhcp');
 
-    const beforeDns = await guest('g2', 'getent hosts example.com');
+    const beforeDns = await guest('g2', 'getent ahostsv4 example.com');
     expect(beforeDns.stdout.trim().split(/\s+/)[0]).toBe(BRIDGE_IP);
 
     const run = await guest(
@@ -410,7 +418,7 @@ describe('S3: fresh guest on the isolated network', () => {
     const nat = await guest('g2', 'sudo iptables -t nat -S OUTPUT');
     expect(nat.stdout).not.toContain('DNAT');
 
-    const dns = await guest('g2', 'getent hosts example.com');
+    const dns = await guest('g2', 'getent ahostsv4 example.com');
     expect(dns.stdout.trim().split(/\s+/)[0]).toBe(BRIDGE_IP);
   }, 900_000);
 });

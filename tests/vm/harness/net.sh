@@ -39,8 +39,21 @@ case "${1:?usage: net.sh up|down|dhcp <gateway|hostonly>}" in
         echo "dhcp-option=option:router,$BRIDGE_IP"
         echo "dhcp-option=option:dns-server,$BRIDGE_IP"
       else
-        # Mirror run-proxy's host-side DHCP and DNS behavior.
-        echo "port=0"
+        # Mirror run-proxy's host-side DHCP and DNS behaviour on the isolated
+        # network: the host is router and resolver, and every name resolves to
+        # it. `port=53` is load-bearing -- this branch used to set `port=0`
+        # (DHCP only, DNS disabled) because the guest ran its own in-guest stub
+        # on 127.0.0.1. That stub is gone, so disabling DNS here would advertise
+        # a resolver that answers nothing and every lookup in the guest would
+        # fail. No upstream is configured, so the catch-all below is the only
+        # answer this ever gives -- exactly like the host responder.
+        echo "port=53"
+        # No upstream, ever. The host responder has none either: it answers A
+        # with its own address and NOERROR/no-answer for every other qtype.
+        # Without this, dnsmasq forwards whatever the catch-all below does not
+        # cover (notably AAAA) to WSL's real resolver, so an isolated guest gets
+        # real answers -- both a fidelity gap and a source of confusing results.
+        echo "no-resolv"
         echo "dhcp-option=option:router,$BRIDGE_IP"
         echo "dhcp-option=option:dns-server,$BRIDGE_IP"
         echo "address=/#/$BRIDGE_IP"
