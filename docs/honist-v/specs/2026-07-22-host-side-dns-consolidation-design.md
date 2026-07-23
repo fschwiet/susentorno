@@ -532,6 +532,132 @@ attempts AAAA before A, and the existing `ConfigamatronDnsResponder` ships these
 exact semantics today. The unit tests in Phase 1 must assert the response
 **bytes** (ANCOUNT=0, RCODE=0) rather than rely on cmdlet reporting.
 
+### Validation results — Phase 4 checkpoint (2026-07-23)
+
+Run against the real environment at `c:\vm-isolated\.configamatron`: a Windows 11
+guest (`DESKTOP-3VVGHIA`) with a **single** Hyper-V NIC, host `192.168.67.1/24` on
+`configamatron-internal`, and `run-proxy` serving gateway, DNS and DHCP.
+
+**Precondition correction, found before any result was recorded.**
+`host-allow-vm-inbound.ps1` had never been run in this environment: the UDP/53 and
+UDP/67 rules were absent, and the SMB rule present was the older manually-created
+name. DNS and DHCP were nonetheless working — carried by a broad
+interactive-prompt firewall rule (`node.exe`, inbound TCP **and** UDP, **any**
+port, profile `Public`) created by a Windows "Allow" dialog. That rule was
+deleted and the script run, so **every result below was recorded against the
+documented firewall configuration**, not an incidental one. Worth noting because
+the accidental rule perfectly masked the missing intended ones.
+
+- **A6 — CONFIRMED.** Every DHCP lifecycle property held against a real Windows
+  client.
+
+  - **Replies reach an address-less client.** This is the specific unknown Phase 0
+    could not reach — it proved only that a `DISCOVER` *arrives*. After
+    `ipconfig /release`, `/renew` completed in seconds and returned
+    `192.168.67.37` (inside the `.10`–`.209` pool) with the host as router **and**
+    DNS. Full DORA to a client with no address works.
+  - **Renewal.** The lease extended in place for a full 3600s, matching
+    `leaseSeconds`; Windows retained the original `Lease Obtained` and advanced
+    `Lease Expires`.
+  - **Restart adoption.** `run-proxy` was stopped and restarted so its lease table
+    came back **empty** while the guest still held `.37`. The guest's REQUEST was
+    **ACKed with a full lease, not NAKed**, and the address was preserved — the
+    adoption branch in `dhcpLeases.request` works against a real client.
+  - **Late host start.** The guest was booted onto the isolated switch with nothing
+    serving DHCP and fell back to APIPA (`169.254.146.134`). `run-proxy` was then
+    started at `15:50:22` host local; the guest acquired `192.168.67.37`
+    **unattended at `15:55:17` — 4m55s, with no console intervention.**
+    Corroborated by the guest's own `Lease Obtained` (`15:55:16`) and by Windows'
+    NCSI probes (`www.msftconnecttest.com`, `www.msftncsi.com`) appearing in the
+    proxy log at that instant.
+
+    **Recovery is bounded by the Windows client's APIPA retry timer (~5 minutes),
+    not by the server.** Once a Windows DHCP client self-assigns `169.254.x.x` it
+    re-attempts `DISCOVER` on roughly a five-minute cycle, and the guest recovered
+    on its first retry after the server appeared. Nothing host-side can shorten
+    this. Unattended recovery is therefore reliable but **not prompt** — the docs
+    should say so, or a ~5-minute wait after an out-of-order boot will be mistaken
+    for a failure.
+  - **Address stability.** Across a release/renew, a server restart with an empty
+    table, and a full shutdown → APIPA → late-start cycle, the guest landed on
+    `192.168.67.37` every time. The identity-hash preference in
+    `dhcpLeases.acquire` holds in practice, not just in unit tests.
+
+- **A4 — CONFIRMED; the outstanding half is now closed.** With the guest moved to
+  the Default Switch and a `cmdkey` credential saved for the Default Switch host
+  IP, `net use \\172.22.208.1\vm-shared-windows` succeeded **without prompting for
+  a password**, and the share listed correctly. That is the authenticated mount
+  Phase 0 could not perform. `cmdkey` entries are per-address, so an entry
+  separate from the Internal-switch one is required — this is the step at
+  `usage-hyper-v.md` that the Phase 0 throwaway guest lacked.
+
+  Negative control: in the NAT phase `Resolve-DnsName example.com` returned **real
+  public addresses** (`172.66.147.243`, `104.20.23.154`) plus AAAA records — not
+  `192.168.67.1` — confirming the guest was genuinely on ICS's resolver and the
+  Internal-switch path was not still in play.
+
+- **DNS and end-to-end.** `example.com`, `api.anthropic.com` and
+  `totally-made-up.invalid` all answered `192.168.67.1` at **TTL 30**. The
+  `.invalid` name is the load-bearing one: it has no real resolution anywhere.
+  `Invoke-WebRequest https://api.anthropic.com` returned 404, and the Envoy access
+  log recorded `CFGM|term|…|via_upstream|404` — `via_upstream` proving the response
+  came from the **real** upstream rather than being generated locally, i.e. the
+  full path (resolution → TLS against the proxy CA → credential injection →
+  upstream) worked.
+
+- **Blue/green.** Touching `allowlist.txt` swapped `configamatron-envoy-blue` →
+  `-green` in ~6 seconds. Across 12 samples spanning the swap, **DNS answered every
+  time and neither `192.168.67.1:53` nor `:67` ever dropped**, and guest traffic
+  kept flowing mid-swap. This is structural rather than lucky: the swap replaces
+  only the Envoy container, while DNS and DHCP live in the `run-proxy` process,
+  which does not restart.
+
+- **No warnings.** Zero warning, error, NAK or pool-exhaustion lines across the
+  whole session, including both restarts and the swap.
+
+**Decision 5 (host DHCP) is validated end to end. Phase 5 is unblocked.**
+
+#### Findings and follow-ups from this checkpoint
+
+1. **The DHCP server logs nothing per-transaction.** ACK-vs-NAK could not be
+   observed host-side; the restart-adoption result rests on behaviour (address
+   retained, exact 3600s extension) rather than direct evidence. A one-line log on
+   ACK / NAK / adoption would make this checkpoint self-evidencing and is worth
+   adding before anyone has to debug a client interop problem in the field.
+2. **`templates/vm-shared-windows/verify-config.ps1:58` asserts a `403` that
+   `gate.lua` can no longer produce.** The gate was deliberately changed (see
+   `docs/investigations/2026-07-22-remote-control-session-token-rejected-by-claude-gate.md`)
+   so a present, non-placeholder `Authorization` passes through unmodified; there
+   is now no 403 path in `gate.lua` at all. Confirmed by the `via_upstream|404`
+   log line. Pre-existing and unrelated to this design, but the verifier reports a
+   false FAIL until fixed. `templates/vm-shared/verify-config.sh:203` has the same
+   stale assertion.
+3. **Live switch moves work but need a cache flush.** Reassigning the adapter
+   without a shutdown does re-lease (faster than APIPA recovery, since link-up is
+   an immediate trigger), but the guest can retain DNS answers from the previous
+   network — ICS's real answers can carry long TTLs. `Clear-DnsClientCache` after
+   the move resolves it. The documented procedure only covers the shutdown flow;
+   this is worth documenting rather than leaving to be rediscovered.
+4. **Nested virtualization in the guest adds a second adapter that is not a second
+   NIC.** A guest with the Hyper-V role gets its own `vEthernet (Default Switch)`
+   (description "Hyper-V Virtual Ethernet Adapter", as against "Microsoft Hyper-V
+   Network Adapter" for a real vNIC). It is gateway-less and DNS-less, so it
+   provides no egress path and does not compromise isolation — but its subnet
+   regenerates across guest reboots (observed `172.22.112.1` → `172.29.160.1`),
+   which is a live demonstration of why the design pins everything to the
+   Internal-switch IP.
+5. **Guest clock skew is cosmetic.** The guest ran two hours behind the host
+   throughout. Lease expiry is computed host-side and the client's renewal timer is
+   a relative interval, so neither depends on the clocks agreeing; only log
+   correlation is affected.
+
+**One caveat on coverage.** The return leg of the switch round trip was performed
+as a *live* move plus `Clear-DnsClientCache` rather than the documented
+shutdown-and-reassign, so the documented Default-Switch → Internal transition was
+not re-exercised here. It is substantially covered by the late-host-start test,
+which booted the guest onto the isolated switch and acquired a lease with no
+guest-side action of any kind.
+
 ## Phases
 
 One spec, one plan, implemented sequentially. The phases are execution structure,
