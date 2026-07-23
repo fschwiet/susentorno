@@ -109,10 +109,10 @@ describe('S1: setup during NAT phase', () => {
   });
 
   it('resolves every name to the host resolver', async () => {
-    const { stdout } = await guest('g1', 'getent hosts example.com');
-    expect(stdout.trim().split(/\s+/)[0]).toBe(BRIDGE_IP);
-    const { stdout } = await guest('g1', 'resolvectl dns');
-    expect(stdout).toContain(BRIDGE_IP);
+    const { stdout: hosts } = await guest('g1', 'getent hosts example.com');
+    expect(hosts.trim().split(/\s+/)[0]).toBe(BRIDGE_IP);
+    const { stdout: dns } = await guest('g1', 'resolvectl dns');
+    expect(dns).toContain(BRIDGE_IP);
   });
 
   it('installed no DNAT rules', async () => {
