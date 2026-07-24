@@ -158,6 +158,12 @@ lease on its own once the server appears. On Windows that took **4m55s**, bounde
 by the client's retry timer rather than by anything host-side. Linux DHCP clients
 back off differently and this has not been measured — worth timing.
 
+**But if you see APIPA, check the firewall before you wait out that timer.** A
+guest stuck on `169.254.x.x` looks identical whether the DHCP server is absent or
+its replies are being dropped. Check for prompt-generated `node.exe` rules first
+— see known gap 4 — because the wait is five minutes and the check is five
+seconds.
+
 **One pre-existing failure is expected and unrelated**, if you run the Windows
 verifier: nothing. That one was fixed in `47651a5`. But note the same
 credential-gate assertion exists in `templates/vm-shared/verify-config.sh` and
@@ -186,3 +192,48 @@ Carried forward from the Windows checkpoint, none blocking:
    `verify-proxy.ps1`.
 3. **`usage-windows-vm.md`** was never revisited for the single-adapter flow
    (plan Task 15 step 4 was only partly applied).
+4. **The Windows firewall prompt makes the environment nondeterministic, and
+   both possible answers are wrong.** This one is not hypothetical — it has now
+   broken the environment twice, in opposite directions, and it will keep doing
+   so until something pre-empts the dialog.
+
+   `run-proxy` binds `:53` and `:67` on the Internal-switch adapter, whose
+   `NetworkCategory` is **Public** (an Internal switch has no gateway, so Windows
+   never identifies it as anything else). When no rule matches the *program*,
+   Windows raises the "allow `node.exe` to communicate on public networks?"
+   dialog and writes a rule named `{TCP,UDP} Query User{GUID}<path>` from
+   whatever gets clicked:
+
+   - **Allow** → an Allow rule for `node.exe`, **any port, any local address**,
+     profile Public. Too generous: it grants far more than the four intended
+     rules and completely masks their absence. This is what happened at the Task
+     16 checkpoint — DNS and DHCP were working while `host-allow-vm-inbound.ps1`
+     had never been run in that environment. See the spec's "Precondition
+     correction" paragraph.
+   - **Cancel / dismiss** → a **Block** rule of the same breadth. Too strict, and
+     worse than merely useless: Windows Firewall evaluates Block before Allow, so
+     it silently overrides all four correctly-scoped rules. Observed on the
+     rebuilt environment (2026-07-23): the guest sat on APIPA while the host was
+     entirely healthy — `run-proxy` bound to `192.168.67.1:53` and `:67`, all
+     four allow rules present, enabled and interface-scoped, and
+     `verify-proxy.ps1` reporting green.
+
+   **Deleting the offending rule unblocks you but fixes nothing** — the prompt
+   fires again on the next `run-proxy` start and you get another coin flip.
+
+   Suggested fix, in `host-allow-vm-inbound.ps1`: delete any existing
+   `*Query User*` rules whose program is the run-proxy `node.exe`, then create an
+   explicit **program-scoped** Allow rule for that binary, `-InterfaceAlias`
+   scoped like the others, so the dialog has nothing left to ask. Note the
+   program path is pnpm's global shim
+   (`C:\Users\<user>\AppData\Local\pnpm\bin\node.exe`), not the repo's `dist/` —
+   the deployed `run-proxy` is the globally installed package.
+   (`Set-NetFirewallProfile -Profile Public -NotifyOnListen False` also silences
+   the prompt, but it is a blunt host-wide setting and suppresses the symptom
+   rather than establishing the rule.)
+
+   Pair it with an assertion in `verify-proxy.ps1` that no `Query User` rule
+   exists for that program. **The current verifier cannot detect any of this**:
+   it runs host-local and never traverses the inbound path on the Public-profile
+   adapter, so it reports green while the guest is completely cut off. That blind
+   spot is the same one behind gap 2 — the two are worth fixing together.
