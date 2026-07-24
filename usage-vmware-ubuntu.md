@@ -1,3 +1,5 @@
+!!! This document is not supported at this time !!!
+
 ## VM setup
 
 May be repeated for any number of VMs; each VM pairs with one environment via its shared folder.
@@ -56,7 +58,7 @@ Run without `sudo`; each script elevates internally where needed. The exact coun
 
 ## Networking: the isolated host-only network
 
-The guest uses **two** VMware networks across its life, and only the network *type* changes — the guest stays on **DHCP** throughout, exactly as under Hyper-V:
+The guest uses **two** VMware networks across its life, and only the network _type_ changes — the guest stays on **DHCP** throughout, exactly as under Hyper-V:
 
 - **NAT (VMnet8)** during OS install and the `pre-scripts` phase — real gateway and DNS, so packages install.
 - **Host-only (a `VMnetN` you create)** once isolated — no internet; `run-proxy` on the host supplies DHCP, DNS, and the only gateway.
@@ -112,7 +114,7 @@ Yes, once these line up — the guest's broadcast `DISCOVER` reaches the host's 
 Disabling VMware's DHCP is not itself the isolation — it just lets `run-proxy` own the guest's routing and DNS. The isolation is three layers:
 
 1. **VMware provides no path off the segment.** A host-only VMnet has no NAT engine and no bridge to a physical NIC, so there is no VMware-supplied route to the internet at all. This is the primary boundary — which is why step 1 forbids also attaching NAT.
-2. **Every name resolves to the host, and only the proxy answers there.** `run-proxy`'s lease sets default-route = DNS = the host IP, and the DNS responder answers *every* A query with that IP. The guest never learns a real internet address; every connection lands on Envoy (80/443), which terminates TLS and forwards **only allowlisted SNI** upstream. Everything else is dropped at the proxy.
+2. **Every name resolves to the host, and only the proxy answers there.** `run-proxy`'s lease sets default-route = DNS = the host IP, and the DNS responder answers _every_ A query with that IP. The guest never learns a real internet address; every connection lands on Envoy (80/443), which terminates TLS and forwards **only allowlisted SNI** upstream. Everything else is dropped at the proxy.
 3. **The host does not route the guest onward.** Although the guest's gateway is a machine with internet on its other adapters, Windows does not forward between interfaces (`Forwarding: disabled`) and the host-only adapter is strong-host (`Weak Host Receives: disabled`), so a packet aimed at a raw internet IP is dropped rather than NAT'd out.
 
-> **Caveat (defense-in-depth gap).** Layer 3 relies on two Windows defaults — the strong host model and no inter-interface forwarding — that this project neither sets nor verifies. They held wherever measured, but if something flipped them (an ICS/RRAS reconfiguration, a manual `netsh ... weakhostreceive=enabled`), a guest could reach the host's *other* IPs on the allowed ports and, on `:53`, fall through to ICS's real recursive resolver as a DNS egress channel. See `docs/investigations/2026-07-23-host-model-lets-guest-reach-other-host-ips.md`.
+> **Caveat (defense-in-depth gap).** Layer 3 relies on two Windows defaults — the strong host model and no inter-interface forwarding — that this project neither sets nor verifies. They held wherever measured, but if something flipped them (an ICS/RRAS reconfiguration, a manual `netsh ... weakhostreceive=enabled`), a guest could reach the host's _other_ IPs on the allowed ports and, on `:53`, fall through to ICS's real recursive resolver as a DNS egress channel. See `docs/investigations/2026-07-23-host-model-lets-guest-reach-other-host-ips.md`.
