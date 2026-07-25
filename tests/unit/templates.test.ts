@@ -146,10 +146,7 @@ describe('templates', () => {
   });
 
   it('host-allow-vm-inbound scopes rules by LocalAddress, splits SMB/node.exe, and drops node discovery', () => {
-    const script = readFileSync(
-      join(templatesDir(), 'proxy', 'host-allow-vm-inbound.ps1'),
-      'utf8',
-    );
+    const script = readFileSync(join(templatesDir(), 'proxy', 'host-allow-vm-inbound.ps1'), 'utf8');
     expect(script).not.toContain('Resolve-RunProxyNode');
     expect(script).not.toContain('-NodePath');
     expect(script).toContain('$hostIp = ');
@@ -167,5 +164,19 @@ describe('templates', () => {
     expect(script).toContain('WeakHostReceive');
     expect(script).toContain('Forwarding');
     expect(script).toContain("EndsWith('node.exe'");
+  });
+
+  it('verify-proxy validates rule filters and state, not just DisplayName presence', () => {
+    const script = readFileSync(join(templatesDir(), 'proxy', 'verify-proxy.ps1'), 'utf8');
+    expect(script).toContain('Get-NetFirewallAddressFilter');
+    expect(script).toContain('Get-NetFirewallPortFilter');
+    expect(script).toContain('Get-NetFirewallInterfaceFilter');
+    expect(script).toContain('Get-NetFirewallApplicationFilter');
+    expect(script).toContain('Enabled.ToString()');
+    expect(script).toContain('Direction.ToString()');
+    expect(script).toContain('Action.ToString()');
+    expect(script).toContain('$NatAdapterAlias');
+    expect(script).toContain('SkipAddress');
+    expect((script.match(/Test-RuleSet -Label/g) ?? []).length).toBe(5);
   });
 });

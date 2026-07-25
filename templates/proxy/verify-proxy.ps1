@@ -19,11 +19,16 @@ The VM-path checks probe the Internal-switch adapter the forwarder listens on.
 differently, matching host-allow-vm-inbound.ps1, e.g.:
 
     ... -File .configamatron\proxy\verify-proxy.ps1 -AdapterAlias "vEthernet (my-switch)"
+
+-NatAdapterAlias defaults to "vEthernet (Default Switch)", matching
+host-allow-vm-inbound.ps1 - it's used only to check the second half of the
+SMB share rule.
 #>
 [CmdletBinding()]
 param(
     [string]$EnvDir = (Get-Location).Path,
-    [string]$AdapterAlias = 'vEthernet (configamatron-internal)'
+    [string]$AdapterAlias = 'vEthernet (configamatron-internal)',
+    [string]$NatAdapterAlias = 'vEthernet (Default Switch)'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -52,6 +57,94 @@ function Invoke-CurlCode {
     param([Parameter(Mandatory)][string[]]$CurlArgs)
     $code = & curl.exe -s -o NUL -w '%{http_code}' @CurlArgs 2>$null
     return [pscustomobject]@{ Code = "$code".Trim(); Exit = $LASTEXITCODE }
+}
+
+# The fixed, host-wide path run-proxy relaunches itself through on Windows -
+# mirrors the convention in src/runProxy/relaunchViaDedicatedNode.ts.
+function Get-DedicatedNodePath {
+    Join-Path $env:USERPROFILE ".configamatron-host\run-proxy-node.exe"
+}
+
+# Checks one expected filter/state tuple against one resolved rule object.
+# $Expected.LocalAddress of $null means "no address restriction expected"
+# (the DHCP/:67 rules) - that dimension is always checked regardless of
+# $Expected.SkipAddress. $Expected.SkipAddress means the address THIS tuple
+# expects couldn't be resolved this run, so only that one dimension is
+# skipped here (Test-RuleSet WARNs about it separately) - count, interface,
+# protocol, port, program, and state are still checked either way.
+function Test-RuleTuple {
+    param($Rule, $Expected)
+    $portFilter = $Rule | Get-NetFirewallPortFilter
+    $addrFilter = $Rule | Get-NetFirewallAddressFilter
+    $ifFilter = $Rule | Get-NetFirewallInterfaceFilter
+    $appFilter = $Rule | Get-NetFirewallApplicationFilter
+
+    $expectedPorts = (@($Expected.LocalPort) | Sort-Object) -join ','
+    $actualPorts = (@($portFilter.LocalPort) | Sort-Object) -join ','
+    $addressOk = if ($Expected.SkipAddress) { $true }
+                 elseif ($null -eq $Expected.LocalAddress) { $addrFilter.LocalAddress -eq 'Any' }
+                 else { $addrFilter.LocalAddress -eq $Expected.LocalAddress }
+    # $Expected.Program of $null means "expected unrestricted" (the TCP/DNS/
+    # DHCP/SMB rules never carry -Program), asserted the same way as an
+    # unrestricted LocalAddress - not "don't care," which would let a rule
+    # that drifted to being -Program-scoped still pass.
+    $programOk = if ($null -eq $Expected.Program) { $appFilter.Program -eq 'Any' }
+                 else { $appFilter.Program -eq $Expected.Program }
+
+    return (
+        $portFilter.Protocol -eq $Expected.Protocol -and
+        $actualPorts -eq $expectedPorts -and
+        $ifFilter.InterfaceAlias -eq $Expected.InterfaceAlias -and
+        $addressOk -and $programOk -and
+        $Rule.Enabled.ToString() -eq 'True' -and
+        $Rule.Direction.ToString() -eq 'Inbound' -and
+        $Rule.Action.ToString() -eq 'Allow'
+    )
+}
+
+# Verifies an exact, unordered match between the rules found under $DisplayName
+# and $Expected (an array of tuples): right count, and every expected tuple
+# claimed by exactly one distinct rule. A shared DisplayName can cover more
+# than one real rule (SMB, node.exe), so "at least one matches" would let a
+# missing or wrongly-scoped sibling hide behind one correct rule. A rule set
+# that's simply absent WARNs (may just mean host-allow-vm-inbound.ps1 hasn't
+# run yet); a present-but-wrong set FAILs. Always runs the full tuple check -
+# an unresolved address (per-tuple SkipAddress) only ever narrows what that
+# one comparison covers, never skips the rule set entirely.
+function Test-RuleSet {
+    param([string]$Label, [string]$DisplayName, [array]$Expected)
+
+    $rules = @(Get-NetFirewallRule -DisplayName $DisplayName -ErrorAction SilentlyContinue)
+
+    if ($rules.Count -eq 0) {
+        Add-Warn "$Label rule(s) present" "not found -- run host-allow-vm-inbound.ps1 (as admin)"
+        return
+    }
+
+    $addressUnverifiable = [bool]($Expected | Where-Object { $_.SkipAddress } | Select-Object -First 1)
+    if ($addressUnverifiable) {
+        Add-Warn "$Label address scoping" "cannot verify -- an expected adapter's address could not be resolved"
+    }
+
+    if ($rules.Count -ne $Expected.Count) {
+        Add-Fail "$Label rule count" "expected $($Expected.Count) rule(s) named '$DisplayName', found $($rules.Count)"
+        return
+    }
+
+    $remaining = [System.Collections.ArrayList]::new($Expected)
+    $allMatched = $true
+    foreach ($rule in $rules) {
+        $hit = $remaining | Where-Object { Test-RuleTuple -Rule $rule -Expected $_ } | Select-Object -First 1
+        if ($hit) { $remaining.Remove($hit) }
+        else { $allMatched = $false }
+    }
+
+    if ($allMatched) {
+        $suffix = if ($addressUnverifiable) { '(port/interface/program/state; address unverified where noted)' } else { '(address/port/interface/program/state)' }
+        Add-Pass "$Label rule(s) match expected scoping $suffix"
+    } else {
+        Add-Fail "$Label rule(s) match expected scoping" "one or more of the $($Expected.Count) rule(s) named '$DisplayName' don't match the expected tuple"
+    }
 }
 
 $proxyDir = Join-Path $EnvDir '.configamatron\proxy'
@@ -210,20 +303,42 @@ if ($staleNodeRules.Count -eq 0) {
 
 Write-Section 'VM reachability'
 
-$rule = Get-NetFirewallRule -DisplayName 'Envoy Sandbox Proxy (VM inbound)' -ErrorAction SilentlyContinue
-if ($rule) { Add-Pass 'Internal-switch inbound firewall rule present' }
-else { Add-Warn 'Internal-switch inbound firewall rule present' "not found -- run host-allow-vm-inbound.ps1 (as admin) once the VM is on the Internal switch" }
-$dnsRule = Get-NetFirewallRule -DisplayName 'Envoy Sandbox Proxy DNS stub (VM inbound)' -ErrorAction SilentlyContinue
-if ($dnsRule) { Add-Pass 'Internal-switch inbound DNS firewall rule present' }
-else { Add-Warn 'Internal-switch inbound DNS firewall rule present' "not found -- run host-allow-vm-inbound.ps1 (as admin)" }
-$dhcpRule = Get-NetFirewallRule -DisplayName 'Envoy Sandbox Proxy DHCP (VM inbound)' -ErrorAction SilentlyContinue
-if ($dhcpRule) { Add-Pass 'Internal-switch inbound DHCP firewall rule present' }
-else { Add-Warn 'Internal-switch inbound DHCP firewall rule present' "not found -- run host-allow-vm-inbound.ps1 (as admin)" }
-
 $cfg = Get-NetIPConfiguration -InterfaceAlias $AdapterAlias -ErrorAction SilentlyContinue
 $hostIp = ($cfg.IPv4Address | Select-Object -First 1).IPAddress
 if ($hostIp) { Add-Pass "$AdapterAlias host IP: $hostIp (use as <host-ip> in VM setup)" }
 else { Add-Warn 'Internal-switch adapter IP' "no IPv4 on '$AdapterAlias' -- is the Internal-switch adapter up?" }
+
+$natCfg = Get-NetIPConfiguration -InterfaceAlias $NatAdapterAlias -ErrorAction SilentlyContinue
+$natHostIp = ($natCfg.IPv4Address | Select-Object -First 1).IPAddress
+if ($natHostIp) { Add-Pass "$NatAdapterAlias host IP: $natHostIp" }
+else { Add-Warn "$NatAdapterAlias host IP" "no IPv4 on '$NatAdapterAlias' -- is the Default Switch adapter up?" }
+
+$nodePath = Get-DedicatedNodePath
+$hostIpUnresolved = -not $hostIp
+
+# Every Test-RuleSet call below runs unconditionally: count, interface,
+# protocol, port, program, and state are always checked. SkipAddress on a
+# tuple narrows only that tuple's address comparison when its specific
+# source IP didn't resolve - it never skips the rest of the check.
+Test-RuleSet -Label 'TCP 80/443' -DisplayName 'Envoy Sandbox Proxy (VM inbound)' -Expected @(
+    @{ Protocol = 'TCP'; LocalPort = 80, 443; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; SkipAddress = $hostIpUnresolved }
+)
+Test-RuleSet -Label 'DNS 53' -DisplayName 'Envoy Sandbox Proxy DNS stub (VM inbound)' -Expected @(
+    @{ Protocol = 'UDP'; LocalPort = 53; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; SkipAddress = $hostIpUnresolved }
+)
+Test-RuleSet -Label 'DHCP 67' -DisplayName 'Envoy Sandbox Proxy DHCP (VM inbound)' -Expected @(
+    @{ Protocol = 'UDP'; LocalPort = 67; InterfaceAlias = $AdapterAlias; LocalAddress = $null }
+)
+Test-RuleSet -Label 'SMB 445' -DisplayName 'Configamatron share (VM inbound)' -Expected @(
+    @{ Protocol = 'TCP'; LocalPort = 445; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; SkipAddress = $hostIpUnresolved }
+    @{ Protocol = 'TCP'; LocalPort = 445; InterfaceAlias = $NatAdapterAlias; LocalAddress = $natHostIp; SkipAddress = (-not $natHostIp) }
+)
+Test-RuleSet -Label 'run-proxy node.exe' -DisplayName 'Configamatron run-proxy node (VM inbound)' -Expected @(
+    @{ Protocol = 'TCP'; LocalPort = 80, 443; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; Program = $nodePath; SkipAddress = $hostIpUnresolved }
+    @{ Protocol = 'UDP'; LocalPort = 53; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; Program = $nodePath; SkipAddress = $hostIpUnresolved }
+    @{ Protocol = 'UDP'; LocalPort = 67; InterfaceAlias = $AdapterAlias; LocalAddress = $null; Program = $nodePath }
+)
+
 if ($hostIp) {
     $dnsListener = Get-NetUDPEndpoint -LocalAddress $hostIp -LocalPort 53 -ErrorAction SilentlyContinue
     if ($dnsListener) { Add-Pass "DNS responder listening on ${hostIp}:53" }
