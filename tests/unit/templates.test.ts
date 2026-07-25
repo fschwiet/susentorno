@@ -160,4 +160,12 @@ describe('templates', () => {
     expect((script.match(/-Program \$nodePath/g) ?? []).length).toBe(3);
     expect(script).toContain('.configamatron-host\\run-proxy-node.exe');
   });
+
+  it('verify-proxy checks the host network model and any stale node.exe Query User rule', () => {
+    const script = readFileSync(join(templatesDir(), 'proxy', 'verify-proxy.ps1'), 'utf8');
+    expect(script).toContain('Get-NetIPInterface');
+    expect(script).toContain('WeakHostReceive');
+    expect(script).toContain('Forwarding');
+    expect(script).toContain("EndsWith('node.exe'");
+  });
 });

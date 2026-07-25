@@ -175,6 +175,39 @@ else {
     else { Add-Pass "credential gate via ${vmIp}: rejected upstream ($($fwdGate.Code))" }
 }
 
+Write-Section 'Host network model'
+
+# A weak-host flip is a real confinement break, not advisory: it lets the
+# guest reach the host's other IPs on the allowed ports (see
+# docs/investigations/2026-07-23-host-model-lets-guest-reach-other-host-ips.md).
+$netIf = Get-NetIPInterface -InterfaceAlias $AdapterAlias -AddressFamily IPv4 -ErrorAction SilentlyContinue
+if (-not $netIf) {
+    Add-Warn 'host network model checked' "no IPv4 interface named '$AdapterAlias' -- is the Internal-switch adapter up?"
+} else {
+    if ($netIf.Forwarding.ToString() -eq 'Disabled') { Add-Pass "IP forwarding disabled on $AdapterAlias" }
+    else { Add-Fail "IP forwarding disabled on $AdapterAlias" "Forwarding=$($netIf.Forwarding) -- a guest could be routed to the host's other networks" }
+
+    if ($netIf.WeakHostReceive.ToString() -eq 'Disabled') { Add-Pass "strong-host model (WeakHostReceive disabled) on $AdapterAlias" }
+    else { Add-Fail "strong-host model (WeakHostReceive disabled) on $AdapterAlias" "WeakHostReceive=$($netIf.WeakHostReceive) -- guest could reach the host's other IPs on the allowed ports" }
+}
+
+Write-Section 'Stale prompt-generated rules'
+
+# Scans for ANY node.exe, not just a specific path, so a rule left behind by a
+# different (e.g. repo-local dev) node.exe that once hosted run-proxy is also
+# caught -- reported, not deleted, since a match might be legitimate for an
+# unrelated program.
+$staleNodeRules = @(Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object {
+    $_.Name -like "*Query User*" -and $_.Name.EndsWith('node.exe', [StringComparison]::OrdinalIgnoreCase)
+})
+if ($staleNodeRules.Count -eq 0) {
+    Add-Pass 'no stale Query User rule for any node.exe'
+} else {
+    foreach ($rule in $staleNodeRules) {
+        Add-Fail 'no stale Query User rule for any node.exe' "$($rule.Action) rule '$($rule.Name)' -- rerun host-allow-vm-inbound.ps1, or investigate why Windows re-prompted"
+    }
+}
+
 Write-Section 'VM reachability'
 
 $rule = Get-NetFirewallRule -DisplayName 'Envoy Sandbox Proxy (VM inbound)' -ErrorAction SilentlyContinue
