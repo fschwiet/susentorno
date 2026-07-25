@@ -53,8 +53,12 @@ cover the seed folder.
 
 Replace `'seed transforms reproduce the extracted inline jq programs'` with a
 structural wiring test. `loadManifest` already enforces that every entry's
-`transform` names an existing file, so the test only adds the two checks it
-does not do — the manifest is non-empty, and no `.jq` file is orphaned:
+`transform` names an existing file (`existsSync(join(dir, transform))` — note
+it does not require a regular `.jq` file or forbid subdirectories, but the seed
+folder only contains flat `.jq` files, so a top-level `*.jq` glob is symmetric
+in practice). The test adds the checks `loadManifest` does not do — the
+manifest is non-empty, entries are duplicate-free, and no `.jq` file is
+orphaned — establishing an exact one-entry-per-`.jq`-file relationship:
 
 ```
 it('home-jq-transforms manifest and .jq files are consistently wired', () => {
@@ -63,12 +67,19 @@ it('home-jq-transforms manifest and .jq files are consistently wired', () => {
   //    throws on malformed/non-list YAML)
   // assert entries.length > 0 — loadManifest([]) returns [] without throwing,
   //   so an emptied manifest must be caught here, not vacuously pass
-  // glob *.jq in the folder; assert each is referenced by some entry.transform
+  // assert the entries' transform names are duplicate-free
+  // glob *.jq in the folder; assert the set of file names equals the set of
+  //   referenced transform names (each file referenced once, no orphans)
 });
 ```
 
 No external binary, no assertions about settings keys/values — only that the
-manifest and the files on disk agree with each other.
+manifest and the files on disk agree with each other. Note this decouples the
+seed *contents*, not the seed *filenames*: `expectedTemplateFiles` in this same
+file still pins `vscode-settings.jq` and `claude-onboarding.jq` by name. That
+is intentional — the filenames are stable packaged artifacts (renaming one is a
+packaging change worth catching), while their jq contents are the customizable
+surface this change frees up.
 
 ### `tests/e2e/vmApplier.test.ts`
 
@@ -82,19 +93,28 @@ it.skipIf(!hasJq)('every seed transform is valid jq that produces a JSON object'
   // const results = previewTransforms({ dir: seedDir })
   // for each result:
   //   assert result.error is undefined (jq exited 0 and ran)
-  //   JSON.parse(result.output) is a non-null, non-array object (not just
-  //   "any valid JSON value" — a transform reduced to `.` or `{}` should not
-  //   silently pass; no assertion on which keys/values it sets)
+  //   assert result.output is defined too — PreviewResult.output is typed
+  //     `string | undefined`, so this both guards the success case and narrows
+  //     the type for the JSON.parse below
+  //   JSON.parse(result.output) is a non-null, non-array object — this rejects
+  //   non-object JSON (null, arrays, scalars), e.g. a transform reduced to
+  //   `.foo` (-> null on {}) or `[.]` (-> array). No-op `.` and `{}` yield the
+  //   empty object and intentionally pass (see Trade-offs); no assertion on
+  //   which keys/values the transform sets.
 });
 ```
 
 This proves each seed transform is runnable, well-formed jq, and yields an
-object shape usable as a settings file — without pinning the settings it
-produces. It exercises the production loader and `jq` runner against the seed
-programs; the existing `'applies a transform to its target on this platform
-(real jq)'` test in the same file is what covers the end-to-end applier
-mechanism (write/atomic-rename), with its own throwaway fixture, and needs no
-changes.
+object shape — the shape a settings file needs — without pinning the settings
+it produces. This object-shape expectation is a *seed convention* asserted by
+the test, not a guarantee production enforces: `applyTransforms` writes
+successful jq stdout verbatim and never checks that it is JSON or an object. The
+test exercises the production loader and `jq` runner against the seed programs;
+it does not exercise `applyTransforms`, target resolution, or the bundled
+`apply-home-jq-transforms.mjs`. The existing `'applies a transform to its target
+on this platform (real jq)'` test in the same file is what covers that
+end-to-end applier mechanism (write/atomic-rename), with its own throwaway
+fixture, and needs no changes.
 
 Note this overlaps in mechanics with `tests/unit/homeJqTransforms.test.ts`,
 which already exercises `loadManifest` and `previewTransforms` with a stub
