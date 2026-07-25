@@ -10,11 +10,16 @@ self-contained edit to one of three existing PowerShell/bash scripts
 `templates/vm-shared/verify-config.sh`), validated by copying the edited
 template into the local `.configamatron` environment (which is gitignored,
 generated content — see `src/initEnv.ts:86-91`) and running the real script
-against a live target: the Windows host itself, the `sus-windows` Hyper-V
-guest, or (after the checkpoint below) an Ubuntu guest.
+directly in this session (this machine has its own Docker Desktop and full
+checkout — Tasks 1-5 need no separate guest console or manual paste-back).
+Tasks 6-9 need an actual Ubuntu machine and are executed in a different
+session after a push/pull handoff — see the checkpoint below.
 
-**Tech Stack:** PowerShell 5.1 (Windows scripts), POSIX `sh`/bash (Linux
-script), Docker CLI, curl.
+**Tech Stack:** PowerShell 5.1 for `verify-proxy.ps1` (declares
+`#requires -Version 5.1`); `verify-config.ps1` is written compatibly with
+5.1 but doesn't declare the requirement itself. Bash (not just POSIX `sh`) for
+`verify-config.sh` — it has a `#!/usr/bin/env bash` shebang and uses
+bash-only features (`set -o pipefail`). Docker CLI, curl.
 
 ## Global Constraints
 
@@ -27,8 +32,11 @@ script), Docker CLI, curl.
   read its PASS/FAIL/WARN output", not an automated test suite.
 - Every task's validation must show the actual PASS/FAIL/WARN line(s) the
   script prints, not just "the exit code was 0".
-- Commit only the `templates/` file(s) touched by each task. Never commit
-  anything under `.configamatron/`.
+- Commit only the `templates/` file(s) touched by each task — this applies to
+  Tasks 1-8, which each change exactly one script. Task 9 is the one
+  exception: it commits a `docs/` file to record that the handoff's defects
+  are resolved, which is a deliberate part of that task, not a violation of
+  this rule.
 
 ---
 
@@ -112,25 +120,37 @@ else { Add-Fail 'envoy container running' "no running configamatron envoy contai
 # green envoy service and either or both can be running during a transition.
 $envoyNames = @($envoy | ForEach-Object { ($_ -split '\s+')[0] } | Where-Object { $_ })
 if ($envoyNames.Count -gt 0) {
-    $resolvedExpected = Resolve-Path $proxyDir -ErrorAction SilentlyContinue
+    $resolvedExpected = Resolve-Path -LiteralPath $proxyDir -ErrorAction SilentlyContinue
     $expectedProxyDir = if ($resolvedExpected) { $resolvedExpected.Path.TrimEnd('\') } else { $proxyDir.TrimEnd('\') }
 
+    # Every branch below that cannot positively confirm ownership -- an
+    # inspect failure, a missing mount, or an actual mismatch -- FAILs and
+    # exits immediately, the same as a confirmed mismatch. "Inconclusive" and
+    # "wrong" get the same treatment here: if this check can't prove the
+    # running Envoy belongs to $EnvDir, every later section's assumption that
+    # it does is equally unsafe to build on.
     foreach ($name in $envoyNames) {
-        $mountsJson = & docker inspect --format '{{json .Mounts}}' $name 2>$null
-        if ($LASTEXITCODE -ne 0 -or -not $mountsJson) {
-            Add-Fail "envoy container '$name' ownership" 'docker inspect failed -- could not read its mounted config'
-            continue
+        $inspectError = $null
+        $mountsJson = & docker inspect --format '{{json .Mounts}}' $name 2>&1
+        if ($LASTEXITCODE -ne 0) { $inspectError = ($mountsJson | Out-String).Trim() }
+        if ($inspectError -or -not $mountsJson) {
+            Add-Fail "envoy container '$name' ownership" "docker inspect failed -- could not read its mounted config: $inspectError"
+            Write-Host ''
+            Write-Host "$($script:pass) passed, $($script:fail) failed, $($script:warn) warnings"
+            exit 1
         }
 
         $mounts = $mountsJson | ConvertFrom-Json
         $configMount = $mounts | Where-Object { $_.Destination -eq '/etc/envoy/envoy.yaml' -and $_.Type -eq 'bind' } | Select-Object -First 1
         if (-not $configMount) {
             Add-Fail "envoy container '$name' ownership" 'no bind mount found at /etc/envoy/envoy.yaml -- cannot verify which environment this container belongs to'
-            continue
+            Write-Host ''
+            Write-Host "$($script:pass) passed, $($script:fail) failed, $($script:warn) warnings"
+            exit 1
         }
 
         $actualProxyDir = Split-Path -Parent $configMount.Source
-        $resolvedActual = Resolve-Path $actualProxyDir -ErrorAction SilentlyContinue
+        $resolvedActual = Resolve-Path -LiteralPath $actualProxyDir -ErrorAction SilentlyContinue
         $actualProxyDirResolved = if ($resolvedActual) { $resolvedActual.Path.TrimEnd('\') } else { $actualProxyDir.TrimEnd('\') }
 
         if ($actualProxyDirResolved -ieq $expectedProxyDir) {
@@ -197,7 +217,57 @@ must not appear at all now, because the script never reaches that section.
 Remove-Item -Recurse -Force "$env:TEMP\configamatron-decoy-env"
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Confirm the missing-mount case FAILs and exits**
+
+Add a plain container that matches the `docker ps` filter (same compose
+label, name containing `envoy`) but has no bind mounts at all, to exercise
+the "no bind mount found" branch:
+
+```powershell
+docker run -d --name test-configamatron-envoy-decoy --label com.docker.compose.project=configamatron alpine:3.20 sleep 3600
+powershell -ExecutionPolicy Bypass -File .\.configamatron\proxy\verify-proxy.ps1
+```
+
+Expected: `FAIL  envoy container 'test-configamatron-envoy-decoy' ownership
+-- no bind mount found at /etc/envoy/envoy.yaml -- cannot verify which
+environment this container belongs to`, and the script exits before
+"Credential secret" — same as the mismatch case in Step 4, confirming this
+branch also stops the script rather than falling through.
+
+Clean up:
+
+```powershell
+docker rm -f test-configamatron-envoy-decoy
+```
+
+- [ ] **Step 7: Confirm both blue and green being up doesn't break the check**
+
+`docker-compose.yml` defines `envoy_blue` and `envoy_green` as separate
+services; bring up the sibling color alongside whichever one `run-proxy` is
+already running, so both are inspected in the same run:
+
+```powershell
+docker compose --project-directory .\.configamatron\proxy -f .\.configamatron\proxy\docker-compose.yml up -d envoy_green
+powershell -ExecutionPolicy Bypass -File .\.configamatron\proxy\verify-proxy.ps1
+```
+
+Expected: two `PASS  envoy container '...' belongs to this environment (...)`
+lines, one for `configamatron-envoy-blue` and one for `configamatron-envoy-green`.
+
+Clean up (only if `run-proxy` isn't actively using the green color — check
+its log output before removing):
+
+```powershell
+docker compose --project-directory .\.configamatron\proxy -f .\.configamatron\proxy\docker-compose.yml stop envoy_green
+docker rm -f configamatron-envoy-green
+```
+
+Note: a transient `docker inspect` failure (e.g. the container is removed in
+the split second between `docker ps` listing it and `docker inspect` reading
+it) is not reproduced here — forcing that exact race reliably isn't
+practical, so that branch is covered by code review rather than a live run.
+
+- [ ] **Step 8: Commit**
 
 ```bash
 git add templates/proxy/verify-proxy.ps1
@@ -210,9 +280,9 @@ git commit -m "fix: verify-proxy.ps1 cross-checks envoy container ownership befo
 
 **Files:**
 
-- Modify: `templates/proxy/verify-proxy.ps1:228` (already renumbered after
-  Task 1's insertion — search for the text below rather than the line
-  number)
+- Modify: `templates/proxy/verify-proxy.ps1` (the "Live proxy behavior"
+  section — Task 1 inserted ~40 lines above this, so search for the text
+  below rather than a line number)
 
 **Interfaces:**
 
@@ -241,9 +311,10 @@ powershell -ExecutionPolicy Bypass -File .\.configamatron\proxy\verify-proxy.ps1
 ```
 
 Expected: `PASS  allow-listed passthrough :443 pypi.org -> 200` in the "Live
-proxy behavior" section, on this run and (if you rerun immediately) on a
-second run — there should no longer be any scenario where this line can read
-`code=200 curlExit=28`.
+proxy behavior" section. This removes the specific cold-download timeout
+that caused `code=200 curlExit=28` (the page is now 22 kB instead of 44 MB) —
+it doesn't guarantee curl can never time out here for some unrelated reason
+(network trouble, a slow upstream), just that this particular cause is gone.
 
 - [ ] **Step 3: Commit**
 
@@ -287,7 +358,14 @@ $PLACEHOLDER = 'sk-ant-oat-SANDBOX-PLACEHOLDER'
 # gateway from the same address. Reusing it here (rather than picking among
 # possibly-multiple default routes by metric) avoids a whole class of
 # ambiguity a route-based discovery would have to resolve.
-$dnsServers = Get-DnsClientServerAddress -AddressFamily IPv4 | ForEach-Object { $_.ServerAddresses } | Where-Object { $_ } | Sort-Object -Unique
+#
+# Wrapped in @(...): with exactly one result, the pipeline below returns a
+# bare [string], not a 1-element array. PowerShell strings also expose a
+# .Count property (always 1), so ".Count -eq 1" below would still look
+# right -- but $dnsServers[0] on a bare string indexes its first *character*
+# (a System.Char), not the address, silently corrupting $HostIp. @(...)
+# forces array semantics regardless of how many results come back.
+$dnsServers = @(Get-DnsClientServerAddress -AddressFamily IPv4 | ForEach-Object { $_.ServerAddresses } | Where-Object { $_ } | Sort-Object -Unique)
 
 Section 'Host IP'
 if ($HostIp) {
@@ -321,24 +399,21 @@ if ($HostIp -and $dnsServers -contains $HostIp) { Ok "resolver points at the hos
 here — this is also what makes discovery and the supplied-`-HostIp`
 assertion consistent, per the design doc's Fix 3.)
 
-- [ ] **Step 3: Sync into the share and ask for a guest run**
+- [ ] **Step 3: Sync and run it, with no argument, in this session**
+
+This environment has its own local copy of `.configamatron\vm-shared-windows`
+— no separate guest console or SMB share needed:
 
 ```powershell
 Copy-Item C:\code\configamatron\templates\vm-shared-windows\verify-config.ps1 C:\code\configamatron\.configamatron\vm-shared-windows\verify-config.ps1 -Force
+cd C:\code\configamatron\.configamatron\vm-shared-windows
+powershell -ExecutionPolicy Bypass -File .\verify-config.ps1
 ```
 
-On the `sus-windows` guest (via its console/RDP session — this cannot be
-driven from the host shell), run, with **no argument**:
-
-```powershell
-cd \\192.168.67.1\vm-shared-windows
-.\verify-config.ps1
-```
-
-Expected: `PASS  discovered host IP 192.168.67.1 from the DHCP-assigned DNS
-server` as the first line under "Host IP", and the same 100% pass result
-already observed with `.\verify-config.ps1 192.168.67.1` (the explicit-IP
-form). Report the full output back before continuing.
+Expected: `PASS  discovered host IP <ip> from the DHCP-assigned DNS server`
+as the first line under "Host IP" (whatever DNS server this environment is
+actually configured with), and the same pass result already observed when
+an explicit `-HostIp` was supplied.
 
 - [ ] **Step 4: Commit**
 
@@ -382,23 +457,34 @@ if ($c -and [int]$c -lt 400 -and $pypiExit -eq 0) { Ok "allow-listed :443 pypi.o
 after calling it still reflects curl's own exit code — nothing else native
 runs in between.)
 
-- [ ] **Step 2: Sync into the share and ask for a guest run**
+- [ ] **Step 2: Sync and run it in this session**
 
 ```powershell
 Copy-Item C:\code\configamatron\templates\vm-shared-windows\verify-config.ps1 C:\code\configamatron\.configamatron\vm-shared-windows\verify-config.ps1 -Force
-```
-
-On the `sus-windows` guest, run:
-
-```powershell
-cd \\192.168.67.1\vm-shared-windows
-.\verify-config.ps1 192.168.67.1
+cd C:\code\configamatron\.configamatron\vm-shared-windows
+powershell -ExecutionPolicy Bypass -File .\verify-config.ps1
 ```
 
 Expected: `PASS  allow-listed :443 pypi.org -> 200` under "Live egress", with
-no other lines changed. Report the full output back before continuing.
+no other lines changed.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Prove the exit-code check actually gates on failure**
+
+The happy-path run above can't show the fix doing anything, since `HttpCode`
+already returned 200 with exit 0 before this change too. Test the added
+logic directly, independent of any real network timing, by feeding it a
+synthetic result that reproduces the original bug's shape (status printed,
+then a timeout):
+
+```powershell
+$c = '200'; $pypiExit = 28
+if ($c -and [int]$c -lt 400 -and $pypiExit -eq 0) { 'WOULD PASS (bug still present)' } else { 'WOULD FAIL (fix works)' }
+```
+
+Expected: `WOULD FAIL (fix works)` — confirming the `-and $pypiExit -eq 0`
+clause is what actually changed, not just the URL.
+
+- [ ] **Step 4: Commit**
 
 ```bash
 git add templates/vm-shared-windows/verify-config.ps1
@@ -419,38 +505,42 @@ powershell -ExecutionPolicy Bypass -File .\.configamatron\proxy\verify-proxy.ps1
 ```
 
 Confirm every section's PASS/FAIL/WARN counts match what they were before
-this plan started, plus the new ownership PASS from Task 1 and the pypi.org
-PASS from Task 2. No new FAILs anywhere.
+this plan started, with two differences: the new ownership PASS(es) from
+Task 1 (which didn't exist before), and the pypi.org line still reads PASS
+(that check already passed on a healthy run before this plan — Task 2 just
+made it stop being flaky on a cold first fetch, it's not a new line). No new
+FAILs anywhere.
 
-- [ ] **Step 2: Full rerun of `verify-config.ps1` on `sus-windows`**
-
-On the guest, with no argument:
+- [ ] **Step 2: Full rerun of `verify-config.ps1`, no argument**
 
 ```powershell
-cd \\192.168.67.1\vm-shared-windows
-.\verify-config.ps1
+cd C:\code\configamatron\.configamatron\vm-shared-windows
+powershell -ExecutionPolicy Bypass -File .\verify-config.ps1
 ```
 
-Confirm 100% pass, including the discovered-IP line from Task 3 and the
-pypi.org line from Task 4. Report the full output back.
+Confirm no FAILs anywhere (WARNs are advisory and fine), including the
+discovered-IP line from Task 3 and the pypi.org line from Task 4.
 
-- [ ] **Step 3: Stop or leave run-proxy running**
+- [ ] **Step 3: Push**
 
-If you're continuing straight to the Ubuntu VM in this same session, leave
-`run-proxy` running (the Ubuntu guest's own "Live egress" checks need it).
-Otherwise, `Ctrl-C` the `pnpm cli run-proxy` process — the container itself
-stays up per its own documented behavior.
+```bash
+git push
+```
+
+The Ubuntu machine continues this plan from Task 6 onward in a separate
+session, by pulling this branch — it needs these commits pushed, not just
+local. Leave `run-proxy` running if anything on this machine still depends on
+it; otherwise `Ctrl-C` the `pnpm cli run-proxy` process (the container itself
+stays up per its own documented behavior).
 
 ---
 
-## >>> CHECKPOINT: switch to the Ubuntu VM here <<<
+## >>> CHECKPOINT: switch to the Ubuntu machine here <<<
 
-Everything above this line is verifiable from the Windows host and the
-`sus-windows` guest, and should be done and committed before continuing.
-
-Everything below needs the Ubuntu guest to actually run `verify-config.sh`
-against. **Stop here and switch to the Ubuntu VM manually before starting
-Task 6.**
+Everything above this line is done and pushed from this session. Everything
+below needs an actual Ubuntu machine to run `verify-config.sh` against, and
+continues in a **separate session**: pull this branch on the Ubuntu machine
+and resume this plan at Task 6 using the executing-plans skill.
 
 ---
 
@@ -494,6 +584,15 @@ bash verify-config.sh <host-ip>
 ```
 
 Expected: `PASS  names resolve to the host (<host-ip>)` under "Host DNS (05)".
+This confirms the check still passes today, but not the actual scenario
+`ahostsv4` exists for (a real AAAA record preceding the A record) — the
+guest's DNS responder currently answers AAAA with NOERROR and zero records,
+so there's no AAAA line to be misled by right now. Reproducing the AAAA-first
+case live would mean temporarily reconfiguring the host's DNS responder to
+answer AAAA queries, which risks destabilizing the other checks that depend
+on it; skip that here and rely on `getent ahostsv4` restricting to the
+address family by definition (the same fix already validated for this exact
+failure mode in `tests/vm/vm.test.ts`).
 
 - [ ] **Step 3: Commit**
 
@@ -533,6 +632,10 @@ Replace with:
 resolver_match=0
 if [ -n "$host_ip" ]; then
   while IFS= read -r line; do
+    case "$line" in
+      *:*) ;;
+      *) continue ;;
+    esac
     servers="${line#*:}"
     for tok in $servers; do
       if [ "$tok" = "$host_ip" ]; then
@@ -552,10 +655,13 @@ fi
 
 (`resolvectl dns` prints lines like `Global: 192.168.67.1` or
 `Link 2 (eth0): 192.168.67.1 8.8.8.8` — everything after the first colon is
-one or more whitespace-separated server addresses. `${line#*:}` strips the
-prefix up to and including the first colon; the `for tok in $servers` loop
-then relies on normal shell word-splitting to check each address as a whole
-token, so `192.168.67.1` no longer matches inside `192.168.67.164`.)
+one or more whitespace-separated server addresses. The `case` guard skips
+any line with no colon at all, so such a line can't fall through with its
+entire content retained in `servers` and accidentally match `$host_ip` as a
+bare token. `${line#*:}` then strips the prefix up to and including the
+first colon; the `for tok in $servers` loop relies on normal shell
+word-splitting to check each address as a whole token, so `192.168.67.1` no
+longer matches inside `192.168.67.164`.)
 
 - [ ] **Step 2: Sync and run on the Ubuntu guest**
 
@@ -689,15 +795,16 @@ git commit -m "fix: verify-config.sh tests passthrough with a small pypi.org pag
 bash verify-config.sh <host-ip>
 ```
 
-Confirm 100% pass — every check from before this plan started, plus the
+Confirm no new FAILs (WARNs are advisory and expected to stay as they were) —
+every check that passed before this plan started should still pass, plus the
 `ahostsv4`, resolver, and pypi.org fixes from Tasks 6–8.
 
 - [ ] **Step 2: Re-confirm the two Windows-side verifiers are still clean**
 
-Re-run `verify-proxy.ps1` (host) and `verify-config.ps1` (on `sus-windows`,
-no argument) one more time now that all four defects are fixed everywhere,
-and confirm both are 100% pass with no regressions from any of the nine
-tasks above.
+Back on the Windows machine from Tasks 1–5, re-run `verify-proxy.ps1` and
+`verify-config.ps1` (no argument) one more time now that all four defects are
+fixed everywhere, and confirm neither has any new FAILs relative to where
+Task 5 left them.
 
 - [ ] **Step 3: Update the handoff doc**
 
