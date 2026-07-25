@@ -158,6 +158,17 @@ This guide continues as if 192.168.67.x was chosen as the subnet and the host wa
 **Ubuntu guest** — leave the interface on **DHCP**; the installer's default configuration is already correct and no netplan drop-in is needed. Then mount the share:
 
 ```bash
+# install prequisites
+sudo apt update -y && sudo apt install openssh-server cifs-utils
+```
+
+With the openssh-server install you can now open an ssh shell to make copy and pasting easier for later commands.
+
+> ssh <username>@<vm-name>
+
+For the following commands, be sure to replace <the password from step 2>. Special characters don't need to be escaped, the heredoc interpretor is only watching for an 'EOF'.
+
+```bash
 # Credentials file, readable only by root:
 sudo tee /etc/configamatron-share.cred > /dev/null << 'EOF'
 username=configamatron-share
