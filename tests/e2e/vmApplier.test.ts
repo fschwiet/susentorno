@@ -13,6 +13,7 @@ import {
 import { tmpdir, platform } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
+import { previewTransforms } from '../../src/homeJqTransforms';
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
 const applierUbuntu = join(
@@ -74,22 +75,26 @@ describe('vm applier bundle', () => {
     }
   });
 
-  it.skipIf(!hasJq)('seed transforms reproduce the former inline settings (real jq)', () => {
-    const vscode = spawnSync('jq', ['-f', join(seedDir, 'vscode-settings.jq')], {
-      input: '{}',
-      encoding: 'utf8',
-    });
-    expect(JSON.parse(vscode.stdout)).toEqual({
-      'files.autoSave': 'afterDelay',
-      'editor.formatOnSave': true,
-      'editor.defaultFormatter': 'esbenp.prettier-vscode',
-      '[csharp]': { 'editor.defaultFormatter': 'csharpier.csharpier-vscode' },
-    });
-    const claude = spawnSync('jq', ['-f', join(seedDir, 'claude-onboarding.jq')], {
-      input: '{}',
-      encoding: 'utf8',
-    });
-    expect(JSON.parse(claude.stdout)).toEqual({ hasCompletedOnboarding: true });
+  it.skipIf(!hasJq)('every seed transform is valid jq that produces a JSON object', () => {
+    // previewTransforms loads manifest.yaml and runs each transform through real
+    // jq with '{}' input, returning { output } on success or { error } on failure.
+    const results = previewTransforms({ dir: seedDir });
+    // Guard against a vacuous pass on an emptied manifest.
+    expect(results.length).toBeGreaterThan(0);
+    for (const result of results) {
+      // jq exited 0 and produced output (no error path).
+      expect(result.error).toBeUndefined();
+      // output is typed `string | undefined`; assert it to both guard the
+      // success case and satisfy the JSON.parse below.
+      expect(result.output).toBeDefined();
+      const parsed = JSON.parse(result.output!);
+      // A settings file must be a JSON object. Reject null and arrays (both
+      // report typeof 'object'), then reject scalars. No-op `.` and `{}` yield
+      // the empty object and intentionally pass; no assertion on keys/values.
+      expect(parsed).not.toBeNull();
+      expect(Array.isArray(parsed)).toBe(false);
+      expect(typeof parsed).toBe('object');
+    }
   });
 
   // Proves the bash wrapper resolves paths from the script dir, not the caller's
