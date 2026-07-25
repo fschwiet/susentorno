@@ -295,14 +295,16 @@ for the node.exe rules, `-Program` matching the fixed dedicated path.
 `DisplayName`s each cover more than one actual rule (two and three,
 respectively) — `Get-NetFirewallRule -DisplayName ...` returns all of them as
 an array. The check must correlate each returned rule object individually
-through `Get-NetFirewallAddressFilter -AssociatedNetFirewallRule`/etc. (never
-aggregate filters across the array, which could let one correct rule mask a
-missing, duplicate, or wrongly-scoped sibling) and confirm the exact expected
-set: precisely two SMB rules (one per adapter/address pair) and precisely
-three node.exe rules (the TCP/UDP-53/UDP-67 split), each matching its own
-specific expected tuple. Fewer than expected, more than expected, or any one
-member mismatched all count as the present-but-wrong case below — not a
-partial pass.
+through `Get-NetFirewallAddressFilter`/`Get-NetFirewallPortFilter`/
+`Get-NetFirewallInterfaceFilter`/`Get-NetFirewallApplicationFilter
+-AssociatedNetFirewallRule` (never aggregate filters across the array, which
+could let one correct rule mask a missing, duplicate, or wrongly-scoped
+sibling) and confirm the exact expected set: precisely two SMB rules (one per
+adapter/address pair, `-InterfaceAlias` included) and precisely three node.exe
+rules (the TCP/UDP-53/UDP-67 split), each matching its own specific expected
+tuple. Fewer than expected, more than expected, or any one member
+mismatched — including a wrong `-InterfaceAlias`, not just address/port/
+program — all count as the present-but-wrong case below, not a partial pass.
 
 **`verify-proxy.ps1` needs a `$NatAdapterAlias` parameter it doesn't have
 today**, added with the same default as `host-allow-vm-inbound.ps1`
@@ -313,9 +315,11 @@ not-necessarily-up adapters elsewhere in this script (e.g. the VM-path
 checks' `Get-NetIPConfiguration ... -ErrorAction SilentlyContinue`) — under
 this script's `$ErrorActionPreference = 'Stop'`, an unresolved address must
 not be allowed to throw and abort the whole run. When an expected address
-can't be resolved, the affected filter assertions **WARN** ("cannot verify —
-adapter not up") rather than FAIL, since an absent adapter is a configuration
-state, not a proven scoping regression.
+can't be resolved, only *that address comparison* becomes unverifiable and
+**WARN**s ("cannot verify — adapter not up"); every other assertion for that
+rule set — count, `-InterfaceAlias`, `-Protocol`/`-LocalPort`, `-Program` —
+is still checked and still **FAIL**s if wrong. An unresolvable adapter isn't
+a license to skip the rest of the tuple.
 
 **Severity split, matching the existing pattern.** A rule that's simply
 *absent* (the whole expected set is missing) stays **WARN** — unchanged from
@@ -365,12 +369,14 @@ unconfigured environment.
     matching `host-allow-vm-inbound.ps1`), needed to know the second SMB
     rule's expected address.
   - Extend the existing TCP/DNS/DHCP/SMB/node.exe rule-presence checks to
-    also assert `-LocalAddress`, `-LocalPort`/`-Protocol`, and (node.exe only)
-    `-Program` filters, correlated per individual rule object (not
-    aggregated across the array a shared `DisplayName` returns) — WARN on
-    total absence or an unresolvable expected address (unchanged posture for
-    a not-yet-configured environment), FAIL on a present-but-mismatched rule
-    or an unexpected rule count (see Design decision 4).
+    also assert `-LocalAddress`, `-InterfaceAlias`, `-LocalPort`/`-Protocol`,
+    and (node.exe only) `-Program` filters, correlated per individual rule
+    object (not aggregated across the array a shared `DisplayName` returns) —
+    WARN on total absence or an unresolvable expected address (unchanged
+    posture for a not-yet-configured environment; every other assertion for
+    that rule set still runs and still FAILs if wrong), FAIL on a
+    present-but-mismatched rule or an unexpected rule count (see Design
+    decision 4).
 
 ## Tests
 
@@ -390,8 +396,9 @@ unconfigured environment.
   `Resolve-RunProxyNode` or `-NodePath`; `verify-proxy.ps1` contains the new
   forwarding/weak-host check, the broadened `Query User` check, the
   `$NatAdapterAlias` parameter, and the extended filter assertions
-  (`Get-NetFirewallAddressFilter`, `Get-NetFirewallPortFilter`,
-  `Get-NetFirewallApplicationFilter`) on the existing rule-presence checks.
+  (`Get-NetFirewallAddressFilter`, `Get-NetFirewallInterfaceFilter`,
+  `Get-NetFirewallPortFilter`, `Get-NetFirewallApplicationFilter`) on the
+  existing rule-presence checks.
 - A test (or an assertion in an existing `runProxy.ts` test) confirming
   `--forward-ports` is gone from the CLI's option list.
 - No new automated test exercises a real Windows firewall or Hyper-V adapter —
@@ -418,11 +425,13 @@ unconfigured environment.
   filters (address, port, protocol, or program) no longer match what
   `host-allow-vm-inbound.ps1` creates — not just if the host model is
   weakened or the rule is missing entirely.
-- The firewall rule that admits run-proxy's process is scoped to a binary that
-  only ever runs run-proxy, on only the default ports the forwarded listener
-  needs (not hardened against a custom `ENVOY_HTTP_PORT`/`ENVOY_HTTPS_PORT`
-  paired with `--forward` — see Design decision 3) — not a shared interpreter,
-  and not an unrestricted port range.
+- The firewall rule that admits run-proxy's process is scoped to a binary
+  dedicated, by project convention, to running run-proxy — not shared by
+  normal project operation the way the discovered system node.exe was (see
+  Risks for the manual-misuse caveat this doesn't eliminate) — on only the
+  default ports the forwarded listener needs (not hardened against a custom
+  `ENVOY_HTTP_PORT`/`ENVOY_HTTPS_PORT` paired with `--forward` — see Design
+  decision 3), not an unrestricted port range.
 - `verify-proxy.ps1` fails loudly if a stale `Query User*` rule for that binary
   *or any other node.exe* ever reappears, rather than silently permitting
   drift back to the pre-`aee5cfe` state.
