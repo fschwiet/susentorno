@@ -24,10 +24,18 @@ Unblock-File $codebaseMemoryInstaller
 & $codebaseMemoryInstaller
 Remove-Item $codebaseMemoryInstaller
 
-# Register the context7 MCP server for both agents (mirrors Ubuntu 04).
-## Call codex last because it blocks on login request we aren't going to respond to.
+# Register the context7 MCP server for both agents
+# Configure Codex directly because `codex mcp add --url` starts the server's
+# optional OAuth flow and blocks unattended provisioning.
 
 claude mcp add --transport http context7 https://mcp.context7.com/mcp
-codex mcp add context7 --url https://mcp.context7.com/mcp
+
+$codexConfigDirectory = Join-Path $HOME '.codex'
+$codexConfigPath = Join-Path $codexConfigDirectory 'config.toml'
+$context7Section = '[mcp_servers.context7]'
+New-Item -ItemType Directory -Force -Path $codexConfigDirectory | Out-Null
+if (-not (Test-Path $codexConfigPath) -or -not (Select-String -LiteralPath $codexConfigPath -SimpleMatch $context7Section -Quiet)) {
+    Add-Content -LiteralPath $codexConfigPath -Value "`n$context7Section`nurl = `"https://mcp.context7.com/mcp`""
+}
 
 Write-Host "04-configure-tools: power timeouts disabled; context7 MCP registered for claude and codex; VS Code Prettier extension installed."

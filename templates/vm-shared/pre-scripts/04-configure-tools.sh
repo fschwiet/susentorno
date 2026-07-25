@@ -24,7 +24,14 @@ code --install-extension JakubKozera.csharp-dev-tools
 curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash
 
 ## Agent configurations
-## Call codex last because it blocks on login request we aren't going to respond to.
+# Configure Codex directly because `codex mcp add --url` starts the server's
+# optional OAuth flow and blocks unattended provisioning.
 
 claude mcp add --transport http context7 https://mcp.context7.com/mcp
-codex mcp add context7 --url https://mcp.context7.com/mcp
+
+codex_config_directory="$HOME/.codex"
+codex_config_path="$codex_config_directory/config.toml"
+mkdir -p "$codex_config_directory"
+if [[ ! -f "$codex_config_path" ]] || ! grep -Fqx '[mcp_servers.context7]' "$codex_config_path"; then
+    printf '\n[mcp_servers.context7]\nurl = "https://mcp.context7.com/mcp"\n' >> "$codex_config_path"
+fi
