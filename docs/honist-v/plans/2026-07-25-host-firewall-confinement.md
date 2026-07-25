@@ -1074,7 +1074,11 @@ function Test-RuleTuple {
     $addressOk = if ($Expected.SkipAddress) { $true }
                  elseif ($null -eq $Expected.LocalAddress) { $addrFilter.LocalAddress -eq 'Any' }
                  else { $addrFilter.LocalAddress -eq $Expected.LocalAddress }
-    $programOk = if ($null -eq $Expected.Program) { $true }
+    # $Expected.Program of $null means "expected unrestricted" (the TCP/DNS/
+    # DHCP/SMB rules never carry -Program), asserted the same way as an
+    # unrestricted LocalAddress - not "don't care," which would let a rule
+    # that drifted to being -Program-scoped still pass.
+    $programOk = if ($null -eq $Expected.Program) { $appFilter.Program -eq 'Any' }
                  else { $appFilter.Program -eq $Expected.Program }
 
     return (
