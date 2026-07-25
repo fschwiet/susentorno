@@ -29,9 +29,11 @@ confinement is actually weaker than the setup assumes. Close both gaps:
   TCP 80/443, UDP 53, and SMB 445 rules; `-LocalPort` scoping on the node.exe
   `-Program` rule to the ports it actually needs; replace node-path discovery
   with a dedicated copy of node.exe.
-- `templates/proxy/verify-proxy.ps1` — two new checks: strong-host/no-forwarding
+- `templates/proxy/verify-proxy.ps1` — two new checks (strong-host/no-forwarding
   on the Internal-switch adapter, and no stale `Query User*` rule for any
-  node.exe (not just the dedicated copy's path).
+  node.exe), plus extending the existing rule-presence checks to validate
+  `-LocalAddress`/`-LocalPort`/`-Program` filters, not just `DisplayName`
+  existence.
 - `src/commands/runProxy.ts`, new `src/runProxy/relaunchViaDedicatedNode.ts` —
   the dedicated-copy-and-relaunch mechanism; also removes the unused
   `--forward-ports` option (see Design decision 3).
@@ -105,6 +107,16 @@ host model" claim for SMB; failing setup instead keeps that claim true. This
 only affects setup-time rule creation — it doesn't change how the VM uses the
 SMB share once both rules exist, whether it's on the Internal-switch or NAT
 network.
+
+**Both addresses must be resolved and validated before either SMB rule is
+deleted.** The script's existing pattern removes a `DisplayName`'s rules first,
+then creates the replacements (as with the other rules above). If the NAT
+address resolution/`throw` happened at rule-creation time instead, a failure
+there would leave the SMB rules already deleted and not yet replaced —
+blocking SMB entirely, a worse state than before the script ran. Both
+`$hostIp` and the NAT address need to be resolved (and validated) up front,
+alongside each other, before any `Remove-NetFirewallRule` call — the same
+place `$hostIp`'s own check already happens today.
 
 ### 2. Strong-host + no-forwarding check in `verify-proxy.ps1`
 
@@ -210,8 +222,10 @@ the firewall rule to that copy's fixed path instead.
 - **Consequences for `host-allow-vm-inbound.ps1`:** `Resolve-RunProxyNode` and
   the `-NodePath` parameter are deleted entirely. The script computes the same
   fixed dedicated path (mirroring the TS convention). Since that binary now
-  only ever runs run-proxy, and run-proxy's forwarded listener only ever binds
-  TCP 80/443, UDP 53, and UDP 67 on this adapter (see above), the
+  only ever runs run-proxy, and run-proxy's forwarded listener binds TCP
+  80/443, UDP 53, and UDP 67 on this adapter by default (see above — not
+  hardened against the undocumented, currently-unexercised combination of a
+  custom `ENVOY_HTTP_PORT`/`ENVOY_HTTPS_PORT` with `--forward`), the
   `-Program`-scoped Allow rule is also scoped by `-LocalPort` — closing the
   "any port" residual this design's Goal calls out, not just the "any
   program" one. This needs **three** rules, not two: a single
@@ -254,6 +268,36 @@ the firewall rule to that copy's fixed path instead.
   Changes how `run-proxy` starts/stops/is supervised — a materially bigger
   change than this work's scope.
 
+### 4. `verify-proxy.ps1`'s existing rule checks validate filters, not just existence
+
+**Problem.** The three pre-existing "Internal-switch inbound firewall rule
+present" checks (`Get-NetFirewallRule -DisplayName ...`) only confirm a rule
+with that name exists — they say nothing about its `-LocalAddress`,
+`-LocalPort`, `-Protocol`, `-InterfaceAlias`, or `-Program` filters, which live
+on separate objects (`Get-NetFirewallAddressFilter`, `Get-NetFirewallPortFilter`,
+`Get-NetFirewallApplicationFilter`, each associated back to the rule). A rule
+that's been edited, manually recreated without `-LocalAddress`, or otherwise
+drifted from what `host-allow-vm-inbound.ps1` creates would still report
+PASS/WARN as if nothing were wrong — directly undercutting this design's
+premise of making confinement checked rather than assumed, and the Success
+Criteria's claim that the rules stay address-confined.
+
+**Fix.** Extend each existing rule check — TCP 80/443, DNS 53, DHCP 67, both
+SMB 445 rules, and the three node.exe rules — to also assert the filters
+`host-allow-vm-inbound.ps1` is now specified to create: `-LocalAddress`
+matching `$hostIp` (or the resolved NAT address, for the SMB rule scoped to
+`$NatAdapterAlias`) on every rule except DHCP 67 and the node.exe rules' own
+UDP-67 rule — both intentionally unscoped by address, per Design decisions 1
+and 3; `-LocalPort`/`-Protocol` matching what each rule is meant to cover; and,
+for the node.exe rules, `-Program` matching the fixed dedicated path.
+
+**Severity split, matching the existing pattern.** A rule that's simply
+*absent* stays **WARN** — unchanged from today, since that may just mean
+`host-allow-vm-inbound.ps1` hasn't been run yet. A rule that *exists* but
+whose filters don't match what's expected is **FAIL** — an actual scoping
+regression, the same severity reasoning as Design decision 2's host-model
+check, not an unconfigured environment.
+
 ## Implementation changes
 
 - **`src/runProxy/relaunchViaDedicatedNode.ts` (new)** — `getDedicatedNodePath()`,
@@ -274,10 +318,12 @@ the firewall rule to that copy's fixed path instead.
   - Compute the fixed dedicated path via the same convention as the TS side.
   - Add `-LocalAddress $hostIp` to the TCP 80/443 and UDP 53 rules; UDP 67
     stays interface-scoped only.
+  - Resolve and validate both `$hostIp` and the `$NatAdapterAlias` address up
+    front, before any `Remove-NetFirewallRule` call, so a resolution failure
+    aborts before any existing rule is deleted.
   - Split the SMB 445 rule into two rules, one per adapter, each with its own
     `-LocalAddress` (`$hostIp` for `$AdapterAlias`, the resolved
-    `$NatAdapterAlias` address for the other — `throw` if that address can't
-    be resolved, same as the existing `$hostIp` check).
+    `$NatAdapterAlias` address for the other).
   - Add three `-Program`-scoped rules for the dedicated node.exe path — TCP
     80/443 and UDP 53 with `-LocalAddress $hostIp`, UDP 67 without — closing
     the "any port" gap this design's Goal names, not just the "any program"
@@ -288,6 +334,10 @@ the firewall rule to that copy's fixed path instead.
   - New FAIL-severity check: strong-host + no-forwarding on `$AdapterAlias`.
   - New FAIL-severity check: no `Query User*` rule exists for *any* node.exe,
     listing matches by name (covers gaps 2a and 2b — see Design decision 3).
+  - Extend the existing TCP/DNS/DHCP/SMB/node.exe rule-presence checks to
+    also assert `-LocalAddress`, `-LocalPort`/`-Protocol`, and (node.exe only)
+    `-Program` filters — WARN on absence (unchanged), FAIL on a
+    present-but-mismatched rule (see Design decision 4).
 
 ## Tests
 
@@ -305,7 +355,10 @@ the firewall rule to that copy's fixed path instead.
   contains `-LocalAddress` on the TCP/DNS/SMB rules and three `-LocalPort`
   `-Program` rules for the node.exe path, and no longer contains
   `Resolve-RunProxyNode` or `-NodePath`; `verify-proxy.ps1` contains the new
-  forwarding/weak-host check and the broadened `Query User` check.
+  forwarding/weak-host check, the broadened `Query User` check, and the
+  extended filter assertions (`Get-NetFirewallAddressFilter`,
+  `Get-NetFirewallPortFilter`, `Get-NetFirewallApplicationFilter`) on the
+  existing rule-presence checks.
 - A test (or an assertion in an existing `runProxy.ts` test) confirming
   `--forward-ports` is gone from the CLI's option list.
 - No new automated test exercises a real Windows firewall or Hyper-V adapter —
@@ -328,6 +381,10 @@ the firewall rule to that copy's fixed path instead.
   traffic to the Internal-switch (and, for SMB, Default Switch) address
   independently of the host model, and `verify-proxy.ps1` fails loudly if that
   host model is ever weakened.
+- `verify-proxy.ps1` fails loudly if any of those rules exists but its
+  filters (address, port, protocol, or program) no longer match what
+  `host-allow-vm-inbound.ps1` creates — not just if the host model is
+  weakened or the rule is missing entirely.
 - The firewall rule that admits run-proxy's process is scoped to a binary that
   only ever runs run-proxy, on only the ports it actually needs — not a
   shared interpreter, and not an unrestricted port range.
