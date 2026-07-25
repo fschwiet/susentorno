@@ -43,6 +43,8 @@ structural wiring test, using the existing `yaml` dependency to parse
 ```
 it('home-jq-transforms manifest and .jq files are consistently wired', () => {
   // parse templates/home-jq-transforms/manifest.yaml
+  // assert it has at least one entry (an emptied manifest should fail, not
+  // vacuously pass)
   // every entry's `transform` field names a .jq file that exists in the folder
   // every .jq file in the folder is referenced by at least one manifest entry
 });
@@ -57,20 +59,32 @@ Replace `'seed transforms reproduce the former inline settings (real jq)'`
 with a behavioral test scoped to processing, not output values:
 
 ```
-it.skipIf(!hasJq)('every seed transform is valid jq that produces valid JSON', () => {
+it.skipIf(!hasJq)('every seed transform is valid jq that produces a JSON object', () => {
   // parse manifest.yaml
   // for each entry: run `jq -f <transform>` with input '{}'
-  // assert exitCode 0 and that stdout parses as JSON
+  // assert exitCode 0 first, then that stdout parses as JSON and is a
+  // non-null, non-array object (not just "any valid JSON value" — a
+  // transform reduced to `.` or `{}` should not silently pass)
   // (no assertion on which keys/values the transform sets)
 });
 ```
 
-This exercises the real `jq` applier mechanism against the real seed files —
-proving each seed transform is runnable and well-formed — without pinning the
-settings it produces. The existing `'applies a transform to its target on
-this platform (real jq)'` test in the same file already covers the
-end-to-end applier mechanism with its own throwaway fixture and needs no
-changes.
+This proves each seed transform is runnable, well-formed jq, and yields an
+object shape usable as a settings file — without pinning the settings it
+produces. It exercises `jq` and the seed programs directly, not the applier
+script itself; the existing `'applies a transform to its target on this
+platform (real jq)'` test in the same file is what covers the end-to-end
+applier mechanism, with its own throwaway fixture, and needs no changes.
+
+## Trade-offs
+
+The replaced tests protected two things: that transforms are valid/runnable,
+and that the shipped defaults contain the historically-intended settings.
+This design keeps the former and deliberately drops the latter — pinning
+"shipped defaults are correct" is exactly the fragility this change removes.
+A transform reduced to `{}` (an empty but valid object) would still pass;
+that's accepted as the cost of not asserting on customizable content, not an
+oversight.
 
 ## Testing
 
