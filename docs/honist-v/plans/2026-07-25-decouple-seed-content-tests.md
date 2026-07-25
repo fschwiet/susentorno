@@ -156,7 +156,7 @@ Run:
 pnpm exec prettier --check tests/unit/templates.test.ts && pnpm exec eslint tests/unit/templates.test.ts && pnpm exec tsc --noEmit
 ```
 
-Expected: all three pass with no output/errors. If prettier reports the file, run `pnpm exec prettier --write tests/unit/templates.test.ts` and re-run the check.
+Expected: the chained command exits successfully (exit code 0). Each tool prints its own status lines (e.g. prettier's `All matched files use Prettier code style!`) — that is normal; only a non-zero exit is a failure. If prettier reports the file needs formatting, run `pnpm exec prettier --write tests/unit/templates.test.ts` and re-run the check.
 
 - [ ] **Step 7: Commit**
 
@@ -266,9 +266,10 @@ Expected: `Test Files 1 passed (1)`, `Tests 1 passed`. (Both current seed transf
 
 - [ ] **Step 5: Prove the test has teeth (non-object rejection)**
 
-Confirm the object-shape assertion actually bites. Temporarily overwrite one seed transform so it emits an array instead of an object (this edit is reverted from git in Step 6, so the seed file is never permanently changed):
+Confirm the object-shape assertion actually bites. **Back up the seed file first** (it may contain uncommitted local customization — do not rely on `git checkout` to restore it), then temporarily overwrite it so it emits an array instead of an object:
 
 ```bash
+cp templates/home-jq-transforms/claude-onboarding.jq claude-onboarding.jq.orig
 printf '[.hasCompletedOnboarding = true]\n' > templates/home-jq-transforms/claude-onboarding.jq
 ```
 
@@ -280,22 +281,22 @@ pnpm exec vitest run --config vitest.e2e.config.ts tests/e2e/vmApplier.test.ts -
 
 Expected: FAIL on `expect(Array.isArray(parsed)).toBe(false)` for the `claude-onboarding.jq` result — proving the object-shape check has teeth.
 
-- [ ] **Step 6: Revert the seed edit and re-confirm green**
+- [ ] **Step 6: Restore the seed file from the backup and re-confirm green**
 
-Restore the seed file from git (never hand-edit it back — Global Constraint forbids modifying `templates/home-jq-transforms/*`):
+Restore the exact original contents from the Step 5 backup (this preserves any uncommitted local customization; do **not** use `git checkout`, which would discard it):
 
 ```bash
-git checkout -- templates/home-jq-transforms/claude-onboarding.jq
+mv claude-onboarding.jq.orig templates/home-jq-transforms/claude-onboarding.jq
 ```
 
 Run:
 
 ```bash
 pnpm exec vitest run --config vitest.e2e.config.ts tests/e2e/vmApplier.test.ts -t "every seed transform is valid jq that produces a JSON object"
-git status --porcelain templates/home-jq-transforms/
+git status --porcelain templates/home-jq-transforms/ claude-onboarding.jq.orig
 ```
 
-Expected: the test PASSES again, and `git status` prints nothing (seed folder untouched).
+Expected: the test PASSES again, and `git status` prints nothing — confirming the seed file matches its pre-teeth state and no leftover `claude-onboarding.jq.orig` remains.
 
 - [ ] **Step 7: Format, lint, and typecheck the changed file**
 
@@ -305,7 +306,7 @@ Run:
 pnpm exec prettier --check tests/e2e/vmApplier.test.ts && pnpm exec eslint tests/e2e/vmApplier.test.ts && pnpm exec tsc --noEmit
 ```
 
-Expected: all three pass. If prettier reports the file, run `pnpm exec prettier --write tests/e2e/vmApplier.test.ts` and re-run.
+Expected: the chained command exits successfully (exit code 0); each tool's own status output is normal. If prettier reports the file needs formatting, run `pnpm exec prettier --write tests/e2e/vmApplier.test.ts` and re-run.
 
 - [ ] **Step 8: Commit**
 
@@ -355,6 +356,7 @@ Task 3 changes no files. If `pnpm test` surfaced a formatting/lint issue that re
 
 ## Notes for the implementer
 
+- **`pnpm` prints a benign version warning.** The repo pins pnpm `11.3.0` while the installed toolchain is newer (e.g. `11.17.0`), so every `pnpm …` command emits a `[WARN] This project is configured to use 11.3.0 of pnpm…` line. That warning does not affect exit codes — judge each command by its exit status (0 = pass), not by the absence of output.
 - **Why reuse `loadManifest` / `previewTransforms` instead of parsing YAML or calling `jq` directly?** These are the exact functions production uses to load the manifest and run transforms. Reusing them means the tests validate the real code path and cannot drift from production behavior — and it keeps the tests short. Do not reintroduce `spawnSync('jq', ...)` or a `yaml` parse in the new tests.
 - **Why not assert specific settings keys/values?** That is precisely the fragility being removed. The seed `.jq` files are a customizable surface maintainers edit over time (that is how `chat.disableAIFeatures` got added). The new tests assert only that processing works and the output is object-shaped.
 - **Why does the teeth step (Task 1 Step 4, Task 2 Step 5) exist?** Both tasks replace a test with another test rather than adding new production code, so there is no natural red-before-green. The teeth steps temporarily violate the invariant to prove each new assertion actually fails when it should — the equivalent of TDD's "watch it fail." Always revert immediately (Task 1 Step 5, Task 2 Step 6) and confirm `git status` shows the seed folder untouched.
