@@ -33,7 +33,8 @@ confinement is actually weaker than the setup assumes. Close both gaps:
   on the Internal-switch adapter, and no stale `Query User*` rule for any
   node.exe (not just the dedicated copy's path).
 - `src/commands/runProxy.ts`, new `src/runProxy/relaunchViaDedicatedNode.ts` —
-  the dedicated-copy-and-relaunch mechanism.
+  the dedicated-copy-and-relaunch mechanism; also removes the unused
+  `--forward-ports` option (see Design decision 3).
 - `tests/unit/**` covering the above.
 
 **Explicitly out of scope:**
@@ -96,11 +97,14 @@ other, defeating the point. Splitting into two `New-NetFirewallRule` calls,
 each with its own single `-InterfaceAlias`/`-LocalAddress` pair (both still
 under the existing `$smbRuleName` `DisplayName`, matching the "safe to re-run"
 pattern already used elsewhere), avoids that. The `$NatAdapterAlias` address
-is resolved the same way as `$hostIp`; if it can't be found (adapter
-absent/down — the Default Switch isn't guaranteed present the way the
-Internal switch is), that half of the rule falls back to interface-only
-scoping with a warning, rather than failing setup over an adapter this design
-doesn't otherwise require.
+is resolved the same way as `$hostIp`, and treated the same way if it can't be
+found: `throw`, same as the existing check for `$hostIp` on `$AdapterAlias`. A
+silent interface-only fallback would quietly reopen exactly the gap this
+design closes, contradicting the Success Criteria's "independently of the
+host model" claim for SMB; failing setup instead keeps that claim true. This
+only affects setup-time rule creation — it doesn't change how the VM uses the
+SMB share once both rules exist, whether it's on the Internal-switch or NAT
+network.
 
 ### 2. Strong-host + no-forwarding check in `verify-proxy.ps1`
 
@@ -157,7 +161,13 @@ the firewall rule to that copy's fixed path instead.
   exit and propagate its code. With the listener installed, the child (which
   already has its own `SIGINT`-driven graceful shutdown in `runProxyLoop`)
   handles the keystroke normally, and the parent's own exit is driven solely
-  by the child's `exit` event. The parent does nothing else once relaunching.
+  by the child's `exit` event: Node's `exit` event supplies `(code, signal)`;
+  when `code` is non-null it's propagated directly as the parent's exit code,
+  and when it's null (the child died by signal rather than exiting normally)
+  the parent falls back to a fixed non-zero exit code (`1`) with a message —
+  Windows has no real signals to re-raise on the parent, so reproducing POSIX
+  kill semantics isn't warranted here. The parent does nothing else once
+  relaunching.
 - **Ensuring the dedicated copy is present and current:** compare file size
   first (cheap `stat`); if they differ, copy. If sizes match, compare a
   streamed SHA-256 of both files and copy on mismatch. This runs at most once
@@ -187,19 +197,32 @@ the firewall rule to that copy's fixed path instead.
   is a hard failure — clear message, non-zero exit, no fallback to running
   through the entry node.exe. Falling back would silently reintroduce the
   broad-rule exposure this design removes.
+- **Why the ports can be treated as fixed:** `--forward-ports` is unused
+  anywhere in this codebase outside its own definition in `runProxy.ts`, and
+  is being deleted as dead code in this change (see Implementation changes)
+  rather than supported alongside the new port-scoped rule. `ENVOY_HTTP_PORT`
+  / `ENVOY_HTTPS_PORT` remain, but the only place that sets them
+  (`tests/proxyStack.ts`) always pairs them with `--no-forward`, so they only
+  ever affect the loopback listener — never the Internal-switch-facing one
+  this rule covers. Not hardened against someone combining a custom
+  `ENVOY_HTTP_PORT`/`ENVOY_HTTPS_PORT` with `--forward` for a real (non-test)
+  run, since nothing in the codebase does that today.
 - **Consequences for `host-allow-vm-inbound.ps1`:** `Resolve-RunProxyNode` and
   the `-NodePath` parameter are deleted entirely. The script computes the same
   fixed dedicated path (mirroring the TS convention). Since that binary now
-  only ever runs run-proxy, and run-proxy only ever binds 80/443/53/67 on this
-  adapter, the `-Program`-scoped Allow rule is also scoped by `-LocalPort` —
-  closing the "any port" residual this design's Goal calls out, not just the
-  "any program" one — split into two rules the same way the plain port rules
-  already are: one for 80/443/53 with `-LocalAddress $hostIp`, one for 67
-  alone without it (DHCP's broadcast source, same reasoning as the plain DHCP
-  rule above). No discovery, no "could not locate node.exe" warning branch,
-  since the path is a known constant rather than a discovery result. The
-  existing stale `Query User*`-rule cleanup for that binary is kept, now
-  matched against the fixed path directly.
+  only ever runs run-proxy, and run-proxy's forwarded listener only ever binds
+  TCP 80/443, UDP 53, and UDP 67 on this adapter (see above), the
+  `-Program`-scoped Allow rule is also scoped by `-LocalPort` — closing the
+  "any port" residual this design's Goal calls out, not just the "any
+  program" one. This needs **three** rules, not two: a single
+  `New-NetFirewallRule` can't mix TCP and UDP under one `-Protocol`, so it
+  mirrors the plain port rules' existing three-way split — TCP 80/443 with
+  `-LocalAddress $hostIp`, UDP 53 with `-LocalAddress $hostIp`, and UDP 67
+  alone without it, for the same broadcast reason as the plain DHCP rule
+  above. No discovery, no "could not locate node.exe" warning branch, since
+  the path is a known constant rather than a discovery result. The existing
+  stale `Query User*`-rule cleanup for that binary is kept, now matched
+  against the fixed path directly.
 - **Consequences for `verify-proxy.ps1`'s new check (gaps 2a and 2b):** rather
   than checking only the one known dedicated-path constant, the check scans
   for *any* `Query User*` rule whose target ends in `node.exe`, and **FAILs**
@@ -244,7 +267,8 @@ the firewall rule to that copy's fixed path instead.
   real filesystem or process.
 - **`src/commands/runProxy.ts`** — one call at the very top of the `.action()`
   handler: if the relaunch fires, return immediately without doing anything
-  else in that process.
+  else in that process. Also delete the unused `--forward-ports` option and
+  `forwardPorts`/`options.forwardPorts` handling (see Design decision 3).
 - **`templates/proxy/host-allow-vm-inbound.ps1`**:
   - Delete `Resolve-RunProxyNode` and the `-NodePath` parameter.
   - Compute the fixed dedicated path via the same convention as the TS side.
@@ -252,11 +276,12 @@ the firewall rule to that copy's fixed path instead.
     stays interface-scoped only.
   - Split the SMB 445 rule into two rules, one per adapter, each with its own
     `-LocalAddress` (`$hostIp` for `$AdapterAlias`, the resolved
-    `$NatAdapterAlias` address for the other — falling back to interface-only
-    scoping with a warning if that address can't be resolved).
-  - Split the node.exe `-Program` rule into two: 80/443/53 with
-    `-LocalAddress $hostIp`, and 67 alone without it — closing the "any port"
-    gap this design's Goal names, not just the "any program" one.
+    `$NatAdapterAlias` address for the other — `throw` if that address can't
+    be resolved, same as the existing `$hostIp` check).
+  - Add three `-Program`-scoped rules for the dedicated node.exe path — TCP
+    80/443 and UDP 53 with `-LocalAddress $hostIp`, UDP 67 without — closing
+    the "any port" gap this design's Goal names, not just the "any program"
+    one.
   - Keep the stale `Query User*`-rule cleanup, now matched against the fixed
     path unconditionally.
 - **`templates/proxy/verify-proxy.ps1`**:
@@ -273,14 +298,16 @@ the firewall rule to that copy's fixed path instead.
   `--no-forward` → no-op; differently-cased `process.execPath` matching the
   dedicated path → treated as already-relaunched, no infinite loop; spawn is
   called with `argv.slice(1)` (not the raw `argv`) and the same cwd/env; a
-  parent `SIGINT` listener is installed before spawning; the child's exit
-  code (including non-zero and signal-terminated cases) is propagated as the
-  parent's.
+  parent `SIGINT` listener is installed before spawning; a non-null child
+  exit code is propagated as the parent's; a null (signal-terminated) child
+  exit code falls back to a fixed non-zero exit code.
 - `templates.test.ts`-style content assertions: `host-allow-vm-inbound.ps1`
-  contains `-LocalAddress` on the TCP/DNS/SMB rules and `-LocalPort` on the
-  node.exe rule, and no longer contains `Resolve-RunProxyNode` or
-  `-NodePath`; `verify-proxy.ps1` contains the new forwarding/weak-host check
-  and the broadened `Query User` check.
+  contains `-LocalAddress` on the TCP/DNS/SMB rules and three `-LocalPort`
+  `-Program` rules for the node.exe path, and no longer contains
+  `Resolve-RunProxyNode` or `-NodePath`; `verify-proxy.ps1` contains the new
+  forwarding/weak-host check and the broadened `Query User` check.
+- A test (or an assertion in an existing `runProxy.ts` test) confirming
+  `--forward-ports` is gone from the CLI's option list.
 - No new automated test exercises a real Windows firewall or Hyper-V adapter —
   consistent with this project's existing posture, where these host-only
   scripts are verified manually at checkpoints, not by CI.
