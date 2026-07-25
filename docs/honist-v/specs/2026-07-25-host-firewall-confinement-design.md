@@ -52,6 +52,13 @@ confinement is actually weaker than the setup assumes. Close both gaps:
   hosted run-proxy, e.g. a repo-local dev build). The handoff already covers
   this by name via the new stale-rule check rather than a matching-rule change;
   no further action here.
+- **Multi-user hosts.** The dedicated node.exe's location
+  (`%USERPROFILE%\.configamatron-host\...`) assumes the same Windows account
+  runs both `host-allow-vm-inbound.ps1` and `run-proxy` — see Design decision 3.
+- **Coordinating the forwarder's bind address across scripts.** The
+  `-LocalAddress` fix assumes the Internal-switch adapter carries a single
+  IPv4 address and that it's the one `run-proxy` actually forwards from — see
+  Design decision 1.
 
 ## Design decisions
 
@@ -66,6 +73,21 @@ Windows' strong-host default to do it implicitly.
 from `0.0.0.0` to `255.255.255.255` — not addressed to the host's unicast IP —
 so a `-LocalAddress` condition would silently break DHCP. That rule stays
 interface-scoped only, per the investigation doc.
+
+**Assumes the adapter carries exactly one IPv4 address, and that it's the one
+`run-proxy` actually forwards from.** `$hostIp` is the first address
+`Get-NetIPConfiguration -InterfaceAlias $AdapterAlias` reports — not
+necessarily the one `run-proxy` binds. `run-proxy` resolves its own forward
+address independently (`resolveForwardListenAddress()`) and accepts an
+explicit `--forward-listen <ip>` override this script has no way to see. If
+the adapter ever carries a second IPv4 address, or `--forward-listen` points
+elsewhere, `-LocalAddress` can silently scope to the wrong address and drop
+the real listener's traffic. Adding a second IPv4 to the Internal-switch
+adapter is an intentional, out-of-band act — not something normal setup or
+DHCP does — so this is treated as an unsupported deviation for now rather than
+solved here. A follow-up could have both scripts read one resolved IP from
+`.configamatron` instead of each computing it independently; deferred as a
+separate issue (see Scope).
 
 ### 2. Strong-host + no-forwarding check in `verify-proxy.ps1`
 
@@ -99,7 +121,10 @@ the firewall rule to that copy's fixed path instead.
   matching the existing model where the firewall rules themselves are
   host-wide (fixed `DisplayName`s, not parameterized per environment) — a
   per-project copy would leave only the most-recently-configured project's
-  copy actually covered by the Allow rule.
+  copy actually covered by the Allow rule. Assumes a single-user host: the
+  account that runs `host-allow-vm-inbound.ps1` (needs admin) and the account
+  that runs `run-proxy` are the same Windows user, so `%USERPROFILE%` resolves
+  to the same path for both — see Scope.
 - **Creation and relaunch, in `src/commands/runProxy.ts`:** as the first thing
   the `run-proxy` action does, gated on `process.platform === 'win32' &&
   options.forward` (see below): if `process.execPath` does not already match
