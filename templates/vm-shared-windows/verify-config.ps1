@@ -13,8 +13,30 @@ function Bad($m, $d) { $script:fail++; if ($d) { Write-Host "  FAIL  $m -- $d" }
 function Adv($m, $d) { $script:warn++; if ($d) { Write-Host "  WARN  $m -- $d" } else { Write-Host "  WARN  $m" } }
 
 $PLACEHOLDER = 'sk-ant-oat-SANDBOX-PLACEHOLDER'
+
+# The DHCP-assigned DNS server is a reliable stand-in for "the host IP" on
+# this branch's host-side-DNS design: the host serves both DNS and the
+# gateway from the same address. Reusing it here (rather than picking among
+# possibly-multiple default routes by metric) avoids a whole class of
+# ambiguity a route-based discovery would have to resolve.
+#
+# Wrapped in @(...): with exactly one result, the pipeline below returns a
+# bare [string], not a 1-element array. PowerShell strings also expose a
+# .Count property (always 1), so ".Count -eq 1" below would still look
+# right -- but $dnsServers[0] on a bare string indexes its first *character*
+# (a System.Char), not the address, silently corrupting $HostIp. @(...)
+# forces array semantics regardless of how many results come back.
+$dnsServers = @(Get-DnsClientServerAddress -AddressFamily IPv4 | ForEach-Object { $_.ServerAddresses } | Where-Object { $_ } | Sort-Object -Unique)
+
 Section 'Host IP'
-if ($HostIp) { Ok "using host IP $HostIp" } else { Bad 'host IP supplied' 'pass the Internal-switch host IP' }
+if ($HostIp) {
+  Ok "using host IP $HostIp"
+} elseif ($dnsServers.Count -eq 1) {
+  $HostIp = $dnsServers[0]
+  Ok "discovered host IP $HostIp from the DHCP-assigned DNS server"
+} else {
+  Bad 'host IP determinable' "pass -HostIp explicitly -- found $($dnsServers.Count) DHCP-assigned DNS server(s) ('$($dnsServers -join ', ')'), need exactly 1 to discover unambiguously"
+}
 
 Section 'CA trust (05)'
 $root = Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like '*configamatron-proxy-certificate-authority*' }
@@ -25,7 +47,6 @@ $sslBackend = (git config --global http.sslBackend) 2>$null
 if ($sslBackend -eq 'schannel') { Ok 'git http.sslBackend=schannel' } else { Bad 'git http.sslBackend=schannel' "got '$sslBackend'" }
 
 Section 'Host DHCP/DNS (05)'
-$dnsServers = Get-DnsClientServerAddress -AddressFamily IPv4 | ForEach-Object { $_.ServerAddresses } | Where-Object { $_ } | Sort-Object -Unique
 if ($HostIp -and $dnsServers -contains $HostIp) { Ok "resolver points at the host ($HostIp)" } else { Bad "resolver points at the host ($HostIp)" "got '$($dnsServers -join ', ')'" }
 if ($HostIp) {
   $ans = (Resolve-DnsName -Name example.com -Type A -DnsOnly -ErrorAction SilentlyContinue | Where-Object Type -eq 'A' | Select-Object -First 1).IPAddress
