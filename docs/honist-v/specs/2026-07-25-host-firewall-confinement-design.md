@@ -289,7 +289,12 @@ matching `$hostIp` (or the resolved NAT address, for the SMB rule scoped to
 `$NatAdapterAlias`) on every rule except DHCP 67 and the node.exe rules' own
 UDP-67 rule — both intentionally unscoped by address, per Design decisions 1
 and 3; `-LocalPort`/`-Protocol` matching what each rule is meant to cover; and,
-for the node.exe rules, `-Program` matching the fixed dedicated path.
+for the node.exe rules, `-Program` matching the fixed dedicated path. Also
+assert the rule object's own state, not just its associated filters:
+`Enabled -eq $true`, `Direction -eq 'Inbound'`, `Action -eq 'Allow'` — matching
+filters on a rule that's been disabled, flipped to outbound, or changed to
+Block would otherwise still report PASS despite being exactly the kind of
+drift this check exists to catch.
 
 **Exact rule-set matching, not "any matching rule."** The SMB and node.exe
 `DisplayName`s each cover more than one actual rule (two and three,
@@ -303,8 +308,9 @@ sibling) and confirm the exact expected set: precisely two SMB rules (one per
 adapter/address pair, `-InterfaceAlias` included) and precisely three node.exe
 rules (the TCP/UDP-53/UDP-67 split), each matching its own specific expected
 tuple. Fewer than expected, more than expected, or any one member
-mismatched — including a wrong `-InterfaceAlias`, not just address/port/
-program — all count as the present-but-wrong case below, not a partial pass.
+mismatched — including a wrong `-InterfaceAlias` or `Enabled`/`Direction`/
+`Action` state, not just address/port/program — all count as the
+present-but-wrong case below, not a partial pass.
 
 **`verify-proxy.ps1` needs a `$NatAdapterAlias` parameter it doesn't have
 today**, added with the same default as `host-allow-vm-inbound.ps1`
@@ -370,7 +376,8 @@ unconfigured environment.
     rule's expected address.
   - Extend the existing TCP/DNS/DHCP/SMB/node.exe rule-presence checks to
     also assert `-LocalAddress`, `-InterfaceAlias`, `-LocalPort`/`-Protocol`,
-    and (node.exe only) `-Program` filters, correlated per individual rule
+    and (node.exe only) `-Program` filters, plus the rule's own
+    `Enabled`/`Direction`/`Action` state, correlated per individual rule
     object (not aggregated across the array a shared `DisplayName` returns) —
     WARN on total absence or an unresolvable expected address (unchanged
     posture for a not-yet-configured environment; every other assertion for
@@ -397,8 +404,8 @@ unconfigured environment.
   forwarding/weak-host check, the broadened `Query User` check, the
   `$NatAdapterAlias` parameter, and the extended filter assertions
   (`Get-NetFirewallAddressFilter`, `Get-NetFirewallInterfaceFilter`,
-  `Get-NetFirewallPortFilter`, `Get-NetFirewallApplicationFilter`) on the
-  existing rule-presence checks.
+  `Get-NetFirewallPortFilter`, `Get-NetFirewallApplicationFilter`, plus
+  `Enabled`/`Direction`/`Action`) on the existing rule-presence checks.
 - A test (or an assertion in an existing `runProxy.ts` test) confirming
   `--forward-ports` is gone from the CLI's option list.
 - No new automated test exercises a real Windows firewall or Hyper-V adapter —
