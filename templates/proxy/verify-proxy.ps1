@@ -79,8 +79,15 @@ function Test-RuleTuple {
     $ifFilter = $Rule | Get-NetFirewallInterfaceFilter
     $appFilter = $Rule | Get-NetFirewallApplicationFilter
 
-    $expectedPorts = (@($Expected.LocalPort) | Sort-Object) -join ','
-    $actualPorts = (@($portFilter.LocalPort) | Sort-Object) -join ','
+    # Both sides are stringified before sorting so the two sorts use the same
+    # comparer. Get-NetFirewallPortFilter hands back LocalPort as strings while
+    # the expected tuples below carry integers, and Sort-Object picks its
+    # comparer from the input: @('80','443') sorts to 443,80 (lexicographic)
+    # but @(80,443) sorts to 80,443 (numeric), so an otherwise-correct
+    # multi-port rule would never match. Also keeps non-numeric values like
+    # 'Any' or a '1000-2000' range comparable rather than throwing.
+    $expectedPorts = (@($Expected.LocalPort) | ForEach-Object { "$_" } | Sort-Object) -join ','
+    $actualPorts = (@($portFilter.LocalPort) | ForEach-Object { "$_" } | Sort-Object) -join ','
     $addressOk = if ($Expected.SkipAddress) { $true }
                  elseif ($null -eq $Expected.LocalAddress) { $addrFilter.LocalAddress -eq 'Any' }
                  else { $addrFilter.LocalAddress -eq $Expected.LocalAddress }
