@@ -26,10 +26,12 @@ confinement is actually weaker than the setup assumes. Close both gaps:
 **In scope:**
 
 - `templates/proxy/host-allow-vm-inbound.ps1` — `-LocalAddress` scoping on the
-  port rules; replace node-path discovery with a dedicated copy of node.exe.
+  TCP 80/443, UDP 53, and SMB 445 rules; `-LocalPort` scoping on the node.exe
+  `-Program` rule to the ports it actually needs; replace node-path discovery
+  with a dedicated copy of node.exe.
 - `templates/proxy/verify-proxy.ps1` — two new checks: strong-host/no-forwarding
-  on the Internal-switch adapter, and no stale `Query User*` rule for the
-  dedicated node.exe copy.
+  on the Internal-switch adapter, and no stale `Query User*` rule for any
+  node.exe (not just the dedicated copy's path).
 - `src/commands/runProxy.ts`, new `src/runProxy/relaunchViaDedicatedNode.ts` —
   the dedicated-copy-and-relaunch mechanism.
 - `tests/unit/**` covering the above.
@@ -48,10 +50,6 @@ confinement is actually weaker than the setup assumes. Close both gaps:
 - **Running run-proxy as a Windows service** and scoping the firewall rule by
   `-Service` instead of `-Program`. A materially bigger change to how run-proxy
   is operated, not warranted by this work.
-- Gap 2b (stale prompt-generated rules left by a *different* node.exe that once
-  hosted run-proxy, e.g. a repo-local dev build). The handoff already covers
-  this by name via the new stale-rule check rather than a matching-rule change;
-  no further action here.
 - **Multi-user hosts.** The dedicated node.exe's location
   (`%USERPROFILE%\.configamatron-host\...`) assumes the same Windows account
   runs both `host-allow-vm-inbound.ps1` and `run-proxy` — see Design decision 3.
@@ -88,6 +86,21 @@ DHCP does — so this is treated as an unsupported deviation for now rather than
 solved here. A follow-up could have both scripts read one resolved IP from
 `.configamatron` instead of each computing it independently; deferred as a
 separate issue (see Scope).
+
+**Also applied to the SMB (445) share rule.** That rule spans two adapters
+(`$AdapterAlias` and `$NatAdapterAlias`), so a single `-LocalAddress` value
+isn't enough — Windows evaluates multiple `-InterfaceAlias`/`-LocalAddress`
+values as independent ORs, not paired tuples, so a shared list would still let
+a packet arriving on one interface match an address that belongs to the
+other, defeating the point. Splitting into two `New-NetFirewallRule` calls,
+each with its own single `-InterfaceAlias`/`-LocalAddress` pair (both still
+under the existing `$smbRuleName` `DisplayName`, matching the "safe to re-run"
+pattern already used elsewhere), avoids that. The `$NatAdapterAlias` address
+is resolved the same way as `$hostIp`; if it can't be found (adapter
+absent/down — the Default Switch isn't guaranteed present the way the
+Internal switch is), that half of the rule falls back to interface-only
+scoping with a warning, rather than failing setup over an adapter this design
+doesn't otherwise require.
 
 ### 2. Strong-host + no-forwarding check in `verify-proxy.ps1`
 
@@ -128,15 +141,35 @@ the firewall rule to that copy's fixed path instead.
 - **Creation and relaunch, in `src/commands/runProxy.ts`:** as the first thing
   the `run-proxy` action does, gated on `process.platform === 'win32' &&
   options.forward` (see below): if `process.execPath` does not already match
-  the dedicated path, copy `process.execPath` there if it doesn't already
-  exist (create-if-missing only — no staleness detection; deleting the file
-  forces a re-copy on the next start), then spawn that copy as a child process.
-  The path comparison is case-insensitive, matching Windows path semantics —
-  a naive case-sensitive compare risks an infinite relaunch loop if
+  the dedicated path (case-insensitive, matching Windows path semantics — a
+  naive case-sensitive compare risks an infinite relaunch loop if
   `process.execPath` is ever reported in different casing than the stored
-  constant.
-  with the same argv/cwd/env and inherited stdio, wait for it to exit, and
-  propagate its exit code. The parent does nothing else once relaunching.
+  constant), ensure the dedicated copy is present and current (see below),
+  then spawn it as a child process with `process.argv.slice(1)` — `argv[0]`
+  is the *current* node executable's own path, so passing it unmodified would
+  hand the child a bogus leading argument — and the same cwd/env, inherited
+  stdio. Before spawning, register a no-op `SIGINT` listener on the parent:
+  Ctrl-C on Windows delivers `CTRL_C_EVENT` to every process sharing the
+  console, parent and child alike, and Node's default reaction to an
+  *unhandled* `SIGINT` is immediate termination — without the listener the
+  parent would very likely die on the same keystroke that's supposed to
+  trigger the child's graceful shutdown, before it can wait for the child's
+  exit and propagate its code. With the listener installed, the child (which
+  already has its own `SIGINT`-driven graceful shutdown in `runProxyLoop`)
+  handles the keystroke normally, and the parent's own exit is driven solely
+  by the child's `exit` event. The parent does nothing else once relaunching.
+- **Ensuring the dedicated copy is present and current:** compare file size
+  first (cheap `stat`); if they differ, copy. If sizes match, compare a
+  streamed SHA-256 of both files and copy on mismatch. This runs at most once
+  per `run-proxy --forward` session — not a hot path — so hashing an
+  ~80-120MB node.exe (a fraction of a second) is negligible next to the rest
+  of startup (bringing up Docker containers, etc.). This replaces a simpler
+  create-if-missing-only plan and closes two things at once: it stops
+  trusting whatever already happens to be at the dedicated path without
+  checking it's actually a copy of `process.execPath`, and it removes the
+  staleness risk noted below — a newer node.exe from an updated install now
+  propagates on the next start instead of requiring the file to be deleted
+  manually.
 - **Why gated on both platform and `forward`:** the entry node.exe (whatever
   the install/shim resolves) never binds a socket before this check runs, so
   it can never trigger Windows' listen-time prompt itself; only code paths
@@ -156,16 +189,29 @@ the firewall rule to that copy's fixed path instead.
   broad-rule exposure this design removes.
 - **Consequences for `host-allow-vm-inbound.ps1`:** `Resolve-RunProxyNode` and
   the `-NodePath` parameter are deleted entirely. The script computes the same
-  fixed dedicated path (mirroring the TS convention) and creates the
-  `-Program`-scoped Allow rule against it unconditionally — no discovery, no
-  "could not locate node.exe" warning branch, since the path is a known
-  constant rather than a discovery result. The existing stale
-  `Query User*`-rule cleanup for that binary is kept, now matched against the
-  fixed path directly.
-- **Consequences for `verify-proxy.ps1`'s new check (gap 2a):** "no
-  `Query User*` rule exists for the dedicated node.exe path" needs no
-  resolution logic of its own — it checks the one known constant, the same one
-  `host-allow-vm-inbound.ps1` uses.
+  fixed dedicated path (mirroring the TS convention). Since that binary now
+  only ever runs run-proxy, and run-proxy only ever binds 80/443/53/67 on this
+  adapter, the `-Program`-scoped Allow rule is also scoped by `-LocalPort` —
+  closing the "any port" residual this design's Goal calls out, not just the
+  "any program" one — split into two rules the same way the plain port rules
+  already are: one for 80/443/53 with `-LocalAddress $hostIp`, one for 67
+  alone without it (DHCP's broadcast source, same reasoning as the plain DHCP
+  rule above). No discovery, no "could not locate node.exe" warning branch,
+  since the path is a known constant rather than a discovery result. The
+  existing stale `Query User*`-rule cleanup for that binary is kept, now
+  matched against the fixed path directly.
+- **Consequences for `verify-proxy.ps1`'s new check (gaps 2a and 2b):** rather
+  than checking only the one known dedicated-path constant, the check scans
+  for *any* `Query User*` rule whose target ends in `node.exe`, and **FAILs**
+  listing each by name — reporting, not deleting, since a rule for some other
+  node.exe might be legitimate (e.g. a user's unrelated tool) and this script
+  is read-only diagnostics. This also catches gap 2b (a stale rule for a
+  *different*, older node.exe that once hosted run-proxy — e.g. a repo-local
+  dev build), which a dedicated-path-only check could not see.
+  `host-allow-vm-inbound.ps1` itself still only *deletes* the stale rule for
+  its own fixed path (unchanged from today), since deleting on the basis of
+  "looks like node.exe" would risk removing a rule the user allowed for an
+  unrelated program.
 
 **Rejected alternatives:**
 
@@ -188,8 +234,10 @@ the firewall rule to that copy's fixed path instead.
 ## Implementation changes
 
 - **`src/runProxy/relaunchViaDedicatedNode.ts` (new)** — `getDedicatedNodePath()`,
-  `ensureDedicatedNodeCopy()` (copy + write/refresh `readme.txt`), and
-  `relaunchIfNeeded()` (the platform/forward-gated check, copy, spawn, wait,
+  `ensureDedicatedNodeCopy()` (size, then SHA-256, comparison against
+  `process.execPath`; copy on mismatch; write/refresh `readme.txt`), and
+  `relaunchIfNeeded()` (the platform/forward-gated check, ensure-copy, spawn
+  with `argv.slice(1)`, install the no-op parent `SIGINT` listener, wait,
   propagate exit code). Dependencies (fs operations, spawn, platform) are
   injectable, matching the existing `RunProxyDeps` pattern used elsewhere in
   `runProxy.ts`, so the decision logic is unit-testable without touching a
@@ -202,23 +250,37 @@ the firewall rule to that copy's fixed path instead.
   - Compute the fixed dedicated path via the same convention as the TS side.
   - Add `-LocalAddress $hostIp` to the TCP 80/443 and UDP 53 rules; UDP 67
     stays interface-scoped only.
+  - Split the SMB 445 rule into two rules, one per adapter, each with its own
+    `-LocalAddress` (`$hostIp` for `$AdapterAlias`, the resolved
+    `$NatAdapterAlias` address for the other — falling back to interface-only
+    scoping with a warning if that address can't be resolved).
+  - Split the node.exe `-Program` rule into two: 80/443/53 with
+    `-LocalAddress $hostIp`, and 67 alone without it — closing the "any port"
+    gap this design's Goal names, not just the "any program" one.
   - Keep the stale `Query User*`-rule cleanup, now matched against the fixed
     path unconditionally.
 - **`templates/proxy/verify-proxy.ps1`**:
   - New FAIL-severity check: strong-host + no-forwarding on `$AdapterAlias`.
-  - New check: no `Query User*` rule exists for the fixed dedicated path.
+  - New FAIL-severity check: no `Query User*` rule exists for *any* node.exe,
+    listing matches by name (covers gaps 2a and 2b — see Design decision 3).
 
 ## Tests
 
 - Unit tests for `relaunchViaDedicatedNode.ts` (injected fs/spawn/platform):
   already on the dedicated path → no-op; not yet copied → copy then spawn;
-  copy already present → spawn only, no re-copy; non-win32 → no-op;
+  copy present and matching (size + hash) → spawn only, no re-copy; copy
+  present but size or hash mismatched → re-copy then spawn; non-win32 → no-op;
   `--no-forward` → no-op; differently-cased `process.execPath` matching the
-  dedicated path → treated as already-relaunched, no infinite loop.
+  dedicated path → treated as already-relaunched, no infinite loop; spawn is
+  called with `argv.slice(1)` (not the raw `argv`) and the same cwd/env; a
+  parent `SIGINT` listener is installed before spawning; the child's exit
+  code (including non-zero and signal-terminated cases) is propagated as the
+  parent's.
 - `templates.test.ts`-style content assertions: `host-allow-vm-inbound.ps1`
-  contains `-LocalAddress` and no longer contains `Resolve-RunProxyNode` or
+  contains `-LocalAddress` on the TCP/DNS/SMB rules and `-LocalPort` on the
+  node.exe rule, and no longer contains `Resolve-RunProxyNode` or
   `-NodePath`; `verify-proxy.ps1` contains the new forwarding/weak-host check
-  and the `Query User` check.
+  and the broadened `Query User` check.
 - No new automated test exercises a real Windows firewall or Hyper-V adapter —
   consistent with this project's existing posture, where these host-only
   scripts are verified manually at checkpoints, not by CI.
@@ -235,15 +297,16 @@ the firewall rule to that copy's fixed path instead.
 
 ## Success criteria
 
-- The inbound allow rules confine guest traffic to the Internal-switch address
+- The inbound allow rules — TCP 80/443, UDP 53, and SMB 445 — confine guest
+  traffic to the Internal-switch (and, for SMB, Default Switch) address
   independently of the host model, and `verify-proxy.ps1` fails loudly if that
   host model is ever weakened.
 - The firewall rule that admits run-proxy's process is scoped to a binary that
-  only ever runs run-proxy — not a shared interpreter that could also carry
-  unrelated traffic.
+  only ever runs run-proxy, on only the ports it actually needs — not a
+  shared interpreter, and not an unrestricted port range.
 - `verify-proxy.ps1` fails loudly if a stale `Query User*` rule for that binary
-  ever reappears, rather than silently permitting drift back to the
-  pre-`aee5cfe` state.
+  *or any other node.exe* ever reappears, rather than silently permitting
+  drift back to the pre-`aee5cfe` state.
 - No behavior change on non-Windows platforms, and no behavior change for any
   existing test or loopback-only dev invocation.
 
@@ -253,10 +316,6 @@ the firewall rule to that copy's fixed path instead.
   Nothing stops someone from manually invoking the copy for an unrelated
   purpose — but doing so requires a deliberate act, unlike today's shared
   node.exe which could pick up unrelated use unintentionally.
-- **Node.exe copy staleness.** The copy is created once and never
-  auto-refreshed; a newer node.exe from an updated install will not propagate
-  until the copy is deleted. Low severity (an older but still-functional
-  runtime), documented in the `readme.txt`.
 - **Order of operations on first-ever setup.** `host-allow-vm-inbound.ps1` may
   run before the dedicated copy file exists (the documented flow runs it
   before `run-proxy`'s first start). This is fine — `New-NetFirewallRule
