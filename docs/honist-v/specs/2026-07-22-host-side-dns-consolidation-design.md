@@ -658,6 +658,135 @@ not re-exercised here. It is substantially covered by the late-host-start test,
 which booted the guest onto the isolated switch and acquired a lease with no
 guest-side action of any kind.
 
+### Validation results — Ubuntu guest checkpoint (2026-07-24)
+
+Run against the same environment (`c:\vm-isolated\.configamatron`, host
+`192.168.67.1/24` on `configamatron-internal`, `run-proxy` serving gateway, DNS
+and DHCP) with an Ubuntu guest (`sus-ubuntu`, kernel `7.0.0-28-generic`) on a
+**single** Hyper-V NIC. This closes the half that had been implemented but never
+run. Checks were driven over SSH from the host so every line of output could be
+read rather than sampled.
+
+**Precondition, handled before any result was recorded.** The same
+interactive-prompt firewall rules described above were present again — enabled
+`Query User` **Allow** rules for `…\pnpm\bin\node.exe`, inbound TCP and UDP, any
+port, any local address, profile `Public`. Unlike the Windows checkpoint all four
+intended scoped rules were *also* present, so nothing was being masked, but the
+broad rules were deleted anyway and replaced with a **program-scoped,
+interface-scoped** Allow rule for that binary before `run-proxy` was started.
+`run-proxy` then bound `:53` and `:67` with **no dialog raised**, confirming the
+fix proposed for this gap works. Every result below was recorded against the
+documented firewall configuration plus that one added rule.
+
+- **Guest network state — all as designed.** Address `192.168.67.164/24` from the
+  `.10`–`.209` pool, `dhcp_lease_time = 3600`; `default via 192.168.67.1 dev eth0
+  proto dhcp`; `resolvectl` reporting `192.168.67.1` as the sole DNS server on the
+  only link; `getent hosts example.com` → `192.168.67.1`; `iptables -t nat -S
+  OUTPUT` containing only `-P OUTPUT ACCEPT`. `dnsmasq` and
+  `configamatron-egress.service` both `inactive`. Netplan is the untouched
+  installer config (`dhcp4: true`, no drop-in), rendered by **NetworkManager** —
+  so `networkctl` reports nothing and the DHCP client is NM's `internal` client,
+  not `systemd-networkd`'s.
+
+- **End-to-end egress.** `curl https://api.anthropic.com` → **404** (transport
+  success). `sudo apt-get update` succeeded, fetching 750 kB.
+
+- **`verify-config.sh` executed for the first time: 18 passed, 0 failed.** The
+  rewritten pieces all hold against a real guest:
+
+  - **Host-IP discovery works.** The `sed` over `ip -4 route show default` matches
+    the real route format — verified in both branches: with an argument (`PASS
+    default route matches requested host IP`) and, separately, with **no**
+    argument (`PASS discovered host IP from the default route: 192.168.67.1`).
+    This was the highest-risk rewrite; it is correct.
+  - **The three inverted checks pass**: no in-guest dnsmasq, no DNAT rules, no
+    `configamatron-egress.service`.
+  - **Both new positive checks pass**, including the `resolvectl dns` substring
+    grep.
+  - The unchanged checks (CA trust including the Firefox-snap readability probe,
+    `NODE_EXTRA_CA_CERTS`, placeholder credential, blocked-host controls) pass,
+    and the **updated** credential-gate assertion behaves correctly: the
+    guest-supplied credential reached the upstream and was rejected there
+    (`401`), which the old `/` + `403` assertion could not have distinguished.
+
+  **`getent hosts` is safe here, for a reason worth recording.** The harness had
+  to move to `ahostsv4` because `getent hosts` lists AAAA first; in the guest it
+  returned only the A record, because the host responder answers AAAA with
+  NOERROR and zero answers. So `verify-config.sh`'s `awk '{print $1}'` reads the
+  right field — but only as a consequence of responder behaviour, not because the
+  call is correct. See follow-up 2.
+
+- **Clean boot with `run-proxy` already running — DHCP is effectively instant.**
+  Timed from the guest's own journal rather than inferred host-side: kernel boot
+  `23:31:18`, DHCP transaction opened `23:31:22.187`, lease offered **1.4 ms**
+  later, fully bound `23:31:22.332` after address-conflict detection. The exchange
+  itself costs ~150 ms. Total boot 15.8 s; `sshd` listening at `23:31:26`.
+
+- **Out-of-order boot recovers unattended, and the bound is the client's retry
+  schedule — but the schedule is not a backoff curve.** The guest was booted onto
+  the isolated switch with nothing serving DHCP. NetworkManager opened a
+  transaction at `23:09:20` and retried on a 45 s cycle four times
+  (`23:10:06`, `23:10:51`, `23:11:36`, `23:12:21`), then **stopped retrying
+  entirely for five minutes**. `run-proxy` was started at `23:14:28` — inside that
+  quiet gap — and the guest did nothing until `23:17:21`, when it opened a fresh
+  transaction and bound `192.168.67.164` immediately.
+
+  So recovery took **2m53s from `run-proxy` start**, but that figure is an
+  artifact of *where in the cycle the server appeared*, not a measurement of
+  anything host-side. The worst case is bounded by NM's ~5-minute idle gap between
+  retry bursts; had `run-proxy` come up during the initial 180 s burst, adoption
+  would have been near-instant. Same practical shape as Windows' 4m55s, different
+  mechanism.
+
+  **The Ubuntu guest never self-assigns APIPA.** Zero occurrences of `169.254`,
+  `ipv4ll` or `link-local` anywhere in that boot's journal: with `dhcp4: true` and
+  no link-local fallback configured, the interface simply has **no IPv4 address**.
+  The Windows-derived guidance in the handoff and in `usage-hyper-v.md` — "if you
+  see `169.254.x.x`" — therefore does not apply to this guest, and the symptom to
+  look for is an address-less `eth0`.
+
+- **Address stability holds on Linux too.** `.164` was reissued across the
+  address-less window, the late server start, and a full reboot.
+
+- **Host verifier green.** `verify-proxy.ps1` reported **24 passed, 0 failed**
+  against the deployed environment.
+
+**The Ubuntu half of decision 5 is now validated end to end. Nothing in the
+consolidation remains unexercised on a real guest.**
+
+#### Findings and follow-ups from this checkpoint
+
+1. **`verify-proxy.ps1` resolves its environment from the current working
+   directory, and says so only in a `PASS` line nobody reads as a warning.** Run
+   by absolute path from the repo checkout while `run-proxy` served
+   `c:\vm-isolated`, it audited `C:\code\configamatron\.configamatron\proxy` and
+   reported **4 failures**, headlined by `SDS secret matches current host
+   credential -- token drift -- run-proxy is serving a stale token; restart it`.
+   Every one was an artifact of comparing the wrong environment against a live
+   Envoy; the same command from `c:\vm-isolated` was fully green. The failure text
+   is confidently wrong and directs the reader to restart a healthy proxy. Worth
+   either resolving the environment from the script's own location or failing loudly
+   when the running Envoy does not belong to the environment being checked.
+2. **`verify-config.sh`'s DNS assertions are two coincidences away from being
+   wrong.** `getent hosts` happens to return only A records here (above), and the
+   resolver check greps `resolvectl dns` for the host IP as a plain substring — so
+   `192.168.67.1` matches `192.168.67.164`, meaning a guest that had somehow been
+   pointed at *itself* would still PASS. Both should be tightened: `getent
+   ahostsv4`, and an anchored match on the resolver line.
+3. **The `pypi.org/simple/` check is a timeout waiting to fire.** It failed on the
+   first run in the guest (`code=200 curlExit=28`) and on the first host run, then
+   passed on every subsequent run. The document is **44 MB**; warm it fetches in
+   ~3.4 s, but a cold first fetch exceeds the check's `--max-time 30`. Not a proxy
+   defect — but it produces a scary-looking FAIL on exactly the first run anyone
+   performs, which is the run that matters. Use a smaller allow-listed endpoint
+   (`https://pypi.org/` is 22 kB), or stop downloading the body.
+4. **Known gap 1 is now partly moot from the client side.** The DHCP server still
+   logs nothing per-transaction, but NetworkManager's journal records the offer,
+   the ACD wait and the bind with millisecond timestamps, and the guest's log was
+   sufficient to characterise both the clean and out-of-order paths precisely. A
+   host-side ACK/NAK log is still worth adding; it is no longer the only evidence
+   available.
+
 ## Phases
 
 One spec, one plan, implemented sequentially. The phases are execution structure,

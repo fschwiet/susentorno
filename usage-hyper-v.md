@@ -192,7 +192,16 @@ cmdkey /add:192.168.67.1 /user:configamatron-share /pass:<the password from step
 
 `cmdkey` entries are **per-address**, so add one for the Default Switch host IP as well if you mount the share during the NAT phase. The share is then reachable at `\\192.168.67.1\vm-shared-windows` — the numbered scripts run from there.
 
-> **If a guest ever comes up with no address**, `run-proxy` was not running when it booted. Start `run-proxy` and the guest will pick up a lease on its next retry — no action is needed inside the guest, though Windows can take up to ~5 minutes to retry once it has fallen back to a `169.254.x.x` self-assigned address. As a last resort, the Hyper-V console plus a static address (an IP in the Internal-switch subnet, no gateway, `nameserver = <host-ip>`) still works and is a supported fallback.
+> **If a guest ever comes up with no address**, `run-proxy` was not running when it booted. Start `run-proxy` and the guest will pick up a lease on its next retry — no action is needed inside the guest, but allow up to ~5 minutes before treating it as a failure. On **Windows** the guest falls back to a `169.254.x.x` self-assigned address and re-attempts on roughly a five-minute cycle (measured: 4m55s). On **Ubuntu** there is **no** APIPA fallback — `eth0` simply has no IPv4 address — and NetworkManager retries every 45s for three minutes, then goes quiet for about five minutes before trying again (measured: 2m53s from starting `run-proxy`, all of it spent inside that quiet gap). Neither wait can be shortened from the host. With `run-proxy` already running before boot, leases bind in well under a second. As a last resort, the Hyper-V console plus a static address (an IP in the Internal-switch subnet, no gateway, `nameserver = <host-ip>`) still works and is a supported fallback.
+>
+> **Before waiting out that timer, check the host firewall.** A guest with no address looks identical whether the DHCP server is absent or its replies are being dropped. `run-proxy` binds `:53` and `:67` on the Internal-switch adapter, whose network category is `Public`, so Windows may raise an "allow `node.exe` on public networks?" dialog and write a broad `Query User{…}` rule from whatever gets clicked — **Block** silently overrides all four correctly-scoped rules, and **Allow** masks their absence. Delete any such rule for the `run-proxy` `node.exe` (it is pnpm's global shim, `C:\Users\<user>\AppData\Local\pnpm\bin\node.exe`, not the repo's `dist/`) and add a program-scoped rule so the dialog has nothing to ask:
+>
+> ```powershell
+> $node = "$env:LOCALAPPDATA\pnpm\bin\node.exe"
+> Get-NetFirewallRule | Where-Object { $_.Name -like '*Query User*' -and $_.Name -like '*pnpm\bin\node.exe' } | Remove-NetFirewallRule
+> New-NetFirewallRule -DisplayName 'Configamatron run-proxy node (VM inbound)' -Direction Inbound `
+>   -Program $node -InterfaceAlias 'vEthernet (configamatron-internal)' -Action Allow -Profile Any
+> ```
 
 ## 6. Run the numbered scripts
 

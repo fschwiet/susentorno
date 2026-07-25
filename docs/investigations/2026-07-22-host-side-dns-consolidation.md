@@ -188,6 +188,26 @@ a multi-homed host, the confinement to the Internal-switch address depends on
 the Windows **strong host model** rather than on the firewall rules. See
 `docs/investigations/2026-07-23-host-model-lets-guest-reach-other-host-ips.md`.
 
-**Not yet closed:** the Ubuntu guest half has been implemented but never run on a
-real Ubuntu VM. The rewritten `templates/vm-shared/verify-config.sh` has only
-been syntax-checked.
+The Ubuntu guest checkpoint (2026-07-24) closes the remaining half. The guest
+needed no configuration beyond the installer's `dhcp4: true`: it took a pool
+address, the host as sole router and resolver, carried no DNAT rules and no
+in-guest resolver, and reached the upstream through the proxy. The rewritten
+`templates/vm-shared/verify-config.sh` was **executed** for the first time and
+reported 18 passed / 0 failed, with the host-IP-discovery rewrite exercised in
+both its argument and no-argument branches. Results are in the spec's "Validation
+results — Ubuntu guest checkpoint (2026-07-24)".
+
+Two things that note did not anticipate, both about *clients* rather than the
+design:
+
+- Ubuntu's DHCP client is NetworkManager's `internal` one, not
+  `systemd-networkd`'s, and after failing it stops retrying for ~5 minutes
+  between bursts. Unattended recovery from an out-of-order boot is reliable but
+  the delay is quantised by that schedule, not proportional to when the server
+  appears.
+- The Ubuntu guest **never self-assigns APIPA**. An address-less `eth0` — not a
+  `169.254.x.x` address — is the symptom of a missing DHCP server on this guest.
+
+**Nothing in the consolidation remains unexercised on a real guest.** The open
+follow-ups are all incidental to it: the strong-host-model concern above, and the
+verifier robustness items recorded with the checkpoint.
