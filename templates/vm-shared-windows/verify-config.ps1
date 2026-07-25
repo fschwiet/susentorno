@@ -64,8 +64,9 @@ Section 'Live egress'
 function HttpCode($url, $timeout) { & curl.exe -s -o NUL -w '%{http_code}' --max-time $timeout $url }
 $c = HttpCode 'http://archive.ubuntu.com/' 20
 if ($c -and [int]$c -lt 400) { Ok "allow-listed :80 archive.ubuntu.com -> $c" } else { Bad 'allow-listed :80 archive.ubuntu.com' "code=$c" }
-$c = HttpCode 'https://pypi.org/simple/' 30
-if ($c -and [int]$c -lt 400) { Ok "allow-listed :443 pypi.org -> $c" } else { Bad 'allow-listed :443 pypi.org' "code=$c" }
+$c = HttpCode 'https://pypi.org/' 30
+$pypiExit = $LASTEXITCODE
+if ($c -and [int]$c -lt 400 -and $pypiExit -eq 0) { Ok "allow-listed :443 pypi.org -> $c" } else { Bad 'allow-listed :443 pypi.org' "code=$c curlExit=$pypiExit" }
 & curl.exe -s -o NUL --max-time 20 https://blocked.example.com/ 2>$null
 if ($LASTEXITCODE -ne 0) { Ok "blocked :443 connection dropped (curlExit=$LASTEXITCODE)" } else { Bad 'blocked :443 connection dropped' 'curl succeeded; expected a connection failure' }
 $c = HttpCode 'http://blocked.example.com/' 20
