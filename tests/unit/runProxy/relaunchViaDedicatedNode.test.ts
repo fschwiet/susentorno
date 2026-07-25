@@ -60,9 +60,7 @@ describe('ensureDedicatedNodeCopy', () => {
   it('copies when sizes match but hashes differ', async () => {
     const deps = makeDeps({
       fileSize: vi.fn(() => 100),
-      hashFile: vi.fn((path: string) =>
-        Promise.resolve(path === SOURCE ? 'hash-a' : 'hash-b'),
-      ),
+      hashFile: vi.fn((path: string) => Promise.resolve(path === SOURCE ? 'hash-a' : 'hash-b')),
     });
 
     await ensureDedicatedNodeCopy(deps);
@@ -160,7 +158,9 @@ describe('relaunchIfNeeded', () => {
     const deps = makeDeps({ spawn: vi.fn(async () => ({ signal: 'SIGTERM' })) });
     const result = await relaunchIfNeeded(deps);
     expect(result).toEqual({ relaunched: true, exitCode: 1 });
-    expect(deps.error).toHaveBeenCalledWith(expect.stringContaining('terminated by signal SIGTERM'));
+    expect(deps.error).toHaveBeenCalledWith(
+      expect.stringContaining('terminated by signal SIGTERM'),
+    );
   });
 
   it('falls back to a fixed exit code when spawn could not launch the process at all', async () => {
