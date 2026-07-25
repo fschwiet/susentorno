@@ -144,4 +144,39 @@ describe('templates', () => {
     );
     expect(claude).toContain('.hasCompletedOnboarding = true');
   });
+
+  it('host-allow-vm-inbound scopes rules by LocalAddress, splits SMB/node.exe, and drops node discovery', () => {
+    const script = readFileSync(join(templatesDir(), 'proxy', 'host-allow-vm-inbound.ps1'), 'utf8');
+    expect(script).not.toContain('Resolve-RunProxyNode');
+    expect(script).not.toContain('-NodePath');
+    expect(script).toContain('$hostIp = ');
+    expect(script).toContain('$natHostIp = ');
+    expect((script.match(/-LocalAddress \$hostIp/g) ?? []).length).toBeGreaterThanOrEqual(4);
+    expect(script).toContain('-LocalAddress $natHostIp');
+    expect((script.match(/-LocalPort 445/g) ?? []).length).toBe(2);
+    expect((script.match(/-Program \$nodePath/g) ?? []).length).toBe(3);
+    expect(script).toContain('.configamatron-host\\run-proxy-node.exe');
+  });
+
+  it('verify-proxy checks the host network model and any stale node.exe Query User rule', () => {
+    const script = readFileSync(join(templatesDir(), 'proxy', 'verify-proxy.ps1'), 'utf8');
+    expect(script).toContain('Get-NetIPInterface');
+    expect(script).toContain('WeakHostReceive');
+    expect(script).toContain('Forwarding');
+    expect(script).toContain("EndsWith('node.exe'");
+  });
+
+  it('verify-proxy validates rule filters and state, not just DisplayName presence', () => {
+    const script = readFileSync(join(templatesDir(), 'proxy', 'verify-proxy.ps1'), 'utf8');
+    expect(script).toContain('Get-NetFirewallAddressFilter');
+    expect(script).toContain('Get-NetFirewallPortFilter');
+    expect(script).toContain('Get-NetFirewallInterfaceFilter');
+    expect(script).toContain('Get-NetFirewallApplicationFilter');
+    expect(script).toContain('Enabled.ToString()');
+    expect(script).toContain('Direction.ToString()');
+    expect(script).toContain('Action.ToString()');
+    expect(script).toContain('$NatAdapterAlias');
+    expect(script).toContain('SkipAddress');
+    expect((script.match(/Test-RuleSet -Label/g) ?? []).length).toBe(5);
+  });
 });

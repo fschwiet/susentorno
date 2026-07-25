@@ -25,6 +25,7 @@ import { bringUpColor, stopColor } from '../runProxy/colorContainer';
 import { waitColorReady } from '../runProxy/waitColorReady';
 import { isColorRunning } from '../runProxy/isColorRunning';
 import type { Color, ColorPorts } from '../runProxy/types';
+import { relaunchIfNeeded, createRelaunchDeps } from '../runProxy/relaunchViaDedicatedNode';
 
 interface RunProxyOptions {
   credentials: string;
@@ -37,7 +38,6 @@ interface RunProxyOptions {
   refresh: boolean;
   forward: boolean;
   forwardListen?: string;
-  forwardPorts?: string;
   upstreamOverride: UpstreamOverride[];
   injectFault?: InjectFault;
 }
@@ -85,10 +85,6 @@ export function registerRunProxy(program: Command): void {
       'IP to forward from (default: the Hyper-V Internal-switch adapter IP)',
     )
     .option(
-      '--forward-ports <http,https>',
-      'ports to forward (default: ENVOY_HTTP_PORT,ENVOY_HTTPS_PORT or 80,443)',
-    )
-    .option(
       '--upstream-override <sniHost=host:port>',
       'redirect a TLS-terminating cluster to a different upstream (test use only)',
       collectOverride,
@@ -99,6 +95,20 @@ export function registerRunProxy(program: Command): void {
       'render a deliberately broken envoy.yaml to exercise proxy robustness (test use only)',
     )
     .action(async (options: RunProxyOptions) => {
+      try {
+        const relaunch = await relaunchIfNeeded(createRelaunchDeps(options.forward));
+        if (relaunch.relaunched) {
+          process.exitCode = relaunch.exitCode;
+          return;
+        }
+      } catch (err) {
+        console.error(
+          `run-proxy: failed to relaunch through the dedicated node.exe copy: ${String(err)}`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+
       const paths = requireEnvPathsOrExit('run-proxy');
       if (!paths) return;
       // run-proxy reissues the leaf itself but never the root: the root must
@@ -114,9 +124,8 @@ export function registerRunProxy(program: Command): void {
 
       let logHandle: LogStreamHandle | null = null;
 
-      const [httpPort, httpsPort] = options.forwardPorts
-        ? options.forwardPorts.split(',').map((p) => Number(p.trim()))
-        : [Number(process.env.ENVOY_HTTP_PORT ?? 80), Number(process.env.ENVOY_HTTPS_PORT ?? 443)];
+      const httpPort = Number(process.env.ENVOY_HTTP_PORT ?? 80);
+      const httpsPort = Number(process.env.ENVOY_HTTPS_PORT ?? 443);
 
       // The gateway always owns the public ports on loopback; when forwarding is
       // enabled it also listens on the Hyper-V Internal-switch adapter. Both point
