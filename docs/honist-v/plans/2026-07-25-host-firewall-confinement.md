@@ -194,7 +194,7 @@ export async function ensureDedicatedNodeCopy(deps: EnsureCopyDeps): Promise<str
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pnpm vitest run tests/unit/runProxy/relaunchViaDedicatedNode.test.ts`
-Expected: PASS (6 tests)
+Expected: PASS (5 tests)
 
 - [ ] **Step 5: Commit**
 
@@ -219,11 +219,31 @@ git commit -m "feat: add dedicated node.exe path and copy-freshness logic"
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `tests/unit/runProxy/relaunchViaDedicatedNode.test.ts` (add the import and the new `describe` block):
+First, find this exact text (Task 1's import block, at the top of the file) and add `relaunchIfNeeded` and `type RelaunchDeps` to it:
 
 ```typescript
-import { relaunchIfNeeded, type RelaunchDeps } from '../../../src/runProxy/relaunchViaDedicatedNode';
+import {
+  getDedicatedNodePath,
+  ensureDedicatedNodeCopy,
+  type EnsureCopyDeps,
+} from '../../../src/runProxy/relaunchViaDedicatedNode';
+```
 
+Replace it with:
+
+```typescript
+import {
+  getDedicatedNodePath,
+  ensureDedicatedNodeCopy,
+  relaunchIfNeeded,
+  type EnsureCopyDeps,
+  type RelaunchDeps,
+} from '../../../src/runProxy/relaunchViaDedicatedNode';
+```
+
+Then append the new `describe` block to the end of the file:
+
+```typescript
 describe('relaunchIfNeeded', () => {
   const DEDICATED = 'C:\\Users\\alice\\.configamatron-host\\run-proxy-node.exe';
   const SOURCE = 'C:\\node\\node.exe';
@@ -501,7 +521,7 @@ export function createRelaunchDeps(forward: boolean): RelaunchDeps {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pnpm vitest run tests/unit/runProxy/relaunchViaDedicatedNode.test.ts`
-Expected: PASS (13 tests)
+Expected: PASS (12 tests)
 
 - [ ] **Step 5: Typecheck**
 
@@ -584,7 +604,15 @@ Remove the `--forward-ports` option registration:
     )
 ```
 
-Replace the port computation that used it:
+Find this exact text (the port computation that used it):
+
+```typescript
+      const [httpPort, httpsPort] = options.forwardPorts
+        ? options.forwardPorts.split(',').map((p) => Number(p.trim()))
+        : [Number(process.env.ENVOY_HTTP_PORT ?? 80), Number(process.env.ENVOY_HTTPS_PORT ?? 443)];
+```
+
+Replace it with:
 
 ```typescript
       const httpPort = Number(process.env.ENVOY_HTTP_PORT ?? 80);
@@ -945,7 +973,8 @@ Add to `tests/unit/templates.test.ts`:
     expect(script).toContain('Direction.ToString()');
     expect(script).toContain('Action.ToString()');
     expect(script).toContain('$NatAdapterAlias');
-    expect(script).toContain('Test-RuleSet');
+    expect(script).toContain('SkipAddress');
+    expect((script.match(/Test-RuleSet -Label/g) ?? []).length).toBe(5);
   });
 ```
 
@@ -1028,11 +1057,13 @@ function Get-DedicatedNodePath {
 
 # Checks one expected filter/state tuple against one resolved rule object.
 # $Expected.LocalAddress of $null means "no address restriction expected"
-# (the DHCP/:67 rules); -SkipAddress means the expected address itself
-# couldn't be resolved this run, so that one dimension is not checked here
-# (the caller reports it separately as a WARN).
+# (the DHCP/:67 rules) - that dimension is always checked regardless of
+# $Expected.SkipAddress. $Expected.SkipAddress means the address THIS tuple
+# expects couldn't be resolved this run, so only that one dimension is
+# skipped here (Test-RuleSet WARNs about it separately) - count, interface,
+# protocol, port, program, and state are still checked either way.
 function Test-RuleTuple {
-    param($Rule, $Expected, [bool]$SkipAddress = $false)
+    param($Rule, $Expected)
     $portFilter = $Rule | Get-NetFirewallPortFilter
     $addrFilter = $Rule | Get-NetFirewallAddressFilter
     $ifFilter = $Rule | Get-NetFirewallInterfaceFilter
@@ -1040,7 +1071,7 @@ function Test-RuleTuple {
 
     $expectedPorts = (@($Expected.LocalPort) | Sort-Object) -join ','
     $actualPorts = (@($portFilter.LocalPort) | Sort-Object) -join ','
-    $addressOk = if ($SkipAddress) { $true }
+    $addressOk = if ($Expected.SkipAddress) { $true }
                  elseif ($null -eq $Expected.LocalAddress) { $addrFilter.LocalAddress -eq 'Any' }
                  else { $addrFilter.LocalAddress -eq $Expected.LocalAddress }
     $programOk = if ($null -eq $Expected.Program) { $true }
@@ -1063,9 +1094,11 @@ function Test-RuleTuple {
 # than one real rule (SMB, node.exe), so "at least one matches" would let a
 # missing or wrongly-scoped sibling hide behind one correct rule. A rule set
 # that's simply absent WARNs (may just mean host-allow-vm-inbound.ps1 hasn't
-# run yet); a present-but-wrong set FAILs.
+# run yet); a present-but-wrong set FAILs. Always runs the full tuple check -
+# an unresolved address (per-tuple SkipAddress) only ever narrows what that
+# one comparison covers, never skips the rule set entirely.
 function Test-RuleSet {
-    param([string]$Label, [string]$DisplayName, [array]$Expected, [bool]$AddressUnverifiable = $false)
+    param([string]$Label, [string]$DisplayName, [array]$Expected)
 
     $rules = @(Get-NetFirewallRule -DisplayName $DisplayName -ErrorAction SilentlyContinue)
 
@@ -1074,7 +1107,8 @@ function Test-RuleSet {
         return
     }
 
-    if ($AddressUnverifiable) {
+    $addressUnverifiable = [bool]($Expected | Where-Object { $_.SkipAddress } | Select-Object -First 1)
+    if ($addressUnverifiable) {
         Add-Warn "$Label address scoping" "cannot verify -- an expected adapter's address could not be resolved"
     }
 
@@ -1086,13 +1120,13 @@ function Test-RuleSet {
     $remaining = [System.Collections.ArrayList]::new($Expected)
     $allMatched = $true
     foreach ($rule in $rules) {
-        $hit = $remaining | Where-Object { Test-RuleTuple -Rule $rule -Expected $_ -SkipAddress $AddressUnverifiable } | Select-Object -First 1
+        $hit = $remaining | Where-Object { Test-RuleTuple -Rule $rule -Expected $_ } | Select-Object -First 1
         if ($hit) { $remaining.Remove($hit) }
         else { $allMatched = $false }
     }
 
     if ($allMatched) {
-        $suffix = if ($AddressUnverifiable) { '(port/interface/program/state; address unverified)' } else { '(address/port/interface/program/state)' }
+        $suffix = if ($addressUnverifiable) { '(port/interface/program/state; address unverified where noted)' } else { '(address/port/interface/program/state)' }
         Add-Pass "$Label rule(s) match expected scoping $suffix"
     } else {
         Add-Fail "$Label rule(s) match expected scoping" "one or more of the $($Expected.Count) rule(s) named '$DisplayName' don't match the expected tuple"
@@ -1153,37 +1187,30 @@ if ($natHostIp) { Add-Pass "$NatAdapterAlias host IP: $natHostIp" }
 else { Add-Warn "$NatAdapterAlias host IP" "no IPv4 on '$NatAdapterAlias' -- is the Default Switch adapter up?" }
 
 $nodePath = Get-DedicatedNodePath
+$hostIpUnresolved = -not $hostIp
 
-if ($hostIp) {
-    Test-RuleSet -Label 'TCP 80/443' -DisplayName 'Envoy Sandbox Proxy (VM inbound)' -Expected @(
-        @{ Protocol = 'TCP'; LocalPort = 80, 443; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp }
-    )
-    Test-RuleSet -Label 'DNS 53' -DisplayName 'Envoy Sandbox Proxy DNS stub (VM inbound)' -Expected @(
-        @{ Protocol = 'UDP'; LocalPort = 53; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp }
-    )
-} else {
-    Add-Warn 'TCP 80/443 and DNS 53 rule scoping' 'cannot verify -- no host IP resolved'
-}
-
+# Every Test-RuleSet call below runs unconditionally: count, interface,
+# protocol, port, program, and state are always checked. SkipAddress on a
+# tuple narrows only that tuple's address comparison when its specific
+# source IP didn't resolve - it never skips the rest of the check.
+Test-RuleSet -Label 'TCP 80/443' -DisplayName 'Envoy Sandbox Proxy (VM inbound)' -Expected @(
+    @{ Protocol = 'TCP'; LocalPort = 80, 443; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; SkipAddress = $hostIpUnresolved }
+)
+Test-RuleSet -Label 'DNS 53' -DisplayName 'Envoy Sandbox Proxy DNS stub (VM inbound)' -Expected @(
+    @{ Protocol = 'UDP'; LocalPort = 53; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; SkipAddress = $hostIpUnresolved }
+)
 Test-RuleSet -Label 'DHCP 67' -DisplayName 'Envoy Sandbox Proxy DHCP (VM inbound)' -Expected @(
     @{ Protocol = 'UDP'; LocalPort = 67; InterfaceAlias = $AdapterAlias; LocalAddress = $null }
 )
-
-Test-RuleSet -Label 'SMB 445' -DisplayName 'Configamatron share (VM inbound)' `
-    -AddressUnverifiable (-not ($hostIp -and $natHostIp)) -Expected @(
-        @{ Protocol = 'TCP'; LocalPort = 445; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp }
-        @{ Protocol = 'TCP'; LocalPort = 445; InterfaceAlias = $NatAdapterAlias; LocalAddress = $natHostIp }
-    )
-
-if ($hostIp) {
-    Test-RuleSet -Label 'run-proxy node.exe' -DisplayName 'Configamatron run-proxy node (VM inbound)' -Expected @(
-        @{ Protocol = 'TCP'; LocalPort = 80, 443; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; Program = $nodePath }
-        @{ Protocol = 'UDP'; LocalPort = 53; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; Program = $nodePath }
-        @{ Protocol = 'UDP'; LocalPort = 67; InterfaceAlias = $AdapterAlias; LocalAddress = $null; Program = $nodePath }
-    )
-} else {
-    Add-Warn 'run-proxy node.exe rule scoping' 'cannot verify -- no host IP resolved'
-}
+Test-RuleSet -Label 'SMB 445' -DisplayName 'Configamatron share (VM inbound)' -Expected @(
+    @{ Protocol = 'TCP'; LocalPort = 445; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; SkipAddress = $hostIpUnresolved }
+    @{ Protocol = 'TCP'; LocalPort = 445; InterfaceAlias = $NatAdapterAlias; LocalAddress = $natHostIp; SkipAddress = (-not $natHostIp) }
+)
+Test-RuleSet -Label 'run-proxy node.exe' -DisplayName 'Configamatron run-proxy node (VM inbound)' -Expected @(
+    @{ Protocol = 'TCP'; LocalPort = 80, 443; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; Program = $nodePath; SkipAddress = $hostIpUnresolved }
+    @{ Protocol = 'UDP'; LocalPort = 53; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; Program = $nodePath; SkipAddress = $hostIpUnresolved }
+    @{ Protocol = 'UDP'; LocalPort = 67; InterfaceAlias = $AdapterAlias; LocalAddress = $null; Program = $nodePath }
+)
 
 if ($hostIp) {
     $dnsListener = Get-NetUDPEndpoint -LocalAddress $hostIp -LocalPort 53 -ErrorAction SilentlyContinue
