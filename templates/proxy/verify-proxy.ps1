@@ -278,7 +278,7 @@ $block80 = Invoke-CurlCode @('--resolve', 'not-allow-listed.example.com:80:127.0
 if ($block80.Code -eq '403') { Add-Pass 'blocked :80 -> 403 (default deny)' }
 else { Add-Fail 'blocked :80 default deny' "expected 403, got code=$($block80.Code) curlExit=$($block80.Exit)" }
 
-$allow443 = Invoke-CurlCode @('--resolve', 'pypi.org:443:127.0.0.1', '--max-time', '30', 'https://pypi.org/simple/')
+$allow443 = Invoke-CurlCode @('--resolve', 'pypi.org:443:127.0.0.1', '--max-time', '30', 'https://pypi.org/')
 if ($allow443.Exit -eq 0 -and [int]($allow443.Code) -lt 400) { Add-Pass "allow-listed passthrough :443 pypi.org -> $($allow443.Code)" }
 else { Add-Fail 'allow-listed passthrough :443 pypi.org' "code=$($allow443.Code) curlExit=$($allow443.Exit)" }
 
