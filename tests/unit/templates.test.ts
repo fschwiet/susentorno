@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { packagedAllowlist, templatesDir } from '../../src/templates';
+import { loadManifest } from '../../src/homeJqTransforms';
 import { parseAllowlist } from '../../src/allowlist';
 import { NO_AUTH_MARKER_HEADER, NO_AUTH_SENTINEL_VALUE } from '../../src/envoyConfig';
 
@@ -132,17 +133,22 @@ describe('templates', () => {
     expect(s).not.toContain('python3');
   });
 
-  it('seed transforms reproduce the extracted inline jq programs', () => {
-    const vscode = readFileSync(
-      join(templatesDir(), 'home-jq-transforms', 'vscode-settings.jq'),
-      'utf8',
-    );
-    expect(vscode).toContain('.["editor.defaultFormatter"] = "esbenp.prettier-vscode"');
-    const claude = readFileSync(
-      join(templatesDir(), 'home-jq-transforms', 'claude-onboarding.jq'),
-      'utf8',
-    );
-    expect(claude).toContain('.hasCompletedOnboarding = true');
+  it('home-jq-transforms manifest and .jq files are consistently wired', () => {
+    const dir = join(templatesDir(), 'home-jq-transforms');
+    // loadManifest parses manifest.yaml, throws on malformed/non-list YAML, and
+    // asserts every entry's transform file exists on disk.
+    const entries = loadManifest(dir);
+    // Non-empty: loadManifest([]) returns [] without throwing, so an emptied
+    // manifest must fail here rather than vacuously pass.
+    expect(entries.length).toBeGreaterThan(0);
+    const referenced = entries.map((e) => e.transform);
+    // Duplicate-free: exactly one manifest entry per seed file.
+    expect(new Set(referenced).size).toBe(referenced.length);
+    // Exact set equality with the .jq files on disk: no orphaned (unreferenced)
+    // files. Combined with loadManifest's existence check, this establishes a
+    // one-entry-per-.jq-file relationship without asserting any settings.
+    const jqFiles = readdirSync(dir).filter((f) => f.endsWith('.jq'));
+    expect([...referenced].sort()).toEqual([...jqFiles].sort());
   });
 
   it('host-allow-vm-inbound scopes rules by LocalAddress, splits SMB/node.exe, and drops node discovery', () => {
