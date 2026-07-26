@@ -14,5 +14,6 @@ accepted (2026-07-22) — supersedes the earlier in-guest networking layer: an U
 ## Consequences
 
 - Both listeners bind the **specific** adapter IP (not `0.0.0.0`), which lets them coexist with Windows' ICS wildcard `:53`/`:67` holders; a bind failure is fatal and loud.
+- This depends on demonstrated Windows socket behavior: a specific-IP `:53` bind wins delivery over an existing wildcard holder, and a specific-IP `:67` bind receives limited/subnet broadcasts. These are platform-specific facts, not assumptions carried over from Linux.
 - Guest network availability now depends on a host process being up: a guest booted before `run-proxy` gets *no* address, and unattended recovery is bounded by the client's DHCP retry timer (~5 min). Accepted; running `run-proxy` as a supervised service is possible follow-on.
 - Setup uses one active adapter at a time (NAT phase for OS/tool install, then reassign the same NIC to the Internal switch), so switching networks needs no guest-side change — see [[transparent-interception-and-network-isolation-boundary]].
