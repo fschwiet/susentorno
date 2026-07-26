@@ -9,6 +9,7 @@ export default tseslint.config(
       'dist/',
       'scripts/',
       '.configamatron/',
+      'test-results/',
       'templates/vm-shared/post-scripts/apply-home-jq-transforms.mjs',
       'templates/vm-shared-windows/post-scripts/apply-home-jq-transforms.mjs',
     ],
