@@ -1,6 +1,6 @@
 import { checkDockerRunning } from '../checkDockerRunning';
+import { checkNoRunningProxy } from '../checkNoRunningProxy';
 import {
-  checkNoRunningProxy,
   checkWslDhcpPortIgnored,
   checkWslDistro,
   checkWslMirroredNetworking,
