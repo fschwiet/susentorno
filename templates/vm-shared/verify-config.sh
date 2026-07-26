@@ -118,7 +118,7 @@ section 'Host DNS (05)'
 # Every name must resolve to the host: the responder there answers all A queries
 # with its own address. A placeholder answer (the old in-guest dnsmasq stub
 # returned 203.0.113.1) would mean a guest-side resolver survived the migration.
-resolved="$(getent hosts example.com 2>/dev/null | awk '{print $1}' | head -n1)"
+resolved="$(getent ahostsv4 example.com 2>/dev/null | awk '{print $1}' | head -n1)"
 if [ -n "$host_ip" ] && [ "$resolved" = "$host_ip" ]; then
   ok "names resolve to the host ($resolved)"
 else
