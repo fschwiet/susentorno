@@ -15,6 +15,7 @@ import {
   REAL_AUTH,
   type ProxyStack,
 } from '../proxyStack';
+import { envRoot } from '../testEnvRoot';
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const BRIDGE_IP = '10.213.87.1';
@@ -81,7 +82,7 @@ beforeAll(async () => {
 
   // Stage the environment's real vm-shared folder (numbered scripts + the
   // generate-ca cert.pem) as the guest's read-only share, mimicking the SMB mount.
-  const wslVmShared = await wslPath(join(repoRoot, '.configamatron', 'vm-shared'));
+  const wslVmShared = await wslPath(join(envRoot, 'vm-shared'));
   shareDir = (await harness('share.sh', wslVmShared)).stdout.trim();
 
   await harness('guest.sh', 'start', 'g1', '--share', shareDir);
