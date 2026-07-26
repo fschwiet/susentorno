@@ -108,9 +108,10 @@ Run these commands in order to verify a change is correct (fail-fast order):
 | 4 | `pnpm test:unit` | Unit tests (Vitest) |
 | 5 | `pnpm build` | Production build (tsup → `dist/cli.js`) |
 | 6 | `pnpm test:cli` | End-to-end tests against the built CLI |
-| 7 | `pnpm test:guest` | Guest tests (QEMU in WSL2) — run when touching `templates/vm-shared/` or proxy config; **not** part of `pnpm test` |
+| 7 | `pnpm test:proxy-stack` | Proxy stack tests against a live Envoy stack |
+| 8 | `pnpm test:guest` | Guest tests (QEMU in WSL2) — run when touching `templates/vm-shared/` or proxy config; **not** part of `pnpm test` |
 
-Run the full pipeline (steps 1–6) in one command:
+Run the full pipeline (steps 1–7) in one command:
 
 ```
 pnpm test

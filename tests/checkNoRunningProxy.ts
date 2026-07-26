@@ -18,7 +18,7 @@ function loopbackPortAccepts(port: number, timeoutMs = 1000): Promise<boolean> {
 // manage the same docker-compose Envoy stack, and startProxyStack REPLACES any
 // running proxy container. With run-proxy live the two clobber each other — the
 // suite's Envoy is torn down underneath it, the Envoy-reachability guard in
-// vm.test.ts then reports '000' and blames Docker WSL integration, and run-proxy
+// guest.test.ts then reports '000' and blames Docker WSL integration, and run-proxy
 // is left serving :80/:443 with no backend (so the real VM silently loses egress
 // too). The symptom lands a long way from the cause, so check it up front.
 //
