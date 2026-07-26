@@ -42,9 +42,11 @@ recreating `join(repoRoot, '.configamatron')`:
   `rmEnvRoot(envRoot)` + `execa(init, { cwd: repoRoot })`.
 - `tests/integration/runProxyRobustness.test.ts` — own `envRoot`/`proxyDir`,
   own setup with `cwd: repoRoot`.
-- `tests/integration/codexInjection.test.ts` — own `envRoot`/`proxyDir`; uses
-  `startProxyStack()` for setup and `envRoot` for assertions.
-- `tests/integration/githubInjection.test.ts` — same shape as codexInjection.
+- `tests/integration/codexInjection.test.ts` — own `envRoot`/`proxyDir`; runs
+  its **own** `init`/`generate-ca`/`run-proxy` with `cwd: repoRoot` (it does
+  **not** use `startProxyStack()`), and uses `envRoot`/`proxyDir` for assertions.
+- `tests/integration/githubInjection.test.ts` — same shape as codexInjection:
+  own setup with `cwd: repoRoot`, not `startProxyStack()`.
 - `tests/vm/vm.test.ts:84` — reads `join(repoRoot, '.configamatron', 'vm-shared')`
   back after `startProxyStack()` builds it.
 
@@ -114,22 +116,39 @@ owns this so callers no longer count directory levels.
 
 ### Files touched
 
+Every CLI invocation (`init`, `generate-ca`, `run-proxy`) that currently passes
+`cwd: repoRoot` must move to `cwd: envParent` — **including launch helpers and
+`beforeEach`/`beforeAll` bodies, not just the first setup call**. The
+`docker compose down` calls that pass `cwd: proxyDir` (`stack.proxyDir`) stay as
+they are — `proxyDir` already tracks the relocated env. The complete inventory
+below was checked against the current files.
+
 - **New — `tests/testEnvRoot.ts`:** exports `repoRoot`, `envParent`, `envRoot`.
-- **`tests/proxyStack.ts`:** import `envRoot`/`envParent`; drop the local
-  `repoRoot`/`envRoot` derivation used for the env path (keep `repoRoot`/absolute
-  derivations for `cliPath` and fixtures, sourced from the helper's `repoRoot`);
-  change the four `execa(… { cwd: repoRoot })` calls to `cwd: envParent`; add
-  `mkdirSync(envParent, { recursive: true })` before `rmEnvRoot(envRoot)`.
-- **`tests/integration/runProxy.test.ts` and `runProxyRobustness.test.ts`:**
-  replace the local `const envRoot = join(repoRoot, '.configamatron')` with the
-  import; change their setup `execa(… { cwd: repoRoot })` calls to
-  `cwd: envParent`; add the `mkdirSync(envParent, …)` guard before their
-  `rmEnvRoot`/init.
+- **`tests/proxyStack.ts`:** import `envRoot`/`envParent` (and `repoRoot` from
+  the helper, still needed for `cliPath`/fixtures); drop the local
+  `repoRoot`/`envRoot` derivation. Change the **three** CLI `execa(…
+  { cwd: repoRoot })` calls — `init`, `generate-ca`, `run-proxy` — to
+  `cwd: envParent`; add `mkdirSync(envParent, { recursive: true })` before
+  `rmEnvRoot(envRoot)`. The `docker compose down` at the file's end already uses
+  `stack.proxyDir` and is unchanged.
+- **`tests/integration/runProxy.test.ts`:** replace the local
+  `const envRoot = join(repoRoot, '.configamatron')` with the import; change its
+  **three** CLI calls (`init`, `generate-ca`, `run-proxy`) from `cwd: repoRoot`
+  to `cwd: envParent`; add `mkdirSync(envParent, …)` before its
+  `rmEnvRoot(envRoot)` in `beforeAll`.
+- **`tests/integration/runProxyRobustness.test.ts`:** replace the local
+  `envRoot` with the import; change **four** CLI calls to `cwd: envParent` — the
+  two `run-proxy` launch helpers (defined outside `beforeAll`) **and** the
+  `init` + `generate-ca` in `beforeAll`; add `mkdirSync(envParent, …)` before its
+  `rmEnvRoot`/init. Missing either launch helper would leave a live test
+  pointing at the old repo-root env.
 - **`tests/integration/codexInjection.test.ts` and `githubInjection.test.ts`:**
-  replace the local `envRoot`/`proxyDir` derivation with the shared `envRoot`
-  (these use `startProxyStack()` for setup, which already does the `mkdirSync`
-  and `cwd: envParent`; they need `envRoot` only for assertions). Confirm they no
-  longer keep a now-unused local `repoRoot`.
+  these self-initialize (they do **not** use `startProxyStack()`), so each needs
+  the same treatment as `runProxy.test.ts` — replace the local
+  `envRoot`/`proxyDir` derivation with the shared `envRoot`; change **all three**
+  CLI calls (`init`, `generate-ca`, `run-proxy`) from `cwd: repoRoot` to
+  `cwd: envParent`; add `mkdirSync(envParent, …)` before the environment removal.
+  Their `docker compose down` (using `proxyDir`) is unchanged.
 - **`tests/vm/vm.test.ts`:** derive the `vm-shared` path from the shared
   `envRoot` (`join(envRoot, 'vm-shared')`) instead of the hardcoded
   `join(repoRoot, '.configamatron', 'vm-shared')`. The `test-results/vm/…`
@@ -167,4 +186,7 @@ owns this so callers no longer count directory levels.
 - Where the environment allows, run the VM suite (`pnpm test:vm` or equivalent)
   and confirm the guest's `vm-shared` share resolves from
   `test-results/.configamatron/vm-shared` and the suite stays green.
-- Confirm unit and e2e suites are unaffected (`pnpm test`).
+- Confirm the unit and e2e suites are unaffected by running them in isolation —
+  `pnpm test:unit` and `pnpm test:e2e` (note `pnpm test` also builds and runs the
+  integration suite, so it does not isolate Docker-free coverage on hosts where
+  the integration suite cannot run).
