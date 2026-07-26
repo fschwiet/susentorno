@@ -45,9 +45,11 @@ expectation.
 
 ### Correct the host-IP discovery description
 
-Update the verification paragraph in `usage-hyper-v.md` to say that omitting the
-host IP discovers it when exactly one IPv4 DNS server is configured. Do not call
-the source "the installed config" or claim that the verifier establishes DHCP
+Update the verification paragraph in `usage-hyper-v.md` with guest-specific
+discovery wording. The Ubuntu verifier discovers the host from the
+DHCP-supplied default route. The Windows verifier discovers it only when exactly
+one IPv4 DNS server is configured across the system. Do not call either source
+"the installed config" or claim that the Windows verifier establishes DHCP
 provenance.
 
 This is a wording-only correction. The Windows verifier's discovery behavior and
@@ -92,10 +94,10 @@ Validation is documentation-focused because runtime behavior is unchanged:
 1. Check every edited Windows-guide command uses the address appropriate to its
    NAT or isolated phase.
 2. Confirm the guide explicitly describes both per-address `cmdkey` entries.
-3. Confirm the optional verification syntax and the corrected
-   `usage-hyper-v.md` sentence match the discovery branch in
-   `templates/vm-shared-windows/verify-config.ps1`: discovery succeeds only when
-   exactly one IPv4 DNS server is configured.
+3. Confirm the optional verification syntax and the corrected guest-specific
+   `usage-hyper-v.md` wording match both verifier implementations: Ubuntu uses
+   its DHCP-supplied default route, while Windows succeeds only when exactly one
+   IPv4 DNS server is configured.
 4. Confirm the Task 18 note agrees with the current S1 test in
    `tests/vm/vm.test.ts` and the `gateway`/`hostonly` branches in
    `tests/vm/harness/net.sh`.
