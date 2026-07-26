@@ -63,11 +63,12 @@ Open an **elevated (Administrator) PowerShell**. The exact script count may vary
 
 > cd "\\<default-switch-host-ip>\vm-shared-windows\"
 
-> Set-ExecutionPolicy RemoteSigned
+> Set-ExecutionPolicy Bypass
 
 1. `cd .\pre-scripts` and run every script in order. With no custom steps, the last is `.\05-configure-network.ps1 -HostIp <internal-switch-host-ip>`.
 2. Isolate the VM — reassign its single adapter to `configamatron-internal` (see `usage-hyper-v.md`), with `run-proxy` already running.
 3. Use the `cmdkey` entry for `<internal-switch-host-ip>`, then run every post-script in order from `\\<internal-switch-host-ip>\vm-shared-windows\post-scripts`: normally `.\01-auth-config.ps1`, then `.\02-apply-home-jq-transforms.ps1`.
+4. Restore the normal execution policy with `Set-ExecutionPolicy RemoteSigned`.
 
 ## Verify
 
@@ -93,7 +94,7 @@ Each prints a `PASS`/`FAIL`/`WARN` line per check and exits non-zero if anything
 Run:
 
 ```bash
-rg -n '<default-switch-host-ip>|<internal-switch-host-ip>|cmdkey|exactly one IPv4 DNS server|DHCP-supplied default route|installed config|<host-ip>|<ip>' usage-windows-vm.md usage-hyper-v.md
+rg -n '<default-switch-host-ip>|<internal-switch-host-ip>|cmdkey|Set-ExecutionPolicy|exactly one IPv4 DNS server|DHCP-supplied default route|installed config|<host-ip>|<ip>' usage-windows-vm.md usage-hyper-v.md
 ```
 
 Expected:
@@ -101,6 +102,7 @@ Expected:
 - `usage-windows-vm.md` uses `<default-switch-host-ip>` only for the NAT-phase UNC path.
 - `usage-windows-vm.md` uses `<internal-switch-host-ip>` for `05-configure-network.ps1`, the isolated UNC path, and explicit verification.
 - The Windows guide says `cmdkey` entries are per-address.
+- Both guides use `Set-ExecutionPolicy Bypass` before the shared scripts and restore `Set-ExecutionPolicy RemoteSigned` afterward.
 - The two verifier discovery mechanisms appear in `usage-hyper-v.md`.
 - Neither edited section contains `installed config`, the ambiguous `<host-ip>`, or the ambiguous `<ip>`.
 - Matches elsewhere in `usage-hyper-v.md` for its established generic `<host-ip>` notation are out of scope and remain unchanged.
