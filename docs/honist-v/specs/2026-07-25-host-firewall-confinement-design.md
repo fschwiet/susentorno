@@ -2,7 +2,6 @@
 
 **Date:** 2026-07-25
 **Status:** Draft, pending review
-**Handoff:** `docs/honist-v/handoffs/2026-07-25-host-firewall-confinement.md`
 **Empirical basis:** `docs/investigations/2026-07-23-host-model-lets-guest-reach-other-host-ips.md`
 
 ## Goal
@@ -252,6 +251,11 @@ the firewall rule to that copy's fixed path instead.
 
 **Rejected alternatives:**
 
+- **(a) Disable listen notifications on the Public firewall profile** with
+  `Set-NetFirewallProfile -Profile Public -NotifyOnListen False`. Rejected:
+  this changes policy host-wide and merely suppresses the dialog; it does not
+  establish the narrowly scoped rule that makes `run-proxy`'s inbound access
+  deterministic.
 - **(b) Modify the `configamatron` shim/launcher** to route the `run-proxy`
   subcommand through a dedicated node.exe before the CLI's JS even starts.
   Rejected: shim format varies by install method (global npm/pnpm, `npx`,
