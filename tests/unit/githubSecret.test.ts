@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { formatGithubBasicSecret, formatGithubApiTokenSecret } from '../../src/githubSecret';
 
-describe('formatGithubBasicSecret', () => {
+describe('GitHub credential secret formatting — Basic SDS', () => {
   it('renders the single Basic SDS resource as an inline string', () => {
     const token = 'github_pat_' + 'A'.repeat(82);
     const basic = 'Basic ' + Buffer.from(`octocat:${token}`).toString('base64');
@@ -26,7 +26,7 @@ describe('formatGithubBasicSecret', () => {
   });
 });
 
-describe('formatGithubApiTokenSecret', () => {
+describe('GitHub credential secret formatting — api token SDS', () => {
   it('renders the single token-scheme SDS resource as an inline string', () => {
     const token = 'github_pat_' + 'B'.repeat(82);
 

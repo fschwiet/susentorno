@@ -7,7 +7,7 @@ import {
 } from '../../src/codexPlaceholder';
 import { jwtExpMs } from '../../src/jwt';
 
-describe('codex placeholder constants', () => {
+describe('Codex placeholder credential constants', () => {
   it('exp is ~year 2100 (well past any real session)', () => {
     expect(CODEX_PLACEHOLDER_EXP_SECONDS).toBe(4102444800);
   });

@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readCodexCredentials } from '../../../src/runProxy/readCodexCredentials';
-import { buildJwt } from '../../../src/jwt';
+import { readCodexCredentials } from '../../src/runProxy/readCodexCredentials';
+import { buildJwt } from '../../src/jwt';
 
 let dir: string;
 let path: string;
@@ -21,7 +21,7 @@ function writeAuth(tokens: Record<string, unknown>): void {
   writeFileSync(path, JSON.stringify({ OPENAI_API_KEY: null, tokens, auth_mode: 'chatgpt' }));
 }
 
-describe('readCodexCredentials', () => {
+describe('credential reading — codex credential channel (JWT exp)', () => {
   it('returns the access token and its JWT exp (in ms) from tokens', () => {
     const access = buildJwt({ exp: 1_700_000_000 });
     writeAuth({ access_token: access, account_id: 'acct-1' });

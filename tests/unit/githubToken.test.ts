@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { validateGithubTokenFormat } from '../../src/githubToken';
 
-describe('validateGithubTokenFormat', () => {
+describe('GitHub host-credential token-format validation', () => {
   it('accepts a well-formed fine-grained token', () => {
     const token = 'github_pat_' + 'A'.repeat(82);
     expect(validateGithubTokenFormat(token)).toBeNull();

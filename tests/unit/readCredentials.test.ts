@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readCredentials } from '../../../src/runProxy/readCredentials';
+import { readCredentials } from '../../src/runProxy/readCredentials';
 
 let dir: string;
 let path: string;
@@ -16,7 +16,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe('readCredentials', () => {
+describe('credential reading — claude credential channel', () => {
   it('parses accessToken and expiresAt from claudeAiOauth', () => {
     writeFileSync(
       path,

@@ -17,7 +17,7 @@ const realCredentials = JSON.stringify({
   },
 });
 
-describe('sanitizeCredentials', () => {
+describe('credential sanitization — claude credential channel (placeholder swap)', () => {
   it('replaces tokens and expiry with placeholders, passing other fields through', () => {
     const output = sanitizeCredentials(realCredentials);
     const parsed = JSON.parse(output);
