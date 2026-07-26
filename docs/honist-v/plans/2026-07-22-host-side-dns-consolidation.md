@@ -3003,6 +3003,8 @@ In `tests/vm/harness/net.sh`, in the `hostonly` branch of the `dhcp` case, repla
         echo "address=/#/$BRIDGE_IP"
 ```
 
+> **Correction (2026-07-25):** Step 2 below targets the S1 / NAT-phase test, so its proposed `BRIDGE_IP` assertion is incorrect and must not be followed. S1 runs the harness in `gateway` mode, which forwards DNS upstream; it must assert that `getent ahostsv4 example.com` returns a real IPv4 answer and that the answer is **not** `BRIDGE_IP`. Resolving every name to `BRIDGE_IP` belongs to S2, after the harness switches to `hostonly` mode and enables `address=/#/$BRIDGE_IP`. The current implementation in `tests/vm/vm.test.ts` reflects this corrected phase distinction.
+
 - [ ] **Step 2: Replace the in-guest DNS assertions**
 
 In `tests/vm/vm.test.ts`, replace the test at lines 111-121 with:
