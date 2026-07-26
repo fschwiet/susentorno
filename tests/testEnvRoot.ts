@@ -2,9 +2,9 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
 /**
- * Single source of truth for where the integration and VM suites build their
+ * Single source of truth for where the proxy-stack and guest suites build their
  * `.configamatron` test environment. It lives under `test-results/` (already
- * gitignored, already the VM suite's artifact home) rather than the repo root,
+ * gitignored, already the guest suite's artifact home) rather than the repo root,
  * so the residue plainly reads as throwaway test output instead of a live
  * configamatron deployment. See
  * docs/honist-v/specs/2026-07-25-relocate-test-environment-design.md.

@@ -19,7 +19,7 @@ const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json',
 const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
 const proxyDir = join(envRoot, 'proxy');
 
-// Distinct from the other integration suites' ports.
+// Distinct from the other proxy-stack suites' ports.
 const HTTPS_PORT = 18447;
 const HTTP_PORT = 18184;
 const envoyEnv = { ENVOY_HTTPS_PORT: String(HTTPS_PORT), ENVOY_HTTP_PORT: String(HTTP_PORT) };

@@ -14,7 +14,7 @@ function loopbackPortAccepts(port: number, timeoutMs = 1000): Promise<boolean> {
   });
 }
 
-// Guard (host-side, not WSL): `run-proxy` and the integration/VM suites both
+// Guard (host-side, not WSL): `run-proxy` and the proxy-stack/guest suites both
 // manage the same docker-compose Envoy stack, and startProxyStack REPLACES any
 // running proxy container. With run-proxy live the two clobber each other — the
 // suite's Envoy is torn down underneath it, the Envoy-reachability guard in

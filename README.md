@@ -107,8 +107,8 @@ Run these commands in order to verify a change is correct (fail-fast order):
 | 3 | `pnpm typecheck` | TypeScript types (no emit) |
 | 4 | `pnpm test:unit` | Unit tests (Vitest) |
 | 5 | `pnpm build` | Production build (tsup → `dist/cli.js`) |
-| 6 | `pnpm test:e2e` | End-to-end tests against the built CLI |
-| 7 | `pnpm test:vm` | VM e2e tests (QEMU in WSL2) — run when touching `templates/vm-shared/` or proxy config; **not** part of `pnpm test` |
+| 6 | `pnpm test:cli` | End-to-end tests against the built CLI |
+| 7 | `pnpm test:guest` | Guest tests (QEMU in WSL2) — run when touching `templates/vm-shared/` or proxy config; **not** part of `pnpm test` |
 
 Run the full pipeline (steps 1–6) in one command:
 
@@ -116,4 +116,4 @@ Run the full pipeline (steps 1–6) in one command:
 pnpm test
 ```
 
-> The e2e suite shells out to `jq`; install it on the dev host (and CI) or the jq-dependent tests self-skip.
+> The cli suite shells out to `jq`; install it on the dev host (and CI) or the jq-dependent tests self-skip.

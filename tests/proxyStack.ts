@@ -2,7 +2,7 @@ import { execa, type ResultPromise } from 'execa';
 import { createInterface } from 'node:readline';
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { startMockUpstream, stopMockUpstream, type MockUpstream } from './integration/mockUpstream';
+import { startMockUpstream, stopMockUpstream, type MockUpstream } from './proxy-stack/mockUpstream';
 import { killProcessTree } from '../src/runProxy/killProcessTree';
 import { rmEnvRoot } from './rmEnvRoot';
 import { repoRoot, envParent, envRoot } from './testEnvRoot';
@@ -15,7 +15,7 @@ export const REAL_TOKEN = 'sandbox-test-real-token-12345';
 export const REAL_AUTH = `Bearer ${REAL_TOKEN}`;
 
 const cliPath = join(repoRoot, 'dist', 'cli.js');
-const allowlistFixture = join(repoRoot, 'tests', 'integration', 'fixtures', 'allowlist.txt');
+const allowlistFixture = join(repoRoot, 'tests', 'proxy-stack', 'fixtures', 'allowlist.txt');
 const credentialsFixture = join(repoRoot, 'tests', 'fixtures', 'credentials.json');
 const authFixture = join(repoRoot, 'tests', 'fixtures', 'auth.json');
 

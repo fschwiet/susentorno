@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared constants for the VM e2e harness. Source from sibling scripts.
+# Shared constants for the guest test harness. Source from sibling scripts.
 if [ "$(id -u)" != 0 ]; then
   echo "harness scripts must run as root (invoke via: wsl.exe -u root ...)" >&2
   exit 1

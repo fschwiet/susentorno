@@ -1,7 +1,7 @@
 import { execa } from 'execa';
 
 /**
- * Guard (host-side): every integration/VM suite eventually shells out to
+ * Guard (host-side): every proxy-stack/guest suite eventually shells out to
  * `docker`/`docker compose` (directly or via run-proxy). If the Docker Desktop
  * engine is not up, those calls fail deep inside a test with an opaque
  * ECONNREFUSED/exit-1, far from the real cause. Check up front and fail fast

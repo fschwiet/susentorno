@@ -26,7 +26,7 @@ const ENVOY_HOST = process.env.CFGM_VMTEST_ENVOY_HOST ?? '127.0.0.1';
 const artifactsDir = join(
   repoRoot,
   'test-results',
-  'vm',
+  'guest',
   new Date().toISOString().replace(/[:.]/g, '-'),
 );
 
@@ -95,7 +95,7 @@ afterAll(async () => {
   for (const name of ['g1', 'g2']) {
     await harness('guest.sh', 'diag', name, `${wslArtifacts}/${name}`).catch(() => {});
   }
-  console.log(`vm-e2e: diagnostics collected in ${artifactsDir}`);
+  console.log(`guest: diagnostics collected in ${artifactsDir}`);
   await harness('cleanup.sh').catch(() => {});
   if (stack) await stopProxyStack(stack);
 }, 600_000);

@@ -138,7 +138,7 @@ describe('Envoy sandbox proxy stack', () => {
           // HEAD, not GET: pypi.org/simple/ is a ~44 MB index whose full download
           // can exceed the test timeout. A HEAD proves the passthrough TLS
           // handshake to the real pypi.org succeeds and returns a non-error status
-          // without transferring the body. Mirrors tests/vm/vm.test.ts.
+          // without transferring the body. Mirrors tests/guest/guest.test.ts.
           method: 'HEAD',
           host: '127.0.0.1',
           port: HTTPS_PORT,
