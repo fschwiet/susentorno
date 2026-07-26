@@ -170,7 +170,7 @@ afterAll(async () => {
   rmSync(tempDir, { recursive: true, force: true });
 });
 
-describe('run-proxy robustness', () => {
+describe('proxy stack robustness under failure', () => {
   it('fast-fails with a config-issue hint when the color exits during startup', async () => {
     proxyProc = spawnProxy('crash-config');
     await waitForLine('exited during startup', 30000); // a regression would wait ~60s

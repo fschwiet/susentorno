@@ -10,7 +10,7 @@ beforeAll(async () => {
   }
 });
 
-describe('isColorRunning', () => {
+describe('serving-state detection', () => {
   it('returns false when the container does not exist', async () => {
     expect(await isColorRunning('blue', tmpdir())).toBe(false);
     expect(await isColorRunning('green', tmpdir())).toBe(false);

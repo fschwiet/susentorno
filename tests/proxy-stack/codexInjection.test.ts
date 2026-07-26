@@ -185,75 +185,85 @@ afterAll(async () => {
 }, 60000);
 
 describe('chatgpt.com codex Bearer injection', () => {
-  it('injects the real token when the placeholder Bearer is presented', async () => {
-    const before = mockUpstream.receivedAuthorizationHeaders.length;
-    const { statusCode } = await requestThrough(
-      'chatgpt.com',
-      `Bearer ${CODEX_PLACEHOLDER_ACCESS_TOKEN}`,
-    );
-    expect(statusCode).toBe(200);
-    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_CODEX_BEARER]);
-  });
-
-  it('passes a leaked real Bearer that is not the placeholder through unmodified', async () => {
-    const before = mockUpstream.receivedAuthorizationHeaders.length;
-    const { statusCode } = await requestThrough('chatgpt.com', 'Bearer some-other-real-token');
-    expect(statusCode).toBe(200);
-    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([
-      'Bearer some-other-real-token',
-    ]);
-  });
-
-  it('passes a request through with no Authorization header when the client sent none', async () => {
-    const before = mockUpstream.receivedHeaders.length;
-    const { statusCode } = await requestThrough('chatgpt.com');
-    expect(statusCode).toBe(200);
-    const received = mockUpstream.receivedHeaders.slice(before);
-    expect(received[0].authorization).toBeUndefined();
-    expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
-  });
-
-  it('strips a client-forged no-auth marker header instead of trusting it', async () => {
-    const before = mockUpstream.receivedHeaders.length;
-    const { statusCode } = await requestThrough('chatgpt.com', 'Bearer some-other-real-token', {
-      'x-configamatron-no-auth': '1',
+  describe('placeholder replacement', () => {
+    it('injects the real token when the placeholder Bearer is presented', async () => {
+      const before = mockUpstream.receivedAuthorizationHeaders.length;
+      const { statusCode } = await requestThrough(
+        'chatgpt.com',
+        `Bearer ${CODEX_PLACEHOLDER_ACCESS_TOKEN}`,
+      );
+      expect(statusCode).toBe(200);
+      expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_CODEX_BEARER]);
     });
-    expect(statusCode).toBe(200);
-    const received = mockUpstream.receivedHeaders.slice(before);
-    expect(received[0].authorization).toBe('Bearer some-other-real-token');
-    expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+
+    it('still injects the real credential when the placeholder is presented alongside a forged no-auth marker header', async () => {
+      const before = mockUpstream.receivedAuthorizationHeaders.length;
+      const { statusCode } = await requestThrough(
+        'chatgpt.com',
+        `Bearer ${CODEX_PLACEHOLDER_ACCESS_TOKEN}`,
+        { 'x-configamatron-no-auth': '1' },
+      );
+      expect(statusCode).toBe(200);
+      expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_CODEX_BEARER]);
+    });
   });
 
-  it('still injects the real credential when the placeholder is presented alongside a forged no-auth marker header', async () => {
-    const before = mockUpstream.receivedAuthorizationHeaders.length;
-    const { statusCode } = await requestThrough(
-      'chatgpt.com',
-      `Bearer ${CODEX_PLACEHOLDER_ACCESS_TOKEN}`,
-      { 'x-configamatron-no-auth': '1' },
-    );
-    expect(statusCode).toBe(200);
-    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_CODEX_BEARER]);
+  describe('credential pass-through', () => {
+    it('passes a leaked real Bearer that is not the placeholder through unmodified', async () => {
+      const before = mockUpstream.receivedAuthorizationHeaders.length;
+      const { statusCode } = await requestThrough('chatgpt.com', 'Bearer some-other-real-token');
+      expect(statusCode).toBe(200);
+      expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([
+        'Bearer some-other-real-token',
+      ]);
+    });
+
+    it('strips a client-forged no-auth marker header instead of trusting it', async () => {
+      const before = mockUpstream.receivedHeaders.length;
+      const { statusCode } = await requestThrough('chatgpt.com', 'Bearer some-other-real-token', {
+        'x-configamatron-no-auth': '1',
+      });
+      expect(statusCode).toBe(200);
+      const received = mockUpstream.receivedHeaders.slice(before);
+      expect(received[0].authorization).toBe('Bearer some-other-real-token');
+      expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+    });
   });
 
-  it('still injects on the claude chain (both channels live)', async () => {
-    const before = mockUpstream.receivedAuthorizationHeaders.length;
-    const { statusCode } = await requestThrough(
-      'api.anthropic.com',
-      'Bearer sk-ant-oat-SANDBOX-PLACEHOLDER',
-    );
-    expect(statusCode).toBe(200);
-    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual(['Bearer claude-int']);
+  describe('missing authentication', () => {
+    it('passes a request through with no Authorization header when the client sent none', async () => {
+      const before = mockUpstream.receivedHeaders.length;
+      const { statusCode } = await requestThrough('chatgpt.com');
+      expect(statusCode).toBe(200);
+      const received = mockUpstream.receivedHeaders.slice(before);
+      expect(received[0].authorization).toBeUndefined();
+      expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+    });
   });
 
-  it('proxies a WebSocket upgrade to the upstream with the injected token (no 403 fallback)', async () => {
-    const before = mockUpstream.receivedUpgradeAuthorizationHeaders.length;
-    const statusLine = await upgradeThrough(
-      'chatgpt.com',
-      `Bearer ${CODEX_PLACEHOLDER_ACCESS_TOKEN}`,
-    );
-    expect(statusLine).toContain('101');
-    expect(mockUpstream.receivedUpgradeAuthorizationHeaders.slice(before)).toEqual([
-      REAL_CODEX_BEARER,
-    ]);
+  describe('upstream observation', () => {
+    it('still injects on the claude chain (both channels live)', async () => {
+      const before = mockUpstream.receivedAuthorizationHeaders.length;
+      const { statusCode } = await requestThrough(
+        'api.anthropic.com',
+        'Bearer sk-ant-oat-SANDBOX-PLACEHOLDER',
+      );
+      expect(statusCode).toBe(200);
+      expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([
+        'Bearer claude-int',
+      ]);
+    });
+
+    it('proxies a WebSocket upgrade to the upstream with the injected token (no 403 fallback)', async () => {
+      const before = mockUpstream.receivedUpgradeAuthorizationHeaders.length;
+      const statusLine = await upgradeThrough(
+        'chatgpt.com',
+        `Bearer ${CODEX_PLACEHOLDER_ACCESS_TOKEN}`,
+      );
+      expect(statusLine).toContain('101');
+      expect(mockUpstream.receivedUpgradeAuthorizationHeaders.slice(before)).toEqual([
+        REAL_CODEX_BEARER,
+      ]);
+    });
   });
 });

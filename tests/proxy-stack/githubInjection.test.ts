@@ -184,139 +184,155 @@ afterAll(async () => {
 }, 60000);
 
 describe('github.com Basic injection', () => {
-  it('injects the real Basic credential when the placeholder token is presented (any username)', async () => {
-    const before = mockUpstream.receivedAuthorizationHeaders.length;
-    const { statusCode } = await requestThrough(
-      'github.com',
-      basicOf('whoever', GITHUB_PLACEHOLDER_PAT),
-    );
-    expect(statusCode).toBe(200);
-    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_BASIC]);
-  });
-
-  it('passes a Basic credential whose token half is not the placeholder through unmodified', async () => {
-    const before = mockUpstream.receivedAuthorizationHeaders.length;
-    const sent = basicOf('whoever', 'some-other-token');
-    const { statusCode } = await requestThrough('github.com', sent);
-    expect(statusCode).toBe(200);
-    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([sent]);
-  });
-
-  it('passes a non-Basic Authorization on github.com through unmodified', async () => {
-    const before = mockUpstream.receivedAuthorizationHeaders.length;
-    const { statusCode } = await requestThrough('github.com', 'Bearer not-basic-at-all');
-    expect(statusCode).toBe(200);
-    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([
-      'Bearer not-basic-at-all',
-    ]);
-  });
-
-  it('passes a malformed-base64 Basic credential through unmodified without crashing', async () => {
-    const before = mockUpstream.receivedAuthorizationHeaders.length;
-    const { statusCode } = await requestThrough('github.com', 'Basic not-valid-base64!!!');
-    expect(statusCode).toBe(200);
-    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([
-      'Basic not-valid-base64!!!',
-    ]);
-  });
-
-  it('passes a lowercase "bearer" scheme through unmodified (only exact "Basic " is decoded)', async () => {
-    const before = mockUpstream.receivedAuthorizationHeaders.length;
-    const sent = `bearer ${GITHUB_PLACEHOLDER_PAT}`;
-    const { statusCode } = await requestThrough('github.com', sent);
-    expect(statusCode).toBe(200);
-    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([sent]);
-  });
-
-  it('passes a request through with no Authorization header when the client sent none', async () => {
-    const before = mockUpstream.receivedHeaders.length;
-    const { statusCode } = await requestThrough('github.com');
-    expect(statusCode).toBe(200);
-    const received = mockUpstream.receivedHeaders.slice(before);
-    expect(received[0].authorization).toBeUndefined();
-    expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
-  });
-
-  it('strips a client-forged no-auth marker header instead of trusting it', async () => {
-    const before = mockUpstream.receivedHeaders.length;
-    const sent = basicOf('whoever', 'some-other-token');
-    const { statusCode } = await requestThrough('github.com', sent, {
-      'x-configamatron-no-auth': '1',
+  describe('placeholder replacement', () => {
+    it('injects the real Basic credential when the placeholder token is presented (any username)', async () => {
+      const before = mockUpstream.receivedAuthorizationHeaders.length;
+      const { statusCode } = await requestThrough(
+        'github.com',
+        basicOf('whoever', GITHUB_PLACEHOLDER_PAT),
+      );
+      expect(statusCode).toBe(200);
+      expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_BASIC]);
     });
-    expect(statusCode).toBe(200);
-    const received = mockUpstream.receivedHeaders.slice(before);
-    expect(received[0].authorization).toBe(sent);
-    expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+
+    it('still injects the real credential when the placeholder is presented alongside a forged no-auth marker header', async () => {
+      const before = mockUpstream.receivedAuthorizationHeaders.length;
+      const { statusCode } = await requestThrough(
+        'github.com',
+        basicOf('whoever', GITHUB_PLACEHOLDER_PAT),
+        { 'x-configamatron-no-auth': '1' },
+      );
+      expect(statusCode).toBe(200);
+      expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_BASIC]);
+    });
   });
 
-  it('still injects the real credential when the placeholder is presented alongside a forged no-auth marker header', async () => {
-    const before = mockUpstream.receivedAuthorizationHeaders.length;
-    const { statusCode } = await requestThrough(
-      'github.com',
-      basicOf('whoever', GITHUB_PLACEHOLDER_PAT),
-      { 'x-configamatron-no-auth': '1' },
-    );
-    expect(statusCode).toBe(200);
-    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_BASIC]);
+  describe('credential pass-through', () => {
+    it('passes a Basic credential whose token half is not the placeholder through unmodified', async () => {
+      const before = mockUpstream.receivedAuthorizationHeaders.length;
+      const sent = basicOf('whoever', 'some-other-token');
+      const { statusCode } = await requestThrough('github.com', sent);
+      expect(statusCode).toBe(200);
+      expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([sent]);
+    });
+
+    it('strips a client-forged no-auth marker header instead of trusting it', async () => {
+      const before = mockUpstream.receivedHeaders.length;
+      const sent = basicOf('whoever', 'some-other-token');
+      const { statusCode } = await requestThrough('github.com', sent, {
+        'x-configamatron-no-auth': '1',
+      });
+      expect(statusCode).toBe(200);
+      const received = mockUpstream.receivedHeaders.slice(before);
+      expect(received[0].authorization).toBe(sent);
+      expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+    });
+  });
+
+  describe('missing authentication', () => {
+    it('passes a request through with no Authorization header when the client sent none', async () => {
+      const before = mockUpstream.receivedHeaders.length;
+      const { statusCode } = await requestThrough('github.com');
+      expect(statusCode).toBe(200);
+      const received = mockUpstream.receivedHeaders.slice(before);
+      expect(received[0].authorization).toBeUndefined();
+      expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+    });
+  });
+
+  describe('scheme handling', () => {
+    it('passes a non-Basic Authorization on github.com through unmodified', async () => {
+      const before = mockUpstream.receivedAuthorizationHeaders.length;
+      const { statusCode } = await requestThrough('github.com', 'Bearer not-basic-at-all');
+      expect(statusCode).toBe(200);
+      expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([
+        'Bearer not-basic-at-all',
+      ]);
+    });
+
+    it('passes a malformed-base64 Basic credential through unmodified without crashing', async () => {
+      const before = mockUpstream.receivedAuthorizationHeaders.length;
+      const { statusCode } = await requestThrough('github.com', 'Basic not-valid-base64!!!');
+      expect(statusCode).toBe(200);
+      expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([
+        'Basic not-valid-base64!!!',
+      ]);
+    });
+
+    it('passes a lowercase "bearer" scheme through unmodified (only exact "Basic " is decoded)', async () => {
+      const before = mockUpstream.receivedAuthorizationHeaders.length;
+      const sent = `bearer ${GITHUB_PLACEHOLDER_PAT}`;
+      const { statusCode } = await requestThrough('github.com', sent);
+      expect(statusCode).toBe(200);
+      expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([sent]);
+    });
   });
 });
 
 describe('api.github.com token/Bearer injection', () => {
-  it('injects the real token when the placeholder token scheme is presented', async () => {
-    const before = mockUpstream.receivedAuthorizationHeaders.length;
-    const { statusCode } = await requestThrough(
-      'api.github.com',
-      `token ${GITHUB_PLACEHOLDER_PAT}`,
-    );
-    expect(statusCode).toBe(200);
-    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_API_AUTH]);
-  });
-
-  it('injects the real token when the placeholder Bearer scheme is presented', async () => {
-    const before = mockUpstream.receivedAuthorizationHeaders.length;
-    const { statusCode } = await requestThrough(
-      'api.github.com',
-      `Bearer ${GITHUB_PLACEHOLDER_PAT}`,
-    );
-    expect(statusCode).toBe(200);
-    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_API_AUTH]);
-  });
-
-  it('passes a non-placeholder credential through to the upstream unmodified', async () => {
-    const before = mockUpstream.receivedAuthorizationHeaders.length;
-    const { statusCode } = await requestThrough('api.github.com', 'Bearer wrong-token');
-    expect(statusCode).toBe(200);
-    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual(['Bearer wrong-token']);
-  });
-
-  it('passes a request through with no Authorization header when the client sent none', async () => {
-    const before = mockUpstream.receivedHeaders.length;
-    const { statusCode } = await requestThrough('api.github.com');
-    expect(statusCode).toBe(200);
-    const received = mockUpstream.receivedHeaders.slice(before);
-    expect(received[0].authorization).toBeUndefined();
-    expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
-  });
-
-  it('strips a client-forged no-auth marker header on a non-matching credential instead of trusting it', async () => {
-    const before = mockUpstream.receivedHeaders.length;
-    const { statusCode } = await requestThrough('api.github.com', 'Bearer wrong-token', {
-      'x-configamatron-no-auth': '1',
+  describe('placeholder replacement', () => {
+    it('injects the real token when the placeholder token scheme is presented', async () => {
+      const before = mockUpstream.receivedAuthorizationHeaders.length;
+      const { statusCode } = await requestThrough(
+        'api.github.com',
+        `token ${GITHUB_PLACEHOLDER_PAT}`,
+      );
+      expect(statusCode).toBe(200);
+      expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_API_AUTH]);
     });
-    expect(statusCode).toBe(200);
-    const received = mockUpstream.receivedHeaders.slice(before);
-    expect(received[0].authorization).toBe('Bearer wrong-token');
-    expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+
+    it('injects the real token when the placeholder Bearer scheme is presented', async () => {
+      const before = mockUpstream.receivedAuthorizationHeaders.length;
+      const { statusCode } = await requestThrough(
+        'api.github.com',
+        `Bearer ${GITHUB_PLACEHOLDER_PAT}`,
+      );
+      expect(statusCode).toBe(200);
+      expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_API_AUTH]);
+    });
+
+    it('still injects the real credential when the placeholder is presented alongside a forged no-auth marker header', async () => {
+      const before = mockUpstream.receivedAuthorizationHeaders.length;
+      const { statusCode } = await requestThrough(
+        'api.github.com',
+        `token ${GITHUB_PLACEHOLDER_PAT}`,
+        { 'x-configamatron-no-auth': '1' },
+      );
+      expect(statusCode).toBe(200);
+      expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_API_AUTH]);
+    });
   });
 
-  it('still injects the real credential when the placeholder is presented alongside a forged no-auth marker header', async () => {
-    const before = mockUpstream.receivedAuthorizationHeaders.length;
-    const { statusCode } = await requestThrough(
-      'api.github.com',
-      `token ${GITHUB_PLACEHOLDER_PAT}`,
-      { 'x-configamatron-no-auth': '1' },
-    );
-    expect(statusCode).toBe(200);
-    expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_API_AUTH]);
+  describe('credential pass-through', () => {
+    it('passes a non-placeholder credential through to the upstream unmodified', async () => {
+      const before = mockUpstream.receivedAuthorizationHeaders.length;
+      const { statusCode } = await requestThrough('api.github.com', 'Bearer wrong-token');
+      expect(statusCode).toBe(200);
+      expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([
+        'Bearer wrong-token',
+      ]);
+    });
+
+    it('strips a client-forged no-auth marker header on a non-matching credential instead of trusting it', async () => {
+      const before = mockUpstream.receivedHeaders.length;
+      const { statusCode } = await requestThrough('api.github.com', 'Bearer wrong-token', {
+        'x-configamatron-no-auth': '1',
+      });
+      expect(statusCode).toBe(200);
+      const received = mockUpstream.receivedHeaders.slice(before);
+      expect(received[0].authorization).toBe('Bearer wrong-token');
+      expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+    });
+  });
+
+  describe('missing authentication', () => {
+    it('passes a request through with no Authorization header when the client sent none', async () => {
+      const before = mockUpstream.receivedHeaders.length;
+      const { statusCode } = await requestThrough('api.github.com');
+      expect(statusCode).toBe(200);
+      const received = mockUpstream.receivedHeaders.slice(before);
+      expect(received[0].authorization).toBeUndefined();
+      expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+    });
   });
 });

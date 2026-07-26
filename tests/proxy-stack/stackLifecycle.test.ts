@@ -135,7 +135,7 @@ afterAll(async () => {
   rmSync(tempDir, { recursive: true, force: true });
 }, 60000);
 
-describe('run-proxy applies credential rotations with a blue-green swap', () => {
+describe('proxy stack lifecycle & replacement', () => {
   it('swaps blue->green->blue across rotations and serves the new token each time', async () => {
     const mark1 = stdoutLines.length;
     writeCredentials('token-rotated');
