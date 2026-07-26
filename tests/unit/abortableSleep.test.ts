@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { sleep } from '../../../src/runProxy/abortableSleep';
+import { sleep } from '../../src/runProxy/abortableSleep';
 
-describe('sleep', () => {
+describe('abortable sleep seam', () => {
   it('resolves after the delay when there is no signal', async () => {
     const start = Date.now();
     await sleep(40);

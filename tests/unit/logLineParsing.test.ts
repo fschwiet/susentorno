@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { parseLine } from '../../../src/runProxy/parseLine';
+import { parseLine } from '../../src/runProxy/parseLine';
 
-describe('parseLine', () => {
+describe('access-log line parsing', () => {
   it('parses a well-formed CFGM line', () => {
     const line =
       'CFGM|term|2026-07-06T12:04:31|api.anthropic.com|api.anthropic.com|via_upstream|200|-|842|1531';

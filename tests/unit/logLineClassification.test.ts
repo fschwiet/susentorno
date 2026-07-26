@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { classify } from '../../../src/runProxy/classify';
-import type { AccessLine } from '../../../src/runProxy/parseLine';
+import { classify } from '../../src/runProxy/classify';
+import type { AccessLine } from '../../src/runProxy/parseLine';
 
 function line(over: Partial<AccessLine>): AccessLine {
   return {
@@ -13,7 +13,7 @@ function line(over: Partial<AccessLine>): AccessLine {
   };
 }
 
-describe('classify', () => {
+describe('access-log line classification', () => {
   it("maps the 'term' path to ALLOW CRED with the SNI as domain", () => {
     expect(classify(line({ pathId: 'term', serverName: 'api.anthropic.com' }))).toEqual([
       { time: '2026-07-06T12:00:00', tag: 'ALLOW CRED', domain: 'api.anthropic.com' },

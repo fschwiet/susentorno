@@ -3,8 +3,8 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from 'yaml';
-import { writeEnvoyConfig } from '../../../src/runProxy/buildConfig';
-import { parseAllowlist } from '../../../src/allowlist';
+import { writeEnvoyConfig } from '../../src/runProxy/buildConfig';
+import { parseAllowlist } from '../../src/allowlist';
 
 const ALLOWLIST = [
   '#pragma passthrough',
@@ -15,7 +15,7 @@ const ALLOWLIST = [
   '',
 ].join('\n');
 
-describe('writeEnvoyConfig', () => {
+describe('proxy configuration writing', () => {
   it('writes envoy.yaml with upstream overrides applied', () => {
     const dir = mkdtempSync(join(tmpdir(), 'buildconfig-'));
     const outputPath = join(dir, 'envoy.yaml');

@@ -4,11 +4,9 @@ import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { killProcessTree } from '../../../src/runProxy/killProcessTree';
+import { killProcessTree } from '../../src/runProxy/killProcessTree';
 
-const parentScript = fileURLToPath(
-  new URL('../../fixtures/processTree/parent.mjs', import.meta.url),
-);
+const parentScript = fileURLToPath(new URL('../fixtures/processTree/parent.mjs', import.meta.url));
 
 function isAlive(pid: number): boolean {
   try {
@@ -27,7 +25,7 @@ async function waitFor(check: () => boolean, timeoutMs: number): Promise<void> {
   }
 }
 
-describe('killProcessTree', () => {
+describe('process-tree termination', () => {
   it('kills the spawned process and the descendant it spawned', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'killtree-'));
     const pidFile = join(dir, 'grandchild.pid');

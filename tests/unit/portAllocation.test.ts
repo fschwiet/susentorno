@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import net from 'node:net';
-import { allocateColorPorts } from '../../../src/runProxy/allocateColorPorts';
+import { allocateColorPorts } from '../../src/runProxy/allocateColorPorts';
 
 function canBind(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -10,7 +10,7 @@ function canBind(port: number): Promise<boolean> {
   });
 }
 
-describe('allocateColorPorts', () => {
+describe('loopback port allocation', () => {
   it('returns three distinct free loopback ports', async () => {
     const ports = await allocateColorPorts();
     const values = [ports.httpsPort, ports.httpPort, ports.adminPort];

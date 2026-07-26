@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createServiceStack, type Closable } from '../../../src/runProxy/serviceStack';
+import { createServiceStack, type Closable } from '../../src/runProxy/serviceStack';
 function fake(name: string, log: string[]): Closable {
   return {
     close: async () => {
@@ -7,7 +7,7 @@ function fake(name: string, log: string[]): Closable {
     },
   };
 }
-describe('createServiceStack', () => {
+describe('service-stack start/rollback/close lifecycle', () => {
   it('returns each started service', async () => {
     const log: string[] = [];
     const stack = createServiceStack();

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { createServer, type Server } from 'node:http';
-import { waitColorReady } from '../../../src/runProxy/waitColorReady';
+import { waitColorReady } from '../../src/runProxy/waitColorReady';
 
 let server: Server | undefined;
 const alive = async (): Promise<boolean> => true;
@@ -24,7 +24,7 @@ function listen(handler: (n: number) => number): Promise<number> {
   });
 }
 
-describe('waitColorReady', () => {
+describe('proxy stack readiness polling', () => {
   it('resolves ready once /ready returns 200 (after a few 503s)', async () => {
     const port = await listen((hits) => (hits >= 3 ? 200 : 503));
     const ac = new AbortController();
