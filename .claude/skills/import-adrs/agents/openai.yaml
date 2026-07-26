@@ -1,0 +1,5 @@
+interface:
+  display_name: "Import ADRs"
+  short_description: "Back-fill ADRs from a folder of past design docs"
+policy:
+  allow_implicit_invocation: false
