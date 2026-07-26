@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { createLeaseTable } from '../../../src/runProxy/dhcpLeases';
+import { createLeaseTable } from '../../src/runProxy/dhcpLeases';
 const make = (o = {}) =>
   createLeaseTable({ hostIp: '192.168.67.1', netmask: '255.255.255.0', leaseSeconds: 3600, ...o });
-describe('lease table', () => {
+describe('DHCP lease table', () => {
   it('allocates stable in-pool leases and resolves collisions', () => {
     const t = make({ poolStart: 10, poolEnd: 11 });
     const a = t.acquire('a');

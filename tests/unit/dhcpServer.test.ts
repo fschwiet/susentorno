@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import dgram from 'node:dgram';
-import { startDhcpServer, type DhcpServerHandle } from '../../../src/runProxy/dhcpServer';
+import { startDhcpServer, type DhcpServerHandle } from '../../src/runProxy/dhcpServer';
 let handle: DhcpServerHandle | null = null;
 afterEach(async () => {
   await handle?.close();
@@ -20,7 +20,7 @@ function discover() {
   b[243] = 255;
   return b;
 }
-describe('DHCP server', () => {
+describe('DHCP serving', () => {
   it('replies to DISCOVER', async () => {
     const client = dgram.createSocket({ type: 'udp4', reuseAddr: true });
     await new Promise<void>((r) => client.bind(0, '127.0.0.1', r));

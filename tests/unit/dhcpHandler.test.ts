@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { handleDhcp } from '../../../src/runProxy/dhcpHandler';
-import { DHCP, parsePacket } from '../../../src/runProxy/dhcpMessage';
-import { createLeaseTable } from '../../../src/runProxy/dhcpLeases';
+import { handleDhcp } from '../../src/runProxy/dhcpHandler';
+import { DHCP, parsePacket } from '../../src/runProxy/dhcpMessage';
+import { createLeaseTable } from '../../src/runProxy/dhcpLeases';
 const base = () => ({
   hostIp: '192.168.67.1',
   netmask: '255.255.255.0',
@@ -41,7 +41,7 @@ function type(b: Buffer) {
   }
   return 0;
 }
-describe('DHCP handler', () => {
+describe('DHCP request handling (offer/ACK/relay)', () => {
   it('offers and ACKs', () => {
     const o = base();
     const offer = handleDhcp(pkt(DHCP.DISCOVER), o)!;

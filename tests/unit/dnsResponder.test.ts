@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import dgram from 'node:dgram';
-import { startDnsResponder, type DnsResponderHandle } from '../../../src/runProxy/dnsResponder';
+import { startDnsResponder, type DnsResponderHandle } from '../../src/runProxy/dnsResponder';
 
 let handle: DnsResponderHandle | null = null;
 afterEach(async () => {
@@ -40,7 +40,7 @@ function ask(port: number, packet: Buffer): Promise<Buffer> {
   });
 }
 
-describe('startDnsResponder', () => {
+describe('DNS responding', () => {
   it('answers an A query with the configured IP', async () => {
     handle = await startDnsResponder({
       listenAddress: '127.0.0.1',
