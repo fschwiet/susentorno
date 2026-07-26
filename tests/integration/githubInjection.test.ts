@@ -12,12 +12,11 @@ import { formatGithubBasicSecret, formatGithubApiTokenSecret } from '../../src/g
 import { GITHUB_PLACEHOLDER_PAT } from '../../src/githubPlaceholder';
 import { startMockUpstream, stopMockUpstream, type MockUpstream } from './mockUpstream';
 import { buildJwt } from '../../src/jwt';
+import { envParent, envRoot } from '../testEnvRoot';
 
-const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
 const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
-const envRoot = join(repoRoot, '.configamatron');
 const proxyDir = join(envRoot, 'proxy');
 
 // Distinct from the other integration suites' ports.
@@ -111,11 +110,12 @@ beforeAll(async () => {
     buildJwt({ exp: Math.floor(Date.now() / 1000) + 86400 }),
   );
 
+  mkdirSync(envParent, { recursive: true });
   await rmEnvRoot(envRoot);
   await execa(
     'node',
     [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
-    { cwd: repoRoot },
+    { cwd: envParent },
   );
 
   // Stage an allowlist with both github hosts under the new pragma so generate-ca
@@ -124,7 +124,7 @@ beforeAll(async () => {
     join(proxyDir, 'allowlist.txt'),
     ['#pragma github authenticated', 'github.com:443', 'api.github.com:443', ''].join('\n'),
   );
-  await execa('node', [cliPath, 'generate-ca'], { cwd: repoRoot });
+  await execa('node', [cliPath, 'generate-ca'], { cwd: envParent });
 
   // The proxy's watched secrets dir must hold both github secrets before Envoy starts,
   // since each chain's SDS subscription watches its own single-resource file.
@@ -154,7 +154,7 @@ beforeAll(async () => {
       '--upstream-override',
       `api.github.com=host.docker.internal:${mockUpstream.port}`,
     ],
-    { cwd: repoRoot, env: { ...process.env, ...envoyEnv }, buffer: false, reject: false },
+    { cwd: envParent, env: { ...process.env, ...envoyEnv }, buffer: false, reject: false },
   );
   for (const stream of [proxyProc.stdout, proxyProc.stderr]) {
     if (!stream) continue;

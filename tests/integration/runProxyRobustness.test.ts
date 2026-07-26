@@ -1,21 +1,20 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { execa, type ResultPromise } from 'execa';
 import { createInterface } from 'node:readline';
-import { writeFileSync, mkdtempSync, rmSync, copyFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync, mkdtempSync, rmSync, copyFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { killProcessTree } from '../../src/runProxy/killProcessTree';
 import { isColorRunning } from '../../src/runProxy/isColorRunning';
 import { rmEnvRoot } from '../rmEnvRoot';
+import { envParent, envRoot } from '../testEnvRoot';
 import { buildJwt } from '../../src/jwt';
 
-const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
 const allowlistFixture = fileURLToPath(new URL('./fixtures/allowlist.txt', import.meta.url));
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
 const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
-const envRoot = join(repoRoot, '.configamatron');
 const proxyDir = join(envRoot, 'proxy');
 
 // Distinct from runProxy.test.ts's ports to avoid any lingering-socket overlap.
@@ -73,7 +72,7 @@ function spawnProxy(fault: 'crash-config' | 'never-ready'): ResultPromise {
       '--inject-fault',
       fault,
     ],
-    { cwd: repoRoot, env: { ...process.env, ...envoyEnv }, buffer: false, reject: false },
+    { cwd: envParent, env: { ...process.env, ...envoyEnv }, buffer: false, reject: false },
   );
   for (const stream of [proc.stdout, proc.stderr]) {
     if (!stream) continue;
@@ -96,7 +95,7 @@ function spawnProxyPlain(): ResultPromise {
       '--codex-credentials',
       codexCredentialsPath,
     ],
-    { cwd: repoRoot, env: { ...process.env, ...envoyEnv }, buffer: false, reject: false },
+    { cwd: envParent, env: { ...process.env, ...envoyEnv }, buffer: false, reject: false },
   );
   for (const stream of [proc.stdout, proc.stderr]) {
     if (!stream) continue;
@@ -138,14 +137,15 @@ beforeAll(async () => {
     buildJwt({ exp: Math.floor(Date.now() / 1000) + 86400 }),
   );
 
+  mkdirSync(envParent, { recursive: true });
   await rmEnvRoot(envRoot);
   await execa(
     'node',
     [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
-    { cwd: repoRoot },
+    { cwd: envParent },
   );
   copyFileSync(allowlistFixture, join(proxyDir, 'allowlist.txt'));
-  await execa('node', [cliPath, 'generate-ca'], { cwd: repoRoot });
+  await execa('node', [cliPath, 'generate-ca'], { cwd: envParent });
 }, 120000);
 
 afterEach(async () => {

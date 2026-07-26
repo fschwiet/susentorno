@@ -1,21 +1,20 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { execa, type ResultPromise } from 'execa';
 import { createInterface } from 'node:readline';
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, copyFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, copyFileSync } from 'node:fs';
 import { killProcessTree } from '../../src/runProxy/killProcessTree';
 import { rmEnvRoot } from '../rmEnvRoot';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startMockUpstream, stopMockUpstream, type MockUpstream } from './mockUpstream';
+import { envParent, envRoot } from '../testEnvRoot';
 import { buildJwt } from '../../src/jwt';
 
-const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
 const allowlistFixture = fileURLToPath(new URL('./fixtures/allowlist.txt', import.meta.url));
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
 const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
-const envRoot = join(repoRoot, '.configamatron');
 const proxyDir = join(envRoot, 'proxy');
 
 const HTTPS_PORT = 18543;
@@ -85,14 +84,15 @@ beforeAll(async () => {
     buildJwt({ exp: Math.floor(Date.now() / 1000) + 86400 }),
   );
 
+  mkdirSync(envParent, { recursive: true });
   await rmEnvRoot(envRoot);
   await execa(
     'node',
     [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
-    { cwd: repoRoot },
+    { cwd: envParent },
   );
   copyFileSync(allowlistFixture, join(proxyDir, 'allowlist.txt'));
-  await execa('node', [cliPath, 'generate-ca'], { cwd: repoRoot });
+  await execa('node', [cliPath, 'generate-ca'], { cwd: envParent });
 
   proxyProc = execa(
     'node',
@@ -108,7 +108,7 @@ beforeAll(async () => {
       '--upstream-override',
       `api.anthropic.com=host.docker.internal:${mockUpstream.port}`,
     ],
-    { cwd: repoRoot, env: { ...process.env, ...envoyEnv }, buffer: false, reject: false },
+    { cwd: envParent, env: { ...process.env, ...envoyEnv }, buffer: false, reject: false },
   );
   for (const stream of [proxyProc.stdout, proxyProc.stderr]) {
     if (!stream) continue;

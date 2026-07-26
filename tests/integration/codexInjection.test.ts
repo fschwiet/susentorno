@@ -3,7 +3,7 @@ import { execa, type ResultPromise } from 'execa';
 import { createInterface } from 'node:readline';
 import { request as httpsRequest } from 'node:https';
 import { connect as tlsConnect } from 'node:tls';
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,12 +12,11 @@ import { rmEnvRoot } from '../rmEnvRoot';
 import { buildJwt } from '../../src/jwt';
 import { CODEX_PLACEHOLDER_ACCESS_TOKEN } from '../../src/codexPlaceholder';
 import { startMockUpstream, stopMockUpstream, type MockUpstream } from './mockUpstream';
+import { envParent, envRoot } from '../testEnvRoot';
 
-const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
 const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
-const envRoot = join(repoRoot, '.configamatron');
 const proxyDir = join(envRoot, 'proxy');
 
 // Distinct from the other integration suites' ports.
@@ -122,11 +121,12 @@ beforeAll(async () => {
   );
   writeCodexAuth(REAL_CODEX_TOKEN);
 
+  mkdirSync(envParent, { recursive: true });
   await rmEnvRoot(envRoot);
   await execa(
     'node',
     [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
-    { cwd: repoRoot },
+    { cwd: envParent },
   );
 
   writeFileSync(
@@ -140,7 +140,7 @@ beforeAll(async () => {
       '',
     ].join('\n'),
   );
-  await execa('node', [cliPath, 'generate-ca'], { cwd: repoRoot });
+  await execa('node', [cliPath, 'generate-ca'], { cwd: envParent });
 
   proxyProc = execa(
     'node',
@@ -158,7 +158,7 @@ beforeAll(async () => {
       '--upstream-override',
       `chatgpt.com=host.docker.internal:${mockUpstream.port}`,
     ],
-    { cwd: repoRoot, env: { ...process.env, ...envoyEnv }, buffer: false, reject: false },
+    { cwd: envParent, env: { ...process.env, ...envoyEnv }, buffer: false, reject: false },
   );
   for (const stream of [proxyProc.stdout, proxyProc.stderr]) {
     if (!stream) continue;
