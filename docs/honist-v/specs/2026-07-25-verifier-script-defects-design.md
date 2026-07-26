@@ -22,7 +22,7 @@ touches only the file(s) named below. There is no shared code or sequencing
 between them.
 
 Firewall-driven additions to `verify-proxy.ps1` are out of scope here — see
-`docs/honist-v/handoffs/2026-07-25-host-firewall-confinement.md`, which owns
+`docs/honist-v/specs/2026-07-25-host-firewall-confinement-design.md`, which owns
 those assertions separately.
 
 ## Fix 1: `verify-proxy.ps1` audits whichever environment you happen to be standing in
@@ -236,4 +236,4 @@ none of them runs against more than one of these environments.)
 - The credential gate contract — correct in both verifiers already, validated
   end to end on both guests at the 2026-07-24 checkpoint.
 - Firewall-driven additions to `verify-proxy.ps1` — owned by
-  `docs/honist-v/handoffs/2026-07-25-host-firewall-confinement.md`.
+  `docs/honist-v/specs/2026-07-25-host-firewall-confinement-design.md`.
