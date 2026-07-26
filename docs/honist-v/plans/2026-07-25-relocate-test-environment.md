@@ -344,13 +344,13 @@ If Docker is unavailable in this environment, skip the run and note it — Steps
 
 - [ ] **Step 7: Confirm the environment was built in the new location, not the repo root**
 
-After a run (or during Task 6), verify:
+After a run (or during Task 6), verify (commands are PowerShell, the repo's primary shell):
 
-Run: `ls test-results/.configamatron/proxy/envoy.yaml`
-Expected: the file exists (environment built under `test-results/`).
+Run: `Test-Path test-results/.configamatron/proxy/envoy.yaml`
+Expected: `True` (environment built under `test-results/`).
 
-Run: `test -e .configamatron && echo "PRESENT (bad)" || echo "absent (good)"`
-Expected: `absent (good)` — no environment at the repo root. (If a stale `.configamatron` from before this change exists, delete it: `rm -rf .configamatron`.)
+Run: `if (Test-Path .configamatron) { 'PRESENT (investigate)' } else { 'absent (good)' }`
+Expected: `absent (good)` — the run created no repo-root environment. A `.configamatron` that pre-existed this run is out of scope (see Task 6 Step 2): it means a manual or stale environment was already present, not that the test wrote to the repo root — do not delete it here.
 
 - [ ] **Step 8: Commit**
 
@@ -444,7 +444,7 @@ The .configamatron folder in this project does not represent a long-running depl
 with:
 
 ```markdown
-The test suites build their throwaway configamatron environment under `test-results/.configamatron` (gitignored test residue), not at the repository root. A bare `.configamatron` at the repository root does not appear during normal test runs and does not represent a long-running deployment; if you find one, it is stale residue from a manual CLI run and can be deleted.
+The test suites build their throwaway configamatron environment under `test-results/.configamatron` (gitignored test residue), not at the repository root. A bare `.configamatron` at the repository root is not created by normal test runs and does not represent a long-running deployment. If you find one, do not assume it is disposable — it may be an environment someone created by running the CLI manually. Leave it alone unless you know it is stale test residue.
 ```
 
 - [ ] **Step 2: Verify formatting**
@@ -479,13 +479,16 @@ Final gate confirming the whole change holds together and nothing writes to the 
 Run: `git grep -n "join(repoRoot, '.configamatron')" -- tests/`
 Expected: no output.
 
-Run: `git grep -n "cwd: repoRoot" -- tests/`
-Expected: no output.
+Run: `git grep -n "cwd: repoRoot" -- tests/proxyStack.ts tests/integration/ tests/vm/`
+Expected: no output. (Scope is limited to the in-scope files on purpose: `tests/e2e/vmApplier.test.ts` legitimately keeps `cwd: repoRoot` for its `pnpm pack --dry-run` call, which builds no environment and must not be relocated — grepping all of `tests/` would flag it as a false positive.)
 
-- [ ] **Step 2: Remove any pre-existing repo-root environment**
+- [ ] **Step 2: Clear stale repo-root residue — only if you are sure it is stale**
 
-Run: `rm -rf .configamatron`
-(Clears stale residue from before this change so Step 4's check is meaningful. Safe — it is gitignored and rebuilt by tests.)
+If a `.configamatron` directory exists at the repo root **and** you are certain it is leftover test residue (not an environment someone created manually with the CLI), remove it so Step 4's check is meaningful:
+
+Run (PowerShell): `if (Test-Path .configamatron) { Remove-Item -Recurse -Force .configamatron }`
+
+It is gitignored and, if it was test residue, is rebuilt by the suites. If you are not certain it is stale, skip this step and account for the pre-existing directory when reading Step 4 — do not delete a directory you did not create.
 
 - [ ] **Step 3: Run the Docker-free suites, then the integration suite**
 
@@ -499,10 +502,10 @@ If Docker is unavailable, note it and rely on the typecheck/lint/grep gates plus
 
 - [ ] **Step 4: Confirm the repo root stayed clean**
 
-Run: `test -e .configamatron && echo "PRESENT (bad)" || echo "absent (good)"`
-Expected: `absent (good)` — the integration run built its environment under `test-results/.configamatron`, leaving the repo root clean.
+Run (PowerShell): `if (Test-Path .configamatron) { 'PRESENT (investigate)' } else { 'absent (good)' }`
+Expected: `absent (good)` — the integration run built its environment under `test-results/.configamatron`, leaving the repo root clean. (If Step 2 was skipped because a manual environment already exists there, `PRESENT` is expected — confirm the run did not modify it rather than treating this as a failure.)
 
-Run: `ls test-results/.configamatron`
+Run (PowerShell): `Get-ChildItem test-results/.configamatron`
 Expected: the environment directory contents (e.g. `proxy/`, `vm-shared/`) exist.
 
 - [ ] **Step 5: Commit (only if Step 2 or verification produced tracked changes)**
