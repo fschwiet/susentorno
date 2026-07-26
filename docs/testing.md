@@ -193,9 +193,9 @@ a coherent module where they are not.
 
 | Current file | Target file | Target group vocabulary |
 | --- | --- | --- |
-| `tests/unit/envPaths.test.ts` | `envPaths.test.ts` | environment paths & layout; VM-share and proxy secret locations |
+| `tests/unit/envPaths.test.ts` | `envPaths.test.ts` | environment paths & layout; VM share and proxy secret locations |
 | `tests/unit/initEnv.test.ts` | `initEnv.test.ts` | environment initialization (scaffolds VM shares, allowlist, sanitized credentials, home settings transforms) |
-| `tests/unit/collisions.test.ts` | `collisions.test.ts` | VM-share collision detection |
+| `tests/unit/collisions.test.ts` | `collisions.test.ts` | VM share collision detection |
 | `tests/unit/gitignore.test.ts` | `gitignore.test.ts` | environment ignore rules (customization surface vs. secrets) |
 
 #### Allowlist compilation & proxy configuration
@@ -238,12 +238,12 @@ pre-isolation step, post-isolation step, home settings transform.
 
 | Current file | Target file | Target group vocabulary |
 | --- | --- | --- |
-| `tests/unit/templates.test.ts` | `templates.test.ts` | generated provisioning inventory (packaged VM-share & proxy templates, pre-/post-isolation step scripts) |
+| `tests/unit/templates.test.ts` | `templates.test.ts` | generated provisioning inventory (packaged VM share & proxy templates, pre-/post-isolation step scripts) |
 | `tests/unit/weaveScripts.test.ts` | `weaveScripts.test.ts` | pre-/post-isolation step weaving (ordering, renumbering, customization-input validation) |
-| `tests/unit/weaveShares.test.ts` | `weaveShares.test.ts` | VM-share weaving (built-ins + customization inputs into both shares) |
+| `tests/unit/weaveShares.test.ts` | `weaveShares.test.ts` | VM share weaving (built-ins + customization inputs into both shares) |
 | `tests/unit/homeJqTransforms.test.ts` | `homeSettingsTransforms.test.ts` | home settings transforms (manifest load, target resolution, apply/preview) |
 
-#### Proxy-stack supervision
+#### Proxy stack supervision
 
 The supervisor state machine is named for the capability, not its implementation
 function. Nested groups: startup, access logging, allowlist changes, credential
@@ -251,31 +251,32 @@ changes, event coalescing, refresh nudging, shutdown, multiple credential channe
 
 | Current file | Target file | Target group vocabulary |
 | --- | --- | --- |
-| `tests/unit/runProxy/runProxyLoop.test.ts` | `proxyStackSupervisor.test.ts` | proxy-stack supervision — startup / inline access logging / allowlist changes / credential changes / coalescing / refresh nudging / shutdown / multiple credential channels |
-| `tests/unit/runProxy/planNextActions.test.ts` | `planNextActions.test.ts` | supervision planning (deterministic next-action transitions, refresh-window nudge arming) |
+| `tests/unit/runProxy/runProxyLoop.test.ts` | `proxyStackSupervisor.test.ts` | proxy stack supervision — startup / inline access logging / allowlist changes / credential changes / coalescing / refresh nudging / shutdown / multiple credential channels |
+| `tests/unit/runProxy/planNextActions.test.ts` | `supervisionPlanning.test.ts` | supervision planning (deterministic next-action transitions, refresh-window nudge arming) |
 | `tests/unit/runProxy/credentialChannel.test.ts` | `credentialChannel.test.ts` | credential channel lifecycle (startup/propagation, refresh nudging, isolation between channels) |
 | `tests/unit/commands/runProxy.test.ts` | `commands/runProxy.test.ts` | run-proxy command option surface (internal seam guarding the registered flags) |
 
-#### Proxy-stack adapters & internal seams
+#### Proxy stack adapters & internal seams
 
 Kept as focused seam files because each interface has meaningful, deterministic
-failure behavior behind the live stack.
+failure behavior behind the live stack. Target filenames name the capability the
+seam provides, not the implementation function that provides it.
 
 | Current file | Target file | Target group vocabulary |
 | --- | --- | --- |
-| `tests/unit/runProxy/waitColorReady.test.ts` | `waitColorReady.test.ts` | proxy-stack readiness polling |
-| `tests/unit/runProxy/killProcessTree.test.ts` | `killProcessTree.test.ts` | process-tree termination |
-| `tests/unit/runProxy/buildConfig.test.ts` | `writeProxyConfig.test.ts` | proxy configuration writing (upstream overrides applied) |
-| `tests/unit/runProxy/parseLine.test.ts` | `parseLine.test.ts` | access-log line parsing |
-| `tests/unit/runProxy/classify.test.ts` | `classify.test.ts` | access-log line classification |
-| `tests/unit/runProxy/formatOutput.test.ts` | `formatOutput.test.ts` | access-log output formatting |
+| `tests/unit/runProxy/waitColorReady.test.ts` | `readiness.test.ts` | proxy stack readiness polling |
+| `tests/unit/runProxy/killProcessTree.test.ts` | `processTermination.test.ts` | process-tree termination |
+| `tests/unit/runProxy/buildConfig.test.ts` | `proxyConfigWriting.test.ts` | proxy configuration writing (upstream overrides applied) |
+| `tests/unit/runProxy/parseLine.test.ts` | `logLineParsing.test.ts` | access-log line parsing |
+| `tests/unit/runProxy/classify.test.ts` | `logLineClassification.test.ts` | access-log line classification |
+| `tests/unit/runProxy/formatOutput.test.ts` | `outputFormatting.test.ts` | access-log output formatting |
 | `tests/unit/runProxy/uniqueTracker.test.ts` | `uniqueTracker.test.ts` | first-occurrence access-log deduplication |
-| `tests/unit/runProxy/allocateColorPorts.test.ts` | `allocateColorPorts.test.ts` | loopback port allocation |
-| `tests/unit/runProxy/relaunchViaDedicatedNode.test.ts` | `relaunchViaDedicatedNode.test.ts` | dedicated-node runtime relaunch |
+| `tests/unit/runProxy/allocateColorPorts.test.ts` | `portAllocation.test.ts` | loopback port allocation |
+| `tests/unit/runProxy/relaunchViaDedicatedNode.test.ts` | `runtimeRelaunch.test.ts` | dedicated-node runtime relaunch |
 | `tests/unit/runProxy/serviceStack.test.ts` | `serviceStack.test.ts` | service-stack start/rollback/close lifecycle |
 | `tests/unit/runProxy/abortableSleep.test.ts` | `abortableSleep.test.ts` | abortable sleep seam |
 
-#### Internal-switch networking protocols
+#### Internal switch networking protocols
 
 Protocol seams stay explicit because they give precise, deterministic behavior
 behind the live network interface. **DNS**, **DHCP**, and **IPv4** are retained.
@@ -288,8 +289,8 @@ behind the live network interface. **DNS**, **DHCP**, and **IPv4** are retained.
 | `tests/unit/runProxy/dhcpServer.test.ts` | `dhcpServer.test.ts` | **DHCP** serving |
 | `tests/unit/runProxy/dnsMessage.test.ts` | `dnsMessage.test.ts` | **DNS** message parsing & response construction |
 | `tests/unit/runProxy/dnsResponder.test.ts` | `dnsResponder.test.ts` | **DNS** responding |
-| `tests/unit/runProxy/forwarder.test.ts` | `forwarder.test.ts` | internal-switch address selection & forwarding |
-| `tests/unit/runProxy/gateway.test.ts` | `gateway.test.ts` | internal-switch gateway lifecycle (connection routing, drain, flip) |
+| `tests/unit/runProxy/forwarder.test.ts` | `forwarder.test.ts` | internal switch address selection & forwarding |
+| `tests/unit/runProxy/gateway.test.ts` | `gateway.test.ts` | internal switch gateway lifecycle (connection routing, drain, flip) |
 | `tests/unit/runProxy/ip.test.ts` | `ip.test.ts` | **IPv4** addressing helpers |
 
 ### CLI tier
@@ -304,7 +305,7 @@ interface; command-specific behavior uses the full user-facing command name.
 | `tests/cli/init.test.ts` | `init.test.ts` | `init` — environment initialization command |
 | `tests/cli/generateCa.test.ts` | `generateCa.test.ts` | `generate-ca` — certificate generation command (**CA** retained) |
 | `tests/cli/writeGithubConfig.test.ts` | `writeGithubConfig.test.ts` | `write-github-config` — GitHub configuration command (absorbs the cli.test.ts write-github-config cases) |
-| `tests/cli/updateShares.test.ts` | `updateShares.test.ts` | `update-shares` — VM-share regeneration command (pre-/post-isolation step reweave, home settings transform preview) |
+| `tests/cli/updateShares.test.ts` | `updateShares.test.ts` | `update-shares` — VM share regeneration command (pre-/post-isolation step reweave, home settings transform preview) |
 | `tests/cli/vmApplier.test.ts` | `vmApplier.test.ts` | packaged guest applier artifact (built into both VM shares, listed in the npm package) |
 
 ### Proxy-stack tier
@@ -314,17 +315,17 @@ except where the concrete adapter is the subject.
 
 | Current file | Target file | Target group vocabulary |
 | --- | --- | --- |
-| `tests/proxy-stack/proxy.test.ts` | `networkPolicyEnforcement.test.ts` | live network-policy enforcement (allow-listed passthrough / port-80 host / dropped non-allow-listed SNI / default-deny) **and** access logging — rename "Envoy sandbox proxy stack" → proxy stack; **CA** retained on the leaf-chain case |
+| `tests/proxy-stack/proxy.test.ts` | `allowlistEnforcement.test.ts` | live allowlist enforcement (allow-listed passthrough / port-80 host / dropped non-allow-listed SNI / default-deny) **and** access logging — rename "Envoy sandbox proxy stack" → proxy stack; **CA** retained on the leaf-chain case |
 | `tests/proxy-stack/runProxy.test.ts` | `stackLifecycle.test.ts` | stack lifecycle & replacement (blue-green credential-rotation swap) |
 | `tests/proxy-stack/runProxyRobustness.test.ts` | `stackRobustness.test.ts` | robustness under failure (config-issue fast-fail, prompt SIGINT, collision startup) |
 | `tests/proxy-stack/githubInjection.test.ts` | `githubInjection.test.ts` | credential injection — GitHub credential channel (placeholder replacement, pass-through, missing auth, scheme handling, upstream observation) |
 | `tests/proxy-stack/codexInjection.test.ts` | `codexInjection.test.ts` | credential injection — Codex credential channel (parallel structure to GitHub) |
-| `tests/proxy-stack/isColorRunning.test.ts` | `isColorRunning.test.ts` | serving-state detection (container running check) |
+| `tests/proxy-stack/isColorRunning.test.ts` | `servingStateDetection.test.ts` | serving-state detection (container running check) |
 
 ### Guest tier
 
 Remains a single lifecycle-oriented file; the expensive shared guest and
-proxy-stack setup make splitting counterproductive. Drop the `S1`/`S1b`/`S2`/`S2b`/
+proxy stack setup make splitting counterproductive. Drop the `S1`/`S1b`/`S2`/`S2b`/
 `S2c`/`S3` labels and order the groups by lifecycle. Use `setup phase` (not "NAT
 phase") and `isolated phase` (not "offline"/"gateway-less").
 
@@ -334,7 +335,7 @@ phase") and `isolated phase` (not "offline"/"gateway-less").
 | | `S1b: applier onboarding ... offline` → | guest home & authentication configuration |
 | | `S2: switch to gateway-less and reboot` → | transition to the isolated phase |
 | | `S2c: cold DNS cache vs. restart-warmup ...` → | passthrough destination resolution after proxy warmup (keep the cold-resolution investigation reference in a nearby comment, not the group name; **DNS** retained in the body) |
-| | `S2b: run-proxy inline logging` → | proxy-stack access logging & replacement |
+| | `S2b: run-proxy inline logging` → | proxy stack access logging & replacement |
 | | `S3: fresh guest on the isolated network` → | a fresh guest starting in the isolated phase |
 
 The `guest.test.ts` filename is kept: the whole file is one lifecycle capability
