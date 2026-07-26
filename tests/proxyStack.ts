@@ -1,11 +1,11 @@
 import { execa, type ResultPromise } from 'execa';
 import { createInterface } from 'node:readline';
-import { copyFileSync, readFileSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { startMockUpstream, stopMockUpstream, type MockUpstream } from './integration/mockUpstream';
 import { killProcessTree } from '../src/runProxy/killProcessTree';
 import { rmEnvRoot } from './rmEnvRoot';
+import { repoRoot, envParent, envRoot } from './testEnvRoot';
 import { buildJwt } from '../src/jwt';
 
 export const HTTPS_PORT = 18443;
@@ -14,12 +14,10 @@ export const PLACEHOLDER_AUTH = 'Bearer sk-ant-oat-SANDBOX-PLACEHOLDER';
 export const REAL_TOKEN = 'sandbox-test-real-token-12345';
 export const REAL_AUTH = `Bearer ${REAL_TOKEN}`;
 
-const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const cliPath = join(repoRoot, 'dist', 'cli.js');
 const allowlistFixture = join(repoRoot, 'tests', 'integration', 'fixtures', 'allowlist.txt');
 const credentialsFixture = join(repoRoot, 'tests', 'fixtures', 'credentials.json');
 const authFixture = join(repoRoot, 'tests', 'fixtures', 'auth.json');
-const envRoot = join(repoRoot, '.configamatron');
 
 export interface ProxyStack {
   mockUpstream: MockUpstream;
@@ -121,18 +119,19 @@ export async function startProxyStack(): Promise<ProxyStack> {
   };
 
   // Fresh environment per run: environments are rebuilt from scratch, never migrated.
+  mkdirSync(envParent, { recursive: true });
   await rmEnvRoot(envRoot);
   await execa(
     'node',
     [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
-    { cwd: repoRoot },
+    { cwd: envParent },
   );
 
   // Stage the test allowlist as the environment's own before generate-ca so
   // the leaf SANs derive from it; run-proxy then builds envoy.yaml from it too.
   const allowlistPath = join(proxyDir, 'allowlist.txt');
   copyFileSync(allowlistFixture, allowlistPath);
-  await execa('node', [cliPath, 'generate-ca'], { cwd: repoRoot });
+  await execa('node', [cliPath, 'generate-ca'], { cwd: envParent });
 
   // run-proxy owns the SDS secret now: the token in this mutable credentials
   // file becomes the injected `Bearer ${REAL_TOKEN}` header.
@@ -161,7 +160,7 @@ export async function startProxyStack(): Promise<ProxyStack> {
       '--upstream-override',
       `auth-candidate.test=host.docker.internal:${mockUpstream.port}`,
     ],
-    { cwd: repoRoot, env: composeEnv, buffer: false, reject: false },
+    { cwd: envParent, env: composeEnv, buffer: false, reject: false },
   );
 
   const stdoutLines: string[] = [];
