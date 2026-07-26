@@ -41,8 +41,8 @@ function guest(name: string, cmd: string) {
  * Single passthrough-:443 curl from the guest, capturing both the HTTP status
  * and curl's own exit code (via `; echo exit=$?`, so guest.sh exec itself
  * always succeeds and we parse curl's result out of stdout). Deliberately
- * unretried: the S2c cold-cache probe must observe the FIRST contact to a
- * host — a retry would warm the DNS cache and erase the signal.
+ * unretried: the passthrough-resolution probe below must observe the FIRST
+ * contact to a host — a retry would warm the DNS cache and erase the signal.
  */
 async function guestProbe(name: string, host: string): Promise<{ http: string; exit: string }> {
   const { stdout } = await guest(
@@ -100,8 +100,8 @@ afterAll(async () => {
   if (stack) await stopProxyStack(stack);
 }, 600_000);
 
-describe('S1: setup during NAT phase', () => {
-  it('runs 05-configure-network.sh from the read-only share', async () => {
+describe('provisioning during the setup phase', () => {
+  it('runs 05-configure-network.sh from the VM share', async () => {
     const { stdout } = await guest(
       'g1',
       `bash /mnt/vm-shared/pre-scripts/05-configure-network.sh ${BRIDGE_IP}`,
@@ -110,10 +110,10 @@ describe('S1: setup during NAT phase', () => {
   });
 
   it('takes its resolver from DHCP and resolves real names', async () => {
-    // NAT phase: the lease points the guest at the harness host, which forwards
+    // Setup phase: the lease points the guest at the harness host, which forwards
     // upstream — mirroring the Default Switch's ICS resolver. Names resolve for
-    // REAL here. The catch-all to the proxy only exists on the isolated network
-    // (S2), so asserting BRIDGE_IP in this phase would assert the wrong topology.
+    // REAL here. The catch-all to the proxy only exists in the isolated phase
+    // (below), so asserting BRIDGE_IP in this phase would assert the wrong topology.
     const { stdout: dns } = await guest('g1', 'resolvectl dns');
     expect(dns).toContain(BRIDGE_IP);
 
@@ -136,8 +136,8 @@ describe('S1: setup during NAT phase', () => {
   });
 });
 
-describe('S1b: applier onboarding (07), auth-config symlink (06), firefox policy merge (05), offline', () => {
-  it('applier sets hasCompletedOnboarding on a fresh ~/.claude.json', async () => {
+describe('guest home & authentication configuration', () => {
+  it('the home settings transform sets hasCompletedOnboarding on a fresh ~/.claude.json', async () => {
     await guest(
       'g1',
       'rm -f "$HOME/.claude.json" && bash /mnt/vm-shared/post-scripts/02-apply-home-jq-transforms.sh',
@@ -149,7 +149,7 @@ describe('S1b: applier onboarding (07), auth-config symlink (06), firefox policy
     expect(stdout.trim()).toBe('True');
   });
 
-  it('applier merges into an existing ~/.claude.json without clobbering', async () => {
+  it('the home settings transform merges into an existing ~/.claude.json without clobbering', async () => {
     await guest(
       'g1',
       `printf '%s' '{"someExisting": 123}' > "$HOME/.claude.json" && bash /mnt/vm-shared/post-scripts/02-apply-home-jq-transforms.sh`,
@@ -193,8 +193,8 @@ describe('S1b: applier onboarding (07), auth-config symlink (06), firefox policy
   });
 });
 
-describe('S2: switch to gateway-less and reboot', () => {
-  it('reboots into gateway-less mode with no in-guest DNS unit', async () => {
+describe('transition to the isolated phase', () => {
+  it('reboots into the isolated phase with no in-guest DNS unit', async () => {
     await harness('net.sh', 'dhcp', 'hostonly');
     await harness('guest.sh', 'reboot', 'g1');
 
@@ -293,14 +293,16 @@ describe('S2: switch to gateway-less and reboot', () => {
   });
 });
 
-describe('S2c: cold DNS cache vs. restart-warmup discrimination (docs/investigations/2026-07-11-proxy-restart-swap-window-race.txt)', () => {
+describe('passthrough destination resolution after proxy warmup', () => {
+  // Investigation: docs/investigations/2026-07-11-proxy-restart-swap-window-race.txt
   // The doc's deterministic exit-35 failures were only ever seen immediately
   // after a container restart, always coinciding with pypi.org being
   // un-resolved. That conflates two variables: container age (fresh-restart
   // vs. long-warm) and host freshness (un-resolved vs. already-cached). This
   // probes the cell that disentangles them — hosts allow-listed since startup
   // but never contacted, hit now while the Envoy container has been up since
-  // beforeAll with no recent restart (S2b's restarts run *after* this block).
+  // beforeAll with no recent restart (the proxy stack access-logging &
+  // replacement tests below run their restarts *after* this block).
   //
   //   - restart-warmup theory   → first contact SUCCEEDS (exit 0): the cold
   //     "DNS cache" framing is a red herring; a fresh restart is required to
@@ -316,7 +318,7 @@ describe('S2c: cold DNS cache vs. restart-warmup discrimination (docs/investigat
     const freshHosts = ['files.pythonhosted.org', 'github.com', 'www.google.com'];
     const results: Record<string, { http: string; exit: string }> = {};
     for (const host of freshHosts) results[host] = await guestProbe('g1', host);
-    console.log('S2c cold-cache probe (long-warm container, first contact):', results);
+    console.log('passthrough-resolution probe (long-warm container, first contact):', results);
 
     // Exit 28 (timeout) is the doc's separate, orthogonal real-network
     // flakiness — it neither confirms nor refutes the cache theory, so we
@@ -329,8 +331,8 @@ describe('S2c: cold DNS cache vs. restart-warmup discrimination (docs/investigat
   }, 120_000);
 });
 
-describe('S2b: run-proxy inline logging', () => {
-  it('streamed unique tagged lines for the traffic S2 generated', async () => {
+describe('proxy stack access logging & replacement', () => {
+  it('streamed unique tagged lines for the traffic generated by the isolated-phase transition tests above', async () => {
     await waitForProxyLine(stack, 'ALLOW CRED  api.anthropic.com', 30_000);
     await waitForProxyLine(stack, 'ALLOW PASS  pypi.org', 30_000);
     await waitForProxyLine(stack, 'ALLOW HTTP  archive.ubuntu.com', 30_000);
@@ -386,12 +388,13 @@ describe('S2b: run-proxy inline logging', () => {
   }, 300_000);
 });
 
-describe('S3: fresh guest on the isolated network', () => {
+describe('a fresh guest starting in the isolated phase', () => {
   it('is fully configured by DHCP alone, and 05 leaves networking untouched', async () => {
-    // DHCP is still in gateway-less mode (S2), so g2 boots straight onto the
-    // isolated network. This replaces the old "05 installs the route" test: there
-    // is no interface-discovery fallback and no route install left to exercise,
-    // because the lease now carries the router and DNS.
+    // DHCP is still configured for the isolated phase (per the transition
+    // above), so g2 boots straight onto the isolated network. This replaces
+    // the old "05 installs the route" test: there is no interface-discovery
+    // fallback and no route install left to exercise, because the lease now
+    // carries the router and DNS.
     await harness('guest.sh', 'start', 'g2', '--share', shareDir);
     await harness('guest.sh', 'wait-ssh', 'g2');
 
