@@ -107,9 +107,11 @@ Run these commands in order to verify a change is correct (fail-fast order):
 | 3 | `pnpm typecheck` | TypeScript types (no emit) |
 | 4 | `pnpm test:unit` | Unit tests (Vitest) |
 | 5 | `pnpm build` | Production build (tsup → `dist/cli.js`) |
-| 6 | `pnpm test:cli` | End-to-end tests against the built CLI |
+| 6 | `pnpm test:cli` | Packaged CLI behavior and the artifacts it generates (against `dist/cli.js`) |
 | 7 | `pnpm test:proxy-stack` | Proxy stack tests against a live Envoy stack |
 | 8 | `pnpm test:guest` | Guest tests (QEMU in WSL2) — run when touching `templates/vm-shared/` or proxy config; **not** part of `pnpm test` |
+
+See [docs/testing.md](docs/testing.md) for what each tier's test surface is, how to choose the tier for a new test, and each tier's prerequisites.
 
 Run the full pipeline (steps 1–7) in one command:
 

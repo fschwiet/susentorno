@@ -48,6 +48,8 @@ Consequences worth knowing: the guest needs `run-proxy` running before it boots,
 
 ## Testing
 
+For the tier model — each tier's test surface, how to place a new test (highest exercised seam wins), and per-tier prerequisites — see [docs/testing.md](docs/testing.md). This section covers the runtime background behind the proxy-stack and guest suites.
+
 `pnpm test` runs, in fail-fast order: format check, lint, typecheck, unit tests, build, cli tests (against `dist/cli.js`), and proxy-stack tests. The proxy-stack tests build this repository's own gitignored `.configamatron` (using `tests/fixtures/credentials.json`, never your real credential file) and bring the Envoy stack up against a mock upstream on transient ports. Docker must be running; no VM or real credential is required. The suite replaces any running proxy container, but never touches another environment's files.
 
 `pnpm test:guest` (not part of `pnpm test`) boots a QEMU/KVM Ubuntu guest inside WSL2 and runs the real script from `/mnt/vm-shared/pre-scripts/` against the same Envoy stack the proxy-stack tests use, published at a harness-owned bridge IP. It covers the NAT-phase setup, the switch to gateway-less DHCP plus reboot, and a fresh guest coming up on the isolated network — asserting in each case that the guest is configured by its **lease alone** and that the deleted layer stays deleted (no in-guest dnsmasq, no DNAT rules, the default route arriving via DHCP). See `docs/superpowers/specs/2026-07-06-vm-e2e-test-harness-design.md`.
