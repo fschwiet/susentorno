@@ -198,7 +198,7 @@ section 'Live egress'
 
 c="$(curl_code 20 http://archive.ubuntu.com/)" && [ "$c" -lt 400 ] 2>/dev/null && ok "allow-listed :80 archive.ubuntu.com -> $c" || bad 'allow-listed :80 archive.ubuntu.com' "code=$c curlExit=$?"
 
-c="$(curl_code 30 https://pypi.org/simple/)" && [ "$c" -lt 400 ] 2>/dev/null && ok "allow-listed passthrough :443 pypi.org -> $c" || bad 'allow-listed passthrough :443 pypi.org' "code=$c curlExit=$?"
+c="$(curl_code 30 https://pypi.org/)" && [ "$c" -lt 400 ] 2>/dev/null && ok "allow-listed passthrough :443 pypi.org -> $c" || bad 'allow-listed passthrough :443 pypi.org' "code=$c curlExit=$?"
 
 if curl -s -o /dev/null --max-time 20 https://blocked.example.com/; then
   bad 'blocked :443 connection dropped' 'curl succeeded; expected a connection failure'
