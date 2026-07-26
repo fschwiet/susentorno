@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { planNextActions } from '../../../src/runProxy/planNextActions';
-import type { PlanInput } from '../../../src/runProxy/types';
+import { planNextActions } from '../../src/runProxy/planNextActions';
+import type { PlanInput } from '../../src/runProxy/types';
 
 const MIN = 60_000;
 
@@ -15,7 +15,7 @@ function input(overrides: Partial<PlanInput> = {}): PlanInput {
   };
 }
 
-describe('planNextActions', () => {
+describe('supervision planning', () => {
   it('does not propagate when the token is unchanged', () => {
     expect(planNextActions(input()).propagate).toBe(false);
   });
