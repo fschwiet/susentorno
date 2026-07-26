@@ -263,7 +263,7 @@ Run the read-only checks (`-AdapterAlias` defaults to the Internal-switch adapte
 - **Ubuntu guest:** `/mnt/vm-shared/verify-config.sh 192.168.67.1`.
 - **Windows guest:** `.\verify-config.ps1 192.168.67.1` from the mounted `vm-shared-windows` share.
 
-Each prints a `PASS`/`FAIL`/`WARN` line per check and exits non-zero if anything failed. Omit the host IP to have the script discover and report it from the installed config.
+Each prints a `PASS`/`FAIL`/`WARN` line per check and exits non-zero if anything failed. If the host IP is omitted, the Ubuntu verifier discovers it from the DHCP-supplied default route; the Windows verifier discovers it when exactly one IPv4 DNS server is configured.
 
 ## Security note: the share account
 
