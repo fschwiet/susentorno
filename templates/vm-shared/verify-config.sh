@@ -125,7 +125,24 @@ else
   bad 'names resolve to the host' "example.com -> '${resolved:-none}', expected ${host_ip:-<host-ip>}"
 fi
 
-if [ -n "$host_ip" ] && resolvectl dns 2>/dev/null | grep -q "$host_ip"; then
+resolver_match=0
+if [ -n "$host_ip" ]; then
+  while IFS= read -r line; do
+    case "$line" in
+      *:*) ;;
+      *) continue ;;
+    esac
+    servers="${line#*:}"
+    for tok in $servers; do
+      if [ "$tok" = "$host_ip" ]; then
+        resolver_match=1
+      fi
+    done
+  done <<EOF
+$(resolvectl dns 2>/dev/null)
+EOF
+fi
+if [ "$resolver_match" = 1 ]; then
   ok "resolver points at the host ($host_ip)"
 else
   bad 'resolver points at the host' "resolvectl dns: $(resolvectl dns 2>/dev/null | tr '\n' ' ')"
