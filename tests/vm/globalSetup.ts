@@ -1,3 +1,4 @@
+import { checkDockerRunning } from '../checkDockerRunning';
 import {
   checkNoRunningProxy,
   checkWslDhcpPortIgnored,
@@ -7,9 +8,11 @@ import {
 } from './wsl';
 
 export default async function setup() {
-  // First: instant, needs nothing installed, and it is the most common
-  // self-inflicted failure — a live run-proxy fighting this suite for the Envoy
-  // containers. Everything below is slower and some of it is destructive.
+  // First: instant, needs nothing installed, and they are the most common
+  // self-inflicted failures — Docker Desktop not running, or a live run-proxy
+  // fighting this suite for the Envoy containers. Everything below is slower
+  // and some of it is destructive.
+  await checkDockerRunning();
   await checkNoRunningProxy();
   await checkWslDistro();
   try {

@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/integration/**/*.test.ts'],
+    globalSetup: ['tests/integration/globalSetup.ts'],
     testTimeout: 60000,
     hookTimeout: 60000,
     // Integration tests share a single docker compose project (the `envoy`
