@@ -9,10 +9,12 @@ Resolve the remaining live items in
 `docs/honist-v/handoffs/2026-07-25-documentation-gaps.md` without broadening the
 work into a general documentation audit.
 
-The handoff's second item is already resolved: the Windows verifier now discovers
-the host IP from the single DHCP-assigned IPv4 DNS server when its argument is
-omitted. This matches the existing promise in `usage-hyper-v.md`, so neither the
-verifier nor that guide needs a behavioral correction.
+The behavioral half of the handoff's second item is already resolved: when its
+argument is omitted, the Windows verifier now discovers the host IP if exactly
+one IPv4 DNS server is configured across the system. The implementation does not
+establish that the address was assigned by DHCP. `usage-hyper-v.md` still needs a
+wording correction because it inaccurately calls this discovery "from the
+installed config."
 
 ## Documentation changes
 
@@ -37,9 +39,19 @@ direct the user to run the post-scripts from the UNC path containing
 `<internal-switch-host-ip>`.
 
 The verification command will show the host-IP argument as optional. Omitting it
-uses the verifier's implemented DHCP/DNS-based discovery; supplying
+uses the verifier's configured-DNS-server discovery; supplying
 `<internal-switch-host-ip>` performs the same checks against an explicit
 expectation.
+
+### Correct the host-IP discovery description
+
+Update the verification paragraph in `usage-hyper-v.md` to say that omitting the
+host IP discovers it when exactly one IPv4 DNS server is configured. Do not call
+the source "the installed config" or claim that the verifier establishes DHCP
+provenance.
+
+This is a wording-only correction. The Windows verifier's discovery behavior and
+the Ubuntu verifier remain unchanged.
 
 ### Correct the executed host-side DNS plan
 
@@ -58,17 +70,17 @@ from mistaking the historical instruction for the intended current behavior.
 
 ### Retire the completed handoff
 
-Delete `docs/honist-v/handoffs/2026-07-25-documentation-gaps.md` after the two
-live documentation gaps are corrected. The already-resolved verifier item needs
-no duplicate documentation: its implementation and verifier-defects design and
-plan remain the authoritative record.
+Delete `docs/honist-v/handoffs/2026-07-25-documentation-gaps.md` after its live
+documentation gaps are corrected. The verifier's discovery implementation needs
+no duplicate documentation: its code and the verifier-defects design and plan
+remain the authoritative record.
 
 ## Scope boundaries
 
 This work will not:
 
 - perform a general rewrite or consistency audit of either usage guide;
-- change `usage-hyper-v.md`;
+- change `usage-hyper-v.md` beyond the inaccurate host-IP discovery sentence;
 - change verifier, networking, or VM harness behavior;
 - modify tests to accommodate documentation edits;
 - duplicate the full Hyper-V setup procedure in `usage-windows-vm.md`.
@@ -80,8 +92,10 @@ Validation is documentation-focused because runtime behavior is unchanged:
 1. Check every edited Windows-guide command uses the address appropriate to its
    NAT or isolated phase.
 2. Confirm the guide explicitly describes both per-address `cmdkey` entries.
-3. Confirm the optional verification syntax matches the discovery branch in
-   `templates/vm-shared-windows/verify-config.ps1`.
+3. Confirm the optional verification syntax and the corrected
+   `usage-hyper-v.md` sentence match the discovery branch in
+   `templates/vm-shared-windows/verify-config.ps1`: discovery succeeds only when
+   exactly one IPv4 DNS server is configured.
 4. Confirm the Task 18 note agrees with the current S1 test in
    `tests/vm/vm.test.ts` and the `gateway`/`hostonly` branches in
    `tests/vm/harness/net.sh`.
