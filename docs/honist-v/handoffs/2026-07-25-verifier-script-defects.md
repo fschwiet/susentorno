@@ -3,6 +3,9 @@
 **Written:** 2026-07-25
 **Branch:** `host-side-dns`
 **Blocked on:** nothing. All four are small, independent, and fixable without a guest.
+**Resolved:** 2026-07-25. All four defects below were fixed per
+`docs/honist-v/specs/2026-07-25-verifier-script-defects-design.md` and
+`docs/honist-v/plans/2026-07-25-verifier-script-defects.md`.
 
 ## What this is
 
