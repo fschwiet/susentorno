@@ -43,7 +43,7 @@ mechanism used to run it.
   placed here because the guest is the highest surface it exercises. The test
   implementation boots the guest with QEMU under WSL2; **Hyper-V remains the
   production guest platform, and is not the test runtime** (see
-  [ADR-0010](adr/0010-wsl-qemu-vm-test-platform.md)). The `guest` name refers to
+  [ADR-0010](adr/0010-vm-tests-via-qemu-in-wsl2.md)). The `guest` name refers to
   the domain actor under test, not to the virtualization mechanism.
 
 ## Placing a new test
