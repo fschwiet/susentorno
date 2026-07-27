@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { formatGithubConfig } from '../../src/githubConfig';
 
-describe('formatGithubConfig', () => {
+describe('GitHub credential configuration formatting', () => {
   it('writes username, email, and token as quoted shell variable assignments', () => {
     const content = formatGithubConfig({
       username: 'Test User',

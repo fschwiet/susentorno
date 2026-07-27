@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Command } from 'commander';
 import { registerRunProxy } from '../../../src/commands/runProxy';
 
-describe('registerRunProxy', () => {
+describe('run-proxy command option surface', () => {
   it('no longer exposes --forward-ports', () => {
     const program = new Command();
     registerRunProxy(program);

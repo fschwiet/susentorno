@@ -6,7 +6,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /**
  * Delete an environment root, riding out transient Windows file locks.
  *
- * The integration and VM suites rebuild `.configamatron` from scratch each run.
+ * The proxy-stack and guest suites rebuild `.configamatron` from scratch each run.
  * On Windows, whatever holds a handle inside the tree at delete time —
  * VS Code's C# Dev Kit build host (which auto-builds the copied dns-responder
  * .csproj), Defender, the Search Indexer, Docker Desktop's file sharing — makes

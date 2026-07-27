@@ -10,7 +10,7 @@ import {
 
 const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
 
-describe('sanitizeCodexCredentials', () => {
+describe('credential sanitization — codex credential channel', () => {
   it('replaces the three token fields with placeholders and passes everything else through', () => {
     const output = sanitizeCodexCredentials(readFileSync(authFixture, 'utf8'));
     const parsed = JSON.parse(output);

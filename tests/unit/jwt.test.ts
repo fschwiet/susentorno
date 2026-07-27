@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildJwt, decodeJwtClaims, encodeBase64Url, jwtExpMs } from '../../src/jwt';
 
-describe('jwt helpers', () => {
+describe('JWT build/decode helpers', () => {
   it('round-trips claims through buildJwt/decodeJwtClaims', () => {
     const token = buildJwt({ sub: 'x', exp: 4102444800 });
     expect(decodeJwtClaims(token)).toEqual({ sub: 'x', exp: 4102444800 });

@@ -24,7 +24,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe('ensureLeaf', () => {
+describe('leaf certificate issuance & reuse', () => {
   it('skips when there are no TLS-terminated hosts', () => {
     expect(ensureLeaf(paths, caCertPem, caKeyPem, [])).toContain('skipped leaf');
   });
