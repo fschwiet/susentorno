@@ -302,6 +302,7 @@ interface; command-specific behavior uses the full user-facing command name.
 | Current file | Target file | Target group vocabulary |
 | --- | --- | --- |
 | `tests/cli/cli.test.ts` | `cli.test.ts` | CLI interface — help, `--version`, command registration, parsing. The `import-sbx-network-policy` (allowlist import) and `write-github-config` cases move to their command files below |
+| `tests/cli/cli.test.ts` | `importSbxNetworkPolicy.test.ts` | `import-sbx-network-policy` — allowlist import command (absorbs the cli.test.ts import-sbx-network-policy cases) |
 | `tests/cli/init.test.ts` | `init.test.ts` | `init` — environment initialization command |
 | `tests/cli/generateCa.test.ts` | `generateCa.test.ts` | `generate-ca` — certificate generation command (**CA** retained) |
 | `tests/cli/writeGithubConfig.test.ts` | `writeGithubConfig.test.ts` | `write-github-config` — GitHub configuration command (absorbs the cli.test.ts write-github-config cases) |
