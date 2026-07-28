@@ -1,0 +1,16 @@
+# Host-run MCP servers, reached through the proxy on loopback
+
+Configamatron can launch MCP (Model Context Protocol) servers on the host and expose each to isolated guests as an HTTPS endpoint on a dedicated hostname (recommended under `.internal`); the server binds host loopback, and Envoy matches the SNI, terminates the guest's TLS, and forwards cleartext to `127.0.0.1:<port>`. This lets a guest's coding agents use tools backed by host credentials and host filesystem access without those secrets ever entering the guest, and it needs no firewall change because it reuses the existing `:443` path and all-names-resolve-to-host routing ([[egress-through-host-envoy-proxy]], [[host-side-dns-and-dhcp]]).
+
+## Considered Options
+
+- **Guest binds the host MCP port directly, opening a firewall port per server.** Rejected: it creates an ungoverned side-channel outside the proxy stack and adds firewall maintenance, whereas loopback + SNI reuses the existing `:443` boundary and opens nothing. (The choice is about the cleaner mechanism, not a claim that the proxy must govern every byte a host deliberately exposes.)
+- **Let the server pick its own port and scrape it from stdout via a configured regex.** Rejected in favour of Configamatron assigning a free loopback port and substituting `{ip}` (`127.0.0.1`) and `{port}` into the command: assignment makes the Envoy upstream known before launch and removes a startup race, a coupling to the server's log format, and a re-scrape-on-restart problem. Scraping is worth revisiting only for a concrete server that refuses a port argument.
+- **Inject credentials at the proxy, as for external services** ([[credential-injection-at-proxy]]). Not applicable: the server already runs on the trusted host with host credentials, so there is nothing to inject and the guest holds nothing regardless.
+
+## Consequences
+
+- A new destination kind in the proxy: TLS-terminated to a loopback upstream in **cleartext**, with **no** credential injection and no upstream TLS — distinct from every existing terminated chain.
+- run-proxy folds the MCP hostnames into the leaf SANs it already reissues ([[root-ca-plus-derived-leaf]]), so a guest that already trusts the root CA needs no cert update to reach a newly added server.
+- run-proxy owns the server processes for its lifetime ([[run-proxy-owns-proxy-lifecycle]]): it reads `.configamatron/mcp-servers.yaml` once at startup (no live watching), refuses to start if a declared server fails to launch, and if **any** running server exits it tears down the whole proxy and exits non-zero. Connectivity is deliberately all-or-nothing so silent partial degradation cannot hide from a user working inside the guest; abnormal exits are announced by a spoken host alert via the native SAPI COM voice (no NuGet/`System.Speech` dependency). A broken server is unblocked by commenting it out of the YAML and restarting.
+- `mcp-servers.yaml` feeds two consumers: run-proxy (launch + Envoy chain + SANs) and `update-shares`, which generates a re-runnable guest **post-script** that registers each server with the Claude and Codex CLIs (`claude mcp add --transport http`, `codex mcp add`). It is a post-script because the endpoint only resolves-to-host and routes through the proxy once the guest is isolated and run-proxy is up.

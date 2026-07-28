@@ -26,6 +26,8 @@ Configamatron creates development environments in which coding agents run inside
 
 **Authentication candidate**: An allowed destination whose requests remain unmodified while limited authentication-header evidence is reported to help classify it later. _Avoid_: Credential candidate, observed host
 
+**Host-service destination**: An allowed destination the proxy stack terminates and serves from a host process on the loopback interface rather than from the external Internet, injecting no credential. _Avoid_: Loopback destination, internal service, local host
+
 **Internal switch**: The Hyper-V network shared only by the host and isolated guests, with the host acting as the guests' constrained network edge. _Avoid_: Host-only network, VMnet
 
 ## Credentials
@@ -47,3 +49,7 @@ Configamatron creates development environments in which coding agents run inside
 **Post-isolation step**: A provisioning step that runs after general network access has been removed from the guest. _Avoid_: Post-script, offline script
 
 **Home settings transform**: An ordered, declarative customization that merges environment-specific values into a guest user's JSON settings. _Avoid_: jq file, settings patch
+
+## Host tooling
+
+**Host MCP server**: A Model Context Protocol server the host runs on behalf of a guest's coding agents, bound to loopback and reachable from the guest only through the proxy stack under its own dedicated hostname. _Avoid_: Local MCP server, host tool, guest MCP server
