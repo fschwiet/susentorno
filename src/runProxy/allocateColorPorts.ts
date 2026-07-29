@@ -24,3 +24,15 @@ export async function allocateColorPorts(): Promise<ColorPorts> {
   await Promise.all(servers.map((s) => new Promise<void>((r) => s.close(() => r()))));
   return { httpsPort, httpPort, adminPort };
 }
+
+/**
+ * Allocate a single free loopback port (e.g. for a Host MCP server, issue #60). Same
+ * open-then-close technique as `allocateColorPorts`; the unavoidable TOCTOU gap between
+ * closing here and the caller binding is small and standard for ephemeral-port handoff.
+ */
+export async function allocateLoopbackPort(): Promise<number> {
+  const server = await openEphemeral();
+  const port = (server.address() as net.AddressInfo).port;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
+}
