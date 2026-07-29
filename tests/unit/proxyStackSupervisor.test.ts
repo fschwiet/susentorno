@@ -6,6 +6,8 @@ import {
 } from '../../src/runProxy/runProxyLoop';
 import type { CredentialChannelConfig } from '../../src/runProxy/credentialChannel';
 import type { Credentials, ColorPorts, Color } from '../../src/runProxy/types';
+import type { McpServer } from '../../src/mcpServers';
+import type { McpServerHandle } from '../../src/runProxy/mcpServerProcess';
 
 const MIN = 60_000;
 
@@ -57,12 +59,27 @@ function claudeChannelConfig(
   };
 }
 
-function baseConfig(channels: CredentialChannelConfig[]): RunProxyConfig {
+function baseConfig(
+  channels: CredentialChannelConfig[],
+  overrides: Partial<RunProxyConfig> = {},
+): RunProxyConfig {
   return {
     channels,
     allowlistPath: '/fake/allowlist.txt',
     readyTimeoutMs: 30_000,
     drainTimeoutMs: 30_000,
+    mcpServers: [],
+    mcpReadyTimeoutMs: 30_000,
+    ...overrides,
+  };
+}
+
+function mcpServer(name: string, host: string): McpServer {
+  return {
+    name,
+    url: `https://${host}/mcp`,
+    host,
+    command: 'node server.js {ip} {port}',
   };
 }
 
@@ -75,6 +92,11 @@ interface Harness {
   fireAllowlist: () => void;
   fireSigint: () => void;
   feedLogLine: (raw: string) => void;
+  /** Fires the onExit callback registered for the Nth (0-based) launched MCP server. */
+  fireMcpExit: (
+    index: number,
+    info?: { code: number | null; signal: NodeJS.Signals | null },
+  ) => void;
   mocks: {
     writeSecret: ReturnType<typeof vi.fn<(token: string, path: string) => void>>;
     allocatePorts: ReturnType<typeof vi.fn>;
@@ -92,6 +114,10 @@ interface Harness {
     log: ReturnType<typeof vi.fn>;
     error: ReturnType<typeof vi.fn>;
     alertAbnormalExit: ReturnType<typeof vi.fn>;
+    allocateMcpPort: ReturnType<typeof vi.fn>;
+    launchMcpServer: ReturnType<typeof vi.fn>;
+    waitMcpServerReady: ReturnType<typeof vi.fn>;
+    stopMcpServer: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -113,6 +139,11 @@ function makeHarness(
     return { httpsPort: 20000 + portSeq, httpPort: 21000 + portSeq, adminPort: 22000 + portSeq };
   };
 
+  let mcpPortSeq = 0;
+  const mcpExitCbs: Array<(info: { code: number | null; signal: NodeJS.Signals | null }) => void> =
+    [];
+  const mcpAlive: boolean[] = [];
+
   const mocks = {
     writeSecret: vi.fn<(token: string, path: string) => void>(),
     allocatePorts: vi.fn(async () => nextPorts()),
@@ -132,6 +163,27 @@ function makeHarness(
     log: vi.fn(),
     error: vi.fn(),
     alertAbnormalExit: vi.fn(),
+    allocateMcpPort: vi.fn(async () => {
+      mcpPortSeq += 1;
+      return 30000 + mcpPortSeq;
+    }),
+    launchMcpServer: vi.fn((_server: McpServer, port: number): McpServerHandle => {
+      const index = mcpAlive.length;
+      mcpAlive.push(true);
+      return {
+        pid: 1000 + index,
+        port,
+        isAlive: async () => mcpAlive[index],
+        onExit: (cb) => {
+          mcpExitCbs[index] = (info) => {
+            mcpAlive[index] = false;
+            cb(info);
+          };
+        },
+      };
+    }),
+    waitMcpServerReady: vi.fn(async () => ({ ready: true }) as const),
+    stopMcpServer: vi.fn(async () => undefined),
   };
   const channelConfig = claudeChannelConfig(creds, mocks);
   const deps: RunProxyDeps = {
@@ -158,6 +210,10 @@ function makeHarness(
     error: mocks.error,
     alertAbnormalExit: mocks.alertAbnormalExit,
     now: () => Date.now(),
+    allocateMcpPort: mocks.allocateMcpPort,
+    launchMcpServer: mocks.launchMcpServer,
+    waitMcpServerReady: mocks.waitMcpServerReady,
+    stopMcpServer: mocks.stopMcpServer,
   };
   return {
     deps,
@@ -168,6 +224,7 @@ function makeHarness(
     fireAllowlist: () => allowlistCb?.(),
     fireSigint: () => sigintCb?.(),
     feedLogLine: (raw) => onLine?.(raw),
+    fireMcpExit: (index, info = { code: 1, signal: null }) => mcpExitCbs[index]?.(info),
     mocks,
   };
 }
@@ -776,6 +833,120 @@ describe('proxy stack supervision', () => {
       expect(h.mocks.error).toHaveBeenCalledWith(expect.stringContaining('codex boom'));
       // Both credentials watchers + the allowlist watcher were closed (3 total).
       expect(h.mocks.watchClose).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('Host MCP server supervision', () => {
+    it('launches each declared server, waits for readiness, then wires it into the proxy config', async () => {
+      const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+      const servers = [mcpServer('fs', 'fs.mcp.internal'), mcpServer('git', 'git.mcp.internal')];
+      void runProxyLoop(baseConfig([h.channelConfig], { mcpServers: servers }), h.deps);
+      await flush();
+
+      expect(h.mocks.allocateMcpPort).toHaveBeenCalledTimes(2);
+      expect(h.mocks.launchMcpServer).toHaveBeenCalledTimes(2);
+      expect(h.mocks.launchMcpServer.mock.calls[0][0]).toBe(servers[0]);
+      expect(h.mocks.launchMcpServer.mock.calls[1][0]).toBe(servers[1]);
+      expect(h.mocks.waitMcpServerReady).toHaveBeenCalledTimes(2);
+
+      // The leaf and the generated envoy config both learned about the MCP hosts/ports.
+      expect(h.mocks.ensureLeaf).toHaveBeenCalledWith(
+        expect.arrayContaining(['fs.mcp.internal', 'git.mcp.internal']),
+      );
+      expect(h.mocks.buildConfig).toHaveBeenCalledTimes(1);
+      expect(h.mocks.buildConfig.mock.calls[0][1]).toEqual([
+        { host: 'fs.mcp.internal', port: 30001 },
+        { host: 'git.mcp.internal', port: 30002 },
+      ]);
+
+      // Startup proceeded to bring up the proxy as usual.
+      expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1);
+    });
+
+    it('prints a startup reminder naming the generated guest registration step', async () => {
+      const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+      const servers = [mcpServer('fs', 'fs.mcp.internal')];
+      void runProxyLoop(baseConfig([h.channelConfig], { mcpServers: servers }), h.deps);
+      await flush();
+
+      expect(h.mocks.log).toHaveBeenCalledWith(expect.stringContaining('register-mcp-servers'));
+    });
+
+    it('prints no MCP reminder when no servers are declared', async () => {
+      const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+      void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      await flush();
+
+      expect(h.mocks.log).not.toHaveBeenCalledWith(expect.stringContaining('register-mcp-servers'));
+    });
+
+    it('aborts startup with no partial bring-up when a server never becomes ready, and alerts once', async () => {
+      const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+      h.mocks.waitMcpServerReady.mockResolvedValueOnce({ ready: false, reason: 'timeout' });
+      const servers = [mcpServer('fs', 'fs.mcp.internal')];
+      const exit = runProxyLoop(baseConfig([h.channelConfig], { mcpServers: servers }), h.deps);
+      await flush();
+
+      await expect(exit).resolves.toBe(1);
+      expect(h.mocks.error).toHaveBeenCalledWith(expect.stringContaining("Host MCP server 'fs'"));
+      expect(h.mocks.buildConfig).not.toHaveBeenCalled();
+      expect(h.mocks.bringUpColor).not.toHaveBeenCalled();
+      expect(h.mocks.alertAbnormalExit).toHaveBeenCalledTimes(1);
+      // The launched-but-never-ready process is still torn down.
+      expect(h.mocks.stopMcpServer).toHaveBeenCalledTimes(1);
+    });
+
+    it('aborts startup when a server exits before becoming ready', async () => {
+      const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+      h.mocks.waitMcpServerReady.mockResolvedValueOnce({ ready: false, reason: 'exited' });
+      const servers = [mcpServer('fs', 'fs.mcp.internal')];
+      const exit = runProxyLoop(baseConfig([h.channelConfig], { mcpServers: servers }), h.deps);
+      await flush();
+
+      await expect(exit).resolves.toBe(1);
+      expect(h.mocks.error).toHaveBeenCalledWith(expect.stringContaining("Host MCP server 'fs'"));
+      expect(h.mocks.alertAbnormalExit).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not launch a later server once an earlier one fails to start', async () => {
+      const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+      h.mocks.waitMcpServerReady.mockResolvedValueOnce({ ready: false, reason: 'timeout' });
+      const servers = [mcpServer('fs', 'fs.mcp.internal'), mcpServer('git', 'git.mcp.internal')];
+      const exit = runProxyLoop(baseConfig([h.channelConfig], { mcpServers: servers }), h.deps);
+      await flush();
+
+      await expect(exit).resolves.toBe(1);
+      expect(h.mocks.launchMcpServer).toHaveBeenCalledTimes(1);
+    });
+
+    it('tears the whole stack down and exits non-zero naming the server when it exits after coming up', async () => {
+      const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+      const servers = [mcpServer('fs', 'fs.mcp.internal')];
+      const exit = runProxyLoop(baseConfig([h.channelConfig], { mcpServers: servers }), h.deps);
+      await flush();
+      expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1); // fully up and serving
+
+      h.fireMcpExit(0, { code: 1, signal: null });
+      await flush();
+
+      await expect(exit).resolves.toBe(1);
+      expect(h.mocks.error).toHaveBeenCalledWith(expect.stringContaining("Host MCP server 'fs'"));
+      expect(h.mocks.alertAbnormalExit).toHaveBeenCalledTimes(1);
+      expect(h.mocks.stopMcpServer).toHaveBeenCalledTimes(1);
+    });
+
+    it('terminates every launched server process on a clean SIGINT shutdown, without alerting', async () => {
+      const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+      const servers = [mcpServer('fs', 'fs.mcp.internal'), mcpServer('git', 'git.mcp.internal')];
+      const exit = runProxyLoop(baseConfig([h.channelConfig], { mcpServers: servers }), h.deps);
+      await flush();
+
+      h.fireSigint();
+      await flush();
+
+      await expect(exit).resolves.toBe(0);
+      expect(h.mocks.stopMcpServer).toHaveBeenCalledTimes(2);
+      expect(h.mocks.alertAbnormalExit).not.toHaveBeenCalled();
     });
   });
 });

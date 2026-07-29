@@ -1,4 +1,6 @@
-import { parseAllowlist, terminateTlsHosts, type Allowlist } from '../allowlist';
+import { parseAllowlist, leafSanHosts, type Allowlist } from '../allowlist';
+import type { HostMcpServerDestination } from '../envoyConfig';
+import type { McpServer } from '../mcpServers';
 import { parseLine } from './parseLine';
 import { classify } from './classify';
 import { formatOutput } from './formatOutput';
@@ -7,6 +9,7 @@ import { CredentialChannel, type CredentialChannelConfig } from './credentialCha
 import type { Color, ColorPorts } from './types';
 import { otherColor } from './types';
 import type { WaitResult } from './waitColorReady';
+import type { McpServerHandle } from './mcpServerProcess';
 
 export interface RunProxyConfig {
   /** One entry per credential source (Claude, Codex). Each drives its own file watch, secret, and nudge timer. */
@@ -16,13 +19,18 @@ export interface RunProxyConfig {
   readyTimeoutMs: number;
   /** How long to let the old color's connections finish before force-closing them. */
   drainTimeoutMs: number;
+  /** Declared Host MCP servers (mcp-servers.yaml), read once at startup (issue #60). */
+  mcpServers: McpServer[];
+  /** How long to wait for a freshly-launched Host MCP server's loopback port to accept a connection. */
+  mcpReadyTimeoutMs: number;
 }
 
 export interface RunProxyDeps {
   /** Raw allowlist file content, or null when unreadable. */
   readAllowlist: (path: string) => string | null;
-  /** Render and write envoy.yaml (upstream overrides are baked in by the caller). */
-  buildConfig: (allowlist: Allowlist) => void;
+  /** Render and write envoy.yaml (upstream overrides are baked in by the caller). `mcpServers`
+   *  is the declared Host MCP servers' hostnames paired with their allocated loopback ports. */
+  buildConfig: (allowlist: Allowlist, mcpServers: HostMcpServerDestination[]) => void;
   /** Ensure the leaf covers `sans` (reissue if needed); returns a status line. */
   ensureLeaf: (sans: string[]) => string;
   /** Allocate three distinct free loopback ports for the next color to bring up. */
@@ -56,6 +64,23 @@ export interface RunProxyDeps {
    */
   alertAbnormalExit: () => void;
   now: () => number;
+  /** Allocate a free loopback port for a Host MCP server (reuses the color-port allocator). */
+  allocateMcpPort: () => Promise<number>;
+  /** Launch a declared Host MCP server bound to its allocated port; stdout/stderr lines are
+   *  surfaced via `onOutput` so a verbose child can never block on an unread pipe. */
+  launchMcpServer: (
+    server: McpServer,
+    port: number,
+    onOutput: (line: string) => void,
+  ) => McpServerHandle;
+  /** Poll the server's own loopback port; ready once it accepts a connection, else exited/timeout. */
+  waitMcpServerReady: (
+    handle: McpServerHandle,
+    timeoutMs: number,
+    signal: AbortSignal,
+  ) => Promise<WaitResult>;
+  /** Stop a launched Host MCP server via the existing process-tree termination. */
+  stopMcpServer: (handle: McpServerHandle) => Promise<void>;
 }
 
 /**
@@ -78,6 +103,10 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
     const unique = new UniqueTracker();
     const shutdownAbort = new AbortController();
     const watchers: { close: () => void }[] = [];
+    // Every launched Host MCP server, regardless of whether it ever became ready — all are
+    // torn down on exit so a startup failure never leaves an orphaned process (issue #60).
+    const mcpLaunched: { server: McpServer; handle: McpServerHandle }[] = [];
+    const mcpConfirmedUp = new Set<McpServerHandle>();
 
     /**
      * Tear down every long-lived handle, then resolve. `settled` flips synchronously so
@@ -91,7 +120,10 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
       shutdownAbort.abort();
       for (const channel of channels) channel.clearTimer();
       for (const watcher of watchers) watcher.close();
-      void deps.stopLogStream().then(() => resolve(code));
+      const stopMcpServers = Promise.all(
+        mcpLaunched.map(({ handle }) => deps.stopMcpServer(handle).catch(() => {})),
+      );
+      void stopMcpServers.then(() => deps.stopLogStream()).then(() => resolve(code));
     };
 
     const fatal = (message: string): void => {
@@ -137,8 +169,56 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
 
     /** Reissue the leaf if the TLS-terminated hosts changed and rewrite envoy.yaml. */
     const applyAllowlist = (allowlist: Allowlist): void => {
-      deps.log(`run-proxy: ${deps.ensureLeaf(terminateTlsHosts(allowlist))}`);
-      deps.buildConfig(allowlist);
+      const mcpHosts = config.mcpServers.map((s) => s.host);
+      deps.log(`run-proxy: ${deps.ensureLeaf(leafSanHosts(allowlist, mcpHosts))}`);
+      const mcpDestinations: HostMcpServerDestination[] = mcpLaunched.map(({ server, handle }) => ({
+        host: server.host,
+        port: handle.port,
+      }));
+      deps.buildConfig(allowlist, mcpDestinations);
+    };
+
+    /**
+     * Launches every declared Host MCP server in order, waiting for each to accept a
+     * loopback connection before moving to the next. Connectivity is deliberately
+     * all-or-nothing (issue #60): any launch/readiness failure calls `fatal` (which aborts
+     * startup with no partial bring-up) and stops launching further servers. A server that
+     * exits after being confirmed up is fatal to the whole running stack, not just startup.
+     */
+    const launchAllMcpServers = async (): Promise<boolean> => {
+      for (const server of config.mcpServers) {
+        if (settled) return false;
+        const port = await deps.allocateMcpPort();
+        if (settled) return false;
+        const handle = deps.launchMcpServer(server, port, (line) =>
+          deps.log(`run-proxy: [${server.name}] ${line}`),
+        );
+        mcpLaunched.push({ server, handle });
+        handle.onExit((info) => {
+          if (settled || !mcpConfirmedUp.has(handle)) return;
+          fatal(
+            `Host MCP server '${server.name}' exited unexpectedly ` +
+              `(code ${info.code ?? 'null'}, signal ${info.signal ?? 'null'})`,
+          );
+        });
+
+        const result = await deps.waitMcpServerReady(
+          handle,
+          config.mcpReadyTimeoutMs,
+          shutdownAbort.signal,
+        );
+        if (settled) return false;
+        if (!result.ready) {
+          fatal(
+            result.reason === 'exited'
+              ? `Host MCP server '${server.name}' exited during startup — check the logs`
+              : `Host MCP server '${server.name}' did not become ready — no connection accepted within the timeout`,
+          );
+          return false;
+        }
+        mcpConfirmedUp.add(handle);
+      }
+      return true;
     };
 
     const requestRestart = (source: CredentialChannel | 'allowlist'): void => {
@@ -291,6 +371,12 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
 
       restarting = true; // hold watcher events as pending until the startup bring-up is done
       try {
+        // Host MCP servers are launched before the proxy config is built: envoy.yaml and
+        // the leaf SANs both need each server's hostname + allocated port. Any failure here
+        // aborts startup with no partial bring-up (issue #60).
+        const mcpReady = await launchAllMcpServers();
+        if (!mcpReady || settled) return;
+
         try {
           applyAllowlist(allowlist);
         } catch (err) {
@@ -334,6 +420,14 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
       deps.log(
         `run-proxy: watching credentials and allowlist; proxy is serving the current token (${activeColor})`,
       );
+      if (config.mcpServers.length > 0) {
+        const names = config.mcpServers.map((s) => s.name).join(', ');
+        deps.log(
+          `run-proxy: ${config.mcpServers.length} Host MCP server(s) up (${names}) — ` +
+            'run the generated post-isolation step inside the guest to register them: ' +
+            'register-mcp-servers.sh (or register-mcp-servers.ps1 on Windows).',
+        );
+      }
 
       // Apply anything that landed during the startup recreate.
       if (dirtyChannels.size > 0 || pendingAllowlist) void drainRestarts();

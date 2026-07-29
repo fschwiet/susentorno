@@ -27,6 +27,13 @@ import { isColorRunning } from '../runProxy/isColorRunning';
 import type { Color, ColorPorts } from '../runProxy/types';
 import { relaunchIfNeeded, createRelaunchDeps } from '../runProxy/relaunchViaDedicatedNode';
 import { speakAbnormalExit } from '../runProxy/speakAbnormalExit';
+import { loadDeclaredMcpServers } from '../mcpRegistrationStep';
+import { allocateLoopbackPort } from '../runProxy/allocateColorPorts';
+import {
+  launchMcpServer,
+  waitMcpServerReady as waitMcpServerReadyImpl,
+  stopMcpServer,
+} from '../runProxy/mcpServerProcess';
 
 interface RunProxyOptions {
   credentials: string;
@@ -128,6 +135,16 @@ export function registerRunProxy(program: Command): void {
       }
       const secretPath = options.secret ?? paths.sdsSecret;
 
+      let mcpServers;
+      try {
+        mcpServers = loadDeclaredMcpServers(paths);
+      } catch (err) {
+        console.error(`run-proxy: invalid mcp-servers.yaml: ${String(err)}`);
+        process.exitCode = 1;
+        speakAbnormalExit();
+        return;
+      }
+
       let logHandle: LogStreamHandle | null = null;
 
       const httpPort = Number(process.env.ENVOY_HTTP_PORT ?? 80);
@@ -218,12 +235,13 @@ export function registerRunProxy(program: Command): void {
             return null;
           }
         },
-        buildConfig: (allowlist) =>
+        buildConfig: (allowlist, mcpDestinations) =>
           writeEnvoyConfig(
             allowlist,
             paths.envoyConfig,
             options.upstreamOverride,
             options.injectFault,
+            mcpDestinations,
           ),
         ensureLeaf: (sans) =>
           ensureLeaf(
@@ -261,6 +279,11 @@ export function registerRunProxy(program: Command): void {
         error: (message) => console.error(message),
         alertAbnormalExit: () => speakAbnormalExit(),
         now: () => Date.now(),
+        allocateMcpPort: allocateLoopbackPort,
+        launchMcpServer: (server, port, onOutput) => launchMcpServer(server, port, onOutput),
+        waitMcpServerReady: (handle, timeoutMs, signal) =>
+          waitMcpServerReadyImpl(handle.port, timeoutMs, signal, handle.isAlive),
+        stopMcpServer,
       };
 
       const refreshWindowMs = Number(options.refreshWindow) * 60_000;
@@ -300,6 +323,8 @@ export function registerRunProxy(program: Command): void {
             allowlistPath: paths.allowlist,
             readyTimeoutMs: 60_000,
             drainTimeoutMs: 30_000,
+            mcpServers,
+            mcpReadyTimeoutMs: 30_000,
           },
           deps,
         );
