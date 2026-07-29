@@ -30,6 +30,7 @@ describe('configamatron init', () => {
         ),
       ).toBe(true);
       expect(existsSync(join(dir, '.configamatron', 'pre-scripts', 'README.md'))).toBe(true);
+      expect(existsSync(join(dir, '.configamatron', 'mcp-servers.yaml'))).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
