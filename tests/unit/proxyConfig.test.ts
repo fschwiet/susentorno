@@ -573,7 +573,7 @@ describe('proxy configuration generation', () => {
       expect(cert.private_key.filename).toBe('/etc/envoy/ca/leaf-key.pem');
     });
 
-    it('routes to a cleartext cluster at 127.0.0.1:<allocated-port>, with no credential injection and no upstream TLS', () => {
+    it('routes to a cleartext cluster at host.docker.internal:<allocated-port>, with no credential injection and no upstream TLS', () => {
       const config = generateEnvoyConfig(allowlist, {
         mcpServers: [{ host: 'filesystem.mcp.internal', port: 51000 }],
       }) as any;
@@ -591,9 +591,14 @@ describe('proxy configuration generation', () => {
       const clusterName = hcm.route_config.virtual_hosts[0].routes[0].route.cluster;
       const cluster = config.static_resources.clusters.find((c: any) => c.name === clusterName);
       expect(cluster).toBeDefined();
+      // host.docker.internal, not a 127.0.0.1 literal: Envoy runs inside the
+      // docker-compose-managed container, so its own loopback is not the host's —
+      // the declared server binds the *host's* loopback (ADR-0016), and Docker
+      // Desktop's host.docker.internal is what actually reaches it from inside.
+      expect(cluster.type).toBe('STRICT_DNS');
       expect(
         cluster.load_assignment.endpoints[0].lb_endpoints[0].endpoint.address.socket_address,
-      ).toEqual({ address: '127.0.0.1', port_value: 51000 });
+      ).toEqual({ address: 'host.docker.internal', port_value: 51000 });
       // Cleartext upstream: no transport_socket at all on the cluster.
       expect(cluster.transport_socket).toBeUndefined();
     });

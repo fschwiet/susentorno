@@ -658,7 +658,15 @@ function buildCodexEntry(entry: string, overrides: UpstreamOverride[]) {
 function buildMcpUpstreamCluster(clusterName: string, port: number) {
   return {
     name: clusterName,
-    type: 'STATIC',
+    // STRICT_DNS + host.docker.internal, not a STATIC 127.0.0.1 literal: Envoy runs
+    // inside the docker-compose-managed container (see docker-compose.yml's
+    // `extra_hosts: host.docker.internal:host-gateway`), so its own loopback is the
+    // container's, not the host's. The declared server binds the *host's* loopback
+    // (ADR-0016, src/runProxy/mcpServerProcess.ts substitutes {ip} with 127.0.0.1
+    // there), and Docker Desktop's host.docker.internal is what actually reaches a
+    // host-loopback-bound port from inside the container — a plain host IP would not.
+    type: 'STRICT_DNS',
+    dns_lookup_family: 'V4_ONLY',
     lb_policy: 'ROUND_ROBIN',
     load_assignment: {
       cluster_name: clusterName,
@@ -667,7 +675,7 @@ function buildMcpUpstreamCluster(clusterName: string, port: number) {
           lb_endpoints: [
             {
               endpoint: {
-                address: { socket_address: { address: '127.0.0.1', port_value: port } },
+                address: { socket_address: { address: 'host.docker.internal', port_value: port } },
               },
             },
           ],
