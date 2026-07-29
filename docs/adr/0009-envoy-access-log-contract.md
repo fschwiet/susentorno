@@ -1,6 +1,8 @@
 # Envoy emits a machine-parseable access-log line, classified in `run-proxy`
 
-Every Envoy path writes a stable, pipe-delimited access-log line to stdout — `CFGM|<path-id>|<start-time>|<server-name>|<authority>|<response-code-details>|…` — which `run-proxy` parses and maps to friendly tags (`ALLOW CRED`/`ALLOW PASS`/`ALLOW HTTP`/`BLOCK TLS`/`BLOCK HTTP`) in its inline stream. The friendly-tag mapping lives in the CLI (where the repo concentrates its unit tests), keeping the Envoy config declarative. A catch-all `:443` filter chain routes unmatched SNI to an **endpoint-less `blackhole` cluster** purely so blocked TLS connections are visible (`deny443`) — without it, Envoy silently resets them with no log line at all.
+Every Envoy path writes a stable, pipe-delimited access-log line to stdout — `CFGM|<path-id>|<start-time>|<server-name>|<authority>|<response-code-details>|…` — which `run-proxy` parses and maps to friendly tags (`ALLOW CRED`/`ALLOW PASS`/`ALLOW HTTP`/`ALLOW MCP`/`BLOCK TLS`/`BLOCK HTTP`) in its inline stream. The friendly-tag mapping lives in the CLI (where the repo concentrates its unit tests), keeping the Envoy config declarative. A catch-all `:443` filter chain routes unmatched SNI to an **endpoint-less `blackhole` cluster** purely so blocked TLS connections are visible (`deny443`) — without it, Envoy silently resets them with no log line at all.
+
+The `mcp` path id classifies a **Host-service destination** ([[egress-through-host-envoy-proxy]], ADR-0016): a filter chain that terminates the guest's TLS with the environment's leaf and forwards cleartext to a Host MCP server on loopback, with no credential injection. It reuses the same field layout as `term`/`pass`/`http` and maps to the `ALLOW MCP` friendly tag.
 
 ## Consequences
 

@@ -24,6 +24,12 @@ describe('access-log line classification', () => {
     expect(classify(line({ pathId: 'pass', serverName: 'pypi.org' }))[0].tag).toBe('ALLOW PASS');
   });
 
+  it("maps the 'mcp' path to ALLOW MCP with the SNI as domain", () => {
+    expect(classify(line({ pathId: 'mcp', serverName: 'filesystem.mcp.internal' }))).toEqual([
+      { time: '2026-07-06T12:00:00', tag: 'ALLOW MCP', domain: 'filesystem.mcp.internal' },
+    ]);
+  });
+
   it('maps deny443 to BLOCK TLS', () => {
     expect(classify(line({ pathId: 'deny443', serverName: 'nope.example.com' }))[0].tag).toBe(
       'BLOCK TLS',

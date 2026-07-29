@@ -542,4 +542,91 @@ describe('proxy configuration generation', () => {
       expect(cluster).toBeDefined();
     });
   });
+
+  describe('Host-service (MCP) destination', () => {
+    it('builds one filter chain per declared server, matching SNI and terminating TLS with the leaf', () => {
+      const config = generateEnvoyConfig(allowlist, {
+        mcpServers: [
+          { host: 'filesystem.mcp.internal', port: 51000 },
+          { host: 'other.mcp.internal', port: 51001 },
+        ],
+      }) as any;
+      const listener443 = config.static_resources.listeners.find(
+        (l: any) => l.name === 'listener_443',
+      );
+
+      const fsChain = listener443.filter_chains.find((fc: any) =>
+        fc.filter_chain_match?.server_names?.includes('filesystem.mcp.internal'),
+      );
+      const otherChain = listener443.filter_chains.find((fc: any) =>
+        fc.filter_chain_match?.server_names?.includes('other.mcp.internal'),
+      );
+      expect(fsChain).toBeDefined();
+      expect(otherChain).toBeDefined();
+
+      const tls = fsChain.transport_socket.typed_config;
+      expect(tls['@type']).toBe(
+        'type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext',
+      );
+      const cert = tls.common_tls_context.tls_certificates[0];
+      expect(cert.certificate_chain.filename).toBe('/etc/envoy/ca/leaf-cert.pem');
+      expect(cert.private_key.filename).toBe('/etc/envoy/ca/leaf-key.pem');
+    });
+
+    it('routes to a cleartext cluster at 127.0.0.1:<allocated-port>, with no credential injection and no upstream TLS', () => {
+      const config = generateEnvoyConfig(allowlist, {
+        mcpServers: [{ host: 'filesystem.mcp.internal', port: 51000 }],
+      }) as any;
+      const listener443 = config.static_resources.listeners.find(
+        (l: any) => l.name === 'listener_443',
+      );
+      const chain = listener443.filter_chains.find((fc: any) =>
+        fc.filter_chain_match?.server_names?.includes('filesystem.mcp.internal'),
+      );
+      const hcm = chain.filters[0].typed_config;
+
+      // No lua gate, no credential_injector — only the router.
+      expect(hcm.http_filters.map((f: any) => f.name)).toEqual(['envoy.filters.http.router']);
+
+      const clusterName = hcm.route_config.virtual_hosts[0].routes[0].route.cluster;
+      const cluster = config.static_resources.clusters.find((c: any) => c.name === clusterName);
+      expect(cluster).toBeDefined();
+      expect(
+        cluster.load_assignment.endpoints[0].lb_endpoints[0].endpoint.address.socket_address,
+      ).toEqual({ address: '127.0.0.1', port_value: 51000 });
+      // Cleartext upstream: no transport_socket at all on the cluster.
+      expect(cluster.transport_socket).toBeUndefined();
+    });
+
+    it('tags the access log with the mcp path id', () => {
+      const config = generateEnvoyConfig(allowlist, {
+        mcpServers: [{ host: 'filesystem.mcp.internal', port: 51000 }],
+      }) as any;
+      const listener443 = config.static_resources.listeners.find(
+        (l: any) => l.name === 'listener_443',
+      );
+      const chain = listener443.filter_chains.find((fc: any) =>
+        fc.filter_chain_match?.server_names?.includes('filesystem.mcp.internal'),
+      );
+      const log =
+        chain.filters[0].typed_config.access_log[0].typed_config.log_format.text_format_source
+          .inline_string;
+      expect(log).toMatch(/^CFGM\|mcp\|/);
+      expect(log.endsWith('|%RESPONSE_CODE%|%RESPONSE_FLAGS%|%DURATION%|%BYTES_SENT%\n')).toBe(
+        true,
+      );
+    });
+
+    it('emits no MCP filter chains or clusters when no Host MCP servers are declared', () => {
+      const config = generateEnvoyConfig(allowlist) as any;
+      const listener443 = config.static_resources.listeners.find(
+        (l: any) => l.name === 'listener_443',
+      );
+      expect(
+        listener443.filter_chains.some((fc: any) =>
+          fc.filter_chain_match?.server_names?.some((n: string) => n.includes('mcp')),
+        ),
+      ).toBe(false);
+    });
+  });
 });

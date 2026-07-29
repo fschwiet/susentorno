@@ -40,7 +40,19 @@ type Section =
   | 'codexAuthenticated'
   | 'authCandidate';
 
-export function parseAllowlist(content: string): Allowlist {
+export interface ParseAllowlistOptions {
+  /**
+   * Canonicalized (lowercased) hostnames already reserved by a declared Host MCP
+   * server. Any allowlist entry whose host matches one is dropped — MCP precedence —
+   * with a warning, using the same drop-the-loser-and-warn mechanism as intra-allowlist
+   * collision resolution below. This only runs on a live-watched reload; the initial
+   * mcp-servers.yaml-vs-allowlist collision at startup is a separate, fatal check
+   * (src/mcpServers.ts).
+   */
+  reservedMcpHosts?: string[];
+}
+
+export function parseAllowlist(content: string, opts: ParseAllowlistOptions = {}): Allowlist {
   const passthrough = new Set<string>();
   const claudeAuthenticated = new Set<string>();
   const githubAuthenticated = new Set<string>();
@@ -135,6 +147,26 @@ export function parseAllowlist(content: string): Allowlist {
     warnings.add(`collision: '${entry}' listed in ${listed.join(' and ')}; using ${winner.name}`);
   }
 
+  // MCP precedence: a reserved Host MCP server hostname always wins over anything a
+  // reloaded allowlist introduces for the same host, so the running proxy keeps a
+  // single filter chain per SNI without needing to reissue the leaf or restart the
+  // MCP server. Runs after intra-allowlist collision resolution, so at most one
+  // section still holds a given entry.
+  const reservedMcpHosts = new Set((opts.reservedMcpHosts ?? []).map((h) => h.toLowerCase()));
+  if (reservedMcpHosts.size > 0) {
+    for (const section of byPriority) {
+      for (const entry of [...section.set]) {
+        const { host } = splitHostPort(entry);
+        const canonicalHost = host.toLowerCase();
+        if (!reservedMcpHosts.has(canonicalHost)) continue;
+        section.set.delete(entry);
+        warnings.add(
+          `collision: '${entry}' listed in ${section.name}; using Host MCP server '${canonicalHost}'`,
+        );
+      }
+    }
+  }
+
   return {
     passthrough: [...passthroughSet],
     claudeAuthenticated: [...claudeAuthenticated],
@@ -155,6 +187,16 @@ export function terminateTlsHosts(allowlist: Allowlist): string[] {
   ]
     .filter((entry) => entry.endsWith(':443'))
     .map((entry) => entry.slice(0, entry.lastIndexOf(':')));
+}
+
+/**
+ * The full leaf SAN set: the union of `terminateTlsHosts(allowlist)` and the declared
+ * Host MCP server hostnames (already-canonicalized, from src/mcpServers.ts records'
+ * `.host` field). A guest that already trusts the root CA needs no new certificate
+ * when a Host MCP server is added, since its hostname was already folded into the leaf.
+ */
+export function leafSanHosts(allowlist: Allowlist, mcpServerHosts: string[] = []): string[] {
+  return [...new Set([...terminateTlsHosts(allowlist), ...mcpServerHosts])];
 }
 
 export function formatAllowlist(allowlist: Allowlist): string {
