@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Fake `codex` CLI; see sibling `claude` fixture for behavior.
+name=$(basename "$0")
+echo "$name $*" >> "$MCP_FAKE_LOG"
+if [ "$1" = "mcp" ] && [ "$2" = "remove" ]; then
+  exit "${MCP_FAKE_REMOVE_EXIT:-1}"
+fi
+if [ "$1" = "mcp" ] && [ "$2" = "add" ]; then
+  exit "${MCP_FAKE_ADD_EXIT:-0}"
+fi
+exit 0

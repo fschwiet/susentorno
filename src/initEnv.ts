@@ -4,6 +4,7 @@ import { envPaths } from './envPaths';
 import { sanitizeCredentials } from './sanitizeCredentials';
 import { sanitizeCodexCredentials } from './sanitizeCodexCredentials';
 import { planAllPhases, executePlans } from './weaveShares';
+import { loadDeclaredMcpServers } from './mcpRegistrationStep';
 
 const PRE_SCRIPTS_README = `# pre-scripts
 
@@ -81,7 +82,8 @@ export function initEnvironment(options: InitOptions): void {
   writeFileSync(join(paths.preScripts, 'README.md'), PRE_SCRIPTS_README);
   mkdirSync(paths.postScripts, { recursive: true });
   writeFileSync(join(paths.postScripts, 'README.md'), POST_SCRIPTS_README);
-  const plans = planAllPhases({ templatesDir: options.templatesDir, paths });
+  const mcpServers = loadDeclaredMcpServers(paths);
+  const plans = planAllPhases({ templatesDir: options.templatesDir, paths, mcpServers });
 
   cpSync(join(options.templatesDir, 'vm-shared'), paths.vmShared, { recursive: true });
   cpSync(join(options.templatesDir, 'vm-shared-windows'), paths.vmSharedWindows, {

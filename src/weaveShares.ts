@@ -3,10 +3,13 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   renameSync,
   rmSync,
+  writeFileSync,
 } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { EnvPaths } from './envPaths';
 import {
@@ -16,6 +19,8 @@ import {
   type ScriptExtension,
 } from './weaveScripts';
 import { detectCollisions, type Collision, type WeaveItem } from './collisions';
+import { generateMcpRegistrationScript } from './mcpRegistrationStep';
+import type { McpServer } from './mcpServers';
 
 export interface WeaveAction {
   kind: 'file' | 'dir';
@@ -27,7 +32,15 @@ export interface PhasePlan {
   actions: WeaveAction[];
 }
 
-export function planAllPhases(opts: { templatesDir: string; paths: EnvPaths }): PhasePlan[] {
+export interface WeaveAllPhasesOptions {
+  templatesDir: string;
+  paths: EnvPaths;
+  /** Declared Host MCP servers; when non-empty, a generated post-isolation step is
+   *  woven into `post-scripts` for both platforms (see `mcpRegistrationStep.ts`). */
+  mcpServers?: McpServer[];
+}
+
+export function planAllPhases(opts: WeaveAllPhasesOptions): PhasePlan[] {
   const platforms = [
     { ext: 'sh' as const, template: 'vm-shared', output: opts.paths.vmShared, insensitive: false },
     {
@@ -39,9 +52,14 @@ export function planAllPhases(opts: { templatesDir: string; paths: EnvPaths }): 
   ];
   const plans: PhasePlan[] = [];
   const errors: string[] = [];
+  const mcpServers = opts.mcpServers ?? [];
   for (const phase of ['pre-scripts', 'post-scripts']) {
     for (const platform of platforms) {
       try {
+        const generatedScript =
+          phase === 'post-scripts' && mcpServers.length > 0
+            ? stageMcpRegistrationScript(mcpServers, platform.ext)
+            : undefined;
         plans.push(
           planPhase({
             builtinPhaseDir: join(opts.templatesDir, platform.template, phase),
@@ -49,6 +67,7 @@ export function planAllPhases(opts: { templatesDir: string; paths: EnvPaths }): 
             outPhaseDir: join(platform.output, phase),
             extension: platform.ext,
             caseInsensitive: platform.insensitive,
+            generatedScript,
           }),
         );
       } catch (error) {
@@ -60,12 +79,33 @@ export function planAllPhases(opts: { templatesDir: string; paths: EnvPaths }): 
   return plans;
 }
 
+/**
+ * Writes the generated MCP registration step to a fresh staging file so it can
+ * flow through the same file-copy `WeaveAction` as every other script. The
+ * staging directory is left for the OS to reclaim; the file is tiny and
+ * `executePlans` may run well after this function returns (or, on a dry run,
+ * never), so it cannot be cleaned up here.
+ */
+function stageMcpRegistrationScript(
+  servers: McpServer[],
+  ext: ScriptExtension,
+): { sourcePath: string; remainder: string } {
+  const remainder = `register-mcp-servers.${ext}`;
+  const stagingDir = mkdtempSync(join(tmpdir(), 'cfgm-mcp-'));
+  const sourcePath = join(stagingDir, remainder);
+  writeFileSync(sourcePath, generateMcpRegistrationScript(servers, ext));
+  return { sourcePath, remainder };
+}
+
 function planPhase(opts: {
   builtinPhaseDir: string;
   customPhaseDir: string;
   outPhaseDir: string;
   extension: ScriptExtension;
   caseInsensitive: boolean;
+  /** A generated step (e.g. MCP server registration) to weave in like a built-in
+   *  script — after the packaged built-ins, before customization inputs. */
+  generatedScript?: { sourcePath: string; remainder: string };
 }): PhasePlan {
   const builtin = readFolderContents({
     dir: opts.builtinPhaseDir,
@@ -79,10 +119,22 @@ function planPhase(opts: {
     allowSentinel: false,
     strictExtension: false,
   });
-  const labeled: { script: OrderedScript; label: 'built-in' | 'custom' }[] = [
+  const generated: OrderedScript[] = opts.generatedScript
+    ? [
+        {
+          sourcePath: opts.generatedScript.sourcePath,
+          sourceName: opts.generatedScript.remainder,
+          remainder: opts.generatedScript.remainder,
+          ext: opts.extension,
+          sentinel: false,
+        },
+      ]
+    : [];
+  const labeled: { script: OrderedScript; label: 'built-in' | 'custom' | 'generated' }[] = [
     ...builtin.scripts
       .filter((s) => !s.sentinel)
       .map((script) => ({ script, label: 'built-in' as const })),
+    ...generated.map((script) => ({ script, label: 'generated' as const })),
     ...custom.scripts.map((script) => ({ script, label: 'custom' as const })),
     ...builtin.scripts
       .filter((s) => s.sentinel)
@@ -180,6 +232,6 @@ export function executePlans(plans: PhasePlan[]): void {
   for (const { backup } of swapped) rmSync(backup, { recursive: true, force: true });
 }
 
-export function weaveShares(opts: { templatesDir: string; paths: EnvPaths }): void {
+export function weaveShares(opts: WeaveAllPhasesOptions): void {
   executePlans(planAllPhases(opts));
 }

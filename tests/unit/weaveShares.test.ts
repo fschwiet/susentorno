@@ -1,9 +1,27 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+  existsSync,
+  readdirSync,
+  readFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { envPaths } from '../../src/envPaths';
 import { planAllPhases, weaveShares } from '../../src/weaveShares';
+import type { McpServer } from '../../src/mcpServers';
+
+const sampleServers: McpServer[] = [
+  {
+    name: 'filesystem',
+    url: 'https://filesystem.mcp.internal/mcp',
+    host: 'filesystem.mcp.internal',
+    command: 'my-server --bind {ip} --port {port}',
+  },
+];
 
 let work: string;
 let templates: string;
@@ -94,6 +112,45 @@ describe('VM share weaving', () => {
         message = (error as Error).message;
       }
       expect(message).toMatch(/02-network\.sh[\s\S]*built-in script[\s\S]*custom resource/);
+    });
+  });
+
+  describe('generated MCP registration step', () => {
+    it('weaves the generated step into post-scripts, after built-ins and before customization inputs, identically on both platforms', () => {
+      const paths = envPaths(work);
+      writeFileSync(join(paths.postScripts, '01-custom.sh'), 'custom');
+      weaveShares({ templatesDir: templates, paths, mcpServers: sampleServers });
+      expect(readdirSync(paths.vmSharedTargets[0].postScripts).sort()).toEqual([
+        '01-auth.sh',
+        '02-register-mcp-servers.sh',
+        '03-custom.sh',
+      ]);
+      expect(readdirSync(paths.vmSharedTargets[1].postScripts).sort()).toEqual([
+        '01-auth.ps1',
+        '02-register-mcp-servers.ps1',
+      ]);
+      const shStep = readFileSync(
+        join(paths.vmSharedTargets[0].postScripts, '02-register-mcp-servers.sh'),
+        'utf8',
+      );
+      const ps1Step = readFileSync(
+        join(paths.vmSharedTargets[1].postScripts, '02-register-mcp-servers.ps1'),
+        'utf8',
+      );
+      expect(shStep).toContain("claude mcp add --transport http 'filesystem'");
+      expect(ps1Step).toContain("claude mcp add --transport http 'filesystem'");
+    });
+
+    it('does not add a step when no MCP servers are declared', () => {
+      const paths = envPaths(work);
+      weaveShares({ templatesDir: templates, paths, mcpServers: [] });
+      expect(readdirSync(paths.vmSharedTargets[0].postScripts).sort()).toEqual(['01-auth.sh']);
+    });
+
+    it('does not add a step when mcpServers is omitted', () => {
+      const paths = envPaths(work);
+      weaveShares({ templatesDir: templates, paths });
+      expect(readdirSync(paths.vmSharedTargets[0].postScripts).sort()).toEqual(['01-auth.sh']);
     });
   });
 });
