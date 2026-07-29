@@ -50,6 +50,11 @@ export interface RunProxyDeps {
   onSigint: (handler: () => void) => void;
   log: (message: string) => void;
   error: (message: string) => void;
+  /**
+   * Best-effort, bounded audible alert (ADR-0017). Called at most once, only on a
+   * non-clean exit (any shutdown code other than 0) — never on a clean SIGINT.
+   */
+  alertAbnormalExit: () => void;
   now: () => number;
 }
 
@@ -82,6 +87,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
     const shutdown = (code: number): void => {
       if (settled) return;
       settled = true;
+      if (code !== 0) deps.alertAbnormalExit();
       shutdownAbort.abort();
       for (const channel of channels) channel.clearTimer();
       for (const watcher of watchers) watcher.close();

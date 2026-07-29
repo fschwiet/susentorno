@@ -3,6 +3,7 @@ import { createReadStream, statSync, copyFileSync, mkdirSync, writeFileSync } fr
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { execa } from 'execa';
+import { speakAbnormalExit } from './speakAbnormalExit';
 
 export interface EnsureCopyDeps {
   execPath: string;
@@ -32,6 +33,15 @@ export interface RelaunchDeps extends EnsureCopyDeps {
   ) => Promise<SpawnResult>;
   onSigint: (handler: () => void) => void;
   error: (message: string) => void;
+  /**
+   * Best-effort, bounded audible alert (ADR-0017). Called only when the dedicated
+   * copy never ran to completion (couldn't be launched, or was killed by signal) —
+   * in that case no child process ever gets a chance to alert on its own, so the
+   * parent must speak on its behalf. A normal (even non-zero) exit code means the
+   * child ran its own lifecycle and already alerted if warranted; the parent stays
+   * silent to avoid speaking twice.
+   */
+  alertAbnormalExit: () => void;
 }
 
 export type RelaunchResult = { relaunched: true; exitCode: number } | { relaunched: false };
@@ -126,6 +136,7 @@ export async function relaunchIfNeeded(deps: RelaunchDeps): Promise<RelaunchResu
   } else {
     deps.error('run-proxy: failed to launch the dedicated node.exe copy');
   }
+  deps.alertAbnormalExit();
   return { relaunched: true, exitCode: FALLBACK_EXIT_CODE };
 }
 
@@ -172,5 +183,6 @@ export function createRelaunchDeps(forward: boolean): RelaunchDeps {
     },
     onSigint: (handler) => process.on('SIGINT', handler),
     error: (message) => console.error(message),
+    alertAbnormalExit: () => speakAbnormalExit(),
   };
 }
