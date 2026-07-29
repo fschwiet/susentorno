@@ -91,6 +91,7 @@ interface Harness {
     watchClose: ReturnType<typeof vi.fn>;
     log: ReturnType<typeof vi.fn>;
     error: ReturnType<typeof vi.fn>;
+    alertAbnormalExit: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -130,6 +131,7 @@ function makeHarness(
     watchClose,
     log: vi.fn(),
     error: vi.fn(),
+    alertAbnormalExit: vi.fn(),
   };
   const channelConfig = claudeChannelConfig(creds, mocks);
   const deps: RunProxyDeps = {
@@ -154,6 +156,7 @@ function makeHarness(
     },
     log: mocks.log,
     error: mocks.error,
+    alertAbnormalExit: mocks.alertAbnormalExit,
     now: () => Date.now(),
   };
   return {
@@ -658,6 +661,27 @@ describe('proxy stack supervision', () => {
 
       await expect(exit).resolves.toBe(0);
       expect(h.mocks.setActiveBackend).not.toHaveBeenCalled();
+    });
+
+    it('stays silent on a clean SIGINT shutdown', async () => {
+      const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+      const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      await flush();
+
+      h.fireSigint();
+      await flush();
+
+      await expect(exit).resolves.toBe(0);
+      expect(h.mocks.alertAbnormalExit).not.toHaveBeenCalled();
+    });
+
+    it('speaks the abnormal-exit alert exactly once when a fatal error stops the loop', async () => {
+      const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN }, null);
+      const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      await flush();
+
+      await expect(exit).resolves.toBe(1);
+      expect(h.mocks.alertAbnormalExit).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -106,6 +106,7 @@ describe('dedicated-node runtime relaunch', () => {
         spawn: vi.fn(async () => ({ exitCode: 0 })),
         onSigint: vi.fn(),
         error: vi.fn(),
+        alertAbnormalExit: vi.fn(),
         ...overrides,
       };
     }
@@ -149,10 +150,11 @@ describe('dedicated-node runtime relaunch', () => {
       expect(result).toEqual({ relaunched: true, exitCode: 0 });
     });
 
-    it('propagates a non-zero exit code', async () => {
+    it('propagates a non-zero exit code without alerting — the child ran and speaks for itself', async () => {
       const deps = makeDeps({ spawn: vi.fn(async () => ({ exitCode: 7 })) });
       const result = await relaunchIfNeeded(deps);
       expect(result).toEqual({ relaunched: true, exitCode: 7 });
+      expect(deps.alertAbnormalExit).not.toHaveBeenCalled();
     });
 
     it('falls back to a fixed exit code when the child was terminated by signal', async () => {
@@ -162,6 +164,9 @@ describe('dedicated-node runtime relaunch', () => {
       expect(deps.error).toHaveBeenCalledWith(
         expect.stringContaining('terminated by signal SIGTERM'),
       );
+      // The child was killed before it could run its own alerting path — the
+      // parent must speak on its behalf, or no one ever does.
+      expect(deps.alertAbnormalExit).toHaveBeenCalledTimes(1);
     });
 
     it('falls back to a fixed exit code when spawn could not launch the process at all', async () => {
@@ -169,6 +174,8 @@ describe('dedicated-node runtime relaunch', () => {
       const result = await relaunchIfNeeded(deps);
       expect(result).toEqual({ relaunched: true, exitCode: 1 });
       expect(deps.error).toHaveBeenCalledWith(expect.stringContaining('failed to launch'));
+      // No child ever ran, so no one else can alert.
+      expect(deps.alertAbnormalExit).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -26,6 +26,7 @@ import { waitColorReady } from '../runProxy/waitColorReady';
 import { isColorRunning } from '../runProxy/isColorRunning';
 import type { Color, ColorPorts } from '../runProxy/types';
 import { relaunchIfNeeded, createRelaunchDeps } from '../runProxy/relaunchViaDedicatedNode';
+import { speakAbnormalExit } from '../runProxy/speakAbnormalExit';
 
 interface RunProxyOptions {
   credentials: string;
@@ -106,11 +107,15 @@ export function registerRunProxy(program: Command): void {
           `run-proxy: failed to relaunch through the dedicated node.exe copy: ${String(err)}`,
         );
         process.exitCode = 1;
+        speakAbnormalExit();
         return;
       }
 
       const paths = requireEnvPathsOrExit('run-proxy');
-      if (!paths) return;
+      if (!paths) {
+        speakAbnormalExit();
+        return;
+      }
       // run-proxy reissues the leaf itself but never the root: the root must
       // already exist (and be trusted in the guest) via generate-ca.
       if (!existsSync(paths.caCert) || !existsSync(paths.caKey)) {
@@ -118,6 +123,7 @@ export function registerRunProxy(program: Command): void {
           `run-proxy: proxy CA not found in ${paths.caDir} — run 'configamatron generate-ca' first`,
         );
         process.exitCode = 1;
+        speakAbnormalExit();
         return;
       }
       const secretPath = options.secret ?? paths.sdsSecret;
@@ -139,6 +145,7 @@ export function registerRunProxy(program: Command): void {
               'Pass --forward-listen <ip>, or --no-forward to disable forwarding.',
           );
           process.exitCode = 1;
+          speakAbnormalExit();
           return;
         }
         listenAddresses.push(forwardIp);
@@ -153,6 +160,7 @@ export function registerRunProxy(program: Command): void {
       } catch (err) {
         console.error(`run-proxy: failed to start the gateway forwarder: ${String(err)}`);
         process.exitCode = 1;
+        speakAbnormalExit();
         return;
       }
       console.log(
@@ -174,6 +182,7 @@ export function registerRunProxy(program: Command): void {
             `run-proxy: failed to bind DNS on ${dnsIp}:53 — ${String(err)}. Another process may hold that specific address; a wildcard 0.0.0.0:53 holder (e.g. the ICS service) is expected and does not conflict.`,
           );
           process.exitCode = 1;
+          speakAbnormalExit();
           return;
         }
         console.log(`run-proxy: DNS responder listening on ${dnsIp}:53 (all A -> ${dnsIp})`);
@@ -193,6 +202,7 @@ export function registerRunProxy(program: Command): void {
             `run-proxy: failed to bind DHCP on ${dnsIp}:67 — ${String(err)}. Guests on the Internal switch cannot get an address without this.`,
           );
           process.exitCode = 1;
+          speakAbnormalExit();
           return;
         }
         console.log(
@@ -249,6 +259,7 @@ export function registerRunProxy(program: Command): void {
         onSigint: (handler) => process.on('SIGINT', handler),
         log: (message) => console.log(message),
         error: (message) => console.error(message),
+        alertAbnormalExit: () => speakAbnormalExit(),
         now: () => Date.now(),
       };
 
