@@ -40,6 +40,18 @@ end
 /** Test-only config faults, applied as render-time mutations of envoy.yaml. */
 export type InjectFault = 'crash-config' | 'never-ready';
 
+/**
+ * A declared Host MCP server ready to be routed to: its canonical (lowercased)
+ * hostname (matches `McpServer.host` from src/mcpServers.ts) plus the loopback port
+ * it has been launched on. Port allocation and process launch are not this module's
+ * concern (see issue #60) — this is purely the shape the proxy-config builder needs
+ * to emit the Host-service destination's filter chain and cluster.
+ */
+export interface HostMcpServerDestination {
+  host: string;
+  port: number;
+}
+
 export interface BuildEnvoyConfigOptions {
   overrides?: UpstreamOverride[];
   /**
@@ -48,6 +60,8 @@ export interface BuildEnvoyConfigOptions {
    * so Envoy stays healthy but the admin probe is refused forever.
    */
   fault?: InjectFault;
+  /** Declared Host MCP servers to route to, one filter chain + cluster each. */
+  mcpServers?: HostMcpServerDestination[];
 }
 
 function sanitizeName(host: string): string {
@@ -641,6 +655,97 @@ function buildCodexEntry(entry: string, overrides: UpstreamOverride[]) {
   return { filterChain, cluster };
 }
 
+function buildMcpUpstreamCluster(clusterName: string, port: number) {
+  return {
+    name: clusterName,
+    type: 'STATIC',
+    lb_policy: 'ROUND_ROBIN',
+    load_assignment: {
+      cluster_name: clusterName,
+      endpoints: [
+        {
+          lb_endpoints: [
+            {
+              endpoint: {
+                address: { socket_address: { address: '127.0.0.1', port_value: port } },
+              },
+            },
+          ],
+        },
+      ],
+    },
+    // Deliberately no transport_socket: the upstream is a loopback host process the
+    // guest's TLS was already terminated in front of, so the hop to it is plain
+    // cleartext HTTP — no upstream TLS, matching the Host-service destination.
+  };
+}
+
+// A Host-service destination (ADR-0016): TLS-terminated to a loopback upstream in
+// cleartext, with no credential injection and no upstream TLS — distinct from every
+// other terminated chain, which either injects a credential or gates on one. The host
+// process already runs as trusted host code with its own ambient credentials, so there
+// is nothing for the proxy to inject and nothing to gate.
+function buildMcpServerEntry(server: HostMcpServerDestination) {
+  const { host, port } = server;
+  const clusterName = `cluster_mcp_${sanitizeName(host)}`;
+
+  const filterChain = {
+    filter_chain_match: { server_names: [host] },
+    transport_socket: {
+      name: 'envoy.transport_sockets.tls',
+      typed_config: {
+        '@type':
+          'type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext',
+        common_tls_context: {
+          tls_certificates: [
+            {
+              certificate_chain: { filename: '/etc/envoy/ca/leaf-cert.pem' },
+              private_key: { filename: '/etc/envoy/ca/leaf-key.pem' },
+            },
+          ],
+        },
+      },
+    },
+    filters: [
+      {
+        name: 'envoy.filters.network.http_connection_manager',
+        typed_config: {
+          '@type':
+            'type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager',
+          stat_prefix: `mcp_${sanitizeName(host)}`,
+          access_log: accessLog('mcp'),
+          route_config: {
+            name: 'local_route',
+            virtual_hosts: [
+              {
+                name: 'mcp',
+                domains: ['*'],
+                routes: [
+                  // timeout '0s': MCP tool calls and SSE-style streaming responses
+                  // should not be severed by Envoy's default 15s route timeout,
+                  // matching the claude/codex streaming chains.
+                  { match: { prefix: '/' }, route: { cluster: clusterName, timeout: '0s' } },
+                ],
+              },
+            ],
+          },
+          http_filters: [
+            {
+              name: 'envoy.filters.http.router',
+              typed_config: {
+                '@type': 'type.googleapis.com/envoy.extensions.filters.http.router.v3.Router',
+              },
+            },
+          ],
+        },
+      },
+    ],
+  };
+
+  const cluster = buildMcpUpstreamCluster(clusterName, port);
+  return { filterChain, cluster };
+}
+
 const DYNAMIC_FORWARD_PROXY_HTTP_CACHE = 'dynamic_forward_proxy_cache_config_http';
 
 function buildWildcardHttp80VirtualHost(hosts: string[]) {
@@ -742,6 +847,7 @@ export function generateEnvoyConfig(
       return cfg ? buildGithubEntry(e, overrides, cfg.sdsResource, cfg.sdsFile, cfg.gate) : null;
     })
     .filter((b): b is NonNullable<typeof b> => b !== null);
+  const mcpBuilt = (options.mcpServers ?? []).map(buildMcpServerEntry);
   const passthroughServerNames = allowlist.passthrough
     .filter((e) => e.endsWith(':443'))
     .map((e) => e.split(':')[0]);
@@ -776,6 +882,7 @@ export function generateEnvoyConfig(
             ...codexBuilt.map((b) => b.filterChain),
             ...authCandidateBuilt.map((b) => b.filterChain),
             ...githubBuilt.map((b) => b.filterChain),
+            ...mcpBuilt.map((b) => b.filterChain),
             {
               filter_chain_match: { server_names: passthroughServerNames },
               filters: [
@@ -876,6 +983,7 @@ export function generateEnvoyConfig(
         ...codexBuilt.map((b) => b.cluster),
         ...authCandidateBuilt.map((b) => b.cluster),
         ...githubBuilt.map((b) => b.cluster),
+        ...mcpBuilt.map((b) => b.cluster),
         ...http80ExactBuilt.map((b) => b.cluster),
         ...(hasWildcardHttp80 ? [buildDynamicForwardProxyHttpCluster()] : []),
         {

@@ -3,6 +3,7 @@ import {
   parseAllowlist,
   formatAllowlist,
   terminateTlsHosts,
+  leafSanHosts,
   type Allowlist,
 } from '../../src/allowlist';
 
@@ -767,6 +768,101 @@ describe('allowlist parsing, formatting & collision resolution', () => {
         ['#pragma codex authenticated', 'chatgpt.com:443', ''].join('\n'),
       );
       expect(terminateTlsHosts(parsed)).toContain('chatgpt.com');
+    });
+  });
+
+  describe('leafSanHosts', () => {
+    it('unions terminateTlsHosts with the declared Host MCP server hostnames', () => {
+      const allowlist: Allowlist = {
+        passthrough: [],
+        claudeAuthenticated: ['api.anthropic.com:443'],
+        githubAuthenticated: [],
+        codexAuthenticated: [],
+        authCandidate: [],
+        warnings: [],
+      };
+      expect(leafSanHosts(allowlist, ['filesystem.mcp.internal'])).toEqual([
+        'api.anthropic.com',
+        'filesystem.mcp.internal',
+      ]);
+    });
+
+    it('returns terminateTlsHosts unchanged when no Host MCP servers are declared', () => {
+      const allowlist: Allowlist = {
+        passthrough: [],
+        claudeAuthenticated: ['api.anthropic.com:443'],
+        githubAuthenticated: [],
+        codexAuthenticated: [],
+        authCandidate: [],
+        warnings: [],
+      };
+      expect(leafSanHosts(allowlist)).toEqual(terminateTlsHosts(allowlist));
+    });
+
+    it('dedupes a host that is somehow both TLS-terminated and MCP-declared', () => {
+      const allowlist: Allowlist = {
+        passthrough: [],
+        claudeAuthenticated: ['shared.example.com:443'],
+        githubAuthenticated: [],
+        codexAuthenticated: [],
+        authCandidate: [],
+        warnings: [],
+      };
+      expect(leafSanHosts(allowlist, ['shared.example.com'])).toEqual(['shared.example.com']);
+    });
+  });
+
+  describe('Host MCP server precedence on reload', () => {
+    it('drops a newly-introduced entry whose host equals a reserved MCP hostname, with a warning', () => {
+      const content = ['#pragma passthrough', 'mcp.internal:443', ''].join('\n');
+
+      expect(parseAllowlist(content, { reservedMcpHosts: ['mcp.internal'] })).toEqual({
+        passthrough: [],
+        claudeAuthenticated: [],
+        githubAuthenticated: [],
+        codexAuthenticated: [],
+        authCandidate: [],
+        warnings: [
+          "collision: 'mcp.internal:443' listed in passthrough; using Host MCP server 'mcp.internal'",
+        ],
+      });
+    });
+
+    it('matches a reserved MCP hostname case-insensitively', () => {
+      const content = ['#pragma claude authenticated', 'MCP.Internal:443', ''].join('\n');
+
+      const result = parseAllowlist(content, { reservedMcpHosts: ['mcp.internal'] });
+      expect(result.claudeAuthenticated).toEqual([]);
+      expect(result.warnings).toEqual([
+        "collision: 'MCP.Internal:443' listed in claudeAuthenticated; using Host MCP server 'mcp.internal'",
+      ]);
+    });
+
+    it('leaves entries that do not collide with any reserved MCP hostname untouched', () => {
+      const content = [
+        '#pragma claude authenticated',
+        'api.anthropic.com:443',
+        'mcp.internal:443',
+        '',
+      ].join('\n');
+
+      const result = parseAllowlist(content, { reservedMcpHosts: ['mcp.internal'] });
+      expect(result.claudeAuthenticated).toEqual(['api.anthropic.com:443']);
+      expect(result.warnings).toEqual([
+        "collision: 'mcp.internal:443' listed in claudeAuthenticated; using Host MCP server 'mcp.internal'",
+      ]);
+    });
+
+    it('does not warn or drop anything when no reserved MCP hostnames are given', () => {
+      const content = ['#pragma passthrough', 'mcp.internal:443', ''].join('\n');
+      expect(parseAllowlist(content)).toEqual({
+        passthrough: ['mcp.internal:443'],
+        claudeAuthenticated: [],
+        githubAuthenticated: [],
+        codexAuthenticated: [],
+        authCandidate: [],
+        warnings: [],
+      });
     });
   });
 });

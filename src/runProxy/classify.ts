@@ -2,7 +2,13 @@ import type { AccessLine } from './parseLine';
 import { CAND_HEADER_NAMES } from './parseLine';
 
 export type Tag =
-  'ALLOW CRED' | 'ALLOW PASS' | 'ALLOW HTTP' | 'BLOCK TLS' | 'BLOCK HTTP' | 'AUTH CANDIDATE';
+  | 'ALLOW CRED'
+  | 'ALLOW PASS'
+  | 'ALLOW HTTP'
+  | 'ALLOW MCP'
+  | 'BLOCK TLS'
+  | 'BLOCK HTTP'
+  | 'AUTH CANDIDATE';
 
 export interface Entry {
   time: string;
@@ -42,6 +48,9 @@ export function classify(line: AccessLine): Entry[] {
       break;
     case 'pass':
       tag = 'ALLOW PASS';
+      break;
+    case 'mcp':
+      tag = 'ALLOW MCP';
       break;
     case 'deny443':
       tag = 'BLOCK TLS';

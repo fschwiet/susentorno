@@ -1,4 +1,4 @@
-export type PathId = 'term' | 'pass' | 'http' | 'deny443' | 'cand';
+export type PathId = 'term' | 'pass' | 'http' | 'mcp' | 'deny443' | 'cand';
 
 /** Header names carried by a `cand` line, in field order; also their display names. */
 export const CAND_HEADER_NAMES = [
@@ -27,7 +27,7 @@ export interface AccessLine {
   authHeaders?: string[];
 }
 
-const PATH_IDS = new Set<PathId>(['term', 'pass', 'http', 'deny443', 'cand']);
+const PATH_IDS = new Set<PathId>(['term', 'pass', 'http', 'mcp', 'deny443', 'cand']);
 
 export function parseLine(raw: string): AccessLine | null {
   const idx = raw.indexOf('CFGM|');
