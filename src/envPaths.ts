@@ -22,6 +22,7 @@ export interface EnvPaths {
   homeJqTransforms: string;
   preScripts: string;
   postScripts: string;
+  mcpServersYaml: string;
   gitignore: string;
   mcpServers: string;
   proxy: string;
@@ -66,6 +67,7 @@ export function envPaths(cwd: string): EnvPaths {
     homeJqTransforms: join(root, 'home-jq-transforms'),
     preScripts: join(root, 'pre-scripts'),
     postScripts: join(root, 'post-scripts'),
+    mcpServersYaml: join(root, 'mcp-servers.yaml'),
     gitignore: join(root, '.gitignore'),
     mcpServers: join(root, 'mcp-servers.yaml'),
     proxy,

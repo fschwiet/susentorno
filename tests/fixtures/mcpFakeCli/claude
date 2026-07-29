@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Fake `claude` CLI for cli-tier verification of the generated MCP registration
+# step. Logs every invocation to $MCP_FAKE_LOG and returns configurable exit
+# codes for `mcp remove` / `mcp add` via $MCP_FAKE_REMOVE_EXIT / $MCP_FAKE_ADD_EXIT.
+name=$(basename "$0")
+echo "$name $*" >> "$MCP_FAKE_LOG"
+if [ "$1" = "mcp" ] && [ "$2" = "remove" ]; then
+  exit "${MCP_FAKE_REMOVE_EXIT:-1}"
+fi
+if [ "$1" = "mcp" ] && [ "$2" = "add" ]; then
+  exit "${MCP_FAKE_ADD_EXIT:-0}"
+fi
+exit 0

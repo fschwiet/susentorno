@@ -4,6 +4,7 @@ import { requireEnvPathsOrExit } from '../envPaths';
 import { previewTransforms } from '../homeJqTransforms';
 import { planAllPhases, executePlans, type PhasePlan } from '../weaveShares';
 import { templatesDir } from '../templates';
+import { loadDeclaredMcpServers } from '../mcpRegistrationStep';
 
 interface UpdateSharesOptions {
   dryRun: boolean;
@@ -60,7 +61,8 @@ export function registerUpdateShares(program: Command): void {
 
       let plans: PhasePlan[];
       try {
-        plans = planAllPhases({ templatesDir: templatesDir(), paths });
+        const mcpServers = loadDeclaredMcpServers(paths);
+        plans = planAllPhases({ templatesDir: templatesDir(), paths, mcpServers });
       } catch (error) {
         console.error(`update-shares: ${(error as Error).message}`);
         process.exitCode = 1;
