@@ -19,6 +19,7 @@ describe('environment ignore rules', () => {
         '!/home-jq-transforms/**',
         '!/proxy/',
         '!/proxy/allowlist.txt',
+        '!/mcp-servers.yaml',
       ]) {
         expect(gitignore, line).toContain(line);
       }

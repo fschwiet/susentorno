@@ -79,6 +79,43 @@ describe('environment initialization', () => {
     });
   });
 
+  describe('mcp-servers.yaml stub', () => {
+    function writeAndReadStub(): string {
+      initEnvironment(options());
+      return readFileSync(join(dir, ENV_DIR_NAME, 'mcp-servers.yaml'), 'utf8');
+    }
+
+    it('writes a fully-commented, empty mcp-servers.yaml documenting every field', () => {
+      expect(existsSync(join(dir, ENV_DIR_NAME, 'mcp-servers.yaml'))).toBe(false);
+      const stub = writeAndReadStub();
+      expect(existsSync(join(dir, ENV_DIR_NAME, 'mcp-servers.yaml'))).toBe(true);
+
+      // Every non-blank line is a comment: the stub declares no live entries.
+      for (const line of stub.split('\n')) {
+        if (line.trim() === '') continue;
+        expect(line.trim().startsWith('#'), line).toBe(true);
+      }
+
+      for (const field of ['name', 'url', 'command', '{ip}', '{port}', 'workingDir']) {
+        expect(stub, field).toContain(field);
+      }
+    });
+
+    it('recommends .internal hostnames and warns that a public hostname is shadowed', () => {
+      const stub = writeAndReadStub();
+      expect(stub).toContain('.internal');
+      expect(stub.toLowerCase()).toContain('shadow');
+    });
+
+    it('documents the trust model', () => {
+      const stub = writeAndReadStub();
+      expect(stub).toContain('trusted host code');
+      expect(stub).toContain("run-proxy's ambient host identity");
+      expect(stub.toLowerCase()).toContain('no per-guest authentication');
+      expect(stub).toContain('No credential is injected');
+    });
+  });
+
   describe('sanitized credentials', () => {
     it('writes the sanitized placeholder credential into both shared folders', () => {
       initEnvironment(options());

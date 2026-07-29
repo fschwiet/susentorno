@@ -19,6 +19,58 @@ Your own VM setup scripts go here. Name runnable steps \`NN-name.sh\` or
 resources relative to the script, then run \`configamatron update-shares\` after editing.
 `;
 
+const MCP_SERVERS_STUB = `# mcp-servers.yaml — Host-run MCP servers reachable from guests through the proxy.
+#
+# Empty by default: run-proxy launches nothing and Envoy routes nothing extra
+# until you add entries here. See docs/adr/0016-host-run-mcp-servers.md for the
+# full design rationale.
+#
+# Each entry is a mapping with these fields:
+#
+#   name        Required. A short identifier for the server. Must be unique
+#               across all entries.
+#
+#   url         Required. The https:// URL guests use to reach this server,
+#               e.g. https://filesystem.mcp.internal/mcp. The hostname drives
+#               SNI routing and the certificate SAN, and must be unique across
+#               all entries and not collide with an allowlist entry.
+#
+#               Recommended: invent a hostname under .internal for this
+#               purpose (e.g. filesystem.mcp.internal).
+#               WARNING: choosing a real public hostname (e.g. github.com)
+#               will shadow that name inside the guest — every guest request
+#               to that hostname is routed to this MCP server instead of the
+#               real internet host.
+#
+#   command     Required. The shell command Configamatron uses to launch the
+#               server on the host. Must contain both the {ip} and {port}
+#               placeholders; Configamatron substitutes {ip} with 127.0.0.1
+#               and {port} with a free loopback port before launch:
+#                 command: "my-mcp-server --bind {ip} --port {port}"
+#
+#   workingDir  Optional. Working directory the command runs in. Relative
+#               paths resolve against this environment's root. Must resolve
+#               to an existing directory.
+#
+# Trust model (read before adding a server):
+#   A host MCP server declared here is trusted host code: it runs with
+#   run-proxy's ambient host identity, environment, and filesystem
+#   permissions, the same as any other process you would launch on the host
+#   yourself. The tools it exposes become callable by the untrusted guest.
+#   Any guest that can reach the running proxy over the internal switch can
+#   invoke it, selected by SNI (hostname), with no per-guest authentication.
+#   No credential is injected into the server by the proxy; whatever it
+#   needs, it draws from the host environment it already runs in. Only add
+#   a server here if you are comfortable with any guest calling any of its
+#   exposed tools.
+#
+# Example (uncomment and adapt):
+# - name: filesystem
+#   url: https://filesystem.mcp.internal/mcp
+#   command: "my-mcp-server --bind {ip} --port {port}"
+#   workingDir: .
+`;
+
 export interface InitOptions {
   cwd: string;
   credentialsPath: string;
@@ -101,5 +153,6 @@ export function initEnvironment(options: InitOptions): void {
     cpSync(templateTransforms, target.homeJqTransforms, { recursive: true });
   }
   copyFileSync(join(options.templatesDir, 'configamatron.gitignore'), paths.gitignore);
+  writeFileSync(paths.mcpServers, MCP_SERVERS_STUB);
   executePlans(plans);
 }
