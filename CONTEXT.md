@@ -36,7 +36,9 @@ Configamatron creates development environments in which coding agents run inside
 
 **Placeholder credential**: A deliberately unusable value stored in a guest that preserves a tool's signed-in configuration shape and signals eligibility for host-credential injection. _Avoid_: Fake credential, guest credential
 
-**Credential channel**: The association between one external service's host credential, placeholder credential, policy destinations, and refresh lifecycle. _Avoid_: Auth type, secret file
+**Host credential channel**: The association between one external service's host credential, placeholder credential, policy destinations, and refresh lifecycle. _Avoid_: Auth type, secret file, credential channel
+
+**Placeholder mount**: A location in the guest environment where a host credential channel's placeholder credential is deposited so a specific tool discovers it. One channel can have more than one placeholder mount (e.g., the codex channel's placeholder can be mounted at both the Codex CLI's `~/.codex/auth.json` and the Pi Coding Agent's `~/.pi/agent/auth.json`); a mount may also occupy only part of a shared, multi-provider file rather than the entire file. _Avoid_: Guest destination, auth file
 
 ## Provisioning
 
