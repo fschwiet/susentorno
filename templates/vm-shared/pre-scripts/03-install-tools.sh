@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Pi Coding Agent
 pnpm runtime set node latest -g
 
 curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh
 
 curl -fsSL https://claude.ai/install.sh | bash
+
+pnpm add -g --ignore-scripts @earendil-works/pi-coding-agent
 
 if ! snap list code > /dev/null 2>&1; then
   sudo snap install code --classic
