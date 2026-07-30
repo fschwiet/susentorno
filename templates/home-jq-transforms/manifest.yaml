@@ -7,3 +7,6 @@
 - transform: claude-onboarding.jq
   linux: ~/.claude.json
   windows: ~/.claude.json
+- transform: pi-openai-codex-auth.jq
+  linux: ~/.pi/agent/auth.json
+  windows: ~/.pi/agent/auth.json
