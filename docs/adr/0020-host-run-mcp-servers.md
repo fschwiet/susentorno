@@ -9,6 +9,8 @@ Configamatron can launch MCP (Model Context Protocol) servers on the host and ex
 - **Inject credentials at the proxy, as for external services** ([[credential-injection-at-proxy]]). Not applicable: the server already runs on the trusted host with host credentials, so there is nothing to inject and the guest holds nothing regardless.
 - **Require a shared bearer token (per-server or per-environment) at the MCP HTTP layer, injected the same way as other credentialed destinations.** Rejected: every other proxied destination's trust boundary is already "on the internal switch," which today only ever has the host and one guest on it ([[transparent-interception-and-network-isolation-boundary]]); a second auth layer defends against a threat (another peer on the switch) that doesn't exist yet, at the cost of a secret to generate, store, and thread through guest CLI registration. Revisit if a future environment shares one internal switch across multiple guests.
 
+No auth at the MCP HTTP layer means the trust granted is to **the whole guest**, not just its coding agent: any process running inside the guest that can complete a TLS handshake to a declared MCP hostname gets that server's full tool access, the same breadth of trust the guest already has for reaching any other terminated or passthrough destination.
+
 ## Consequences
 
 - A new destination kind in the proxy: TLS-terminated to a loopback upstream in **cleartext**, with **no** credential injection and no upstream TLS — distinct from every existing terminated chain (Claude/Codex/GitHub all inject credentials; auth-candidate observes but doesn't forward). It gets its own access-log pathId (`mcp` → friendly tag `ALLOW MCP`), per the existing `CFGM|<path-id>|...` contract ([[envoy-access-log-contract]]).
