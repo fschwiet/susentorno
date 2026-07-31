@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { parse } from 'yaml';
+import type { Allowlist } from './allowlist';
 
 export interface McpServerConfig {
   name: string;
@@ -88,4 +89,47 @@ export function parseMcpServers(content: string): McpServerConfig[] {
 export function readMcpServers(path: string): McpServerConfig[] {
   if (!existsSync(path)) return [];
   return parseMcpServers(readFileSync(path, 'utf8'));
+}
+
+const ALLOWLIST_SECTIONS = [
+  ['passthrough', 'passthrough'],
+  ['claudeAuthenticated', 'claudeAuthenticated'],
+  ['githubAuthenticated', 'githubAuthenticated'],
+  ['codexAuthenticated', 'codexAuthenticated'],
+  ['authCandidate', 'authCandidate'],
+] as const;
+
+/**
+ * MCP always wins a hostname collision with allowlist.txt: the colliding entry is
+ * dropped from whichever section it was in, with a warning, so Envoy never sees two
+ * filter chains matching one SNI. Resolved separately from parseAllowlist's own
+ * intra-allowlist collision priority, since mcp-servers.yaml is a different file.
+ */
+export function resolveMcpAllowlistCollisions(
+  allowlist: Allowlist,
+  servers: McpServerConfig[],
+): Allowlist {
+  const resolved: Allowlist = {
+    passthrough: [...allowlist.passthrough],
+    claudeAuthenticated: [...allowlist.claudeAuthenticated],
+    githubAuthenticated: [...allowlist.githubAuthenticated],
+    codexAuthenticated: [...allowlist.codexAuthenticated],
+    authCandidate: [...allowlist.authCandidate],
+    warnings: [...allowlist.warnings],
+  };
+
+  for (const server of servers) {
+    const entry = `${server.hostname}:443`;
+    for (const [key, label] of ALLOWLIST_SECTIONS) {
+      const list = resolved[key];
+      const idx = list.indexOf(entry);
+      if (idx === -1) continue;
+      list.splice(idx, 1);
+      resolved.warnings.push(
+        `collision: '${entry}' listed in ${label} and mcp-servers.yaml; using mcp-servers.yaml`,
+      );
+    }
+  }
+
+  return resolved;
 }

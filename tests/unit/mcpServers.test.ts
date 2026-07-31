@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseMcpServers, readMcpServers } from '../../src/mcpServers';
+import { parseMcpServers, readMcpServers, resolveMcpAllowlistCollisions } from '../../src/mcpServers';
+import type { Allowlist } from '../../src/allowlist';
 
 describe('mcp-servers.yaml parsing & validation', () => {
   it('parses a valid file with all fields', () => {
@@ -110,5 +111,55 @@ describe('readMcpServers', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('resolveMcpAllowlistCollisions', () => {
+  const baseAllowlist: Allowlist = {
+    passthrough: [],
+    claudeAuthenticated: [],
+    githubAuthenticated: [],
+    codexAuthenticated: [],
+    authCandidate: [],
+    warnings: [],
+  };
+
+  it('removes a passthrough entry that collides with an MCP hostname and warns', () => {
+    const allowlist: Allowlist = { ...baseAllowlist, passthrough: ['filesystem.internal:443', 'other.com:443'] };
+    const servers = [{ name: 'fs', hostname: 'filesystem.internal', command: 'x' }];
+
+    const resolved = resolveMcpAllowlistCollisions(allowlist, servers);
+
+    expect(resolved.passthrough).toEqual(['other.com:443']);
+    expect(resolved.warnings).toEqual([
+      "collision: 'filesystem.internal:443' listed in passthrough and mcp-servers.yaml; using mcp-servers.yaml",
+    ]);
+  });
+
+  it('checks every section, not just passthrough', () => {
+    const allowlist: Allowlist = { ...baseAllowlist, claudeAuthenticated: ['fs.internal:443'] };
+    const servers = [{ name: 'fs', hostname: 'fs.internal', command: 'x' }];
+
+    const resolved = resolveMcpAllowlistCollisions(allowlist, servers);
+
+    expect(resolved.claudeAuthenticated).toEqual([]);
+    expect(resolved.warnings).toEqual([
+      "collision: 'fs.internal:443' listed in claudeAuthenticated and mcp-servers.yaml; using mcp-servers.yaml",
+    ]);
+  });
+
+  it('does not modify or warn when there is no collision', () => {
+    const allowlist: Allowlist = { ...baseAllowlist, passthrough: ['unrelated.com:443'] };
+    const servers = [{ name: 'fs', hostname: 'fs.internal', command: 'x' }];
+
+    const resolved = resolveMcpAllowlistCollisions(allowlist, servers);
+
+    expect(resolved).toEqual(allowlist);
+  });
+
+  it('preserves pre-existing warnings alongside any new collision warnings', () => {
+    const allowlist: Allowlist = { ...baseAllowlist, warnings: ['pre-existing warning'] };
+    const resolved = resolveMcpAllowlistCollisions(allowlist, []);
+    expect(resolved.warnings).toEqual(['pre-existing warning']);
   });
 });
