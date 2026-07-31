@@ -7,13 +7,17 @@ SIGTERM shutdown.
 **Architecture:** A small injectable-deps module (`src/runProxy/abnormalExitAlert.ts`) owns the
 guarded "speak at most once" alert and the detached, unref'd PowerShell/SAPI spawn. It is wired in
 at exactly one place — the `run-proxy` command's `.action()` in `src/commands/runProxy.ts` — via a
-top-level try/finally plus `process.on('uncaughtException')`/`('unhandledRejection')` handlers,
-so every current and future failure path is covered without touching each of the command's early
-exit sites individually. `runProxyLoop` gains a second clean-shutdown signal (SIGTERM, alongside
-the existing SIGINT) so both resolve with exit code 0 and never trigger the alert. The relaunch
-mechanism (`relaunchViaDedicatedNode.ts`) gains a `childRan` field so the top-level wrapper can
-tell "the child ran and already had its own chance to speak" apart from "the relaunch mechanism
-itself failed and no child ever started" — the latter must still speak.
+top-level try/finally plus `process.on('uncaughtException')`/`('unhandledRejection')` handlers —
+the latter two explicitly force the process to exit after speaking, since registering a listener
+for them suppresses Node's normal fatal-crash behavior and would otherwise leave `run-proxy`
+hanging on open handles instead of actually exiting — so every current and future failure path is
+covered without touching each of the command's early exit sites individually. `runProxyLoop` gains
+a second clean-shutdown signal (SIGTERM, alongside the existing SIGINT) so both resolve with exit
+code 0 and never trigger the alert. The relaunch mechanism (`relaunchViaDedicatedNode.ts`) gains a
+`childMayHaveAlerted` field so the top-level wrapper can tell "the child ran far enough to have had
+its own chance to speak" apart from "the relaunch mechanism itself failed — spawn never succeeded,
+or the child was killed by a signal before it could run its own handlers" — the latter must still
+speak, even though a signal-terminated child did briefly exist as a process.
 
 **Tech Stack:** TypeScript (ESM, `tsup` build), Vitest for unit tests, `execa` for process
 spawning, Windows `powershell.exe` + `SAPI.SpVoice` COM object for speech.
@@ -49,22 +53,22 @@ spawning, Windows `powershell.exe` + `SAPI.SpVoice` COM object for speech.
   process access" factory that itself stays untested.
 - **Create** `tests/unit/abnormalExitAlert.test.ts` — unit tests for the guard, the command
   builder, and (with `execa` mocked) the real spawn's shape (detached, unref'd, never awaited).
-- **Modify** `src/runProxy/relaunchViaDedicatedNode.ts` — add `childRan` to `RelaunchResult` and a
-  `relaunchFailedWithNoChild` predicate so the caller can tell the two `relaunched: true` cases
-  apart.
-- **Modify** `tests/unit/runtimeRelaunch.test.ts` — update the three `relaunched: true` assertions
+- **Modify** `src/runProxy/relaunchViaDedicatedNode.ts` — add `childMayHaveAlerted` to
+  `RelaunchResult` and a `relaunchFailedWithNoChild` predicate so the caller can tell the two
+  `relaunched: true` cases apart.
+- **Modify** `tests/unit/runtimeRelaunch.test.ts` — update the four `relaunched: true` assertions
   for the new field; add tests for `relaunchFailedWithNoChild`.
 - **Modify** `src/runProxy/runProxyLoop.ts` — add `onSigterm` to `RunProxyDeps` and register it
   alongside `onSigint` as a second, equally-clean shutdown signal (`shutdown(0)`).
 - **Modify** `tests/unit/proxyStackSupervisor.test.ts` — extend the harness with `fireSigterm`;
   add a SIGTERM shutdown test mirroring the existing SIGINT one.
-- **Modify** `src/commands/runProxy.ts` — wire the real `onSigterm` dep, install the alert +
-  process-level exception handlers, and make the relaunch branch and the rest of the action trigger
-  the alert exactly when required.
+- **Modify** `src/commands/runProxy.ts` — wire the real `onSigterm` dep (added in Task 4), install
+  the alert + process-level exception handlers, and make the relaunch branch and the rest of the
+  action trigger the alert exactly when required.
 
 ---
 
-### Task 1: Distinguish "child ran" from "relaunch mechanism failed" in `RelaunchResult`
+### Task 1: Distinguish "child could have alerted" from "relaunch mechanism failed" in `RelaunchResult`
 
 **Files:**
 
@@ -73,20 +77,25 @@ spawning, Windows `powershell.exe` + `SAPI.SpVoice` COM object for speech.
 
 **Interfaces:**
 
-- Produces: `RelaunchResult` gains a `childRan: boolean` field on the `relaunched: true` branch;
-  new `relaunchFailedWithNoChild(result: RelaunchResult): boolean` — later tasks use this exported
-  predicate to decide whether the top-level alert must fire for a relaunch outcome.
+- Produces: `RelaunchResult` gains a `childMayHaveAlerted: boolean` field on the `relaunched: true`
+  branch; new `relaunchFailedWithNoChild(result: RelaunchResult): boolean` — later tasks use this
+  exported predicate to decide whether the top-level alert must fire for a relaunch outcome.
 
-Today `relaunchIfNeeded` returns `{ relaunched: true, exitCode }` for *both* "the dedicated child
-process actually ran and exited" and "the child was signal-killed or never spawned at all" — the
-ADR's silence rule ("stay silent whenever `relaunchIfNeeded` reports a child actually ran") can't
-be implemented correctly against the current 2-branch union, because both cases report
-`relaunched: true`. Only the first case had a chance to speak for itself; the second must still
-trigger the top-level alert.
+Today `relaunchIfNeeded` returns `{ relaunched: true, exitCode }` for *three* different outcomes:
+the dedicated child process ran to completion and exited (any exit code, including nonzero — a
+running child had every opportunity to run its own top-level alert wrapper, once this same plan
+lands in the child's own code path); the child was killed by a signal before it could run any of
+its own JS-level exit handling; or the child never spawned at all. The ADR's silence rule ("stay
+silent whenever `relaunchIfNeeded` reports a child actually ran") only makes sense for the first
+case — a signal-terminated child never got the chance to speak for itself despite having briefly
+existed as a process, so it is grouped with "never spawned," not with "exited normally." The field
+is named `childMayHaveAlerted` rather than `childRan` specifically to capture this: it answers "did
+the child get far enough into its own JS-level exit path to have had a chance to trigger its own
+alert," not "did a child process technically start."
 
 - [ ] **Step 1: Write the failing tests for the new field**
 
-Edit `tests/unit/runtimeRelaunch.test.ts`. Update the three existing assertions in the
+Edit `tests/unit/runtimeRelaunch.test.ts`. Update the four existing assertions in the
 `'relaunch decision'` describe block that check `relaunched: true` results, and add the new
 predicate tests at the end of that block:
 
@@ -104,19 +113,19 @@ predicate tests at the end of that block:
         cwd: 'C:\\project',
         env: { FOO: 'bar' },
       });
-      expect(result).toEqual({ relaunched: true, childRan: true, exitCode: 0 });
+      expect(result).toEqual({ relaunched: true, childMayHaveAlerted: true, exitCode: 0 });
     });
 
     it('propagates a non-zero exit code', async () => {
       const deps = makeDeps({ spawn: vi.fn(async () => ({ exitCode: 7 })) });
       const result = await relaunchIfNeeded(deps);
-      expect(result).toEqual({ relaunched: true, childRan: true, exitCode: 7 });
+      expect(result).toEqual({ relaunched: true, childMayHaveAlerted: true, exitCode: 7 });
     });
 
     it('falls back to a fixed exit code when the child was terminated by signal', async () => {
       const deps = makeDeps({ spawn: vi.fn(async () => ({ signal: 'SIGTERM' })) });
       const result = await relaunchIfNeeded(deps);
-      expect(result).toEqual({ relaunched: true, childRan: false, exitCode: 1 });
+      expect(result).toEqual({ relaunched: true, childMayHaveAlerted: false, exitCode: 1 });
       expect(deps.error).toHaveBeenCalledWith(
         expect.stringContaining('terminated by signal SIGTERM'),
       );
@@ -125,7 +134,7 @@ predicate tests at the end of that block:
     it('falls back to a fixed exit code when spawn could not launch the process at all', async () => {
       const deps = makeDeps({ spawn: vi.fn(async () => ({})) });
       const result = await relaunchIfNeeded(deps);
-      expect(result).toEqual({ relaunched: true, childRan: false, exitCode: 1 });
+      expect(result).toEqual({ relaunched: true, childMayHaveAlerted: false, exitCode: 1 });
       expect(deps.error).toHaveBeenCalledWith(expect.stringContaining('failed to launch'));
     });
   });
@@ -135,16 +144,16 @@ predicate tests at the end of that block:
       expect(relaunchFailedWithNoChild({ relaunched: false })).toBe(false);
     });
 
-    it('is false when a child actually ran', () => {
-      expect(relaunchFailedWithNoChild({ relaunched: true, childRan: true, exitCode: 0 })).toBe(
-        false,
-      );
+    it('is false when the child ran far enough to have had a chance to alert', () => {
+      expect(
+        relaunchFailedWithNoChild({ relaunched: true, childMayHaveAlerted: true, exitCode: 0 }),
+      ).toBe(false);
     });
 
-    it('is true when the relaunch mechanism failed before any child ran', () => {
-      expect(relaunchFailedWithNoChild({ relaunched: true, childRan: false, exitCode: 1 })).toBe(
-        true,
-      );
+    it('is true when the child was signal-killed, or the relaunch mechanism failed before any child ran — both report childMayHaveAlerted: false', () => {
+      expect(
+        relaunchFailedWithNoChild({ relaunched: true, childMayHaveAlerted: false, exitCode: 1 }),
+      ).toBe(true);
     });
   });
 ```
@@ -165,7 +174,7 @@ import {
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `pnpm exec vitest run tests/unit/runtimeRelaunch.test.ts`
-Expected: FAIL — `childRan` is missing from the actual results, and
+Expected: FAIL — `childMayHaveAlerted` is missing from the actual results, and
 `relaunchFailedWithNoChild` is not exported (TypeScript/import error).
 
 - [ ] **Step 3: Implement the field and predicate**
@@ -174,16 +183,18 @@ Edit `src/runProxy/relaunchViaDedicatedNode.ts`. Replace the `RelaunchResult` ty
 
 ```ts
 export type RelaunchResult =
-  | { relaunched: true; childRan: true; exitCode: number }
-  | { relaunched: true; childRan: false; exitCode: number }
+  | { relaunched: true; childMayHaveAlerted: true; exitCode: number }
+  | { relaunched: true; childMayHaveAlerted: false; exitCode: number }
   | { relaunched: false };
 
 /**
- * True only when a relaunch was attempted but no child process ever ran — the child
- * itself had no chance to speak for its own failure, so the caller must.
+ * True only when a relaunch was attempted but the child never got far enough to have run
+ * its own JS-level exit handling — either it was killed by a signal before it could, or it
+ * never spawned at all. In both cases nothing else could have spoken the alert, so the
+ * caller (the relaunch parent) must.
  */
 export function relaunchFailedWithNoChild(result: RelaunchResult): boolean {
-  return result.relaunched && !result.childRan;
+  return result.relaunched && !result.childMayHaveAlerted;
 }
 ```
 
@@ -191,14 +202,14 @@ Replace the tail of `relaunchIfNeeded` (lines 121-129):
 
 ```ts
   if (result.exitCode !== undefined) {
-    return { relaunched: true, childRan: true, exitCode: result.exitCode };
+    return { relaunched: true, childMayHaveAlerted: true, exitCode: result.exitCode };
   }
   if (result.signal !== undefined) {
     deps.error(`run-proxy: dedicated node.exe copy was terminated by signal ${result.signal}`);
   } else {
     deps.error('run-proxy: failed to launch the dedicated node.exe copy');
   }
-  return { relaunched: true, childRan: false, exitCode: FALLBACK_EXIT_CODE };
+  return { relaunched: true, childMayHaveAlerted: false, exitCode: FALLBACK_EXIT_CODE };
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**
@@ -506,13 +517,15 @@ git commit -m "run-proxy: spawn the detached SAPI voice alert via powershell.exe
 **Files:**
 
 - Modify: `src/runProxy/runProxyLoop.ts:21-54` (interface), `:70,252-257,284` (shutdown wiring)
+- Modify: `src/commands/runProxy.ts:249` (real `onSigterm` dep, so this task's own typecheck stays
+  green — see Step 5)
 - Test: `tests/unit/proxyStackSupervisor.test.ts`
 
 **Interfaces:**
 
 - Consumes: none new.
-- Produces: `RunProxyDeps.onSigterm: (handler: () => void) => void` — Task 5's real deps object in
-  `src/commands/runProxy.ts` must supply this alongside the existing `onSigint`.
+- Produces: `RunProxyDeps.onSigterm: (handler: () => void) => void` — wired to the real
+  `process.on('SIGTERM', ...)` in this same task, so no other task depends on it.
 
 `runProxyLoop` already resolves with exit code `0` for SIGINT via `onSigintOnce`/`shutdown(0)`.
 SIGTERM must resolve the same way — same log line shape, same "container left running" behavior —
@@ -638,18 +651,27 @@ Register both signals where `deps.onSigint(onSigintOnce)` was called (line 284):
 Run: `pnpm exec vitest run tests/unit/proxyStackSupervisor.test.ts`
 Expected: PASS (all tests in the file, including the two new ones).
 
-- [ ] **Step 5: Typecheck**
+- [ ] **Step 5: Wire the real `onSigterm` dep**
+
+`RunProxyDeps` is now missing a required field wherever it's constructed — the only real-deps
+construction site is `src/commands/runProxy.ts`. Rather than leave the tree in a non-typechecking
+state until Task 5, wire the trivial real dep now. In the `deps: RunProxyDeps` object literal in
+`src/commands/runProxy.ts` (around line 249), add `onSigterm` right after `onSigint`:
+
+```ts
+        onSigint: (handler) => process.on('SIGINT', handler),
+        onSigterm: (handler) => process.on('SIGTERM', handler),
+```
+
+- [ ] **Step 6: Typecheck**
 
 Run: `pnpm typecheck`
-Expected: FAIL at this point — `src/commands/runProxy.ts` builds a `RunProxyDeps` object that is
-now missing the required `onSigterm` field. This is expected; Task 5 supplies it. Confirm the
-*only* error reported is the missing `onSigterm` property in `src/commands/runProxy.ts`, to make
-sure Step 3 didn't introduce anything else.
+Expected: no errors.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add src/runProxy/runProxyLoop.ts tests/unit/proxyStackSupervisor.test.ts
+git add src/runProxy/runProxyLoop.ts tests/unit/proxyStackSupervisor.test.ts src/commands/runProxy.ts
 git commit -m "run-proxy: treat SIGTERM as a second clean, silent shutdown signal"
 ```
 
@@ -665,7 +687,8 @@ git commit -m "run-proxy: treat SIGTERM as a second clean, silent shutdown signa
 
 - Consumes: `createRealAbnormalExitAlert` and `AbnormalExitAlert` from
   `../runProxy/abnormalExitAlert` (Tasks 2-3); `relaunchFailedWithNoChild` from
-  `../runProxy/relaunchViaDedicatedNode` (Task 1); `RunProxyDeps.onSigterm` (Task 4).
+  `../runProxy/relaunchViaDedicatedNode` (Task 1). (`RunProxyDeps.onSigterm` was already wired to
+  its real dep in Task 4, Step 5 — nothing left to do for it here.)
 - Produces: nothing new for other tasks — this is the outermost wiring layer.
 
 This task has no new automated test. The pure decision logic it uses
@@ -764,48 +787,46 @@ Add this new function above `registerRunProxy` (after the `collectOverride` func
  * `uncaughtException`/`unhandledRejection` are the catch-all beneath every other guard: any
  * future failure path that doesn't set process.exitCode itself, or that throws where nothing
  * local catches it, still speaks the alert instead of failing silently.
+ *
+ * Registering either listener suppresses Node's default fatal-crash behavior (immediate
+ * process termination) — without an explicit exit here, a process with open handles (docker
+ * children, file watchers, the gateway's listening sockets) would announce failure and then
+ * hang instead of actually exiting, which is strictly worse than today's unhandled behavior.
+ * `alert.trigger()` fires its detached, unref'd spawn synchronously and returns immediately
+ * (see `speakAlert` in `abnormalExitAlert.ts`), so it's safe to call `process.exit()` right
+ * after it — the alert's own child process is unaffected by this process exiting.
  */
 function installAbnormalExitHandlers(alert: AbnormalExitAlert): void {
   process.on('uncaughtException', (err) => {
     console.error(`run-proxy: uncaught exception: ${String(err)}`);
-    process.exitCode = 1;
     alert.trigger();
+    process.exit(1);
   });
   process.on('unhandledRejection', (reason) => {
     console.error(`run-proxy: unhandled rejection: ${String(reason)}`);
-    process.exitCode = 1;
     alert.trigger();
+    process.exit(1);
   });
 }
 ```
 
-- [ ] **Step 5: Add the real `onSigterm` dep**
-
-In the `deps: RunProxyDeps` object literal (around line 249), add `onSigterm` right after
-`onSigint`:
-
-```ts
-        onSigint: (handler) => process.on('SIGINT', handler),
-        onSigterm: (handler) => process.on('SIGTERM', handler),
-```
-
-- [ ] **Step 6: Run the existing command test and typecheck**
+- [ ] **Step 5: Run the existing command test and typecheck**
 
 Run: `pnpm exec vitest run tests/unit/commands/runProxy.test.ts && pnpm typecheck`
-Expected: PASS — the option-surface test still passes, and the `RunProxyDeps` object now satisfies
-the interface (no missing `onSigterm`, resolving the expected Task 4 typecheck failure).
+Expected: PASS — the option-surface test still passes, and `src/commands/runProxy.ts` typechecks
+cleanly against the updated `RelaunchResult` and `RunProxyDeps` types.
 
-- [ ] **Step 7: Run the full unit suite**
+- [ ] **Step 6: Run the full unit suite**
 
 Run: `pnpm test:unit`
 Expected: PASS — all unit tests across the project, including every test added in Tasks 1-4.
 
-- [ ] **Step 8: Lint and format**
+- [ ] **Step 7: Lint and format**
 
 Run: `pnpm lint && pnpm format:check`
 Expected: no errors. If `format:check` fails, run `pnpm format` and re-check.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add src/commands/runProxy.ts
@@ -842,31 +863,51 @@ Run: `node dist/cli.js run-proxy` in a working environment, wait for
 Expected: the console prints the SIGINT log line, the process exits 0, the container is left
 running (per the command's own description), and no speech is heard.
 
-- [ ] **Step 4: Confirm a SIGTERM sent by another Node process stays silent**
+- [ ] **Step 4: Confirm SIGTERM's code path (limited to what Windows can actually deliver)**
 
-Windows has no native signals; `taskkill`/`Stop-Process` do not trigger Node's `'SIGTERM'` event on
-Windows — only `process.kill(pid, 'SIGTERM')` from another Node/libuv process does. Start
-`node dist/cli.js run-proxy` in one terminal, note its PID from Task Manager or
-`Get-Process node | Select-Object Id,StartTime`, then in a second terminal run:
-
-`node -e "process.kill(<PID>, 'SIGTERM')"`
-
-Expected: same as Step 3 — SIGTERM log line, exit 0, no speech.
+Windows has no real inter-process signal delivery. `taskkill` and `Stop-Process` call
+`TerminateProcess`, which kills the target unconditionally without ever invoking its registered
+`process.on('SIGTERM', ...)` listener — they cannot exercise this code path at all. Per Node's own
+platform notes, even `process.kill(pid, 'SIGTERM')` targeting a *different* process on Windows
+causes unconditional termination rather than dispatching that process's listener; only self-signals
+(`process.kill(process.pid, 'SIGTERM')`, called from inside the same process) reliably invoke it.
+Given that, there is no real cross-process manual test to run here on this project's Windows-only
+target — the behavior is fully covered by the unit tests added in Task 4
+(`tests/unit/proxyStackSupervisor.test.ts`), which drive it directly via the injected
+`RunProxyDeps.onSigterm` handler and don't depend on real OS signal delivery. Treat those unit
+tests as the verification of record for this step; the `onSigterm` real-dep wiring exists so that
+if `run-proxy` is ever driven by a supervisor capable of a same-process self-signal or an
+equivalent internal shutdown call, the graceful path is already there to receive it. Skip to Step 5.
 
 - [ ] **Step 5: Confirm a runtime crash still speaks**
 
-With `run-proxy` running normally, stop Docker Desktop entirely (or otherwise force a runtime
-failure the loop's `fatal()` will hit, e.g. deleting `envoy.yaml`'s directory permissions).
-Expected: the failure is logged, the process exits nonzero, and you hear "Configamatron is down"
-once.
+Stopping Docker Desktop while `run-proxy` is already serving does **not** reliably reach `fatal()`:
+`runProxyLoop.ts`'s post-startup color-swap path treats a failed `bringUpColor` as recoverable (it
+logs and keeps the current color running — see `runProxyLoop.ts:201-209`), and log-stream failures
+are swallowed entirely. Use a deterministic trigger instead — a post-startup config-rebuild failure,
+which does reach `fatal()` at `runProxyLoop.ts:169` (`fatal(\`failed to rebuild the proxy config:
+...\`)`):
+
+1. Start `node dist/cli.js run-proxy` in a working environment and wait for
+   `run-proxy: watching credentials and allowlist; ...`.
+2. In another terminal, make the rendered `envoy.yaml` path read-only, e.g.
+   `attrib +R .configamatron\proxy\envoy.yaml` (adjust to your environment's actual
+   `paths.envoyConfig` location).
+3. Touch `proxy/allowlist.txt` (append a blank line and save) to trigger a watched rebuild.
+
+Expected: the console prints `run-proxy: failed to rebuild the proxy config: ...`, the process
+exits nonzero, and you hear "Configamatron is down" once. Afterward, run
+`attrib -R .configamatron\proxy\envoy.yaml` to restore write access before any further testing.
 
 - [ ] **Step 6: Confirm the message never repeats within one process**
 
-In any of the failure scenarios above, note that only one utterance is heard even though a fatal
-error can be followed by teardown-time noise (e.g. `services.closeAll()` failures) — the guard from
-Task 2 ensures at most one `Speak(...)` call per process.
+In Step 2's startup-failure scenario, note that only one utterance is heard even though `fatal()`
+can, in principle, be reached more than once in sequence (guarded by `runProxyLoop`'s own `settled`
+flag) or be followed by an `uncaughtException` during teardown — the guard from Task 2 ensures at
+most one `Speak(...)` call per process regardless of how many failure signals fire.
 
-Report the outcome of Steps 2-6 back before considering this ADR's behavior verified end to end.
+Report the outcome of Steps 2, 3, 5, and 6 back before considering this ADR's behavior verified end
+to end. Step 4 has no separate manual outcome to report — see its note above.
 
 ---
 
@@ -878,3 +919,17 @@ Report the outcome of Steps 2-6 back before considering this ADR's behavior veri
   the way `CTRL_C_EVENT` is delivered, so the same premature-death risk does not apply — this is
   consistent with [[loopback-publish-with-node-forwarder]] and out of scope for this ADR, which is
   about alerting, not relaunch-topology signal propagation.
+- `runProxyLoop`'s SIGINT/SIGTERM listeners are registered partway through `start()` — after the
+  per-channel credential reads and the allowlist read, but before `bringUpColor` (`runProxyLoop.ts`
+  around line 284, inside `start()`). A signal arriving in that earlier synchronous/async window
+  gets Node's default (unhandled) behavior rather than the graceful `shutdown(0)` path. This gap
+  already exists for SIGINT today and Task 4 does not change it — moving registration earlier would
+  be a real improvement but is a pre-existing behavior this ADR doesn't ask to fix, and doing so
+  isn't free (watchers/timers aren't armed yet either at that point). Worth a follow-up, not part of
+  this plan.
+- Genuinely uncatchable terminations — `SIGKILL` (not deliverable on Windows in the POSIX sense,
+  but the `taskkill /F`/`TerminateProcess` equivalent), `process.abort()`, a native/V8 crash, or the
+  host OS itself powering off — cannot run any JS at all, so nothing in this plan (or any
+  in-process mechanism) can speak for them. This matches the ADR's own acknowledgment that there is
+  "no confirmation the speech was heard or even started"; the alert covers every path Node itself
+  can still execute code on, which is the practical ceiling for a purely in-process design.
