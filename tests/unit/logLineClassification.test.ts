@@ -85,4 +85,10 @@ describe('access-log line classification', () => {
       ),
     ).toEqual([]);
   });
+
+  it('classifies an mcp pathId as ALLOW MCP', () => {
+    expect(classify(line({ pathId: 'mcp', serverName: 'filesystem.internal' }))).toEqual([
+      { time: '2026-07-06T12:00:00', tag: 'ALLOW MCP', domain: 'filesystem.internal' },
+    ]);
+  });
 });

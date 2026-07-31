@@ -67,4 +67,19 @@ describe('access-log line parsing', () => {
   it('returns null for a non-cand line with 11 fields', () => {
     expect(parseLine('CFGM|term|t|s|a|d|x|x|x|x|x')).toBeNull();
   });
+
+  it('parses a well-formed mcp line', () => {
+    const line = 'CFGM|mcp|2026-07-06T12:04:31|filesystem.internal|filesystem.internal|via_upstream|200|-|12|34';
+    expect(parseLine(line)).toEqual({
+      pathId: 'mcp',
+      time: '2026-07-06T12:04:31',
+      serverName: 'filesystem.internal',
+      authority: 'filesystem.internal',
+      codeDetails: 'via_upstream',
+      responseCode: '200',
+      responseFlags: '-',
+      duration: '12',
+      bytesSent: '34',
+    });
+  });
 });
