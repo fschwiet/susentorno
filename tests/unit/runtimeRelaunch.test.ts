@@ -3,6 +3,7 @@ import {
   getDedicatedNodePath,
   ensureDedicatedNodeCopy,
   relaunchIfNeeded,
+  relaunchFailedWithNoChild,
   type EnsureCopyDeps,
   type RelaunchDeps,
 } from '../../src/runProxy/relaunchViaDedicatedNode';
@@ -146,19 +147,19 @@ describe('dedicated-node runtime relaunch', () => {
         cwd: 'C:\\project',
         env: { FOO: 'bar' },
       });
-      expect(result).toEqual({ relaunched: true, exitCode: 0 });
+      expect(result).toEqual({ relaunched: true, childMayHaveAlerted: true, exitCode: 0 });
     });
 
     it('propagates a non-zero exit code', async () => {
       const deps = makeDeps({ spawn: vi.fn(async () => ({ exitCode: 7 })) });
       const result = await relaunchIfNeeded(deps);
-      expect(result).toEqual({ relaunched: true, exitCode: 7 });
+      expect(result).toEqual({ relaunched: true, childMayHaveAlerted: true, exitCode: 7 });
     });
 
     it('falls back to a fixed exit code when the child was terminated by signal', async () => {
       const deps = makeDeps({ spawn: vi.fn(async () => ({ signal: 'SIGTERM' })) });
       const result = await relaunchIfNeeded(deps);
-      expect(result).toEqual({ relaunched: true, exitCode: 1 });
+      expect(result).toEqual({ relaunched: true, childMayHaveAlerted: false, exitCode: 1 });
       expect(deps.error).toHaveBeenCalledWith(
         expect.stringContaining('terminated by signal SIGTERM'),
       );
@@ -167,8 +168,26 @@ describe('dedicated-node runtime relaunch', () => {
     it('falls back to a fixed exit code when spawn could not launch the process at all', async () => {
       const deps = makeDeps({ spawn: vi.fn(async () => ({})) });
       const result = await relaunchIfNeeded(deps);
-      expect(result).toEqual({ relaunched: true, exitCode: 1 });
+      expect(result).toEqual({ relaunched: true, childMayHaveAlerted: false, exitCode: 1 });
       expect(deps.error).toHaveBeenCalledWith(expect.stringContaining('failed to launch'));
+    });
+  });
+
+  describe('relaunchFailedWithNoChild', () => {
+    it('is false when relaunch did not happen at all', () => {
+      expect(relaunchFailedWithNoChild({ relaunched: false })).toBe(false);
+    });
+
+    it('is false when the child ran far enough to have had a chance to alert', () => {
+      expect(
+        relaunchFailedWithNoChild({ relaunched: true, childMayHaveAlerted: true, exitCode: 0 }),
+      ).toBe(false);
+    });
+
+    it('is true when the child was signal-killed, or the relaunch mechanism failed before any child ran — both report childMayHaveAlerted: false', () => {
+      expect(
+        relaunchFailedWithNoChild({ relaunched: true, childMayHaveAlerted: false, exitCode: 1 }),
+      ).toBe(true);
     });
   });
 });

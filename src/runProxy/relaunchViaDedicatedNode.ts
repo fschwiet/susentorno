@@ -34,7 +34,20 @@ export interface RelaunchDeps extends EnsureCopyDeps {
   error: (message: string) => void;
 }
 
-export type RelaunchResult = { relaunched: true; exitCode: number } | { relaunched: false };
+export type RelaunchResult =
+  | { relaunched: true; childMayHaveAlerted: true; exitCode: number }
+  | { relaunched: true; childMayHaveAlerted: false; exitCode: number }
+  | { relaunched: false };
+
+/**
+ * True only when a relaunch was attempted but the child never got far enough to have run
+ * its own JS-level exit handling — either it was killed by a signal before it could, or it
+ * never spawned at all. In both cases nothing else could have spoken the alert, so the
+ * caller (the relaunch parent) must.
+ */
+export function relaunchFailedWithNoChild(result: RelaunchResult): boolean {
+  return result.relaunched && !result.childMayHaveAlerted;
+}
 
 const FALLBACK_EXIT_CODE = 1;
 
@@ -119,14 +132,14 @@ export async function relaunchIfNeeded(deps: RelaunchDeps): Promise<RelaunchResu
   });
 
   if (result.exitCode !== undefined) {
-    return { relaunched: true, exitCode: result.exitCode };
+    return { relaunched: true, childMayHaveAlerted: true, exitCode: result.exitCode };
   }
   if (result.signal !== undefined) {
     deps.error(`run-proxy: dedicated node.exe copy was terminated by signal ${result.signal}`);
   } else {
     deps.error('run-proxy: failed to launch the dedicated node.exe copy');
   }
-  return { relaunched: true, exitCode: FALLBACK_EXIT_CODE };
+  return { relaunched: true, childMayHaveAlerted: false, exitCode: FALLBACK_EXIT_CODE };
 }
 
 function hashFile(path: string): Promise<string> {
