@@ -31,6 +31,10 @@ import {
   relaunchFailedWithNoChild,
 } from '../runProxy/relaunchViaDedicatedNode';
 import { createRealAbnormalExitAlert, type AbnormalExitAlert } from '../runProxy/abnormalExitAlert';
+import { readMcpServers } from '../mcpServers';
+import { allocateMcpPorts } from '../runProxy/allocateMcpPorts';
+import { spawnMcpServer, probeMcpReady } from '../runProxy/mcpProcess';
+import { killProcessTree } from '../runProxy/killProcessTree';
 
 interface RunProxyOptions {
   credentials: string;
@@ -159,6 +163,15 @@ export function registerRunProxy(program: Command): void {
         }
         const secretPath = options.secret ?? paths.sdsSecret;
 
+        let mcpServers;
+        try {
+          mcpServers = readMcpServers(paths.mcpServers);
+        } catch (err) {
+          console.error(`run-proxy: ${(err as Error).message}`);
+          process.exitCode = 1;
+          return;
+        }
+
         let logHandle: LogStreamHandle | null = null;
 
         const httpPort = Number(process.env.ENVOY_HTTP_PORT ?? 80);
@@ -245,12 +258,13 @@ export function registerRunProxy(program: Command): void {
               return null;
             }
           },
-          buildConfig: (allowlist) =>
+          buildConfig: (allowlist, mcpServersWithPorts) =>
             writeEnvoyConfig(
               allowlist,
               paths.envoyConfig,
               options.upstreamOverride,
               options.injectFault,
+              mcpServersWithPorts,
             ),
           ensureLeaf: (sans) =>
             ensureLeaf(
@@ -294,6 +308,10 @@ export function registerRunProxy(program: Command): void {
           log: (message) => console.log(message),
           error: (message) => console.error(message),
           now: () => Date.now(),
+          allocateMcpPorts,
+          spawnMcpServer: (spec, onLine) => spawnMcpServer(spec.command, { cwd: spec.cwd, env: spec.env }, onLine),
+          probeMcpReady,
+          killProcessTree,
         };
 
         const refreshWindowMs = Number(options.refreshWindow) * 60_000;
@@ -333,6 +351,8 @@ export function registerRunProxy(program: Command): void {
               allowlistPath: paths.allowlist,
               readyTimeoutMs: 60_000,
               drainTimeoutMs: 30_000,
+              mcpServers,
+              mcpReadyTimeoutMs: 60_000,
             },
             deps,
           );
