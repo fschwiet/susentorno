@@ -542,4 +542,46 @@ describe('proxy configuration generation', () => {
       expect(cluster).toBeDefined();
     });
   });
+
+  describe('host-run MCP servers', () => {
+    it('builds a cleartext filter chain and cluster routed to host.docker.internal', () => {
+      const config = generateEnvoyConfig(allowlist, {
+        mcpServers: [{ hostname: 'filesystem.internal', port: 54321 }],
+      }) as any;
+      const listener443 = config.static_resources.listeners.find((l: any) => l.name === 'listener_443');
+      const mcpChain = listener443.filter_chains.find((fc: any) =>
+        fc.filter_chain_match?.server_names?.includes('filesystem.internal'),
+      );
+
+      expect(mcpChain).toBeDefined();
+      expect(mcpChain.transport_socket.typed_config.common_tls_context.tls_certificates[0]).toEqual({
+        certificate_chain: { filename: '/etc/envoy/ca/leaf-cert.pem' },
+        private_key: { filename: '/etc/envoy/ca/leaf-key.pem' },
+      });
+
+      const hcm = mcpChain.filters[0].typed_config;
+      expect(hcm.access_log[0].typed_config.log_format.text_format_source.inline_string).toContain('CFGM|mcp|');
+      expect(hcm.route_config.virtual_hosts[0].routes[0].route.cluster).toBe(
+        'cluster_mcp_filesystem_internal',
+      );
+      expect(hcm.route_config.virtual_hosts[0].routes[0].route.timeout).toBe('0s');
+      expect(hcm.http_filters.map((f: any) => f.name)).toEqual(['envoy.filters.http.router']);
+
+      const cluster = config.static_resources.clusters.find(
+        (c: any) => c.name === 'cluster_mcp_filesystem_internal',
+      );
+      expect(
+        cluster.load_assignment.endpoints[0].lb_endpoints[0].endpoint.address.socket_address,
+      ).toEqual({ address: 'host.docker.internal', port_value: 54321 });
+      expect(cluster.transport_socket).toBeUndefined();
+    });
+
+    it('omits MCP chains and clusters when no MCP servers are declared', () => {
+      const config = generateEnvoyConfig(allowlist) as any;
+      const listener443 = config.static_resources.listeners.find((l: any) => l.name === 'listener_443');
+      expect(
+        listener443.filter_chains.some((fc: any) => fc.filter_chain_match?.server_names?.[0]?.endsWith('.internal')),
+      ).toBe(false);
+    });
+  });
 });

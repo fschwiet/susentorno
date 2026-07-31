@@ -40,6 +40,11 @@ end
 /** Test-only config faults, applied as render-time mutations of envoy.yaml. */
 export type InjectFault = 'crash-config' | 'never-ready';
 
+export interface McpServerUpstream {
+  hostname: string;
+  port: number;
+}
+
 export interface BuildEnvoyConfigOptions {
   overrides?: UpstreamOverride[];
   /**
@@ -48,6 +53,7 @@ export interface BuildEnvoyConfigOptions {
    * so Envoy stays healthy but the admin probe is refused forever.
    */
   fault?: InjectFault;
+  mcpServers?: McpServerUpstream[];
 }
 
 function sanitizeName(host: string): string {
@@ -641,6 +647,90 @@ function buildCodexEntry(entry: string, overrides: UpstreamOverride[]) {
   return { filterChain, cluster };
 }
 
+function buildMcpEntry(server: McpServerUpstream) {
+  const clusterName = `cluster_mcp_${sanitizeName(server.hostname)}`;
+
+  const filterChain = {
+    filter_chain_match: { server_names: [server.hostname] },
+    transport_socket: {
+      name: 'envoy.transport_sockets.tls',
+      typed_config: {
+        '@type':
+          'type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext',
+        common_tls_context: {
+          tls_certificates: [
+            {
+              certificate_chain: { filename: '/etc/envoy/ca/leaf-cert.pem' },
+              private_key: { filename: '/etc/envoy/ca/leaf-key.pem' },
+            },
+          ],
+        },
+      },
+    },
+    filters: [
+      {
+        name: 'envoy.filters.network.http_connection_manager',
+        typed_config: {
+          '@type':
+            'type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager',
+          stat_prefix: `mcp_${sanitizeName(server.hostname)}`,
+          access_log: accessLog('mcp'),
+          route_config: {
+            name: 'local_route',
+            virtual_hosts: [
+              {
+                name: 'mcp',
+                domains: ['*'],
+                routes: [
+                  { match: { prefix: '/' }, route: { cluster: clusterName, timeout: '0s' } },
+                ],
+              },
+            ],
+          },
+          // No auth_pre/credential_injector/auth_post: host-run MCP servers have no
+          // auth of any form — network isolation is the only gate (see ADR host-run-mcp-servers).
+          http_filters: [
+            {
+              name: 'envoy.filters.http.router',
+              typed_config: {
+                '@type': 'type.googleapis.com/envoy.extensions.filters.http.router.v3.Router',
+              },
+            },
+          ],
+        },
+      },
+    ],
+  };
+
+  // Envoy runs inside the Docker container, so `127.0.0.1` here would be the
+  // container's own loopback. host.docker.internal reaches the host, where the
+  // spawned MCP server actually bound 127.0.0.1 (declared in docker-compose.yml's
+  // `extra_hosts: host.docker.internal:host-gateway`). No transport_socket: cleartext
+  // upstream, unlike every other terminated chain.
+  const cluster = {
+    name: clusterName,
+    type: 'STRICT_DNS',
+    dns_lookup_family: 'V4_ONLY',
+    lb_policy: 'ROUND_ROBIN',
+    load_assignment: {
+      cluster_name: clusterName,
+      endpoints: [
+        {
+          lb_endpoints: [
+            {
+              endpoint: {
+                address: { socket_address: { address: 'host.docker.internal', port_value: server.port } },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  return { filterChain, cluster };
+}
+
 const DYNAMIC_FORWARD_PROXY_HTTP_CACHE = 'dynamic_forward_proxy_cache_config_http';
 
 function buildWildcardHttp80VirtualHost(hosts: string[]) {
@@ -742,6 +832,7 @@ export function generateEnvoyConfig(
       return cfg ? buildGithubEntry(e, overrides, cfg.sdsResource, cfg.sdsFile, cfg.gate) : null;
     })
     .filter((b): b is NonNullable<typeof b> => b !== null);
+  const mcpBuilt = (options.mcpServers ?? []).map(buildMcpEntry);
   const passthroughServerNames = allowlist.passthrough
     .filter((e) => e.endsWith(':443'))
     .map((e) => e.split(':')[0]);
@@ -776,6 +867,7 @@ export function generateEnvoyConfig(
             ...codexBuilt.map((b) => b.filterChain),
             ...authCandidateBuilt.map((b) => b.filterChain),
             ...githubBuilt.map((b) => b.filterChain),
+            ...mcpBuilt.map((b) => b.filterChain),
             {
               filter_chain_match: { server_names: passthroughServerNames },
               filters: [
@@ -876,6 +968,7 @@ export function generateEnvoyConfig(
         ...codexBuilt.map((b) => b.cluster),
         ...authCandidateBuilt.map((b) => b.cluster),
         ...githubBuilt.map((b) => b.cluster),
+        ...mcpBuilt.map((b) => b.cluster),
         ...http80ExactBuilt.map((b) => b.cluster),
         ...(hasWildcardHttp80 ? [buildDynamicForwardProxyHttpCluster()] : []),
         {
