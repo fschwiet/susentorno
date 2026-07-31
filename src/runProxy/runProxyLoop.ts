@@ -7,6 +7,10 @@ import { CredentialChannel, type CredentialChannelConfig } from './credentialCha
 import type { Color, ColorPorts } from './types';
 import { otherColor } from './types';
 import type { WaitResult } from './waitColorReady';
+import type { McpServerConfig } from '../mcpServers';
+import { resolveMcpAllowlistCollisions } from '../mcpServers';
+import type { McpServerUpstream } from '../envoyConfig';
+import { startMcpServers, type McpServerSpec, type McpSupervisorHandle } from './mcpSupervisor';
 
 export interface RunProxyConfig {
   /** One entry per credential source (Claude, Codex). Each drives its own file watch, secret, and nudge timer. */
@@ -16,13 +20,17 @@ export interface RunProxyConfig {
   readyTimeoutMs: number;
   /** How long to let the old color's connections finish before force-closing them. */
   drainTimeoutMs: number;
+  /** Declared host-run MCP servers for this environment; defaults to none. */
+  mcpServers?: McpServerConfig[];
+  /** Fixed TCP-connect readiness timeout per MCP server. Defaults to 60s. */
+  mcpReadyTimeoutMs?: number;
 }
 
 export interface RunProxyDeps {
   /** Raw allowlist file content, or null when unreadable. */
   readAllowlist: (path: string) => string | null;
   /** Render and write envoy.yaml (upstream overrides are baked in by the caller). */
-  buildConfig: (allowlist: Allowlist) => void;
+  buildConfig: (allowlist: Allowlist, mcpServers: McpServerUpstream[]) => void;
   /** Ensure the leaf covers `sans` (reissue if needed); returns a status line. */
   ensureLeaf: (sans: string[]) => string;
   /** Allocate three distinct free loopback ports for the next color to bring up. */
@@ -52,6 +60,17 @@ export interface RunProxyDeps {
   log: (message: string) => void;
   error: (message: string) => void;
   now: () => number;
+  /** Allocate `count` distinct free loopback ports for the declared MCP servers. */
+  allocateMcpPorts: (count: number) => Promise<number[]>;
+  /** Spawn one MCP server's command; onLine receives its stdout/stderr, unprefixed. */
+  spawnMcpServer: (
+    spec: McpServerSpec,
+    onLine: (line: string) => void,
+  ) => { pid: number; onExit: (cb: (code: number | null, signal: string | null) => void) => void };
+  /** TCP-connect readiness probe for one MCP server's port. */
+  probeMcpReady: (port: number, timeoutMs: number) => Promise<boolean>;
+  /** Kill an MCP server's whole process tree. */
+  killProcessTree: (pid: number, signal: NodeJS.Signals) => Promise<void>;
 }
 
 /**
@@ -75,24 +94,56 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
     const shutdownAbort = new AbortController();
     const watchers: { close: () => void }[] = [];
 
+    const mcpServerConfigs = config.mcpServers ?? [];
+    const mcpReadyTimeoutMs = config.mcpReadyTimeoutMs ?? 60_000;
+    const mcpHostnames = mcpServerConfigs.map((s) => s.hostname);
+    let mcpServersWithPorts: McpServerUpstream[] = [];
+    let mcpSupervisorHandle: McpSupervisorHandle | null = null;
+
     /**
-     * Tear down every long-lived handle, then resolve. `settled` flips synchronously so
-     * no callback can act after shutdown begins; the log child is stopped asynchronously
-     * before resolving so it cannot outlive us.
+     * `settled` flips to true synchronously, before `beforeTeardown` (if given) runs —
+     * not after it resolves. This matters for mcpFatal below: without it, a SIGINT
+     * racing in during mcpFatal's async color-stopping could call shutdown(0) first
+     * and "win" with a clean exit code, silently losing the fact that an MCP server
+     * had failed. Reserving `settled` immediately closes that window.
      */
-    const shutdown = (code: number): void => {
+    const shutdown = (code: number, beforeTeardown?: () => Promise<void>): void => {
       if (settled) return;
       settled = true;
       shutdownAbort.abort();
       for (const channel of channels) channel.clearTimer();
       for (const watcher of watchers) watcher.close();
-      void deps.stopLogStream().then(() => resolve(code));
+      const pre = beforeTeardown ? beforeTeardown() : Promise.resolve();
+      void pre
+        .then(() => Promise.all([deps.stopLogStream(), mcpSupervisorHandle?.stopAll() ?? Promise.resolve()]))
+        .then(() => resolve(code));
     };
 
     const fatal = (message: string): void => {
       if (settled) return;
       deps.error(`run-proxy: ${message}`);
       shutdown(1);
+    };
+
+    /**
+     * An MCP-triggered fatal additionally stops both Envoy colors before the normal
+     * shutdown teardown runs: unlike every other fatal path, leaving the container
+     * running would let every other destination keep working while only the failed
+     * MCP hostname went dead — exactly the silent partial degradation this exists to
+     * prevent. stopColor on a color that was never brought up (or already stopped) is
+     * expected to no-op or fail harmlessly; Promise.allSettled tolerates either. Note
+     * this does NOT cover the process-level uncaughtException/unhandledRejection
+     * safety net installed in commands/runProxy.ts, which calls process.exit()
+     * directly and — like every other resource this codebase owns (including the
+     * Envoy container itself) — is not expected to run any cleanup on a genuine crash;
+     * that safety net's job is only the spoken alert, not graceful teardown.
+     */
+    const mcpFatal = (message: string): void => {
+      if (settled) return;
+      deps.error(`run-proxy: ${message}`);
+      shutdown(1, () =>
+        Promise.allSettled([deps.stopColor('blue'), deps.stopColor('green')]).then(() => undefined),
+      );
     };
 
     // Built after fatal so onExhausted can reference it; used only inside async callbacks
@@ -125,15 +176,15 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
         );
         return null;
       }
-      const allowlist = parseAllowlist(content);
+      const allowlist = resolveMcpAllowlistCollisions(parseAllowlist(content), mcpServerConfigs);
       for (const warning of allowlist.warnings) deps.error(`run-proxy: ${warning}`);
       return allowlist;
     };
 
     /** Reissue the leaf if the TLS-terminated hosts changed and rewrite envoy.yaml. */
     const applyAllowlist = (allowlist: Allowlist): void => {
-      deps.log(`run-proxy: ${deps.ensureLeaf(terminateTlsHosts(allowlist))}`);
-      deps.buildConfig(allowlist);
+      deps.log(`run-proxy: ${deps.ensureLeaf([...terminateTlsHosts(allowlist), ...mcpHostnames])}`);
+      deps.buildConfig(allowlist, mcpServersWithPorts);
     };
 
     const requestRestart = (source: CredentialChannel | 'allowlist'): void => {
@@ -268,12 +319,25 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
         }
       }
 
+      const mcpPorts = mcpServerConfigs.length > 0 ? await deps.allocateMcpPorts(mcpServerConfigs.length) : [];
+      mcpServersWithPorts = mcpServerConfigs.map((s, i) => ({ hostname: s.hostname, port: mcpPorts[i] }));
+      // {ip} is always 127.0.0.1: the spawned process itself must bind loopback only
+      // (see the design spec) — only the Envoy cluster upstream uses host.docker.internal.
+      const mcpSpecs: McpServerSpec[] = mcpServerConfigs.map((s, i) => ({
+        name: s.name,
+        hostname: s.hostname,
+        port: mcpPorts[i],
+        command: s.command.replaceAll('{ip}', '127.0.0.1').replaceAll('{port}', String(mcpPorts[i])),
+        cwd: s.cwd,
+        env: s.env,
+      }));
+
       const content = deps.readAllowlist(config.allowlistPath);
       if (content === null) {
         fatal(`could not read allowlist at ${config.allowlistPath}`);
         return;
       }
-      const allowlist = parseAllowlist(content);
+      const allowlist = resolveMcpAllowlistCollisions(parseAllowlist(content), mcpServerConfigs);
       for (const warning of allowlist.warnings) deps.error(`run-proxy: ${warning}`);
 
       // Arm all watchers before the (slow) startup recreate: a change landing
@@ -293,10 +357,27 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
           fatal(`failed to build the proxy config: ${String(err)}`);
           return;
         }
+
+        // Spawn MCP servers now that ports/hostnames are baked into envoy.yaml.
+        // Readiness/exit supervision runs in the background for the rest of the
+        // process; Envoy's own bring-up below proceeds without waiting on it.
+        if (mcpSpecs.length > 0) {
+          mcpSupervisorHandle = startMcpServers(mcpSpecs, {
+            spawn: deps.spawnMcpServer,
+            probeReady: deps.probeMcpReady,
+            killProcessTree: deps.killProcessTree,
+            onLine: (name, line) => deps.log(`[${name}] ${line}`),
+            onReady: (name, elapsedMs) => deps.log(`[${name}] ready in ${elapsedMs}ms`),
+            onFatal: (message) => mcpFatal(message),
+            now: deps.now,
+            readyTimeoutMs: mcpReadyTimeoutMs,
+          });
+        }
+
         // Secrets were already written by each channel's startupRead().
-        const ports = await deps.allocatePorts();
+        const colorPorts = await deps.allocatePorts();
         try {
-          await deps.bringUpColor('blue', ports);
+          await deps.bringUpColor('blue', colorPorts);
         } catch {
           fatal('docker failed to start the proxy on startup');
           return;
@@ -304,7 +385,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
         if (settled) return;
         const result = await deps.waitColorReady(
           'blue',
-          ports,
+          colorPorts,
           config.readyTimeoutMs,
           shutdownAbort.signal,
         );
@@ -318,8 +399,8 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
           return;
         }
         activeColor = 'blue';
-        activePorts = ports;
-        deps.setActiveBackend(ports);
+        activePorts = colorPorts;
+        deps.setActiveBackend(colorPorts);
         for (const channel of channels) channel.commit();
         deps.startLogStream('blue', onLogLine);
       } finally {
