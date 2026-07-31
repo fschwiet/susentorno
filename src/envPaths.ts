@@ -25,6 +25,7 @@ export interface EnvPaths {
   gitignore: string;
   proxy: string;
   allowlist: string;
+  mcpServers: string;
   envoyConfig: string;
   caDir: string;
   caCert: string;
@@ -68,6 +69,7 @@ export function envPaths(cwd: string): EnvPaths {
     gitignore: join(root, '.gitignore'),
     proxy,
     allowlist: join(proxy, 'allowlist.txt'),
+    mcpServers: join(root, 'mcp-servers.yaml'),
     envoyConfig: join(proxy, 'envoy.yaml'),
     caDir: join(proxy, 'ca'),
     caCert: join(proxy, 'ca', 'cert.pem'),

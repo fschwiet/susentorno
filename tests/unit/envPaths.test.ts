@@ -45,6 +45,8 @@ describe('environment paths & layout', () => {
         preScripts: join(root, 'vm-shared', 'pre-scripts'),
         postScripts: join(root, 'vm-shared', 'post-scripts'),
       });
+      expect(paths.mcpServers).toBe(join(root, 'mcp-servers.yaml'));
+
       expect(paths.vmSharedTargets[1]).toEqual({
         dir: join(root, 'vm-shared-windows'),
         cert: join(root, 'vm-shared-windows', 'cert.pem'),
