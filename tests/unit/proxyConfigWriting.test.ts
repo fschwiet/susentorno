@@ -38,4 +38,24 @@ describe('proxy configuration writing', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('threads mcpServers through to the generated config', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'buildconfig-'));
+    const outputPath = join(dir, 'envoy.yaml');
+    try {
+      writeEnvoyConfig(parseAllowlist(ALLOWLIST), outputPath, [], undefined, [
+        { hostname: 'fs.internal', port: 9999 },
+      ]);
+
+      const config = parse(readFileSync(outputPath, 'utf8')) as {
+        static_resources: { listeners: Array<{ name: string; filter_chains: any[] }> };
+      };
+      const listener443 = config.static_resources.listeners.find((l) => l.name === 'listener_443');
+      expect(
+        listener443!.filter_chains.some((fc: any) => fc.filter_chain_match?.server_names?.includes('fs.internal')),
+      ).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
