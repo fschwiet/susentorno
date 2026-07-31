@@ -1,5 +1,18 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createAbnormalExitAlert, type AbnormalExitAlertDeps } from '../../src/runProxy/abnormalExitAlert';
+import {
+  createAbnormalExitAlert,
+  buildSpeakCommand,
+  speakAlert,
+  type AbnormalExitAlertDeps,
+} from '../../src/runProxy/abnormalExitAlert';
+
+const mockUnref = vi.fn();
+const mockExeca = vi.fn<(...args: unknown[]) => { unref: typeof mockUnref }>(() => ({
+  unref: mockUnref,
+}));
+vi.mock('execa', () => ({
+  execa: (...args: unknown[]) => mockExeca(...args),
+}));
 
 function makeDeps(overrides: Partial<AbnormalExitAlertDeps> = {}): AbnormalExitAlertDeps {
   return {
@@ -62,5 +75,37 @@ describe('createAbnormalExitAlert', () => {
     alert.trigger();
 
     expect(deps.speak).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('buildSpeakCommand', () => {
+  it('drives the SAPI COM voice, not System.Speech', () => {
+    const command = buildSpeakCommand('Configamatron is down');
+
+    expect(command).toContain('New-Object -ComObject SAPI.SpVoice');
+    expect(command).toContain(".Speak('Configamatron is down')");
+  });
+
+  it('escapes an embedded single quote for PowerShell single-quoted strings', () => {
+    const command = buildSpeakCommand("it's down");
+
+    expect(command).toContain(".Speak('it''s down')");
+  });
+});
+
+describe('speakAlert', () => {
+  it('spawns a detached, unreferenced powershell.exe that is never awaited', () => {
+    mockExeca.mockClear();
+    mockUnref.mockClear();
+
+    speakAlert();
+
+    expect(mockExeca).toHaveBeenCalledTimes(1);
+    const [command, args, options] = mockExeca.mock.calls[0] as [string, string[], unknown];
+    expect(command).toBe('powershell.exe');
+    expect(args).toContain('-Command');
+    expect(args[args.length - 1]).toContain('SAPI.SpVoice');
+    expect(options).toMatchObject({ detached: true, stdio: 'ignore' });
+    expect(mockUnref).toHaveBeenCalledTimes(1);
   });
 });
