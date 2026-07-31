@@ -5,6 +5,10 @@ import { join } from 'node:path';
 import { envPaths } from '../../src/envPaths';
 import { planAllPhases, weaveShares } from '../../src/weaveShares';
 
+function findPlan(plans: ReturnType<typeof planAllPhases>, dirEndsWith: string) {
+  return plans.find((p) => p.livePhaseDir.replace(/\\/g, '/').endsWith(dirEndsWith));
+}
+
 let work: string;
 let templates: string;
 beforeEach(() => {
@@ -94,6 +98,32 @@ describe('VM share weaving', () => {
         message = (error as Error).message;
       }
       expect(message).toMatch(/02-network\.sh[\s\S]*built-in script[\s\S]*custom resource/);
+    });
+  });
+
+  describe('generated post-scripts', () => {
+    it('folds a generated post-script into the post-scripts plan as a built-in, after the on-disk built-ins', () => {
+      const paths = envPaths(work);
+      const genDir = mkdtempSync(join(tmpdir(), 'gen-post-script-'));
+      const genPath = join(genDir, 'mcp-servers.sh');
+      writeFileSync(genPath, '#!/bin/bash\necho mcp\n');
+
+      try {
+        const plans = planAllPhases({
+          templatesDir: templates,
+          paths,
+          generatedPostScripts: [{ ext: 'sh', remainder: 'mcp-servers.sh', sourcePath: genPath }],
+        });
+
+        const shPostScripts = findPlan(plans, 'vm-shared/post-scripts');
+        const names = shPostScripts!.actions.map((a) => a.destRel);
+        expect(names).toContain('02-mcp-servers.sh'); // after the one on-disk built-in (01-auth.sh)
+
+        const ps1PostScripts = findPlan(plans, 'vm-shared-windows/post-scripts');
+        expect(ps1PostScripts!.actions.map((a) => a.destRel)).not.toContain('02-mcp-servers.sh');
+      } finally {
+        rmSync(genDir, { recursive: true, force: true });
+      }
     });
   });
 });

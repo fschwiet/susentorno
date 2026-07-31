@@ -27,7 +27,19 @@ export interface PhasePlan {
   actions: WeaveAction[];
 }
 
-export function planAllPhases(opts: { templatesDir: string; paths: EnvPaths }): PhasePlan[] {
+export interface GeneratedScript {
+  ext: ScriptExtension;
+  /** Output filename after the 'NN-' prefix is stripped, e.g. 'mcp-servers.sh'. */
+  remainder: string;
+  /** A real file on disk holding the generated content (a temp file, typically). */
+  sourcePath: string;
+}
+
+export function planAllPhases(opts: {
+  templatesDir: string;
+  paths: EnvPaths;
+  generatedPostScripts?: GeneratedScript[];
+}): PhasePlan[] {
   const platforms = [
     { ext: 'sh' as const, template: 'vm-shared', output: opts.paths.vmShared, insensitive: false },
     {
@@ -39,7 +51,7 @@ export function planAllPhases(opts: { templatesDir: string; paths: EnvPaths }): 
   ];
   const plans: PhasePlan[] = [];
   const errors: string[] = [];
-  for (const phase of ['pre-scripts', 'post-scripts']) {
+  for (const phase of ['pre-scripts', 'post-scripts'] as const) {
     for (const platform of platforms) {
       try {
         plans.push(
@@ -49,6 +61,10 @@ export function planAllPhases(opts: { templatesDir: string; paths: EnvPaths }): 
             outPhaseDir: join(platform.output, phase),
             extension: platform.ext,
             caseInsensitive: platform.insensitive,
+            generated:
+              phase === 'post-scripts'
+                ? (opts.generatedPostScripts ?? []).filter((g) => g.ext === platform.ext)
+                : [],
           }),
         );
       } catch (error) {
@@ -66,6 +82,7 @@ function planPhase(opts: {
   outPhaseDir: string;
   extension: ScriptExtension;
   caseInsensitive: boolean;
+  generated: GeneratedScript[];
 }): PhasePlan {
   const builtin = readFolderContents({
     dir: opts.builtinPhaseDir,
@@ -79,10 +96,18 @@ function planPhase(opts: {
     allowSentinel: false,
     strictExtension: false,
   });
+  const generatedScripts: OrderedScript[] = opts.generated.map((g) => ({
+    sourcePath: g.sourcePath,
+    sourceName: `generated-${g.remainder}`,
+    remainder: g.remainder,
+    ext: g.ext,
+    sentinel: false,
+  }));
   const labeled: { script: OrderedScript; label: 'built-in' | 'custom' }[] = [
     ...builtin.scripts
       .filter((s) => !s.sentinel)
       .map((script) => ({ script, label: 'built-in' as const })),
+    ...generatedScripts.map((script) => ({ script, label: 'built-in' as const })),
     ...custom.scripts.map((script) => ({ script, label: 'custom' as const })),
     ...builtin.scripts
       .filter((s) => s.sentinel)
