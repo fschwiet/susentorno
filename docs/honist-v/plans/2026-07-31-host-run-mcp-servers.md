@@ -52,7 +52,7 @@ Test files (new or extended, one per task below):
 - `tests/unit/logLineClassification.test.ts` (extend)
 - `tests/unit/proxyStackSupervisor.test.ts` (extend)
 - `tests/unit/weaveShares.test.ts` (extend)
-- `tests/proxy-stack/mcpServer.test.ts`
+- `tests/proxy-stack/mcpServer.test.ts` (plus a new fixture, `tests/fixtures/mcpFakeServer.mjs`)
 
 ---
 
@@ -712,24 +712,34 @@ git commit -m "envoyConfig: add cleartext MCP destination kind routed to host.do
 
 - [ ] **Step 1: Write the failing test**
 
-Open `tests/unit/proxyConfigWriting.test.ts` to match its existing mocking/assertion style (it tests `writeEnvoyConfig` by checking the written file's parsed YAML), then add:
+`tests/unit/proxyConfigWriting.test.ts` currently has a single `it`, using a per-test `mkdtempSync` directory (not a shared fixture) and the file's own local `ALLOWLIST` constant parsed via `parseAllowlist`. Add a second case in the same style, inside the existing `describe('proxy configuration writing', ...)` block:
 
 ```ts
 it('threads mcpServers through to the generated config', () => {
-  const outputPath = join(tmpDir, 'envoy.yaml'); // reuse the file's existing tmpDir fixture
-  writeEnvoyConfig(allowlist, outputPath, [], undefined, [{ hostname: 'fs.internal', port: 9999 }]);
-  const written = parse(readFileSync(outputPath, 'utf8')); // reuse the file's existing yaml `parse` import
-  const listener443 = written.static_resources.listeners.find((l: any) => l.name === 'listener_443');
-  expect(
-    listener443.filter_chains.some((fc: any) => fc.filter_chain_match?.server_names?.includes('fs.internal')),
-  ).toBe(true);
+  const dir = mkdtempSync(join(tmpdir(), 'buildconfig-'));
+  const outputPath = join(dir, 'envoy.yaml');
+  try {
+    writeEnvoyConfig(parseAllowlist(ALLOWLIST), outputPath, [], undefined, [
+      { hostname: 'fs.internal', port: 9999 },
+    ]);
+
+    const config = parse(readFileSync(outputPath, 'utf8')) as {
+      static_resources: { listeners: Array<{ name: string; filter_chains: any[] }> };
+    };
+    const listener443 = config.static_resources.listeners.find((l) => l.name === 'listener_443');
+    expect(
+      listener443!.filter_chains.some((fc: any) => fc.filter_chain_match?.server_names?.includes('fs.internal')),
+    ).toBe(true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/unit/proxyConfigWriting.test.ts -t "threads mcpServers"`
-Expected: FAIL — TypeScript error (too many arguments) or the chain is missing at runtime, depending on how the test file is structured; either way, not passing.
+Expected: FAIL — TypeScript error (too many arguments to `writeEnvoyConfig`) until Step 3's `buildConfig.ts` change lands.
 
 - [ ] **Step 3: Write minimal implementation**
 
@@ -1041,6 +1051,12 @@ export function spawnMcpServer(
     env: opts.env ? { ...process.env, ...opts.env } : process.env,
     buffer: false,
     reject: false,
+    // killProcessTree's non-Windows path signals the whole process group
+    // (`process.kill(-pid, signal)`), which only reaches this child's own spawned
+    // descendants (e.g. a shell-wrapped command re-execing the real server) if the
+    // child is its own group leader — same requirement logStream.ts's execa call
+    // already satisfies for the docker compose logs child.
+    detached: process.platform !== 'win32',
   });
 
   for (const stream of [child.stdout, child.stderr]) {
@@ -1144,8 +1160,6 @@ function makeDeps(overrides: Partial<McpSupervisorDeps> = {}): {
     probeReady: vi.fn(
       (port: number) =>
         new Promise<boolean>((resolve) => {
-          const name = [...pids.entries()].find(([, p]) => p === undefined)?.[0]; // unused; kept simple below
-          void port;
           resolveProbe.set(String(port), resolve);
         }),
     ),
@@ -1161,12 +1175,21 @@ function makeDeps(overrides: Partial<McpSupervisorDeps> = {}): {
 }
 
 describe('startMcpServers', () => {
-  it('spawns every declared server and reports readiness once its probe succeeds', () => {
-    const { deps, resolveProbe } = makeDeps({ now: vi.fn().mockReturnValueOnce(0).mockReturnValueOnce(500) });
-    startMcpServers([spec({ name: 'fs', port: 1111 }), spec({ name: 'git', port: 2222 })], deps);
+  it('spawns every declared server and reports readiness once its probe succeeds', async () => {
+    // Three now() calls in order: 'fs' spawn start, 'git' spawn start (both happen
+    // synchronously in the launch loop before either probe resolves), then 'fs's
+    // elapsed-time read when its probe resolves below.
+    const { deps, resolveProbe } = makeDeps({
+      now: vi.fn().mockReturnValueOnce(0).mockReturnValueOnce(0).mockReturnValueOnce(500),
+    });
+    startMcpServers(
+      [spec({ name: 'fs', port: 1111 }), spec({ name: 'git', hostname: 'git.internal', port: 2222 })],
+      deps,
+    );
 
     expect(deps.spawn).toHaveBeenCalledTimes(2);
     resolveProbe.get('1111')!(true);
+    await Promise.resolve(); // let probeReady's .then() microtask run
     expect(deps.onReady).toHaveBeenCalledWith('fs', 500);
   });
 
@@ -1327,6 +1350,7 @@ git commit -m "runProxy: add mcpSupervisor orchestrating parallel launch, readin
   - `RunProxyDeps.spawnMcpServer: McpSupervisorDeps['spawn']`
   - `RunProxyDeps.probeMcpReady: McpSupervisorDeps['probeReady']`
   - `RunProxyDeps.killProcessTree: (pid: number, signal: NodeJS.Signals) => Promise<void>`
+  - Each `McpServerConfig.command`'s `{ip}`/`{port}` placeholders are substituted with `127.0.0.1` and the assigned port before being spawned (the spec's original substitution requirement — the earlier tasks only carry the unsubstituted `command` string through).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1452,6 +1476,48 @@ Then add a new top-level `describe` block at the end of the file, before the fin
       await expect(exit).resolves.toBe(0);
       expect(h.mocks.killProcessTree).toHaveBeenCalledWith(9000, 'SIGTERM');
     });
+
+    it('substitutes {ip} and {port} into the command before spawning', async () => {
+      const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+      const config = {
+        ...baseConfig([h.channelConfig]),
+        mcpServers: [{ name: 'fs', hostname: 'fs.internal', command: 'run-fs --host {ip} --port {port}' }],
+      };
+      void runProxyLoop(config, h.deps);
+      await flush();
+
+      expect(h.mocks.spawnMcpServer.mock.calls[0][0].command).toBe('run-fs --host 127.0.0.1 --port 30000');
+    });
+
+    it('a SIGINT racing in while an mcp fatal is stopping the Envoy colors does not win with a clean exit', async () => {
+      const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+      let releaseStopColor!: () => void;
+      h.mocks.stopColor.mockImplementationOnce(
+        () => new Promise<void>((resolve) => (releaseStopColor = resolve)),
+      );
+      let exitCb!: (code: number | null, signal: string | null) => void;
+      h.mocks.spawnMcpServer.mockImplementationOnce((_spec: unknown, _onLine: unknown) => ({
+        pid: 9002,
+        onExit: (cb: (code: number | null, signal: string | null) => void) => (exitCb = cb),
+      }));
+      const config = {
+        ...baseConfig([h.channelConfig]),
+        mcpServers: [{ name: 'fs', hostname: 'fs.internal', command: 'run-fs' }],
+      };
+      const exit = runProxyLoop(config, h.deps);
+      await flush();
+
+      exitCb(1, null); // mcpFatal begins; its first stopColor call is blocked
+      await flush();
+      h.fireSigint(); // races in while the mcp-triggered teardown is still in flight
+      await flush();
+      releaseStopColor();
+      await flush();
+
+      // The mcp fatal must win: exit code 1, not the SIGINT's 0.
+      await expect(exit).resolves.toBe(1);
+      expect(h.mocks.error).toHaveBeenCalledWith(expect.stringContaining("mcp server 'fs' exited"));
+    });
   });
 ```
 
@@ -1515,18 +1581,26 @@ Inside `runProxyLoop`, near the top of the returned `Promise` body (after `const
     let mcpSupervisorHandle: McpSupervisorHandle | null = null;
 ```
 
-Replace the `shutdown` function to also stop MCP servers (was: `void deps.stopLogStream().then(() => resolve(code));`):
+Replace the `shutdown` function to also stop MCP servers and to accept an optional pre-teardown hook (was: `const shutdown = (code: number): void => { if (settled) return; settled = true; shutdownAbort.abort(); for (const channel of channels) channel.clearTimer(); for (const watcher of watchers) watcher.close(); void deps.stopLogStream().then(() => resolve(code)); };`):
 
 ```ts
-    const shutdown = (code: number): void => {
+    /**
+     * `settled` flips to true synchronously, before `beforeTeardown` (if given) runs —
+     * not after it resolves. This matters for mcpFatal below: without it, a SIGINT
+     * racing in during mcpFatal's async color-stopping could call shutdown(0) first
+     * and "win" with a clean exit code, silently losing the fact that an MCP server
+     * had failed. Reserving `settled` immediately closes that window.
+     */
+    const shutdown = (code: number, beforeTeardown?: () => Promise<void>): void => {
       if (settled) return;
       settled = true;
       shutdownAbort.abort();
       for (const channel of channels) channel.clearTimer();
       for (const watcher of watchers) watcher.close();
-      void Promise.all([deps.stopLogStream(), mcpSupervisorHandle?.stopAll() ?? Promise.resolve()]).then(
-        () => resolve(code),
-      );
+      const pre = beforeTeardown ? beforeTeardown() : Promise.resolve();
+      void pre
+        .then(() => Promise.all([deps.stopLogStream(), mcpSupervisorHandle?.stopAll() ?? Promise.resolve()]))
+        .then(() => resolve(code));
     };
 ```
 
@@ -1535,16 +1609,23 @@ Add a new `mcpFatal` function right after `fatal` (before the `channels` constru
 ```ts
     /**
      * An MCP-triggered fatal additionally stops both Envoy colors before the normal
-     * shutdown teardown: unlike every other fatal path, leaving the container running
-     * would let every other destination keep working while only the failed MCP
-     * hostname went dead — exactly the silent partial degradation this exists to
+     * shutdown teardown runs: unlike every other fatal path, leaving the container
+     * running would let every other destination keep working while only the failed
+     * MCP hostname went dead — exactly the silent partial degradation this exists to
      * prevent. stopColor on a color that was never brought up (or already stopped) is
-     * expected to no-op or fail harmlessly; Promise.allSettled tolerates either.
+     * expected to no-op or fail harmlessly; Promise.allSettled tolerates either. Note
+     * this does NOT cover the process-level uncaughtException/unhandledRejection
+     * safety net installed in commands/runProxy.ts, which calls process.exit()
+     * directly and — like every other resource this codebase owns (including the
+     * Envoy container itself) — is not expected to run any cleanup on a genuine crash;
+     * that safety net's job is only the spoken alert, not graceful teardown.
      */
     const mcpFatal = (message: string): void => {
       if (settled) return;
       deps.error(`run-proxy: ${message}`);
-      void Promise.allSettled([deps.stopColor('blue'), deps.stopColor('green')]).then(() => shutdown(1));
+      shutdown(1, () =>
+        Promise.allSettled([deps.stopColor('blue'), deps.stopColor('green')]).then(() => undefined),
+      );
     };
 ```
 
@@ -1581,11 +1662,13 @@ In `start()`, insert MCP port allocation and supervisor startup. First, replace 
 ```ts
       const ports = mcpServerConfigs.length > 0 ? await deps.allocateMcpPorts(mcpServerConfigs.length) : [];
       mcpServersWithPorts = mcpServerConfigs.map((s, i) => ({ hostname: s.hostname, port: ports[i] }));
+      // {ip} is always 127.0.0.1: the spawned process itself must bind loopback only
+      // (see the design spec) — only the Envoy cluster upstream uses host.docker.internal.
       const mcpSpecs: McpServerSpec[] = mcpServerConfigs.map((s, i) => ({
         name: s.name,
         hostname: s.hostname,
         port: ports[i],
-        command: s.command,
+        command: s.command.replaceAll('{ip}', '127.0.0.1').replaceAll('{port}', String(ports[i])),
         cwd: s.cwd,
         env: s.env,
       }));
@@ -1827,7 +1910,11 @@ export function generateMcpPostScript(servers: McpServerConfig[], platform: 'sh'
 Run: `npx vitest run tests/unit/mcpPostScript.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Verify the `codex mcp remove` syntax against the installed CLI**
+
+The design spec flags this explicitly: the exact `codex mcp remove` subcommand syntax was not confirmed against a real `codex` CLI at spec-writing time. Before committing, run `codex mcp remove --help` (or `codex mcp --help` if `remove` isn't a recognized subcommand) against whatever `codex` CLI version is available, and adjust the hardcoded `codex mcp remove ${server.name}`/`codex mcp add ${server.name} ${url}` strings in Step 3 if the real syntax differs (e.g. a different flag name, or `codex mcp delete` instead of `remove`). If no `codex` CLI is available in this environment, leave the strings as written and note this as a follow-up to verify manually before the feature ships.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src/mcpPostScript.ts tests/unit/mcpPostScript.test.ts
@@ -2095,20 +2182,36 @@ Right before the existing `let plans: PhasePlan[];` block, add:
       }
 ```
 
-Change the `plans = planAllPhases({ templatesDir: templatesDir(), paths });` call to:
+The existing code after `mcpServers`/`generatedDir` (now inserted above it) has three points that can return before `executePlans` ever runs — the `planAllPhases` failure `catch`, the `options.dryRun` branch, and (implicitly) any exception `executePlans` itself throws — every one of which would leak `generatedDir` if cleanup were only added after a successful `executePlans` call. Wrap the whole remainder of the action in `try`/`finally` instead. Replace the existing block (`let plans: PhasePlan[]; try { plans = planAllPhases({ templatesDir: templatesDir(), paths }); } catch (error) { ...; return; } const homeJqPlans: PhasePlan[] = ...; if (options.dryRun) { ...; return; } executePlans([...plans, ...homeJqPlans]); console.log(...);`) with:
 
 ```ts
-        plans = planAllPhases({ templatesDir: templatesDir(), paths, generatedPostScripts });
-```
+      try {
+        let plans: PhasePlan[];
+        try {
+          plans = planAllPhases({ templatesDir: templatesDir(), paths, generatedPostScripts });
+        } catch (error) {
+          console.error(`update-shares: ${(error as Error).message}`);
+          process.exitCode = 1;
+          return;
+        }
 
-Add cleanup of the temp dir after `executePlans(...)` runs (the existing code path is `executePlans([...plans, ...homeJqPlans]); console.log(...)`) — wrap it:
+        const homeJqPlans: PhasePlan[] = paths.vmSharedTargets.map((target) => ({
+          livePhaseDir: target.homeJqTransforms,
+          actions: [{ kind: 'dir', src: paths.homeJqTransforms, destRel: '.' }],
+        }));
 
-```ts
-      executePlans([...plans, ...homeJqPlans]);
-      if (generatedDir) rmSync(generatedDir, { recursive: true, force: true });
-      console.log(
-        'update-shares: rewove pre/post scripts and refreshed home-jq-transforms in both shares',
-      );
+        if (options.dryRun) {
+          console.log('\nupdate-shares: dry run — no files copied.');
+          return;
+        }
+
+        executePlans([...plans, ...homeJqPlans]);
+        console.log(
+          'update-shares: rewove pre/post scripts and refreshed home-jq-transforms in both shares',
+        );
+      } finally {
+        if (generatedDir) rmSync(generatedDir, { recursive: true, force: true });
+      }
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -2129,23 +2232,37 @@ git commit -m "update-shares: generate and weave the MCP guest registration post
 
 **Files:**
 
-- Create: `tests/proxy-stack/mcpServer.test.ts`
+- Create: `tests/proxy-stack/mcpServer.test.ts`, `tests/fixtures/mcpFakeServer.mjs`
 - Test: itself (this task *is* the test)
 
 **Interfaces:**
 
 - Consumes: the built CLI (`dist/cli.js`), the real `run-proxy`/`init`/`generate-ca` commands, `killProcessTree` (pre-existing).
 
-- [ ] **Step 1: Write the test**
+- [ ] **Step 1: Add a fixture MCP server script**
 
-Model this closely on `tests/proxy-stack/codexInjection.test.ts` (same `beforeAll`/`afterAll` shape: `init`, write `allowlist.txt` and `mcp-servers.yaml`, `generate-ca`, spawn `run-proxy` for real, wait for its "serving" log line), but the fake upstream here is a plain HTTP server the test spawns itself and binds to `127.0.0.1` — not a TLS mock upstream, since the whole point is to prove Envoy reaches it in cleartext via `host.docker.internal`:
+`spawnMcpServer` runs commands through a shell; a single-line `node -e "..."` command with embedded double quotes is fragile to quote cross-platform (Windows `cmd.exe` shell-quoting is unforgiving). Instead, follow the existing `tests/fixtures/processTree/parent.mjs` convention: a real fixture script, invoked with a plain argv, no embedded quoting needed. Create `tests/fixtures/mcpFakeServer.mjs`:
+
+```js
+import { createServer } from 'node:http';
+
+const [, , ip, port] = process.argv;
+
+createServer((req, res) => {
+  res.writeHead(200, { 'content-type': 'text/plain' });
+  res.end(`mcp ok:${req.url}`);
+}).listen(Number(port), ip);
+```
+
+- [ ] **Step 2: Write the test**
+
+Model this closely on `tests/proxy-stack/codexInjection.test.ts` (same `beforeAll`/`afterAll` shape: `init`, write `allowlist.txt` and `mcp-servers.yaml`, `generate-ca`, spawn `run-proxy` for real, wait for its "serving" log line). Unlike that suite, the "MCP server" here is a real child process `run-proxy` itself spawns (via `mcp-servers.yaml`, using the fixture from Step 1 with `{ip}`/`{port}` placeholders) — not something the test spawns or manages directly, and not something reached via `--upstream-override`, since `buildMcpEntry` (Task 4) has no override support and doesn't need any: this is the real, non-overridden path.
 
 ```ts
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { execa, type ResultPromise } from 'execa';
 import { createInterface } from 'node:readline';
 import { request as httpsRequest } from 'node:https';
-import { createServer, type Server } from 'node:http';
 import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -2157,6 +2274,7 @@ import { envParent, envRoot } from '../testEnvRoot';
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
 const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
+const fakeMcpScript = fileURLToPath(new URL('../fixtures/mcpFakeServer.mjs', import.meta.url));
 const proxyDir = join(envRoot, 'proxy');
 
 // Distinct from the other proxy-stack suites' ports.
@@ -2164,9 +2282,6 @@ const HTTPS_PORT = 18450;
 const HTTP_PORT = 18187;
 const envoyEnv = { ENVOY_HTTPS_PORT: String(HTTPS_PORT), ENVOY_HTTP_PORT: String(HTTP_PORT) };
 
-let fakeMcpServer: Server;
-let fakeMcpPort: number;
-const receivedPaths: string[] = [];
 let tempDir: string;
 let proxyProc: ResultPromise | null = null;
 const stdoutLines: string[] = [];
@@ -2181,35 +2296,31 @@ async function waitForLine(needle: string, timeoutMs: number): Promise<void> {
   }
 }
 
-function requestThrough(servername: string): Promise<{ statusCode?: number }> {
+function requestThrough(servername: string, path: string): Promise<{ statusCode?: number; body: string }> {
   return new Promise((resolve, reject) => {
-    const req = httpsRequest(
-      { host: '127.0.0.1', port: HTTPS_PORT, servername, ca: caCertPem, path: '/mcp-tool-call' },
-      (res) => {
-        res.resume();
-        res.on('end', () => resolve({ statusCode: res.statusCode }));
-      },
-    );
+    const req = httpsRequest({ host: '127.0.0.1', port: HTTPS_PORT, servername, ca: caCertPem, path }, (res) => {
+      let body = '';
+      res.on('data', (chunk) => (body += chunk));
+      res.on('end', () => resolve({ statusCode: res.statusCode, body }));
+    });
     req.on('error', reject);
     req.end();
   });
 }
 
 beforeAll(async () => {
-  fakeMcpServer = createServer((req, res) => {
-    receivedPaths.push(req.url ?? '');
-    res.writeHead(200, { 'content-type': 'text/plain' });
-    res.end('mcp ok');
-  });
-  fakeMcpPort = await new Promise<number>((resolve) => {
-    // 127.0.0.1 only: proves host.docker.internal reaches a loopback-only listener,
-    // not just one bound to every interface.
-    fakeMcpServer.listen(0, '127.0.0.1', () => {
-      resolve((fakeMcpServer.address() as { port: number }).port);
-    });
-  });
-
   tempDir = mkdtempSync(join(tmpdir(), 'mcp-proxy-stack-'));
+  // Written BEFORE run-proxy is spawned: run-proxy reads credentials synchronously
+  // at startup and fails fast if they're missing, so this must not race the spawn.
+  writeFileSync(
+    join(tempDir, '.credentials.json'),
+    JSON.stringify({ claudeAiOauth: { accessToken: 'x', expiresAt: Date.now() + 86400000 } }),
+  );
+  writeFileSync(
+    join(tempDir, 'auth.json'),
+    JSON.stringify({ OPENAI_API_KEY: null, tokens: null, auth_mode: 'chatgpt' }),
+  );
+
   mkdirSync(envParent, { recursive: true });
   await rmEnvRoot(envRoot);
   await execa(
@@ -2225,10 +2336,7 @@ beforeAll(async () => {
       'servers:',
       '  - name: faketool',
       '    hostname: faketool.internal',
-      // {ip}/{port} would normally be substituted into a real launch command; this
-      // test's "server" is already running, so the command just has to exit 0
-      // immediately without touching the already-bound port.
-      '    command: node -e "process.exit(0)"',
+      `    command: node ${fakeMcpScript} {ip} {port}`,
       '',
     ].join('\n'),
   );
@@ -2248,23 +2356,20 @@ beforeAll(async () => {
     ],
     { cwd: envParent, env: { ...process.env, ...envoyEnv }, buffer: false, reject: false },
   );
-  writeFileSync(
-    join(tempDir, '.credentials.json'),
-    JSON.stringify({ claudeAiOauth: { accessToken: 'x', expiresAt: Date.now() + 86400000 } }),
-  );
-  writeFileSync(
-    join(tempDir, 'auth.json'),
-    JSON.stringify({ OPENAI_API_KEY: null, tokens: null, auth_mode: 'chatgpt' }),
-  );
   for (const stream of [proxyProc.stdout, proxyProc.stderr]) {
     if (!stream) continue;
     createInterface({ input: stream }).on('line', (line) => stdoutLines.push(line));
   }
   await waitForLine('serving the current token', 60000);
+  // Confirms the fixture server actually came up and passed its readiness probe —
+  // not just that run-proxy itself started.
+  await waitForLine('[faketool] ready in', 60000);
   caCertPem = readFileSync(join(proxyDir, 'ca', 'cert.pem'), 'utf8');
 }, 120000);
 
 afterAll(async () => {
+  // run-proxy's own SIGINT shutdown kills the faketool child it spawned (Task 10);
+  // no separate cleanup of that process is needed here.
   if (proxyProc?.pid !== undefined) await killProcessTree(proxyProc.pid, 'SIGINT');
   try {
     await proxyProc;
@@ -2272,45 +2377,40 @@ afterAll(async () => {
     /* ignore */
   }
   await execa('docker', ['compose', 'down'], { cwd: proxyDir, env: { ...process.env, ...envoyEnv }, reject: false });
-  await new Promise<void>((resolve) => fakeMcpServer.close(() => resolve()));
   rmSync(tempDir, { recursive: true, force: true });
 }, 60000);
 
 describe('host-run MCP server, reached through the proxy on loopback', () => {
-  it('reaches a host-loopback-bound server in cleartext via host.docker.internal', async () => {
-    // Not achievable without spawning a real server with a Configamatron-assigned
-    // port; this suite proves the routing/host.docker.internal path using the fake
-    // server directly, confirming the mechanism the design's cluster upstream relies
-    // on. A full spawn-and-route test is out of scope here (see the design spec's
-    // "Not planned" testing note re: guest-level CLI registration).
-    expect(fakeMcpPort).toBeGreaterThan(0);
+  it('reaches the spawned host-loopback server in cleartext via host.docker.internal', async () => {
+    const { statusCode, body } = await requestThrough('faketool.internal', '/mcp-tool-call');
+    expect(statusCode).toBe(200);
+    expect(body).toBe('mcp ok:/mcp-tool-call');
   });
 
-  it('emits the mcp pathId in the access log for a request to the declared hostname', async () => {
-    // This confirms the filter chain and access-log tag exist and route correctly,
-    // using --upstream-override to point the mcp cluster at the fake server (the
-    // override mechanism already proven reachable via host.docker.internal by
-    // tests/proxy-stack/codexInjection.test.ts's mock-upstream usage).
-    const before = receivedPaths.length;
-    const { statusCode } = await requestThrough('faketool.internal');
-    expect(statusCode).toBe(200);
-    expect(receivedPaths.slice(before)).toEqual(['/mcp-tool-call']);
-    expect(stdoutLines.some((l) => l.includes('CFGM|mcp|'))).toBe(true);
+  it('logs the request with the ALLOW MCP tag', async () => {
+    const before = stdoutLines.length;
+    await requestThrough('faketool.internal', '/another-call');
+
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline && !stdoutLines.slice(before).some((l) => l.includes('ALLOW MCP'))) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(
+      stdoutLines.slice(before).some((l) => l.includes('ALLOW MCP') && l.includes('faketool.internal')),
+    ).toBe(true);
   });
 });
 ```
 
-- [ ] **Step 2: Run the test**
+- [ ] **Step 3: Run the test**
 
 Run: `npx vitest run --config vitest.proxy-stack.config.ts tests/proxy-stack/mcpServer.test.ts`
-Expected: initially FAIL on the second test — the cluster is currently wired to `host.docker.internal:<port allocated by run-proxy for faketool>`, not to `fakeMcpPort` directly. Add `--upstream-override faketool.internal=host.docker.internal:${fakeMcpPort}` to the `run-proxy` args in `beforeAll` (same override mechanism `codexInjection.test.ts` already uses) so the mcp cluster's upstream is redirected to the fake server for this test, then re-run.
+Expected: PASS. This proves, end to end: `run-proxy` allocates a port and substitutes it into the fixture's `{ip}`/`{port}` command; the fixture binds `127.0.0.1` only; the readiness probe (Task 9) confirms it; Envoy's cleartext MCP filter chain (Task 4) routes a real HTTPS request through `host.docker.internal` to that `127.0.0.1`-only listener; and the access log emits the `ALLOW MCP` tag (Task 6) via `runProxyLoop`'s own formatted console output — not the raw `CFGM|mcp|` line, which is parsed and reformatted before it ever reaches stdout.
 
-Expected after the override is added: PASS — this proves Envoy's `envoy.filters.network.sni_dynamic_forward_proxy`-free, cleartext MCP filter chain routes correctly and that `host.docker.internal` reaches a `127.0.0.1`-only-bound listener on the host, which is the exact mechanism Task 4's cluster relies on for a real (non-overridden) MCP server.
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add tests/proxy-stack/mcpServer.test.ts
+git add tests/fixtures/mcpFakeServer.mjs tests/proxy-stack/mcpServer.test.ts
 git commit -m "proxy-stack: verify Envoy routes a real request to a host-run MCP server in cleartext"
 ```
 
@@ -2335,8 +2435,11 @@ git commit -m "proxy-stack: verify Envoy routes a real request to a host-run MCP
 - Weaving the generated script as a built-in → Task 13. ✓
 - CLI wiring for both commands → Tasks 11, 14. ✓
 - Proxy-stack integration proving `host.docker.internal` reachability → Task 15. ✓
+- `{ip}`/`{port}` command substitution → Task 10 (explicit test; the earlier tasks intentionally carry the raw `command` string unchanged, since substitution needs the assigned port, which isn't known until Task 10's `start()`).
 - Known limitations (unverified loopback bind, no auto-removal on rename/delete) → intentionally not implemented; called out in the spec, not re-litigated here.
 
 **Placeholder scan:** every step above shows real, complete code — no `TBD`/`implement later`/prose-only steps.
 
-**Type consistency check:** `McpServerConfig` (Task 2) flows unchanged into `resolveMcpAllowlistCollisions` (Task 3), `runProxyLoop`'s `RunProxyConfig.mcpServers` (Task 10), `readMcpServers`'s return type (Task 2/11/14), and `generateMcpPostScript` (Task 12) — one shape throughout, no renamed fields. `McpServerUpstream { hostname, port }` (Task 4) flows unchanged into `buildConfig.ts` (Task 5) and `RunProxyDeps.buildConfig`/`mcpServersWithPorts` (Task 10). `McpServerSpec { name, hostname, port, command, cwd, env }` (Task 9) matches the object built in Task 10's `mcpSpecs` mapping and the `spec` parameter destructured in Task 8's `spawnMcpServer` wiring in Task 11.
+**Type consistency check:** `McpServerConfig` (Task 2) flows unchanged into `resolveMcpAllowlistCollisions` (Task 3), `runProxyLoop`'s `RunProxyConfig.mcpServers` (Task 10), `readMcpServers`'s return type (Task 2/11/14), and `generateMcpPostScript` (Task 12) — one shape throughout, no renamed fields. `McpServerUpstream { hostname, port }` (Task 4) flows unchanged into `buildConfig.ts` (Task 5) and `RunProxyDeps.buildConfig`/`mcpServersWithPorts` (Task 10). `McpServerSpec { name, hostname, port, command, cwd, env }` (Task 9) matches the object built in Task 10's `mcpSpecs` mapping (command already substituted) and the `spec` parameter destructured in Task 8's `spawnMcpServer` wiring in Task 11.
+
+**Peer review round 2 (applied inline above):** a peer review of the first draft found several real defects, all fixed in place: `{ip}`/`{port}` substitution was entirely missing from the command-building code (now in Task 10); `spawnMcpServer` omitted `detached: process.platform !== 'win32'`, so `killProcessTree`'s process-group signal couldn't reach a shell-wrapped MCP server's descendants on non-Windows (fixed in Task 8); `mcpFatal` had a race where a concurrent SIGINT could resolve with a clean exit 0 before the async color-stopping finished, silently losing the fatal (fixed by reserving `settled` synchronously inside `shutdown()`, with a new race-condition test in Task 10); Task 9's readiness test asserted synchronously before the probe's `.then()` microtask ran and had a broken `now()` mock sequence (both fixed); Task 15's original integration test was unbuildable — its command exited immediately (triggering the very fatal path Task 9 implements), relied on `--upstream-override` support `buildMcpEntry` doesn't have, wrote credentials after spawning `run-proxy` (a startup race), and asserted on a raw `CFGM|mcp|` log line `runProxyLoop` never emits verbatim (it reformats to `ALLOW MCP`) — replaced with a real long-running fixture script substituted into a real `{ip}`/`{port}` command, no override needed, correct credential-write ordering, and an assertion on the actual formatted output. Task 5 and Task 14's test snippets were also corrected to match the real shape of `proxyConfigWriting.test.ts` and `tests/cli/updateShares.test.ts` (verified by reading both files directly rather than assumed). One item was intentionally left as a documented follow-up rather than fully engineered: the top-level `uncaughtException`/`unhandledRejection` safety net in `commands/runProxy.ts` calls `process.exit()` directly and does not run `runProxyLoop`'s MCP-process cleanup — this matches the existing convention (that same safety net doesn't stop the Envoy container either), so it's noted as an intentional scope boundary in Task 10 rather than a gap to close.
