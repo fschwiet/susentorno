@@ -1,4 +1,5 @@
 import { execa } from 'execa';
+import { tmpdir } from 'node:os';
 
 export interface AbnormalExitAlertDeps {
   platform: NodeJS.Platform;
@@ -40,6 +41,8 @@ export function buildSpeakCommand(message: string): string {
 /**
  * Fires a detached, unreferenced PowerShell process and returns immediately — never
  * awaited, so a slow or failed spawn cannot delay or change run-proxy's own exit.
+ * Pinned to the OS temp dir (not the inherited cwd) so the orphaned process never
+ * locks whatever directory run-proxy happened to be running from.
  */
 export function speakAlert(): void {
   const child = execa(
@@ -52,7 +55,7 @@ export function speakAlert(): void {
       '-Command',
       buildSpeakCommand(SPOKEN_MESSAGE),
     ],
-    { detached: true, stdio: 'ignore', reject: false },
+    { detached: true, stdio: 'ignore', reject: false, cwd: tmpdir() },
   );
   child.unref();
 }
