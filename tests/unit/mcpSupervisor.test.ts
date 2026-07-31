@@ -80,6 +80,19 @@ describe('startMcpServers', () => {
     expect(deps.onReady).not.toHaveBeenCalled();
   });
 
+  it('stops launching further servers once an earlier synchronous spawn failure has already fired the fatal', () => {
+    const { deps } = makeDeps({
+      spawn: vi.fn(() => {
+        throw new Error('boom');
+      }),
+    });
+
+    startMcpServers([spec({ name: 'fs' }), spec({ name: 'git', hostname: 'git.internal', port: 2 })], deps);
+
+    expect(deps.spawn).toHaveBeenCalledTimes(1);
+    expect(deps.onFatal).toHaveBeenCalledTimes(1);
+  });
+
   it('stopAll kills every spawned process via killProcessTree', async () => {
     const { deps, pids } = makeDeps();
     const handle = startMcpServers([spec({ name: 'fs' }), spec({ name: 'git', hostname: 'git.internal', port: 2 })], deps);

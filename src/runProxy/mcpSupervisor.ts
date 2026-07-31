@@ -45,6 +45,10 @@ export function startMcpServers(specs: McpServerSpec[], deps: McpSupervisorDeps)
   };
 
   for (const spec of specs) {
+    // A synchronous spawn failure for an earlier spec already fired the one-shot
+    // fatal and started teardown; don't launch further servers into a stack that's
+    // already shutting down.
+    if (fatalFired) break;
     const startedAt = deps.now();
     let handle: McpChildHandle;
     try {

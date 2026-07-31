@@ -376,6 +376,10 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
 
         // Secrets were already written by each channel's startupRead().
         const colorPorts = await deps.allocatePorts();
+        // An MCP fatal can land during the allocatePorts() await above (it already
+        // stopped both colors as part of its own teardown); without this check,
+        // bringUpColor below would start blue right back up after that teardown.
+        if (settled) return;
         try {
           await deps.bringUpColor('blue', colorPorts);
         } catch {

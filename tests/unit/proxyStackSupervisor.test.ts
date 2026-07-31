@@ -949,5 +949,27 @@ describe('proxy stack supervision', () => {
       await expect(exit).resolves.toBe(1);
       expect(h.mocks.error).toHaveBeenCalledWith(expect.stringContaining("mcp server 'fs' exited"));
     });
+
+    it('does not bring blue up if an mcp fatal lands while waiting on allocatePorts', async () => {
+      const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+      let releaseAllocatePorts!: (ports: ColorPorts) => void;
+      h.mocks.allocatePorts.mockImplementationOnce(
+        () => new Promise<ColorPorts>((resolve) => (releaseAllocatePorts = resolve)),
+      );
+      h.mocks.probeMcpReady.mockResolvedValueOnce(false); // fires mcpFatal
+      const config = {
+        ...baseConfig([h.channelConfig]),
+        mcpServers: [{ name: 'fs', hostname: 'fs.internal', command: 'run-fs' }],
+      };
+      const exit = runProxyLoop(config, h.deps);
+      await flush(); // mcp probe fails and mcpFatal runs while allocatePorts() is still pending
+
+      expect(h.mocks.error).toHaveBeenCalledWith(expect.stringContaining('did not become ready'));
+      releaseAllocatePorts({ httpsPort: 29000, httpPort: 29001, adminPort: 29002 });
+      await flush();
+
+      await expect(exit).resolves.toBe(1);
+      expect(h.mocks.bringUpColor).not.toHaveBeenCalled();
+    });
   });
 });
