@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { execa } from 'execa';
 import { fileURLToPath } from 'node:url';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -128,6 +128,47 @@ describe.skipIf(!hasJq)('configamatron update-shares', () => {
       expect(exitCode).toBe(1);
       expect(stderr).toContain('bad.sh');
       expect(existsSync(existing)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('generates a re-runnable MCP registration post-script when mcp-servers.yaml declares servers', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'update-shares-'));
+    try {
+      await initEnv(dir);
+      writeFileSync(
+        join(dir, '.configamatron', 'mcp-servers.yaml'),
+        ['servers:', '  - name: filesystem', '    hostname: filesystem.internal', '    command: run-fs', ''].join(
+          '\n',
+        ),
+      );
+
+      await execa('node', [cliPath, 'update-shares'], { cwd: dir });
+
+      const shDir = join(dir, '.configamatron', 'vm-shared', 'post-scripts');
+      const generatedName = readdirSync(shDir).find((f) => f.includes('mcp-servers'));
+      expect(generatedName).toBeDefined();
+      const content = readFileSync(join(shDir, generatedName!), 'utf8');
+      expect(content).toContain(
+        'claude mcp add --scope user --transport http filesystem https://filesystem.internal',
+      );
+
+      const ps1Dir = join(dir, '.configamatron', 'vm-shared-windows', 'post-scripts');
+      const generatedPs1Name = readdirSync(ps1Dir).find((f) => f.includes('mcp-servers'));
+      expect(generatedPs1Name).toBeDefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('emits no MCP post-script when mcp-servers.yaml is absent', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'update-shares-'));
+    try {
+      await initEnv(dir);
+      await execa('node', [cliPath, 'update-shares'], { cwd: dir });
+      const shDir = join(dir, '.configamatron', 'vm-shared', 'post-scripts');
+      expect(readdirSync(shDir).some((f) => f.includes('mcp-servers'))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

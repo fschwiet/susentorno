@@ -1,9 +1,14 @@
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Command } from 'commander';
 import { requireEnvPathsOrExit } from '../envPaths';
 import { previewTransforms } from '../homeJqTransforms';
-import { planAllPhases, executePlans, type PhasePlan } from '../weaveShares';
+import { planAllPhases, executePlans, type PhasePlan, type GeneratedScript } from '../weaveShares';
 import { templatesDir } from '../templates';
+import { readMcpServers } from '../mcpServers';
+import { generateMcpPostScript } from '../mcpPostScript';
 
 interface UpdateSharesOptions {
   dryRun: boolean;
@@ -58,28 +63,55 @@ export function registerUpdateShares(program: Command): void {
         return;
       }
 
-      let plans: PhasePlan[];
+      let mcpServers;
       try {
-        plans = planAllPhases({ templatesDir: templatesDir(), paths });
+        mcpServers = readMcpServers(paths.mcpServers);
       } catch (error) {
         console.error(`update-shares: ${(error as Error).message}`);
         process.exitCode = 1;
         return;
       }
 
-      const homeJqPlans: PhasePlan[] = paths.vmSharedTargets.map((target) => ({
-        livePhaseDir: target.homeJqTransforms,
-        actions: [{ kind: 'dir', src: paths.homeJqTransforms, destRel: '.' }],
-      }));
-
-      if (options.dryRun) {
-        console.log('\nupdate-shares: dry run — no files copied.');
-        return;
+      let generatedDir: string | null = null;
+      let generatedPostScripts: GeneratedScript[] = [];
+      if (mcpServers.length > 0) {
+        generatedDir = mkdtempSync(join(tmpdir(), 'cfgm-mcp-postscript-'));
+        const shPath = join(generatedDir, 'mcp-servers.sh');
+        const ps1Path = join(generatedDir, 'mcp-servers.ps1');
+        writeFileSync(shPath, generateMcpPostScript(mcpServers, 'sh'));
+        writeFileSync(ps1Path, generateMcpPostScript(mcpServers, 'ps1'));
+        generatedPostScripts = [
+          { ext: 'sh', remainder: 'mcp-servers.sh', sourcePath: shPath },
+          { ext: 'ps1', remainder: 'mcp-servers.ps1', sourcePath: ps1Path },
+        ];
       }
 
-      executePlans([...plans, ...homeJqPlans]);
-      console.log(
-        'update-shares: rewove pre/post scripts and refreshed home-jq-transforms in both shares',
-      );
+      try {
+        let plans: PhasePlan[];
+        try {
+          plans = planAllPhases({ templatesDir: templatesDir(), paths, generatedPostScripts });
+        } catch (error) {
+          console.error(`update-shares: ${(error as Error).message}`);
+          process.exitCode = 1;
+          return;
+        }
+
+        const homeJqPlans: PhasePlan[] = paths.vmSharedTargets.map((target) => ({
+          livePhaseDir: target.homeJqTransforms,
+          actions: [{ kind: 'dir', src: paths.homeJqTransforms, destRel: '.' }],
+        }));
+
+        if (options.dryRun) {
+          console.log('\nupdate-shares: dry run — no files copied.');
+          return;
+        }
+
+        executePlans([...plans, ...homeJqPlans]);
+        console.log(
+          'update-shares: rewove pre/post scripts and refreshed home-jq-transforms in both shares',
+        );
+      } finally {
+        if (generatedDir) rmSync(generatedDir, { recursive: true, force: true });
+      }
     });
 }
