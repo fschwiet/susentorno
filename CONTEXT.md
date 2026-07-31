@@ -28,6 +28,8 @@ Configamatron creates development environments in which coding agents run inside
 
 **Internal switch**: The Hyper-V network shared only by the host and isolated guests, with the host acting as the guests' constrained network edge. _Avoid_: Host-only network, VMnet
 
+**Host-run MCP server**: A Model Context Protocol server process that Configamatron launches and owns on the host, reachable from an isolated guest at a dedicated hostname through the proxy stack, giving the guest's coding agents host-credentialed tool access without exposing host credentials to the guest itself. _Avoid_: MCP server, tool server
+
 ## Credentials
 
 **Host credential**: A usable credential retained on the trusted host and made available to the proxy stack for a specific external service. _Avoid_: Real token, proxy credential
