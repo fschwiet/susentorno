@@ -48,6 +48,7 @@ export interface RunProxyDeps {
   /** Resolves once the current log-follow child is fully gone; no-op when none. */
   stopLogStream: () => Promise<void>;
   onSigint: (handler: () => void) => void;
+  onSigterm: (handler: () => void) => void;
   log: (message: string) => void;
   error: (message: string) => void;
   now: () => number;
@@ -67,7 +68,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
     let restarting = false;
     let pendingAllowlist = false;
     const dirtyChannels = new Set<CredentialChannel>();
-    let sigintSeen = false;
+    let stopSignalSeen = false;
     let activeColor: Color = 'blue';
     let activePorts: ColorPorts | null = null;
     const unique = new UniqueTracker();
@@ -249,10 +250,10 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
       }
     };
 
-    const onSigintOnce = (): void => {
-      if (sigintSeen || settled) return;
-      sigintSeen = true;
-      deps.log('run-proxy: SIGINT received, stopping (container left running)');
+    const onStopSignal = (signalName: 'SIGINT' | 'SIGTERM'): void => {
+      if (stopSignalSeen || settled) return;
+      stopSignalSeen = true;
+      deps.log(`run-proxy: ${signalName} received, stopping (container left running)`);
       shutdown(0);
     };
 
@@ -281,7 +282,8 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
         watchers.push(deps.watch(channel.credentialsPath, () => requestRestart(channel)));
       }
       watchers.push(deps.watch(config.allowlistPath, () => requestRestart('allowlist')));
-      deps.onSigint(onSigintOnce);
+      deps.onSigint(() => onStopSignal('SIGINT'));
+      deps.onSigterm(() => onStopSignal('SIGTERM'));
 
       restarting = true; // hold watcher events as pending until the startup bring-up is done
       try {

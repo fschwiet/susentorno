@@ -74,6 +74,7 @@ interface Harness {
   fireCredentials: (path?: string) => void;
   fireAllowlist: () => void;
   fireSigint: () => void;
+  fireSigterm: () => void;
   feedLogLine: (raw: string) => void;
   mocks: {
     writeSecret: ReturnType<typeof vi.fn<(token: string, path: string) => void>>;
@@ -103,6 +104,7 @@ function makeHarness(
   const credentialCbs = new Map<string, () => void>();
   let allowlistCb: (() => void) | null = null;
   let sigintCb: (() => void) | null = null;
+  let sigtermCb: (() => void) | null = null;
   let onLine: ((raw: string) => void) | null = null;
   const watchClose = vi.fn();
 
@@ -152,6 +154,9 @@ function makeHarness(
     onSigint: (handler) => {
       sigintCb = handler;
     },
+    onSigterm: (handler) => {
+      sigtermCb = handler;
+    },
     log: mocks.log,
     error: mocks.error,
     now: () => Date.now(),
@@ -164,6 +169,7 @@ function makeHarness(
     fireCredentials: (path = '/fake/.credentials.json') => credentialCbs.get(path)?.(),
     fireAllowlist: () => allowlistCb?.(),
     fireSigint: () => sigintCb?.(),
+    fireSigterm: () => sigtermCb?.(),
     feedLogLine: (raw) => onLine?.(raw),
     mocks,
   };
@@ -638,6 +644,41 @@ describe('proxy stack supervision', () => {
       expect(h.mocks.watchClose).toHaveBeenCalledTimes(2);
       expect(h.mocks.stopLogStream).toHaveBeenCalled();
       expect(h.mocks.bringUpColor).not.toHaveBeenCalled();
+    });
+
+    it('SIGTERM tears everything down once and exits 0, same as SIGINT', async () => {
+      const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+      const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      await flush();
+      h.mocks.log.mockClear();
+      h.mocks.bringUpColor.mockClear();
+
+      h.fireSigterm();
+      h.fireSigterm();
+      await flush();
+
+      await expect(exit).resolves.toBe(0);
+      const sigtermLogs = h.mocks.log.mock.calls.filter((c) => String(c[0]).includes('SIGTERM'));
+      expect(sigtermLogs).toHaveLength(1);
+      expect(h.mocks.watchClose).toHaveBeenCalledTimes(2);
+      expect(h.mocks.stopLogStream).toHaveBeenCalled();
+      expect(h.mocks.bringUpColor).not.toHaveBeenCalled();
+    });
+
+    it('a SIGINT after a SIGTERM (or vice versa) is a no-op — only the first shutdown signal wins', async () => {
+      const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+      const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      await flush();
+
+      h.fireSigterm();
+      h.fireSigint();
+      await flush();
+
+      await expect(exit).resolves.toBe(0);
+      const stopLogs = h.mocks.log.mock.calls.filter(
+        (c) => String(c[0]).includes('SIGTERM') || String(c[0]).includes('SIGINT'),
+      );
+      expect(stopLogs).toHaveLength(1);
     });
 
     it('SIGINT while waiting for a color to become ready aborts the wait and exits 0', async () => {

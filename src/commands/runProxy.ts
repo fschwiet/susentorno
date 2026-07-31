@@ -247,6 +247,7 @@ export function registerRunProxy(program: Command): void {
           await handle?.stop();
         },
         onSigint: (handler) => process.on('SIGINT', handler),
+        onSigterm: (handler) => process.on('SIGTERM', handler),
         log: (message) => console.log(message),
         error: (message) => console.error(message),
         now: () => Date.now(),
