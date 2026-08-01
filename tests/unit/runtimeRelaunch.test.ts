@@ -10,15 +10,15 @@ import {
 
 describe('dedicated-node runtime relaunch', () => {
   describe('dedicated node path resolution', () => {
-    it('joins the given homedir with the fixed .configamatron-host convention', () => {
+    it('joins the given homedir with the fixed .susentorno-host convention', () => {
       expect(getDedicatedNodePath('C:\\Users\\alice')).toBe(
-        'C:\\Users\\alice\\.configamatron-host\\run-proxy-node.exe',
+        'C:\\Users\\alice\\.susentorno-host\\run-proxy-node.exe',
       );
     });
   });
 
   describe('dedicated node copy freshness', () => {
-    const DEDICATED = 'C:\\Users\\alice\\.configamatron-host\\run-proxy-node.exe';
+    const DEDICATED = 'C:\\Users\\alice\\.susentorno-host\\run-proxy-node.exe';
     const SOURCE = 'C:\\node\\node.exe';
 
     function makeDeps(overrides: Partial<EnsureCopyDeps> = {}): EnsureCopyDeps {
@@ -43,7 +43,7 @@ describe('dedicated-node runtime relaunch', () => {
 
       expect(result).toBe(DEDICATED);
       expect(deps.hashFile).not.toHaveBeenCalled();
-      expect(deps.mkdir).toHaveBeenCalledWith('C:\\Users\\alice\\.configamatron-host');
+      expect(deps.mkdir).toHaveBeenCalledWith('C:\\Users\\alice\\.susentorno-host');
       expect(deps.copyFile).toHaveBeenCalledWith(SOURCE, DEDICATED);
       expect(deps.writeReadme).toHaveBeenCalledWith(DEDICATED);
     });
@@ -87,7 +87,7 @@ describe('dedicated-node runtime relaunch', () => {
   });
 
   describe('relaunch decision', () => {
-    const DEDICATED = 'C:\\Users\\alice\\.configamatron-host\\run-proxy-node.exe';
+    const DEDICATED = 'C:\\Users\\alice\\.susentorno-host\\run-proxy-node.exe';
     const SOURCE = 'C:\\node\\node.exe';
 
     function makeDeps(overrides: Partial<RelaunchDeps> = {}): RelaunchDeps {
@@ -127,7 +127,7 @@ describe('dedicated-node runtime relaunch', () => {
 
     it('does nothing when already running the dedicated copy (case-insensitive)', async () => {
       const deps = makeDeps({
-        execPath: 'C:\\USERS\\ALICE\\.CONFIGAMATRON-HOST\\RUN-PROXY-NODE.EXE',
+        execPath: 'C:\\USERS\\ALICE\\.susentorno-HOST\\RUN-PROXY-NODE.EXE',
       });
       const result = await relaunchIfNeeded(deps);
       expect(result).toEqual({ relaunched: false });

@@ -41,5 +41,5 @@ export function jwtExpMs(token: string): number | null {
 export function buildJwt(claims: Record<string, unknown>): string {
   const header = encodeBase64Url({ alg: 'none', typ: 'JWT' });
   const payload = encodeBase64Url(claims);
-  return `${header}.${payload}.configamatron-not-a-real-signature`;
+  return `${header}.${payload}.susentorno-not-a-real-signature`;
 }

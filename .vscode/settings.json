@@ -1,9 +1,9 @@
 {
-  "//": "Hide the throwaway .configamatron test-env dir from the editor. It is gitignored and rebuilt from scratch each test run; if the editor sees it, the C# Dev Kit auto-builds the copied dns-responder .csproj and locks the folder, making the tests' rmSync fail with EPERM on Windows.",
+  "//": "Hide the throwaway .susentorno test-env dir from the editor. It is gitignored and rebuilt from scratch each test run; if the editor sees it, the C# Dev Kit auto-builds the copied dns-responder .csproj and locks the folder, making the tests' rmSync fail with EPERM on Windows.",
   "files.exclude": {
-    "**/.configamatron": true
+    "**/.susentorno": true
   },
   "files.watcherExclude": {
-    "**/.configamatron/**": true
+    "**/.susentorno/**": true
   }
 }

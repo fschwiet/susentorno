@@ -6,7 +6,7 @@ $shareRoot = Split-Path -Parent $scriptDir
 if (-not $CertPath) { $CertPath = Join-Path $shareRoot 'cert.pem' }
 
 if (-not (Test-Path $CertPath)) {
-  Write-Error "05-configure-network: $CertPath not found. Run 'configamatron generate-ca' on the host first."
+  Write-Error "05-configure-network: $CertPath not found. Run 'susentorno generate-ca' on the host first."
   exit 1
 }
 
@@ -17,7 +17,7 @@ certutil -f -addstore Root $CertPath | Out-Null
 
 # 2) Node tools (claude/codex) ignore the Windows store, so point NODE_EXTRA_CA_CERTS
 #    at a stable copy. Machine scope so every new shell inherits it.
-$caDir = 'C:\ProgramData\configamatron'
+$caDir = 'C:\ProgramData\susentorno'
 New-Item -ItemType Directory -Force -Path $caDir | Out-Null
 $caStable = Join-Path $caDir 'proxy-ca.pem'
 Copy-Item -Force $CertPath $caStable

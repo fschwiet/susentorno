@@ -61,11 +61,11 @@ describe('environment initialization', () => {
       expect(credentials).not.toContain('\r');
       expect(credentials).not.toContain('sk-ant-oat-test-fixture-token');
       expect(JSON.parse(credentials).claudeAiOauth.accessToken).toBe(
-        'sk-ant-oat-CONFIGAMATRON-PLACEHOLDER',
+        'sk-ant-oat-susentorno-PLACEHOLDER',
       );
     });
 
-    it('copies the configamatron.gitignore as .gitignore', () => {
+    it('copies the susentorno.gitignore as .gitignore', () => {
       initEnvironment(options());
       const root = join(dir, ENV_DIR_NAME);
       expect(existsSync(join(root, '.gitignore')), '.gitignore').toBe(true);
@@ -86,7 +86,7 @@ describe('environment initialization', () => {
       for (const folder of ['vm-shared', 'vm-shared-windows']) {
         const credentials = readFileSync(join(root, folder, 'credentials.json'), 'utf8');
         expect(JSON.parse(credentials).claudeAiOauth.accessToken, folder).toBe(
-          'sk-ant-oat-CONFIGAMATRON-PLACEHOLDER',
+          'sk-ant-oat-susentorno-PLACEHOLDER',
         );
       }
     });
@@ -135,7 +135,7 @@ describe('environment initialization', () => {
       expect(existsSync(join(dir, ENV_DIR_NAME))).toBe(false);
     });
 
-    it('refuses to run when .configamatron already exists', () => {
+    it('refuses to run when .susentorno already exists', () => {
       initEnvironment(options());
       expect(() => initEnvironment(options())).toThrow('already exists');
     });

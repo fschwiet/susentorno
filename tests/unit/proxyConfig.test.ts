@@ -40,9 +40,9 @@ describe('proxy configuration generation', () => {
       // docs/investigations/2026-07-12-streaming-response-cut-by-envoy-route-timeout.md
       expect(hcm.route_config.virtual_hosts[0].routes[0].route.timeout).toBe('0s');
       expect(hcm.http_filters.map((f: any) => f.name)).toEqual([
-        'configamatron.auth_pre',
+        'susentorno.auth_pre',
         'envoy.filters.http.credential_injector',
-        'configamatron.auth_post',
+        'susentorno.auth_post',
         'envoy.filters.http.router',
       ]);
       expect(hcm.http_filters[0].typed_config.default_source_code.filename).toBe(
@@ -407,14 +407,14 @@ describe('proxy configuration generation', () => {
       expect(chain).toBeDefined();
       const hcm = chain.filters[0].typed_config;
       expect(hcm.http_filters.map((f: any) => f.name)).toEqual([
-        'configamatron.auth_pre',
+        'susentorno.auth_pre',
         'envoy.filters.http.credential_injector',
-        'configamatron.auth_post',
+        'susentorno.auth_post',
         'envoy.filters.http.router',
       ]);
       // Gate is inline (no mounted file) and embeds a base64 decoder + placeholder check.
       const lua = hcm.http_filters[0].typed_config.default_source_code.inline_string;
-      expect(lua).toContain('ghp-CONFIGAMATRON-PLACEHOLDER');
+      expect(lua).toContain('ghp-susentorno-PLACEHOLDER');
       expect(lua).toContain('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/');
       expect(lua).toContain(NO_AUTH_MARKER_HEADER);
       expect(lua).toContain(NO_AUTH_SENTINEL_VALUE);
@@ -443,14 +443,14 @@ describe('proxy configuration generation', () => {
       expect(chain).toBeDefined();
       const hcm = chain.filters[0].typed_config;
       expect(hcm.http_filters.map((f: any) => f.name)).toEqual([
-        'configamatron.auth_pre',
+        'susentorno.auth_pre',
         'envoy.filters.http.credential_injector',
-        'configamatron.auth_post',
+        'susentorno.auth_post',
         'envoy.filters.http.router',
       ]);
       const lua = hcm.http_filters[0].typed_config.default_source_code.inline_string;
-      expect(lua).toContain('token ghp-CONFIGAMATRON-PLACEHOLDER');
-      expect(lua).toContain('Bearer ghp-CONFIGAMATRON-PLACEHOLDER');
+      expect(lua).toContain('token ghp-susentorno-PLACEHOLDER');
+      expect(lua).toContain('Bearer ghp-susentorno-PLACEHOLDER');
       // Still a plain exact match — no base64 decoder embedded (that's the Basic gate only).
       expect(lua).not.toContain('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz');
       const injector = hcm.http_filters[1].typed_config;
@@ -509,9 +509,9 @@ describe('proxy configuration generation', () => {
 
       const hcm = codexChain.filters[0].typed_config;
       expect(hcm.http_filters.map((f: any) => f.name)).toEqual([
-        'configamatron.auth_pre',
+        'susentorno.auth_pre',
         'envoy.filters.http.credential_injector',
-        'configamatron.auth_post',
+        'susentorno.auth_post',
         'envoy.filters.http.router',
       ]);
       // Inline gate (not a mounted file) referencing the placeholder Bearer and the

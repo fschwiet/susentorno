@@ -2,7 +2,7 @@
 
 Create and configure a guest VM under Hyper-V, isolated behind the host proxy. May be repeated for any number of guests; each guest pairs with one environment via its shared folder. Complete [setup-machine.md](setup-machine.md) and [setup-environment.md](setup-environment.md) first, so the environment's `vm-shared/` and `vm-shared-windows/` folders contain `cert.pem`, `github-config.txt`, and `credentials.json`.
 
-Both guest OSes stay on **DHCP** throughout: on the Default Switch they lease from Hyper-V's ICS (real gateway and DNS, so packages install) during setup, and on `configamatron-internal` they lease from `run-proxy` once isolated, which supplies the host as both router and DNS. Nothing inside the guest changes between the two, which is what makes switching networks a purely host-side operation.
+Both guest OSes stay on **DHCP** throughout: on the Default Switch they lease from Hyper-V's ICS (real gateway and DNS, so packages install) during setup, and on `susentorno-internal` they lease from `run-proxy` once isolated, which supplies the host as both router and DNS. Nothing inside the guest changes between the two, which is what makes switching networks a purely host-side operation.
 
 This doc continues as if `192.168.67.x` was chosen as the subnet and the host was assigned `192.168.67.1` in `setup-machine.md`.
 
@@ -18,7 +18,7 @@ This doc continues as if `192.168.67.x` was chosen as the subnet and the host wa
   - Ubuntu can be downloaded from: https://ubuntu.com/download
   - A 90-day evaluation ISO for Windows Enterprise can be downloaded from https://info.microsoft.com/ww-landing-windows-11-enterprise.html
 
-Observation: the included Windows 11 dev VM used 54.6 GB for Windows with updates and its included applications, then took 71.5 GB after running the configamatron install scripts.
+Observation: the included Windows 11 dev VM used 54.6 GB for Windows with updates and its included applications, then took 71.5 GB after running the susentorno install scripts.
 
 ### VM creation
 
@@ -102,30 +102,30 @@ For the following commands, replace `<the password from setup-environment.md>`. 
 
 ```bash
 # Credentials file, readable only by root:
-sudo tee /etc/configamatron-share.cred > /dev/null << 'EOF'
-username=configamatron-share
+sudo tee /etc/susentorno-share.cred > /dev/null << 'EOF'
+username=susentorno-share
 password=<the password from setup-environment.md>
 EOF
-sudo chmod 600 /etc/configamatron-share.cred
+sudo chmod 600 /etc/susentorno-share.cred
 
 sudo mkdir -p /mnt/vm-shared
 # /etc/fstab — auto-mounts at boot so the credentials symlink resolves:
-echo '//192.168.67.1/vm-shared  /mnt/vm-shared  cifs  ro,credentials=/etc/configamatron-share.cred,uid=1000,gid=1000,_netdev,x-systemd.automount  0  0' | sudo tee -a /etc/fstab
+echo '//192.168.67.1/vm-shared  /mnt/vm-shared  cifs  ro,credentials=/etc/susentorno-share.cred,uid=1000,gid=1000,_netdev,x-systemd.automount  0  0' | sudo tee -a /etc/fstab
 sudo systemctl daemon-reload && sudo mount -a
 ```
 
 Use the **Default Switch** host IP in that `fstab` line during the NAT phase and the Internal-switch host IP afterwards. The share then lives at `/mnt/vm-shared` — the numbered scripts run from there.
 
-**Windows guest** — leave the adapter on DHCP. Default Switch uses Hyper-V ICS; `configamatron-internal` uses `run-proxy` with the host as router and DNS. Save credentials with:
+**Windows guest** — leave the adapter on DHCP. Default Switch uses Hyper-V ICS; `susentorno-internal` uses `run-proxy` with the host as router and DNS. Save credentials with:
 
 ```powershell
-cmdkey /add:192.168.67.1 /user:configamatron-share /pass:<the password from setup-environment.md>
+cmdkey /add:192.168.67.1 /user:susentorno-share /pass:<the password from setup-environment.md>
 ```
 
 `cmdkey` entries are **per-address**, so add one for the Default Switch host IP as well if you mount the share during the NAT phase. The share is then reachable at `\\192.168.67.1\vm-shared-windows` — the numbered scripts run from there. Two host addresses appear across this flow:
 
 - `<default-switch-host-ip>` — the temporary address used to reach the SMB share while the VM is attached to the Default Switch.
-- `<internal-switch-host-ip>` — the stable address assigned to `vEthernet (configamatron-internal)` in `setup-machine.md`. Pass this address to the network configuration script and use it after isolation.
+- `<internal-switch-host-ip>` — the stable address assigned to `vEthernet (susentorno-internal)` in `setup-machine.md`. Pass this address to the network configuration script and use it after isolation.
 
 > **If a guest ever comes up with no address**, `run-proxy` was not running when it booted. Start `run-proxy` and the guest will pick up a lease on its next retry — no action is needed inside the guest, but allow up to ~5 minutes before treating it as a failure. On **Windows** the guest falls back to a `169.254.x.x` self-assigned address and re-attempts on roughly a five-minute cycle (measured: 4m55s). On **Ubuntu** there is **no** APIPA fallback — `eth0` simply has no IPv4 address — and NetworkManager retries every 45s for three minutes, then goes quiet for about five minutes before trying again (measured: 2m53s from starting `run-proxy`, all of it spent inside that quiet gap). Neither wait can be shortened from the host. With `run-proxy` already running before boot, leases bind in well under a second. As a last resort, the Hyper-V console plus a static address (an IP in the Internal-switch subnet, no gateway, `nameserver = <host-ip>`) still works and is a supported fallback.
 >
@@ -134,8 +134,8 @@ cmdkey /add:192.168.67.1 /user:configamatron-share /pass:<the password from setu
 > ```powershell
 > $node = "$env:LOCALAPPDATA\pnpm\bin\node.exe"
 > Get-NetFirewallRule | Where-Object { $_.Name -like '*Query User*' -and $_.Name -like '*pnpm\bin\node.exe' } | Remove-NetFirewallRule
-> New-NetFirewallRule -DisplayName 'Configamatron run-proxy node (VM inbound)' -Direction Inbound `
->   -Program $node -InterfaceAlias 'vEthernet (configamatron-internal)' -Action Allow -Profile Any
+> New-NetFirewallRule -DisplayName 'susentorno run-proxy node (VM inbound)' -Direction Inbound `
+>   -Program $node -InterfaceAlias 'vEthernet (susentorno-internal)' -Action Allow -Profile Any
 > ```
 
 ## 3. Run the numbered scripts
@@ -156,7 +156,7 @@ Set-ExecutionPolicy Bypass
 ```
 
 1. `cd .\pre-scripts` and run every script in order. With no custom steps, the last is `.\05-configure-network.ps1 -HostIp <internal-switch-host-ip>`.
-2. Isolate the VM — reassign its single adapter to `configamatron-internal` (see "Isolate" below), with `run-proxy` already running.
+2. Isolate the VM — reassign its single adapter to `susentorno-internal` (see "Isolate" below), with `run-proxy` already running.
 3. Use the `cmdkey` entry for `<internal-switch-host-ip>`, then run every post-script in order from `\\<internal-switch-host-ip>\vm-shared-windows\post-scripts`: normally `.\01-auth-config.ps1`, then `.\02-apply-home-jq-transforms.ps1`.
 4. Restore the normal execution policy with `Set-ExecutionPolicy RemoteSigned`.
 
@@ -167,15 +167,15 @@ When a script asks for `<host-ip>` (`05-configure-network.sh` / `05-configure-ne
 Confirm the host firewall is open and `run-proxy` is running (both from `setup-machine.md` / `setup-environment.md`) before booting a guest into the isolated network:
 
 ```powershell
-powershell -File .configamatron\proxy\host-allow-vm-inbound.ps1
-configamatron run-proxy
+powershell -File .susentorno\proxy\host-allow-vm-inbound.ps1
+susentorno run-proxy
 ```
 
 Then isolate the VM by reassigning its single adapter:
 
 ```powershell
 Stop-VM -Name '<VMName>'
-Connect-VMNetworkAdapter -VMName '<VMName>' -SwitchName 'configamatron-internal'
+Connect-VMNetworkAdapter -VMName '<VMName>' -SwitchName 'susentorno-internal'
 Start-VM -Name '<VMName>'
 ```
 

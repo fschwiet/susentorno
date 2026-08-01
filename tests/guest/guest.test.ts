@@ -177,17 +177,17 @@ describe('guest home & authentication configuration', () => {
     const link = await guest('g1', 'readlink "$HOME/.claude/.credentials.json"');
     expect(link.stdout.trim()).toBe('/mnt/vm-shared/credentials.json');
     const body = await guest('g1', 'cat "$HOME/.claude/.credentials.json"');
-    expect(body.stdout).toContain('sk-ant-oat-CONFIGAMATRON-PLACEHOLDER');
+    expect(body.stdout).toContain('sk-ant-oat-susentorno-PLACEHOLDER');
   });
 
   it('06 merges the CA into an existing firefox policies.json, preserving other keys', async () => {
     await guest(
       'g1',
-      `printf '#!/bin/sh\\n' | sudo tee /usr/local/bin/firefox >/dev/null && sudo chmod +x /usr/local/bin/firefox && sudo mkdir -p /etc/firefox/policies && printf '%s' '{"policies":{"SomeOther":true,"Certificates":{"Install":["/usr/local/share/ca-certificates/configamatron-proxy-certificate-authority.crt"]}}}' | sudo tee /etc/firefox/policies/policies.json >/dev/null && bash /mnt/vm-shared/pre-scripts/05-configure-network.sh ${BRIDGE_IP}`,
+      `printf '#!/bin/sh\\n' | sudo tee /usr/local/bin/firefox >/dev/null && sudo chmod +x /usr/local/bin/firefox && sudo mkdir -p /etc/firefox/policies && printf '%s' '{"policies":{"SomeOther":true,"Certificates":{"Install":["/usr/local/share/ca-certificates/susentorno-proxy-certificate-authority.crt"]}}}' | sudo tee /etc/firefox/policies/policies.json >/dev/null && bash /mnt/vm-shared/pre-scripts/05-configure-network.sh ${BRIDGE_IP}`,
     );
     const { stdout } = await guest(
       'g1',
-      `python3 -c "import json;d=json.load(open('/etc/firefox/policies/policies.json'));i=d['policies']['Certificates']['Install'];print(d['policies']['SomeOther'], '/etc/firefox/policies/configamatron-proxy-certificate-authority.pem' in i, '/usr/local/share/ca-certificates/configamatron-proxy-certificate-authority.crt' in i)"`,
+      `python3 -c "import json;d=json.load(open('/etc/firefox/policies/policies.json'));i=d['policies']['Certificates']['Install'];print(d['policies']['SomeOther'], '/etc/firefox/policies/susentorno-proxy-certificate-authority.pem' in i, '/usr/local/share/ca-certificates/susentorno-proxy-certificate-authority.crt' in i)"`,
     );
     expect(stdout.trim()).toBe('True True False');
   });
@@ -289,7 +289,7 @@ describe('transition to the isolated phase', () => {
 
   it('06 configured NODE_EXTRA_CA_CERTS for login shells', async () => {
     const { stdout } = await guest('g1', `bash -lc 'echo $NODE_EXTRA_CA_CERTS'`);
-    expect(stdout).toContain('configamatron-proxy-certificate-authority.crt');
+    expect(stdout).toContain('susentorno-proxy-certificate-authority.crt');
   });
 });
 

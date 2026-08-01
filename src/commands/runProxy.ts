@@ -99,7 +99,7 @@ export function registerRunProxy(program: Command): void {
     )
     .option(
       '--secret <path>',
-      'SDS secret output path (default: .configamatron/proxy/secrets/sds-secret.yaml)',
+      'SDS secret output path (default: .susentorno/proxy/secrets/sds-secret.yaml)',
     )
     .option(
       '--codex-credentials <path>',
@@ -108,7 +108,7 @@ export function registerRunProxy(program: Command): void {
     )
     .option(
       '--codex-secret <path>',
-      'Codex SDS secret output path (default: .configamatron/proxy/secrets/codex-secret.yaml)',
+      'Codex SDS secret output path (default: .susentorno/proxy/secrets/codex-secret.yaml)',
     )
     .option('--refresh-window <minutes>', 'nudge this many minutes before expiry', '3')
     .option('--retry-interval <minutes>', 'wait this many minutes for a nudge to take', '2')
@@ -156,7 +156,7 @@ export function registerRunProxy(program: Command): void {
         // already exist (and be trusted in the guest) via generate-ca.
         if (!existsSync(paths.caCert) || !existsSync(paths.caKey)) {
           console.error(
-            `run-proxy: proxy CA not found in ${paths.caDir} — run 'configamatron generate-ca' first`,
+            `run-proxy: proxy CA not found in ${paths.caDir} — run 'susentorno generate-ca' first`,
           );
           process.exitCode = 1;
           return;
@@ -324,7 +324,7 @@ export function registerRunProxy(program: Command): void {
           credentialsPath: options.credentials,
           secretPath,
           readCredentials,
-          writeSecret: (token, path) => writeSecret(token, path, 'configamatron_bearer_token'),
+          writeSecret: (token, path) => writeSecret(token, path, 'susentorno_bearer_token'),
           nudgeRefresh,
           refreshWindowMs,
           retryIntervalMs,

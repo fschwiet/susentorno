@@ -30,7 +30,7 @@ const expectedTemplateFiles = [
   'home-jq-transforms/manifest.yaml',
   'home-jq-transforms/vscode-settings.jq',
   'home-jq-transforms/claude-onboarding.jq',
-  'configamatron.gitignore',
+  'susentorno.gitignore',
 ];
 
 describe('generated provisioning inventory', () => {
@@ -64,13 +64,13 @@ describe('generated provisioning inventory', () => {
 
     it('pins the compose project name so environments replace each other', () => {
       const compose = readFileSync(join(templatesDir(), 'proxy', 'docker-compose.yml'), 'utf8');
-      expect(compose).toContain('name: configamatron');
+      expect(compose).toContain('name: susentorno');
     });
 
     it('defines both blue and green Envoy services publishing on loopback', () => {
       const compose = readFileSync(join(templatesDir(), 'proxy', 'docker-compose.yml'), 'utf8');
-      expect(compose).toContain('container_name: configamatron-envoy-blue');
-      expect(compose).toContain('container_name: configamatron-envoy-green');
+      expect(compose).toContain('container_name: susentorno-envoy-blue');
+      expect(compose).toContain('container_name: susentorno-envoy-green');
       // Host ports are injected per-color by run-proxy; unset -> ephemeral.
       expect(compose).toContain('127.0.0.1:${ENVOY_BLUE_HTTPS_PORT:-}:443');
       expect(compose).toContain('127.0.0.1:${ENVOY_GREEN_HTTPS_PORT:-}:443');
@@ -93,7 +93,7 @@ describe('generated provisioning inventory', () => {
       expect(script).toContain('-LocalAddress $natHostIp');
       expect((script.match(/-LocalPort 445/g) ?? []).length).toBe(2);
       expect((script.match(/-Program \$nodePath/g) ?? []).length).toBe(3);
-      expect(script).toContain('.configamatron-host\\run-proxy-node.exe');
+      expect(script).toContain('.susentorno-host\\run-proxy-node.exe');
     });
 
     it('verify-proxy checks the host network model and any stale node.exe Query User rule', () => {
@@ -158,7 +158,7 @@ describe('generated provisioning inventory', () => {
         join(templatesDir(), 'vm-shared-windows', 'verify-config.ps1'),
         'utf8',
       );
-      expect(v).toContain('sk-ant-oat-CONFIGAMATRON-PLACEHOLDER'); // no real token may live in the guest
+      expect(v).toContain('sk-ant-oat-susentorno-PLACEHOLDER'); // no real token may live in the guest
       expect(v).toContain('api.anthropic.com'); // credential-gate check
       expect(v).toContain('curl.exe'); // live egress via bundled curl
     });

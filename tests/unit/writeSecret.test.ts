@@ -3,11 +3,11 @@ import { formatSecret } from '../../src/runProxy/writeSecret';
 
 describe('credential secret formatting', () => {
   it('emits the SDS secret structure with a Bearer-prefixed inline_string and the given resource name', () => {
-    expect(formatSecret('sk-ant-oat01-xyz', 'configamatron_bearer_token')).toBe(
+    expect(formatSecret('sk-ant-oat01-xyz', 'susentorno_bearer_token')).toBe(
       [
         'resources:',
         '  - "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret',
-        '    name: configamatron_bearer_token',
+        '    name: susentorno_bearer_token',
         '    generic_secret:',
         '      secret:',
         '        inline_string: "Bearer sk-ant-oat01-xyz"',

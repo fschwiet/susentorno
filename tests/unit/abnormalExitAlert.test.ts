@@ -80,10 +80,10 @@ describe('createAbnormalExitAlert', () => {
 
 describe('buildSpeakCommand', () => {
   it('drives the SAPI COM voice, not System.Speech', () => {
-    const command = buildSpeakCommand('Configamatron is down');
+    const command = buildSpeakCommand('susentorno is down');
 
     expect(command).toContain('New-Object -ComObject SAPI.SpVoice');
-    expect(command).toContain(".Speak('Configamatron is down')");
+    expect(command).toContain(".Speak('susentorno is down')");
   });
 
   it('escapes an embedded single quote for PowerShell single-quoted strings', () => {

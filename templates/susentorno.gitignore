@@ -1,4 +1,4 @@
-# .configamatron/ is committed, but only the files you author. Everything the tool
+# .susentorno/ is committed, but only the files you author. Everything the tool
 # generates or that holds secrets is ignored by default; the entries below opt the
 # user-authored customization surface back into source control across installs.
 

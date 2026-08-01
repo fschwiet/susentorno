@@ -5,7 +5,7 @@ import { isColorRunning } from '../../src/runProxy/isColorRunning';
 
 // Guarantee the containers do not exist, regardless of other proxy-stack tests.
 beforeAll(async () => {
-  for (const name of ['configamatron-envoy-blue', 'configamatron-envoy-green']) {
+  for (const name of ['susentorno-envoy-blue', 'susentorno-envoy-green']) {
     await execa('docker', ['rm', '-f', name], { reject: false });
   }
 });

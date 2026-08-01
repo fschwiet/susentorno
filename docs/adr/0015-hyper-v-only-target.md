@@ -8,5 +8,5 @@ accepted (2026-07-22) — supersedes the original 2026-07-01 VMware target and i
 
 ## Consequences
 
-- The forwarder, DNS, and DHCP defaults and binding semantics are Windows/Hyper-V specific (e.g. `vEthernet (configamatron-internal)`, specific-IP binds that coexist with ICS), so the host side is no longer portable — a deliberate reversal of the initial goal.
+- The forwarder, DNS, and DHCP defaults and binding semantics are Windows/Hyper-V specific (e.g. `vEthernet (susentorno-internal)`, specific-IP binds that coexist with ICS), so the host side is no longer portable — a deliberate reversal of the initial goal.
 - History and design records under `docs/superpowers/`, `docs/honist-v/`, and `legacy/` retain VMware references intentionally.

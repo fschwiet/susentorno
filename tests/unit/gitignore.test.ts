@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { templatesDir } from '../../src/templates';
 
 describe('environment ignore rules', () => {
-  const gitignore = readFileSync(join(templatesDir(), 'configamatron.gitignore'), 'utf8');
+  const gitignore = readFileSync(join(templatesDir(), 'susentorno.gitignore'), 'utf8');
 
   describe('customization surface', () => {
     it('ignores everything by default', () => expect(gitignore).toMatch(/^\*$/m));

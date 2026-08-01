@@ -1,6 +1,6 @@
 # Development
 
-Requirements and setup for running configamatron's own test suite. See [testing.md](testing.md) for how the tests are organized and how to place a new one.
+Requirements and setup for running susentorno's own test suite. See [testing.md](testing.md) for how the tests are organized and how to place a new one.
 
 ## Prerequisites
 

@@ -11,7 +11,7 @@ import { registerUpdateShares } from './commands/updateShares';
 const program = new Command();
 
 program
-  .name('configamatron')
+  .name('susentorno')
   .description('sets up isolated environments for coding agents.')
   .version(packageJson.version, '-v, --version', 'output the version number');
 

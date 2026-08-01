@@ -4,8 +4,8 @@
 # a far-future epoch-ms so Pi's own client never decides the token needs refreshing.
 .["openai-codex"] = {
   "type": "oauth",
-  "access": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJjb25maWdhbWF0cm9uLXVzZXIiLCJlbWFpbCI6ImNvbmZpZ2FtYXRyb25AY29uZmlnYW1hdHJvbi5pbnZhbGlkIiwiZXhwIjo0MTAyNDQ0ODAwfQ.configamatron-not-a-real-signature",
-  "refresh": "configamatron-placeholder-pi-refresh-token",
+  "access": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJjb25maWdhbWF0cm9uLXVzZXIiLCJlbWFpbCI6ImNvbmZpZ2FtYXRyb25AY29uZmlnYW1hdHJvbi5pbnZhbGlkIiwiZXhwIjo0MTAyNDQ0ODAwfQ.susentorno-not-a-real-signature",
+  "refresh": "susentorno-placeholder-pi-refresh-token",
   "expires": 4102444800000,
-  "accountId": "configamatron-placeholder-account-id"
+  "accountId": "susentorno-placeholder-account-id"
 }

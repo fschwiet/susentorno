@@ -1,4 +1,4 @@
-name: configamatron
+name: susentorno
 
 x-envoy: &envoy
   image: envoyproxy/envoy:v1.31-latest
@@ -15,14 +15,14 @@ x-envoy: &envoy
 services:
   envoy_blue:
     <<: *envoy
-    container_name: configamatron-envoy-blue
+    container_name: susentorno-envoy-blue
     ports:
       - '127.0.0.1:${ENVOY_BLUE_HTTPS_PORT:-}:443'
       - '127.0.0.1:${ENVOY_BLUE_HTTP_PORT:-}:80'
       - '127.0.0.1:${ENVOY_BLUE_ADMIN_PORT:-}:9901'
   envoy_green:
     <<: *envoy
-    container_name: configamatron-envoy-green
+    container_name: susentorno-envoy-green
     ports:
       - '127.0.0.1:${ENVOY_GREEN_HTTPS_PORT:-}:443'
       - '127.0.0.1:${ENVOY_GREEN_HTTP_PORT:-}:80'

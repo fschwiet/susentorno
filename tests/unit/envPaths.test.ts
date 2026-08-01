@@ -59,7 +59,7 @@ describe('environment paths & layout', () => {
       });
     });
 
-    it('hasEnvironment reflects whether .configamatron exists', () => {
+    it('hasEnvironment reflects whether .susentorno exists', () => {
       const dir = mkdtempSync(join(tmpdir(), 'envpaths-'));
       try {
         expect(hasEnvironment(dir)).toBe(false);
@@ -75,8 +75,8 @@ describe('environment paths & layout', () => {
     it('places the codex placeholder auth.json in each vm-shared target', () => {
       const paths = envPaths('/work');
       expect(paths.vmSharedTargets.map((t) => t.authJson)).toEqual([
-        join('/work', '.configamatron', 'vm-shared', 'auth.json'),
-        join('/work', '.configamatron', 'vm-shared-windows', 'auth.json'),
+        join('/work', '.susentorno', 'vm-shared', 'auth.json'),
+        join('/work', '.susentorno', 'vm-shared-windows', 'auth.json'),
       ]);
     });
 
@@ -93,7 +93,7 @@ describe('environment paths & layout', () => {
     it('places the codex SDS secret under proxy/secrets', () => {
       const paths = envPaths('/work');
       expect(paths.codexSecret).toBe(
-        join('/work', '.configamatron', 'proxy', 'secrets', 'codex-secret.yaml'),
+        join('/work', '.susentorno', 'proxy', 'secrets', 'codex-secret.yaml'),
       );
     });
   });
@@ -101,14 +101,14 @@ describe('environment paths & layout', () => {
   describe('home settings transform sources', () => {
     it('locates the user-edited custom script source folders', () => {
       const p = envPaths('/work');
-      expect(p.preScripts).toBe(join('/work', '.configamatron', 'pre-scripts'));
-      expect(p.postScripts).toBe(join('/work', '.configamatron', 'post-scripts'));
+      expect(p.preScripts).toBe(join('/work', '.susentorno', 'pre-scripts'));
+      expect(p.postScripts).toBe(join('/work', '.susentorno', 'post-scripts'));
     });
 
     it('locates the source transforms folder and the env gitignore', () => {
       const p = envPaths('/work');
-      expect(p.homeJqTransforms).toBe(join('/work', '.configamatron', 'home-jq-transforms'));
-      expect(p.gitignore).toBe(join('/work', '.configamatron', '.gitignore'));
+      expect(p.homeJqTransforms).toBe(join('/work', '.susentorno', 'home-jq-transforms'));
+      expect(p.gitignore).toBe(join('/work', '.susentorno', '.gitignore'));
     });
   });
 });

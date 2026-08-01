@@ -1,6 +1,6 @@
 # Test tiers
 
-Configamatron's automated tests are divided into four tiers: `unit`, `cli`, `proxy-stack`, and `guest`. Each tier is named for the **highest observable interface it crosses**—its test surface—not for its size or importance. This makes both test placement and runtime prerequisites predictable.
+susentorno's automated tests are divided into four tiers: `unit`, `cli`, `proxy-stack`, and `guest`. Each tier is named for the **highest observable interface it crosses**—its test surface—not for its size or importance. This makes both test placement and runtime prerequisites predictable.
 
 The tier names use the project's domain vocabulary (see [CONTEXT.md](CONTEXT.md)). In particular, `guest` names the domain actor whose behavior is observed, not the virtualization mechanism used by the harness.
 
@@ -15,7 +15,7 @@ The tier names use the project's domain vocabulary (see [CONTEXT.md](CONTEXT.md)
 
 - **`unit`** tests call an in-process module interface or intentional internal seam. Using an in-memory or stub adapter does not change the tier because the observation is still made through the module. Unit tests require no external services.
 
-- **`cli`** tests invoke the built, user-facing `configamatron` command and assert on its behavior or generated artifacts. Several in-process modules may participate, but the observable interface is the packaged command.
+- **`cli`** tests invoke the built, user-facing `susentorno` command and assert on its behavior or generated artifacts. Several in-process modules may participate, but the observable interface is the packaged command.
 
 - **`proxy-stack`** tests bring up the real proxy stack, including Envoy in Docker, networking, and local mock upstreams. They observe stack behavior without booting a guest.
 
@@ -44,10 +44,10 @@ Install the project's Node dependencies before running any tier.
 | --- | --- |
 | `unit` | None. |
 | `cli` | A production build (`pnpm build`). The default pipeline builds before this tier. Tests that need the external `jq` command self-skip when it is unavailable. |
-| `proxy-stack` | A production build (`pnpm build`), plus Docker and Docker Compose running. Stop any live `configamatron run-proxy` process first. No guest or real credential is required. |
-| `guest` | WSL2/Docker/KVM set up per [development.md](development.md). Stop any live `configamatron run-proxy` process first — it manages the same docker-compose Envoy stack, so leaving it running gets its Envoy torn down mid-suite (the reachability guard then reports `000`, which looks like a Docker/WSL problem) while `run-proxy` itself is left serving with no backend. |
+| `proxy-stack` | A production build (`pnpm build`), plus Docker and Docker Compose running. Stop any live `susentorno run-proxy` process first. No guest or real credential is required. |
+| `guest` | WSL2/Docker/KVM set up per [development.md](development.md). Stop any live `susentorno run-proxy` process first — it manages the same docker-compose Envoy stack, so leaving it running gets its Envoy torn down mid-suite (the reachability guard then reports `000`, which looks like a Docker/WSL problem) while `run-proxy` itself is left serving with no backend. |
 
-See [development.md](development.md) for how to install and configure the guest harness's WSL prerequisites. The harness creates or refreshes its cached golden image automatically at `/root/.cache/configamatron-vmtest`; the first run takes longer.
+See [development.md](development.md) for how to install and configure the guest harness's WSL prerequisites. The harness creates or refreshes its cached golden image automatically at `/root/.cache/susentorno-vmtest`; the first run takes longer.
 
 A missing live-tier prerequisite is an environmental failure, not a product failure. Both live tiers fail fast when Docker is unavailable or `run-proxy` would conflict with their shared proxy stack. The guest tier also checks its WSL configuration and harness dependencies before booting a guest.
 
@@ -61,4 +61,4 @@ The `guest` tier is not part of `pnpm test`. Run it separately with `pnpm test:g
 
 Support code used by more than one tier lives at the root of `tests/`, including `proxyStack.ts`, `testEnvRoot.ts`, `rmEnvRoot.ts`, `checkDockerRunning.ts`, `checkNoRunningProxy.ts`, and `tests/fixtures/`. Tier-specific setup and harness code stays in its tier directory, such as `tests/proxy-stack/globalSetup.ts` and `tests/guest/harness/`.
 
-The proxy-stack and guest suites create their throwaway environment under `test-results/.configamatron`. They do not use a repository-root `.configamatron`. A root `.configamatron` may be a manually created, long-running environment and must not be treated as disposable test residue.
+The proxy-stack and guest suites create their throwaway environment under `test-results/.susentorno`. They do not use a repository-root `.susentorno`. A root `.susentorno` may be a manually created, long-running environment and must not be treated as disposable test residue.

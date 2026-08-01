@@ -8,7 +8,7 @@ dir="$(dirname "$script_dir")"
 
 config_path="$dir/github-config.txt"
 if [ ! -f "$config_path" ]; then
-  echo "06-auth-config: $config_path not found. Run 'configamatron write-github-config' on the host first." >&2
+  echo "06-auth-config: $config_path not found. Run 'susentorno write-github-config' on the host first." >&2
   exit 1
 fi
 

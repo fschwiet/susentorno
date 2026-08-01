@@ -201,7 +201,7 @@ describe('chatgpt.com codex Bearer injection', () => {
       const { statusCode } = await requestThrough(
         'chatgpt.com',
         `Bearer ${CODEX_PLACEHOLDER_ACCESS_TOKEN}`,
-        { 'x-configamatron-no-auth': '1' },
+        { 'x-susentorno-no-auth': '1' },
       );
       expect(statusCode).toBe(200);
       expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_CODEX_BEARER]);
@@ -221,12 +221,12 @@ describe('chatgpt.com codex Bearer injection', () => {
     it('strips a client-forged no-auth marker header instead of trusting it', async () => {
       const before = mockUpstream.receivedHeaders.length;
       const { statusCode } = await requestThrough('chatgpt.com', 'Bearer some-other-real-token', {
-        'x-configamatron-no-auth': '1',
+        'x-susentorno-no-auth': '1',
       });
       expect(statusCode).toBe(200);
       const received = mockUpstream.receivedHeaders.slice(before);
       expect(received[0].authorization).toBe('Bearer some-other-real-token');
-      expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+      expect(received[0]['x-susentorno-no-auth']).toBeUndefined();
     });
   });
 
@@ -237,7 +237,7 @@ describe('chatgpt.com codex Bearer injection', () => {
       expect(statusCode).toBe(200);
       const received = mockUpstream.receivedHeaders.slice(before);
       expect(received[0].authorization).toBeUndefined();
-      expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+      expect(received[0]['x-susentorno-no-auth']).toBeUndefined();
     });
   });
 
@@ -246,7 +246,7 @@ describe('chatgpt.com codex Bearer injection', () => {
       const before = mockUpstream.receivedAuthorizationHeaders.length;
       const { statusCode } = await requestThrough(
         'api.anthropic.com',
-        'Bearer sk-ant-oat-CONFIGAMATRON-PLACEHOLDER',
+        'Bearer sk-ant-oat-susentorno-PLACEHOLDER',
       );
       expect(statusCode).toBe(200);
       expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([

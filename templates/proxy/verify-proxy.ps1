@@ -1,9 +1,9 @@
 #requires -Version 5.1
 <#
 Read-only diagnostics for the host-side Envoy proxy. Run from the environment
-directory (the folder that owns .configamatron) while the proxy is up:
+directory (the folder that owns .susentorno) while the proxy is up:
 
-    powershell -ExecutionPolicy Bypass -File .configamatron\proxy\verify-proxy.ps1
+    powershell -ExecutionPolicy Bypass -File .susentorno\proxy\verify-proxy.ps1
 
 Prints one PASS/FAIL/WARN line per check, with the observed value on failure.
 Exits non-zero if any check FAILs. WARN is advisory and never fails the run.
@@ -15,10 +15,10 @@ rejects locally with 403.
 
 The VM-path checks probe the Internal-switch adapter the forwarder listens on.
 -AdapterAlias defaults to the Hyper-V Internal-switch NIC "vEthernet
-(configamatron-internal)"; pass a different alias if your switch is named
+(susentorno-internal)"; pass a different alias if your switch is named
 differently, matching host-allow-vm-inbound.ps1, e.g.:
 
-    ... -File .configamatron\proxy\verify-proxy.ps1 -AdapterAlias "vEthernet (my-switch)"
+    ... -File .susentorno\proxy\verify-proxy.ps1 -AdapterAlias "vEthernet (my-switch)"
 
 -NatAdapterAlias defaults to "vEthernet (Default Switch)", matching
 host-allow-vm-inbound.ps1 - it's used only to check the second half of the
@@ -27,7 +27,7 @@ SMB share rule.
 [CmdletBinding()]
 param(
     [string]$EnvDir = (Get-Location).Path,
-    [string]$AdapterAlias = 'vEthernet (configamatron-internal)',
+    [string]$AdapterAlias = 'vEthernet (susentorno-internal)',
     [string]$NatAdapterAlias = 'vEthernet (Default Switch)'
 )
 
@@ -62,7 +62,7 @@ function Invoke-CurlCode {
 # The fixed, host-wide path run-proxy relaunches itself through on Windows -
 # mirrors the convention in src/runProxy/relaunchViaDedicatedNode.ts.
 function Get-DedicatedNodePath {
-    Join-Path $env:USERPROFILE ".configamatron-host\run-proxy-node.exe"
+    Join-Path $env:USERPROFILE ".susentorno-host\run-proxy-node.exe"
 }
 
 # Checks one expected filter/state tuple against one resolved rule object.
@@ -154,7 +154,7 @@ function Test-RuleSet {
     }
 }
 
-$proxyDir = Join-Path $EnvDir '.configamatron\proxy'
+$proxyDir = Join-Path $EnvDir '.susentorno\proxy'
 $caCert   = Join-Path $proxyDir 'ca\cert.pem'
 $sdsFile  = Join-Path $proxyDir 'secrets\sds-secret.yaml'
 
@@ -179,15 +179,15 @@ if ($LASTEXITCODE -eq 0) { Add-Pass 'docker daemon reachable' }
 else { Add-Fail 'docker daemon reachable' 'docker info exited non-zero -- is Docker running?' }
 
 $envoy = & docker ps `
-    --filter 'label=com.docker.compose.project=configamatron' `
+    --filter 'label=com.docker.compose.project=susentorno' `
     --format '{{.Names}} {{.Status}}' 2>$null | Where-Object { $_ -match 'envoy' }
 if ($envoy -match 'Up') { Add-Pass "envoy container running ($(($envoy | Select-Object -First 1).Trim()))" }
-else { Add-Fail 'envoy container running' "no running configamatron envoy container ('$envoy') -- run 'configamatron run-proxy'" }
+else { Add-Fail 'envoy container running' "no running susentorno envoy container ('$envoy') -- run 'susentorno run-proxy'" }
 
 # A running envoy container's name is global (Docker doesn't namespace by
 # checkout), so finding one running says nothing about which environment it
 # belongs to. Cross-check by inspecting its bind mounts: envoy.yaml is always
-# mounted from <environment>\.configamatron\proxy\envoy.yaml, so that mount's
+# mounted from <environment>\.susentorno\proxy\envoy.yaml, so that mount's
 # parent directory identifies the owning environment. Checked for every
 # matching container, since docker-compose.yml defines both a blue and a
 # green envoy service and either or both can be running during a transition.
@@ -247,7 +247,7 @@ Write-Section 'Credential secret (structural, no API call)'
 
 $hostCred = Join-Path $env:USERPROFILE '.claude\.credentials.json'
 if (-not (Test-Path $sdsFile)) {
-    Add-Fail 'SDS secret present' "missing $sdsFile -- run 'configamatron run-proxy'"
+    Add-Fail 'SDS secret present' "missing $sdsFile -- run 'susentorno run-proxy'"
 }
 elseif (-not (Test-Path $hostCred)) {
     Add-Warn 'SDS secret freshness' "cannot compare: no host credential at $hostCred"
@@ -313,7 +313,7 @@ else {
     foreach ($port in 80, 443) {
         $listen = Get-NetTCPConnection -LocalAddress $vmIp -LocalPort $port -State Listen -ErrorAction SilentlyContinue
         if ($listen) { Add-Pass "forwarder listening on ${vmIp}:$port" }
-        else { Add-Fail "forwarder listening on ${vmIp}:$port" "no listener -- is 'configamatron run-proxy' running?" }
+        else { Add-Fail "forwarder listening on ${vmIp}:$port" "no listener -- is 'susentorno run-proxy' running?" }
     }
 
     $fwd80 = Invoke-CurlCode @('--resolve', "archive.ubuntu.com:80:$vmIp", '--max-time', '20', 'http://archive.ubuntu.com/')
@@ -380,20 +380,20 @@ $hostIpUnresolved = -not $hostIp
 # protocol, port, program, and state are always checked. SkipAddress on a
 # tuple narrows only that tuple's address comparison when its specific
 # source IP didn't resolve - it never skips the rest of the check.
-Test-RuleSet -Label 'TCP 80/443' -DisplayName 'Configamatron Envoy Proxy (VM inbound)' -Expected @(
+Test-RuleSet -Label 'TCP 80/443' -DisplayName 'susentorno Envoy Proxy (VM inbound)' -Expected @(
     @{ Protocol = 'TCP'; LocalPort = 80, 443; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; SkipAddress = $hostIpUnresolved }
 )
-Test-RuleSet -Label 'DNS 53' -DisplayName 'Configamatron DNS stub (VM inbound)' -Expected @(
+Test-RuleSet -Label 'DNS 53' -DisplayName 'susentorno DNS stub (VM inbound)' -Expected @(
     @{ Protocol = 'UDP'; LocalPort = 53; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; SkipAddress = $hostIpUnresolved }
 )
-Test-RuleSet -Label 'DHCP 67' -DisplayName 'Configamatron DHCP (VM inbound)' -Expected @(
+Test-RuleSet -Label 'DHCP 67' -DisplayName 'susentorno DHCP (VM inbound)' -Expected @(
     @{ Protocol = 'UDP'; LocalPort = 67; InterfaceAlias = $AdapterAlias; LocalAddress = $null }
 )
-Test-RuleSet -Label 'SMB 445' -DisplayName 'Configamatron share (VM inbound)' -Expected @(
+Test-RuleSet -Label 'SMB 445' -DisplayName 'susentorno share (VM inbound)' -Expected @(
     @{ Protocol = 'TCP'; LocalPort = 445; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; SkipAddress = $hostIpUnresolved }
     @{ Protocol = 'TCP'; LocalPort = 445; InterfaceAlias = $NatAdapterAlias; LocalAddress = $natHostIp; SkipAddress = (-not $natHostIp) }
 )
-Test-RuleSet -Label 'run-proxy node.exe' -DisplayName 'Configamatron run-proxy node (VM inbound)' -Expected @(
+Test-RuleSet -Label 'run-proxy node.exe' -DisplayName 'susentorno run-proxy node (VM inbound)' -Expected @(
     @{ Protocol = 'TCP'; LocalPort = 80, 443; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; Program = $nodePath; SkipAddress = $hostIpUnresolved }
     @{ Protocol = 'UDP'; LocalPort = 53; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; Program = $nodePath; SkipAddress = $hostIpUnresolved }
     @{ Protocol = 'UDP'; LocalPort = 67; InterfaceAlias = $AdapterAlias; LocalAddress = $null; Program = $nodePath }

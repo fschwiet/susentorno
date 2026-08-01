@@ -19,7 +19,7 @@ async function initEnv(dir: string) {
   );
 }
 
-describe.skipIf(!hasJq)('configamatron update-shares', () => {
+describe.skipIf(!hasJq)('susentorno update-shares', () => {
   it('previews transforms and refreshes both share copies', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'update-shares-'));
     try {
@@ -27,12 +27,12 @@ describe.skipIf(!hasJq)('configamatron update-shares', () => {
       // Delete a share copy to prove update-shares restores it.
       const winCopy = join(
         dir,
-        '.configamatron',
+        '.susentorno',
         'vm-shared-windows',
         'home-jq-transforms',
         'manifest.yaml',
       );
-      rmSync(join(dir, '.configamatron', 'vm-shared-windows', 'home-jq-transforms'), {
+      rmSync(join(dir, '.susentorno', 'vm-shared-windows', 'home-jq-transforms'), {
         recursive: true,
         force: true,
       });
@@ -50,7 +50,7 @@ describe.skipIf(!hasJq)('configamatron update-shares', () => {
     const dir = mkdtempSync(join(tmpdir(), 'update-shares-'));
     try {
       await initEnv(dir);
-      rmSync(join(dir, '.configamatron', 'vm-shared-windows', 'home-jq-transforms'), {
+      rmSync(join(dir, '.susentorno', 'vm-shared-windows', 'home-jq-transforms'), {
         recursive: true,
         force: true,
       });
@@ -58,9 +58,9 @@ describe.skipIf(!hasJq)('configamatron update-shares', () => {
         cwd: dir,
       });
       expect(exitCode).toBe(0);
-      expect(
-        existsSync(join(dir, '.configamatron', 'vm-shared-windows', 'home-jq-transforms')),
-      ).toBe(false);
+      expect(existsSync(join(dir, '.susentorno', 'vm-shared-windows', 'home-jq-transforms'))).toBe(
+        false,
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -70,9 +70,9 @@ describe.skipIf(!hasJq)('configamatron update-shares', () => {
     const dir = mkdtempSync(join(tmpdir(), 'update-shares-'));
     try {
       await initEnv(dir);
-      const src = join(dir, '.configamatron', 'home-jq-transforms', 'vscode-settings.jq');
+      const src = join(dir, '.susentorno', 'home-jq-transforms', 'vscode-settings.jq');
       writeFileSync(src, '.["x"] = (1 / 0 broken'); // invalid jq
-      rmSync(join(dir, '.configamatron', 'vm-shared', 'home-jq-transforms'), {
+      rmSync(join(dir, '.susentorno', 'vm-shared', 'home-jq-transforms'), {
         recursive: true,
         force: true,
       });
@@ -82,9 +82,7 @@ describe.skipIf(!hasJq)('configamatron update-shares', () => {
       });
       expect(exitCode).toBe(1);
       expect(stderr).toContain('not copying');
-      expect(existsSync(join(dir, '.configamatron', 'vm-shared', 'home-jq-transforms'))).toBe(
-        false,
-      );
+      expect(existsSync(join(dir, '.susentorno', 'vm-shared', 'home-jq-transforms'))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -94,10 +92,10 @@ describe.skipIf(!hasJq)('configamatron update-shares', () => {
     const dir = mkdtempSync(join(tmpdir(), 'update-shares-'));
     try {
       await initEnv(dir);
-      const preSrc = join(dir, '.configamatron', 'pre-scripts');
+      const preSrc = join(dir, '.susentorno', 'pre-scripts');
       writeFileSync(join(preSrc, '01-docker.sh'), 'echo docker\n');
       await execa('node', [cliPath, 'update-shares'], { cwd: dir });
-      const wovenPre = join(dir, '.configamatron', 'vm-shared', 'pre-scripts');
+      const wovenPre = join(dir, '.susentorno', 'vm-shared', 'pre-scripts');
       expect(existsSync(join(wovenPre, '05-docker.sh'))).toBe(true);
       expect(existsSync(join(wovenPre, '06-configure-network.sh'))).toBe(true);
       rmSync(join(preSrc, '01-docker.sh'));
@@ -113,10 +111,10 @@ describe.skipIf(!hasJq)('configamatron update-shares', () => {
     const dir = mkdtempSync(join(tmpdir(), 'update-shares-'));
     try {
       await initEnv(dir);
-      writeFileSync(join(dir, '.configamatron', 'post-scripts', 'bad.sh'), 'oops\n');
+      writeFileSync(join(dir, '.susentorno', 'post-scripts', 'bad.sh'), 'oops\n');
       const existing = join(
         dir,
-        '.configamatron',
+        '.susentorno',
         'vm-shared',
         'post-scripts',
         '02-apply-home-jq-transforms.sh',
@@ -138,7 +136,7 @@ describe.skipIf(!hasJq)('configamatron update-shares', () => {
     try {
       await initEnv(dir);
       writeFileSync(
-        join(dir, '.configamatron', 'mcp-servers.yaml'),
+        join(dir, '.susentorno', 'mcp-servers.yaml'),
         [
           'servers:',
           '  - name: filesystem',
@@ -150,7 +148,7 @@ describe.skipIf(!hasJq)('configamatron update-shares', () => {
 
       await execa('node', [cliPath, 'update-shares'], { cwd: dir });
 
-      const shDir = join(dir, '.configamatron', 'vm-shared', 'post-scripts');
+      const shDir = join(dir, '.susentorno', 'vm-shared', 'post-scripts');
       const generatedName = readdirSync(shDir).find((f) => f.includes('mcp-servers'));
       expect(generatedName).toBeDefined();
       const content = readFileSync(join(shDir, generatedName!), 'utf8');
@@ -158,7 +156,7 @@ describe.skipIf(!hasJq)('configamatron update-shares', () => {
         'claude mcp add --scope user --transport http filesystem https://filesystem.internal',
       );
 
-      const ps1Dir = join(dir, '.configamatron', 'vm-shared-windows', 'post-scripts');
+      const ps1Dir = join(dir, '.susentorno', 'vm-shared-windows', 'post-scripts');
       const generatedPs1Name = readdirSync(ps1Dir).find((f) => f.includes('mcp-servers'));
       expect(generatedPs1Name).toBeDefined();
     } finally {
@@ -171,7 +169,7 @@ describe.skipIf(!hasJq)('configamatron update-shares', () => {
     try {
       await initEnv(dir);
       await execa('node', [cliPath, 'update-shares'], { cwd: dir });
-      const shDir = join(dir, '.configamatron', 'vm-shared', 'post-scripts');
+      const shDir = join(dir, '.susentorno', 'vm-shared', 'post-scripts');
       expect(readdirSync(shDir).some((f) => f.includes('mcp-servers'))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });

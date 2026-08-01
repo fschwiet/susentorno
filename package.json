@@ -1,5 +1,5 @@
 {
-  "name": "configamatron",
+  "name": "susentorno",
   "version": "0.0.1",
   "description": "sets up isolated environments for coding agents.",
   "type": "module",
@@ -9,7 +9,7 @@
   "packageManager": "pnpm@11.3.0",
   "repository": "https://github.com/fschwiet/fschwiet-agent",
   "bin": {
-    "configamatron": "dist/cli.js"
+    "susentorno": "dist/cli.js"
   },
   "files": [
     "dist",

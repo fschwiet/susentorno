@@ -24,7 +24,7 @@ recorded only as history inside another draft).
 | docs/superpowers/specs/2026-07-04-vm-dns-netplan-merge-and-iptables-path-design.md | reviewed | — (obsolete: in-guest DNS/iptables deleted; history in host-side-dns-and-dhcp) |
 | docs/superpowers/specs/2026-07-04-vm-dns-stub-design.md | reviewed | — (obsolete: in-guest DNS deleted; history in host-side-dns-and-dhcp) |
 | docs/superpowers/specs/2026-07-04-vm-dns-stub-dnsmasq-design.md | reviewed | — (obsolete: in-guest dnsmasq deleted; history in host-side-dns-and-dhcp) |
-| docs/superpowers/specs/2026-07-05-configamatron-environments-design.md | reviewed | per-directory-environment-model |
+| docs/superpowers/specs/2026-07-05-susentorno-environments-design.md | reviewed | per-directory-environment-model |
 | docs/superpowers/specs/2026-07-05-run-proxy-credential-monitor-design.md | reviewed | run-proxy-owns-proxy-lifecycle, no-oauth-refresh-piggyback-host-cli |
 | docs/superpowers/specs/2026-07-05-vm-host-only-default-route-design.md | reviewed | — (obsolete: in-guest default-route hack deleted; rejected-alternative history in host-side-dns-and-dhcp) |
 | docs/superpowers/specs/2026-07-06-proxy-logging-design.md | reviewed | envoy-access-log-contract |
@@ -35,7 +35,7 @@ recorded only as history inside another draft).
 | docs/superpowers/specs/2026-07-09-proxy-ca-leaf-split-design.md | reviewed | root-ca-plus-derived-leaf |
 | docs/superpowers/specs/2026-07-09-vm-dhcp-dns-suppression-design.md | reviewed | — (obsolete: in-guest DNS fix; layer deleted) |
 | docs/superpowers/specs/2026-07-09-vm-egress-host-forwarder-design.md | reviewed | loopback-publish-with-node-forwarder |
-| docs/superpowers/specs/2026-07-10-configamatron-egress-service-idempotent-design.md | reviewed | — (obsolete: in-guest egress unit deleted) |
+| docs/superpowers/specs/2026-07-10-susentorno-egress-service-idempotent-design.md | reviewed | — (obsolete: in-guest egress unit deleted) |
 | docs/superpowers/specs/2026-07-10-run-proxy-merge-config-and-logging-design.md | reviewed | run-proxy-owns-proxy-lifecycle |
 | docs/superpowers/specs/2026-07-10-single-star-wildcard-design.md | reviewed | allowlist-format-and-parse-trust-boundary |
 | docs/superpowers/specs/2026-07-10-vm-claude-config-script-design.md | reviewed | — (feature/impl; far-future placeholder expiry recorded in credential-injection-at-proxy) |
@@ -73,13 +73,13 @@ supporting evidence. Same-date ties use filename order.
 
 | Source document | Status | Drafts produced |
 | --- | --- | --- |
-| docs/superpowers/plans/2026-07-01-configamatron-cli.md | reviewed | allowlist-format-and-parse-trust-boundary |
+| docs/superpowers/plans/2026-07-01-susentorno-cli.md | reviewed | allowlist-format-and-parse-trust-boundary |
 | docs/superpowers/plans/2026-07-01-envoy-proxy-stack.md | reviewed | egress-through-host-envoy-proxy, credential-injection-at-proxy, root-ca-plus-derived-leaf, transparent-interception-and-network-isolation-boundary |
 | docs/superpowers/plans/2026-07-03-vm-github-auth.md | reviewed | — (overtaken; history folded into credential-injection-at-proxy) |
 | docs/superpowers/plans/2026-07-04-vm-dns-netplan-merge-and-iptables-path.md | reviewed | — (obsolete in-guest layer; history in host-side-dns-and-dhcp) |
 | docs/superpowers/plans/2026-07-04-vm-dns-stub-dnsmasq.md | reviewed | — (obsolete in-guest layer; history in host-side-dns-and-dhcp) |
 | docs/superpowers/plans/2026-07-04-vm-dns-stub.md | reviewed | — (obsolete in-guest layer; history in host-side-dns-and-dhcp) |
-| docs/superpowers/plans/2026-07-05-configamatron-environments.md | reviewed | per-directory-environment-model |
+| docs/superpowers/plans/2026-07-05-susentorno-environments.md | reviewed | per-directory-environment-model |
 | docs/superpowers/plans/2026-07-05-run-proxy-credential-monitor.md | reviewed | run-proxy-owns-proxy-lifecycle, no-oauth-refresh-piggyback-host-cli |
 | docs/superpowers/plans/2026-07-05-vm-host-only-default-route.md | reviewed | — (obsolete in-guest layer; history in host-side-dns-and-dhcp) |
 | docs/superpowers/plans/2026-07-06-proxy-logging.md | reviewed | envoy-access-log-contract |
@@ -89,7 +89,7 @@ supporting evidence. Same-date ties use filename order.
 | docs/superpowers/plans/2026-07-08-envoy-http80-wildcard.md | reviewed | allowlist-format-and-parse-trust-boundary |
 | docs/superpowers/plans/2026-07-09-proxy-ca-leaf-split.md | reviewed | root-ca-plus-derived-leaf |
 | docs/superpowers/plans/2026-07-09-vm-egress-host-forwarder.md | reviewed | loopback-publish-with-node-forwarder |
-| docs/superpowers/plans/2026-07-10-configamatron-egress-service-idempotent.md | reviewed | — (obsolete in-guest service) |
+| docs/superpowers/plans/2026-07-10-susentorno-egress-service-idempotent.md | reviewed | — (obsolete in-guest service) |
 | docs/superpowers/plans/2026-07-10-run-proxy-merge-config-and-logging.md | reviewed | run-proxy-owns-proxy-lifecycle |
 | docs/superpowers/plans/2026-07-10-single-star-wildcard.md | reviewed | allowlist-format-and-parse-trust-boundary |
 | docs/superpowers/plans/2026-07-10-vm-claude-config-script.md | reviewed | credential-injection-at-proxy |

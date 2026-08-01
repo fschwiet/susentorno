@@ -1,6 +1,6 @@
-# An environment is a `.configamatron` folder owned by the working directory
+# An environment is a `.susentorno` folder owned by the working directory
 
-Every command except `init` and `import-sbx-network-policy` treats the current working directory as the environment root, operating on `<cwd>/.configamatron` and failing fast if it is absent — no parent-directory search, no `--dir` flag. There is **no upgrade path** for a `.configamatron` folder: it is rebuilt from scratch (`init` refuses to touch an existing one), though already-present valid CA/credential material is reused and never silently overwritten. Only **one proxy container can run at a time**: the compose project name is pinned (`name: configamatron`), so bringing up any environment's proxy — or running the test suite — deterministically replaces whichever proxy was running instead of colliding on the host ports.
+Every command except `init` and `import-sbx-network-policy` treats the current working directory as the environment root, operating on `<cwd>/.susentorno` and failing fast if it is absent — no parent-directory search, no `--dir` flag. There is **no upgrade path** for a `.susentorno` folder: it is rebuilt from scratch (`init` refuses to touch an existing one), though already-present valid CA/credential material is reused and never silently overwritten. Only **one proxy container can run at a time**: the compose project name is pinned (`name: susentorno`), so bringing up any environment's proxy — or running the test suite — deterministically replaces whichever proxy was running instead of colliding on the host ports.
 
 ## Consequences
 

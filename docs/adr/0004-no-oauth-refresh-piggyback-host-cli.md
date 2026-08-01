@@ -1,6 +1,6 @@
 # Never implement OAuth refresh; piggyback on the host provider CLIs
 
-`configamatron` never calls a provider's token endpoint or handles refresh tokens itself. The official host-side CLIs (`claude`, `codex`) remain the sole authority over their own credential files; `run-proxy` only reads the current token out of those files and injects it. To keep the token fresh even when the host runs no interactive session, `run-proxy` proactively **nudges** the host CLI shortly before expiry (`claude -p … --model haiku`, `codex exec …`) so the CLI refreshes its own file, which `run-proxy` then picks up.
+`susentorno` never calls a provider's token endpoint or handles refresh tokens itself. The official host-side CLIs (`claude`, `codex`) remain the sole authority over their own credential files; `run-proxy` only reads the current token out of those files and injects it. To keep the token fresh even when the host runs no interactive session, `run-proxy` proactively **nudges** the host CLI shortly before expiry (`claude -p … --model haiku`, `codex exec …`) so the CLI refreshes its own file, which `run-proxy` then picks up.
 
 ## Consequences
 

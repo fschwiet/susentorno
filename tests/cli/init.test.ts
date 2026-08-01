@@ -9,9 +9,9 @@ const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
 const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
 
-describe('configamatron init', () => {
-  it('scaffolds .configamatron and prints next steps', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'configamatron-init-'));
+describe('susentorno init', () => {
+  it('scaffolds .susentorno and prints next steps', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'susentorno-init-'));
     try {
       const { exitCode, stdout } = await execa(
         'node',
@@ -22,21 +22,19 @@ describe('configamatron init', () => {
       expect(stdout).toContain('generate-ca');
       expect(stdout).toContain('update-shares');
       expect(stdout).toContain('home-jq-transforms');
-      expect(existsSync(join(dir, '.configamatron', 'proxy', 'allowlist.txt'))).toBe(true);
-      expect(existsSync(join(dir, '.configamatron', 'vm-shared', 'credentials.json'))).toBe(true);
+      expect(existsSync(join(dir, '.susentorno', 'proxy', 'allowlist.txt'))).toBe(true);
+      expect(existsSync(join(dir, '.susentorno', 'vm-shared', 'credentials.json'))).toBe(true);
       expect(
-        existsSync(
-          join(dir, '.configamatron', 'vm-shared', 'pre-scripts', '05-configure-network.sh'),
-        ),
+        existsSync(join(dir, '.susentorno', 'vm-shared', 'pre-scripts', '05-configure-network.sh')),
       ).toBe(true);
-      expect(existsSync(join(dir, '.configamatron', 'pre-scripts', 'README.md'))).toBe(true);
+      expect(existsSync(join(dir, '.susentorno', 'pre-scripts', 'README.md'))).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it('exits 1 when .configamatron already exists', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'configamatron-init-'));
+  it('exits 1 when .susentorno already exists', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'susentorno-init-'));
     try {
       await execa(
         'node',
@@ -56,7 +54,7 @@ describe('configamatron init', () => {
   });
 
   it('exits 1 with a pointer at the claude CLI when credentials are missing', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'configamatron-init-'));
+    const dir = mkdtempSync(join(tmpdir(), 'susentorno-init-'));
     try {
       const { exitCode, stderr } = await execa(
         'node',
@@ -72,7 +70,7 @@ describe('configamatron init', () => {
       );
       expect(exitCode).toBe(1);
       expect(stderr).toContain('could not read credentials');
-      expect(existsSync(join(dir, '.configamatron'))).toBe(false);
+      expect(existsSync(join(dir, '.susentorno'))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

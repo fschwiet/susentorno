@@ -25,8 +25,8 @@ beforeEach(() => {
   writeFileSync(join(templates, 'vm-shared-windows', 'pre-scripts', '01-pkg.ps1'), 'pkg');
   writeFileSync(join(templates, 'vm-shared-windows', 'pre-scripts', 'nn-network.ps1'), 'net');
   writeFileSync(join(templates, 'vm-shared-windows', 'post-scripts', '01-auth.ps1'), 'auth');
-  mkdirSync(join(work, '.configamatron', 'pre-scripts'), { recursive: true });
-  mkdirSync(join(work, '.configamatron', 'post-scripts'), { recursive: true });
+  mkdirSync(join(work, '.susentorno', 'pre-scripts'), { recursive: true });
+  mkdirSync(join(work, '.susentorno', 'post-scripts'), { recursive: true });
 });
 afterEach(() => rmSync(work, { recursive: true, force: true }));
 

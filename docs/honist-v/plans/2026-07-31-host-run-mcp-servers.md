@@ -1,8 +1,8 @@
 # Host-Run MCP Servers Implementation Plan
 
-**Goal:** Let Configamatron launch MCP servers on the host and expose each to an isolated guest at a dedicated hostname through the existing Envoy proxy, cleartext-forwarded to a loopback port, with no credential injection.
+**Goal:** Let susentorno launch MCP servers on the host and expose each to an isolated guest at a dedicated hostname through the existing Envoy proxy, cleartext-forwarded to a loopback port, with no credential injection.
 
-**Architecture:** A new `.configamatron/mcp-servers.yaml` file is parsed and validated by a new `src/mcpServers.ts` module. `run-proxy` allocates a loopback port per declared server, spawns them in parallel (independent of Envoy's own bring-up), and supervises each with a background TCP-connect readiness probe plus an exit listener — either signal tears the whole proxy down. `envoyConfig.ts` gains a new cleartext destination kind routed to `host.docker.internal:<port>` (the container's view of the host loopback listener). `update-shares` generates a re-runnable guest post-script registering each server with the `claude`/`codex` CLIs.
+**Architecture:** A new `.susentorno/mcp-servers.yaml` file is parsed and validated by a new `src/mcpServers.ts` module. `run-proxy` allocates a loopback port per declared server, spawns them in parallel (independent of Envoy's own bring-up), and supervises each with a background TCP-connect readiness probe plus an exit listener — either signal tears the whole proxy down. `envoyConfig.ts` gains a new cleartext destination kind routed to `host.docker.internal:<port>` (the container's view of the host loopback listener). `update-shares` generates a re-runnable guest post-script registering each server with the `claude`/`codex` CLIs.
 
 **Tech Stack:** TypeScript, Node.js, `execa` (process spawning), `yaml` (parsing), `vitest` (unit + proxy-stack/Docker integration tests), Envoy (proxy).
 
@@ -65,7 +65,7 @@ Test files (new or extended, one per task below):
 
 **Interfaces:**
 
-- Produces: `EnvPaths.mcpServers: string` — absolute path to `.configamatron/mcp-servers.yaml`.
+- Produces: `EnvPaths.mcpServers: string` — absolute path to `.susentorno/mcp-servers.yaml`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -74,7 +74,7 @@ Add to `tests/unit/envPaths.test.ts` (open the file first to match its existing 
 ```ts
 it('includes the mcp-servers.yaml path under the environment root', () => {
   const paths = envPaths('/fake/cwd');
-  expect(paths.mcpServers).toBe(join('/fake/cwd', '.configamatron', 'mcp-servers.yaml'));
+  expect(paths.mcpServers).toBe(join('/fake/cwd', '.susentorno', 'mcp-servers.yaml'));
 });
 ```
 
@@ -1726,7 +1726,7 @@ git commit -m "runProxyLoop: launch and supervise host-run MCP servers alongside
 **Interfaces:**
 
 - Consumes: `readMcpServers` (Task 2), `allocateMcpPorts` (Task 7), `spawnMcpServer`/`probeMcpReady` (Task 8), `killProcessTree` (pre-existing).
-- Produces: `run-proxy`'s CLI action reads `.configamatron/mcp-servers.yaml` and passes it through to `runProxyLoop`.
+- Produces: `run-proxy`'s CLI action reads `.susentorno/mcp-servers.yaml` and passes it through to `runProxyLoop`.
 
 - [ ] **Step 1: Add the imports**
 

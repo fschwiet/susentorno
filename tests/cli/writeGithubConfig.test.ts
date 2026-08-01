@@ -16,7 +16,7 @@ let gitConfig: string;
 const token = 'github_pat_' + 'A'.repeat(82);
 
 beforeEach(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'configamatron-ghcfg-'));
+  dir = mkdtempSync(join(tmpdir(), 'susentorno-ghcfg-'));
   await execa(
     'node',
     [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
@@ -34,7 +34,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe('configamatron write-github-config', () => {
+describe('susentorno write-github-config', () => {
   it('writes github-config.txt into both shared folders', async () => {
     const { exitCode } = await execa('node', [cliPath, 'write-github-config'], {
       cwd: dir,
@@ -44,15 +44,15 @@ describe('configamatron write-github-config', () => {
     expect(exitCode).toBe(0);
 
     for (const folder of ['vm-shared', 'vm-shared-windows']) {
-      const cfg = readFileSync(join(dir, '.configamatron', folder, 'github-config.txt'), 'utf8');
+      const cfg = readFileSync(join(dir, '.susentorno', folder, 'github-config.txt'), 'utf8');
       expect(cfg, folder).toContain('GITHUB_USERNAME="octo"');
       expect(cfg, folder).toContain('GITHUB_EMAIL="octo@example.com"');
-      expect(cfg, folder).toContain('GITHUB_TOKEN="ghp-CONFIGAMATRON-PLACEHOLDER"');
+      expect(cfg, folder).toContain('GITHUB_TOKEN="ghp-susentorno-PLACEHOLDER"');
       expect(cfg, folder).not.toContain(token);
     }
 
     const apiTokenSecret = readFileSync(
-      join(dir, '.configamatron', 'proxy', 'secrets', 'github-api-token-secret.yaml'),
+      join(dir, '.susentorno', 'proxy', 'secrets', 'github-api-token-secret.yaml'),
       'utf8',
     );
     expect(apiTokenSecret).toContain(`inline_string: "token ${token}"`);
@@ -68,7 +68,7 @@ describe('configamatron write-github-config', () => {
   }
 
   it('writes a placeholder VM config and the real credential to the github secret files', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
+    const dir = mkdtempSync(join(tmpdir(), 'susentorno-'));
     const gitConfigPath = join(dir, 'gitconfig');
     writeFixtureGitConfig(
       gitConfigPath,
@@ -93,14 +93,14 @@ describe('configamatron write-github-config', () => {
 
       // VM share gets identity + the placeholder PAT, never the real token.
       const vmConfig = readFileSync(
-        join(dir, '.configamatron', 'vm-shared', 'github-config.txt'),
+        join(dir, '.susentorno', 'vm-shared', 'github-config.txt'),
         'utf8',
       );
       expect(vmConfig).toBe(
         [
           'GITHUB_USERNAME="Test User"',
           'GITHUB_EMAIL="test@example.com"',
-          'GITHUB_TOKEN="ghp-CONFIGAMATRON-PLACEHOLDER"',
+          'GITHUB_TOKEN="ghp-susentorno-PLACEHOLDER"',
           '',
         ].join('\n'),
       );
@@ -108,7 +108,7 @@ describe('configamatron write-github-config', () => {
 
       // The real credential lands only in the proxy secrets, one resource per file.
       const basicSecret = readFileSync(
-        join(dir, '.configamatron', 'proxy', 'secrets', 'github-basic-secret.yaml'),
+        join(dir, '.susentorno', 'proxy', 'secrets', 'github-basic-secret.yaml'),
         'utf8',
       );
       expect(basicSecret).toContain('name: github_basic_auth');
@@ -116,7 +116,7 @@ describe('configamatron write-github-config', () => {
       expect(basicSecret).toContain(`inline_string: "${expectedBasic}"`);
 
       const apiTokenSecret = readFileSync(
-        join(dir, '.configamatron', 'proxy', 'secrets', 'github-api-token-secret.yaml'),
+        join(dir, '.susentorno', 'proxy', 'secrets', 'github-api-token-secret.yaml'),
         'utf8',
       );
       expect(apiTokenSecret).toContain('name: github_api_token');
@@ -127,7 +127,7 @@ describe('configamatron write-github-config', () => {
   });
 
   it('rejects a malformed token without writing either output', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
+    const dir = mkdtempSync(join(tmpdir(), 'susentorno-'));
     const gitConfigPath = join(dir, 'gitconfig');
     writeFixtureGitConfig(
       gitConfigPath,
@@ -149,12 +149,12 @@ describe('configamatron write-github-config', () => {
 
       expect(exitCode).toBe(1);
       expect(stderr).toContain('invalid token');
-      expect(existsSync(join(dir, '.configamatron', 'vm-shared', 'github-config.txt'))).toBe(false);
+      expect(existsSync(join(dir, '.susentorno', 'vm-shared', 'github-config.txt'))).toBe(false);
       expect(
-        existsSync(join(dir, '.configamatron', 'proxy', 'secrets', 'github-basic-secret.yaml')),
+        existsSync(join(dir, '.susentorno', 'proxy', 'secrets', 'github-basic-secret.yaml')),
       ).toBe(false);
       expect(
-        existsSync(join(dir, '.configamatron', 'proxy', 'secrets', 'github-api-token-secret.yaml')),
+        existsSync(join(dir, '.susentorno', 'proxy', 'secrets', 'github-api-token-secret.yaml')),
       ).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -162,7 +162,7 @@ describe('configamatron write-github-config', () => {
   });
 
   it('fails when git user.name/user.email are not set', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
+    const dir = mkdtempSync(join(tmpdir(), 'susentorno-'));
     const gitConfigPath = join(dir, 'gitconfig');
     writeFixtureGitConfig(gitConfigPath, '');
 

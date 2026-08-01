@@ -200,7 +200,7 @@ describe('github.com Basic injection', () => {
       const { statusCode } = await requestThrough(
         'github.com',
         basicOf('whoever', GITHUB_PLACEHOLDER_PAT),
-        { 'x-configamatron-no-auth': '1' },
+        { 'x-susentorno-no-auth': '1' },
       );
       expect(statusCode).toBe(200);
       expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_BASIC]);
@@ -220,12 +220,12 @@ describe('github.com Basic injection', () => {
       const before = mockUpstream.receivedHeaders.length;
       const sent = basicOf('whoever', 'some-other-token');
       const { statusCode } = await requestThrough('github.com', sent, {
-        'x-configamatron-no-auth': '1',
+        'x-susentorno-no-auth': '1',
       });
       expect(statusCode).toBe(200);
       const received = mockUpstream.receivedHeaders.slice(before);
       expect(received[0].authorization).toBe(sent);
-      expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+      expect(received[0]['x-susentorno-no-auth']).toBeUndefined();
     });
   });
 
@@ -236,7 +236,7 @@ describe('github.com Basic injection', () => {
       expect(statusCode).toBe(200);
       const received = mockUpstream.receivedHeaders.slice(before);
       expect(received[0].authorization).toBeUndefined();
-      expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+      expect(received[0]['x-susentorno-no-auth']).toBeUndefined();
     });
   });
 
@@ -296,7 +296,7 @@ describe('api.github.com token/Bearer injection', () => {
       const { statusCode } = await requestThrough(
         'api.github.com',
         `token ${GITHUB_PLACEHOLDER_PAT}`,
-        { 'x-configamatron-no-auth': '1' },
+        { 'x-susentorno-no-auth': '1' },
       );
       expect(statusCode).toBe(200);
       expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([REAL_API_AUTH]);
@@ -316,12 +316,12 @@ describe('api.github.com token/Bearer injection', () => {
     it('strips a client-forged no-auth marker header on a non-matching credential instead of trusting it', async () => {
       const before = mockUpstream.receivedHeaders.length;
       const { statusCode } = await requestThrough('api.github.com', 'Bearer wrong-token', {
-        'x-configamatron-no-auth': '1',
+        'x-susentorno-no-auth': '1',
       });
       expect(statusCode).toBe(200);
       const received = mockUpstream.receivedHeaders.slice(before);
       expect(received[0].authorization).toBe('Bearer wrong-token');
-      expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+      expect(received[0]['x-susentorno-no-auth']).toBeUndefined();
     });
   });
 
@@ -332,7 +332,7 @@ describe('api.github.com token/Bearer injection', () => {
       expect(statusCode).toBe(200);
       const received = mockUpstream.receivedHeaders.slice(before);
       expect(received[0].authorization).toBeUndefined();
-      expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+      expect(received[0]['x-susentorno-no-auth']).toBeUndefined();
     });
   });
 });

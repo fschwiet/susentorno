@@ -9,14 +9,14 @@ const PRE_SCRIPTS_README = `# pre-scripts
 
 Your own VM setup scripts go here. Name runnable steps \`NN-name.sh\` or
 \`NN-name.ps1\`. They run before network isolation. Reference sibling resources
-relative to the script, then run \`configamatron update-shares\` after editing.
+relative to the script, then run \`susentorno update-shares\` after editing.
 `;
 
 const POST_SCRIPTS_README = `# post-scripts
 
 Your own VM setup scripts go here. Name runnable steps \`NN-name.sh\` or
 \`NN-name.ps1\`. They run after network isolation and reboot. Reference sibling
-resources relative to the script, then run \`configamatron update-shares\` after editing.
+resources relative to the script, then run \`susentorno update-shares\` after editing.
 `;
 
 export interface InitOptions {
@@ -28,7 +28,7 @@ export interface InitOptions {
 }
 
 /**
- * Scaffold <cwd>/.configamatron. Validates all inputs before writing anything so a
+ * Scaffold <cwd>/.susentorno. Validates all inputs before writing anything so a
  * failed init leaves no partial environment behind. Throws on any failure.
  */
 export function initEnvironment(options: InitOptions): void {
@@ -100,6 +100,6 @@ export function initEnvironment(options: InitOptions): void {
   for (const target of paths.vmSharedTargets) {
     cpSync(templateTransforms, target.homeJqTransforms, { recursive: true });
   }
-  copyFileSync(join(options.templatesDir, 'configamatron.gitignore'), paths.gitignore);
+  copyFileSync(join(options.templatesDir, 'susentorno.gitignore'), paths.gitignore);
   executePlans(plans);
 }

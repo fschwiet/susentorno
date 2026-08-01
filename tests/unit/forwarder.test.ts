@@ -21,7 +21,7 @@ describe('internal switch address selection & forwarding', () => {
   describe('resolveForwardListenAddress', () => {
     it('returns the non-internal IPv4 of the named adapter', () => {
       const interfaces = {
-        'vEthernet (configamatron-internal)': [ipv4('192.168.67.1')],
+        'vEthernet (susentorno-internal)': [ipv4('192.168.67.1')],
         'Wi-Fi': [ipv4('10.0.0.5')],
       };
       expect(resolveForwardListenAddress(DEFAULT_INTERNAL_SWITCH_ADAPTER, interfaces)).toBe(
@@ -39,7 +39,7 @@ describe('internal switch address selection & forwarding', () => {
 
     it('skips internal and IPv6 addresses', () => {
       const interfaces = {
-        'vEthernet (configamatron-internal)': [
+        'vEthernet (susentorno-internal)': [
           { ...ipv4('127.0.0.1', true) },
           {
             address: 'fe80::1',

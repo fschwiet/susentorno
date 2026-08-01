@@ -52,20 +52,20 @@ export function relaunchFailedWithNoChild(result: RelaunchResult): boolean {
 const FALLBACK_EXIT_CODE = 1;
 
 const README_CONTENT = [
-  'run-proxy-node.exe is a plain copy of the node.exe that ran configamatron',
+  'run-proxy-node.exe is a plain copy of the node.exe that ran susentorno',
   'run-proxy, kept here so a Windows Firewall rule can be scoped to a binary',
   'that only ever runs run-proxy — not the shared system node.exe, which any',
   'other script or tool might also run through.',
   '',
   'It is not a customized build. Deleting this file is safe: the next',
-  '`configamatron run-proxy` (with forwarding enabled, the default) recreates',
+  '`susentorno run-proxy` (with forwarding enabled, the default) recreates',
   'it from whatever node.exe is currently running the CLI.',
   '',
 ].join('\n');
 
 /** Fixed, host-wide path — a known constant needs no discovery logic and cannot guess wrong. */
 export function getDedicatedNodePath(homedir: string): string {
-  return join(homedir, '.configamatron-host', 'run-proxy-node.exe');
+  return join(homedir, '.susentorno-host', 'run-proxy-node.exe');
 }
 
 /**

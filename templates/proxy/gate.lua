@@ -1,6 +1,6 @@
-local PLACEHOLDER = "Bearer sk-ant-oat-CONFIGAMATRON-PLACEHOLDER"
-local NO_AUTH_MARKER = "x-configamatron-no-auth"
-local NO_AUTH_SENTINEL = "configamatron-no-credential"
+local PLACEHOLDER = "Bearer sk-ant-oat-susentorno-PLACEHOLDER"
+local NO_AUTH_MARKER = "x-susentorno-no-auth"
+local NO_AUTH_SENTINEL = "susentorno-no-credential"
 
 function envoy_on_request(request_handle)
   local headers = request_handle:headers()

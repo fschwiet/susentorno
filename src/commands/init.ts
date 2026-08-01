@@ -39,9 +39,9 @@ export function registerInit(program: Command): void {
         return;
       }
       console.log(`init: created ${ENV_DIR_NAME}. Next steps:`);
-      console.log('  1. configamatron generate-ca');
-      console.log('  2. configamatron write-github-config');
-      console.log('  3. configamatron run-proxy');
+      console.log('  1. susentorno generate-ca');
+      console.log('  2. susentorno write-github-config');
+      console.log('  3. susentorno run-proxy');
       console.log(
         `  (Windows) admin PowerShell: powershell -File ${ENV_DIR_NAME}/proxy/host-allow-vm-inbound.ps1`,
       );
@@ -51,7 +51,7 @@ export function registerInit(program: Command): void {
       );
       console.log(
         `  Customize settings transforms in ${ENV_DIR_NAME}/home-jq-transforms (commit them; ` +
-          `re-run 'configamatron update-shares' after edits). ${ENV_DIR_NAME} is source-controlled ` +
+          `re-run 'susentorno update-shares' after edits). ${ENV_DIR_NAME} is source-controlled ` +
           `except the files its .gitignore excludes.`,
       );
     });

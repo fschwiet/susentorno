@@ -15,12 +15,12 @@ export interface UpstreamOverride {
  * pre-filter must remove any inbound copy of this header first — it must never be
  * something a client-sent request can forge.
  */
-export const NO_AUTH_MARKER_HEADER = 'x-configamatron-no-auth';
+export const NO_AUTH_MARKER_HEADER = 'x-susentorno-no-auth';
 
 /** Placeholder Authorization value used only to make the header non-absent for the
  * injector's benefit; its content is never inspected — only NO_AUTH_MARKER_HEADER
  * controls whether the post-filter strips it. */
-export const NO_AUTH_SENTINEL_VALUE = 'configamatron-no-credential';
+export const NO_AUTH_SENTINEL_VALUE = 'susentorno-no-credential';
 
 // Shared by every authenticated chain (Claude, Codex, both GitHub gates): runs after
 // credential_injector to undo the marker/sentinel a pre-filter sets for a genuinely
@@ -358,7 +358,7 @@ function buildGithubEntry(
           },
           http_filters: [
             {
-              name: 'configamatron.auth_pre',
+              name: 'susentorno.auth_pre',
               typed_config: {
                 '@type': 'type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua',
                 default_source_code: { inline_string: gateSource },
@@ -391,7 +391,7 @@ function buildGithubEntry(
               },
             },
             {
-              name: 'configamatron.auth_post',
+              name: 'susentorno.auth_post',
               typed_config: {
                 '@type': 'type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua',
                 default_source_code: { inline_string: AUTH_POST_FILTER_LUA },
@@ -466,7 +466,7 @@ function buildClaudeEntry(entry: string, overrides: UpstreamOverride[]) {
           },
           http_filters: [
             {
-              name: 'configamatron.auth_pre',
+              name: 'susentorno.auth_pre',
               typed_config: {
                 '@type': 'type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua',
                 default_source_code: { filename: '/etc/envoy/gate.lua' },
@@ -485,7 +485,7 @@ function buildClaudeEntry(entry: string, overrides: UpstreamOverride[]) {
                       'type.googleapis.com/envoy.extensions.http.injected_credentials.generic.v3.Generic',
                     header: 'Authorization',
                     credential: {
-                      name: 'configamatron_bearer_token',
+                      name: 'susentorno_bearer_token',
                       sds_config: {
                         path_config_source: {
                           path: '/etc/envoy/secrets/sds-secret.yaml',
@@ -499,7 +499,7 @@ function buildClaudeEntry(entry: string, overrides: UpstreamOverride[]) {
               },
             },
             {
-              name: 'configamatron.auth_post',
+              name: 'susentorno.auth_post',
               typed_config: {
                 '@type': 'type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua',
                 default_source_code: { inline_string: AUTH_POST_FILTER_LUA },
@@ -592,7 +592,7 @@ function buildCodexEntry(entry: string, overrides: UpstreamOverride[]) {
           },
           http_filters: [
             {
-              name: 'configamatron.auth_pre',
+              name: 'susentorno.auth_pre',
               typed_config: {
                 '@type': 'type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua',
                 default_source_code: { inline_string: CODEX_GATE_LUA },
@@ -625,7 +625,7 @@ function buildCodexEntry(entry: string, overrides: UpstreamOverride[]) {
               },
             },
             {
-              name: 'configamatron.auth_post',
+              name: 'susentorno.auth_post',
               typed_config: {
                 '@type': 'type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua',
                 default_source_code: { inline_string: AUTH_POST_FILTER_LUA },
@@ -846,7 +846,7 @@ export function generateEnvoyConfig(
   const hasWildcardHttp80 = http80WildcardHosts.length > 0;
 
   return {
-    node: { id: 'configamatron-proxy', cluster: 'configamatron-proxy' },
+    node: { id: 'susentorno-proxy', cluster: 'susentorno-proxy' },
     admin: {
       address: { socket_address: { address: '0.0.0.0', port_value: adminPortValue } },
     },
@@ -941,7 +941,7 @@ export function generateEnvoyConfig(
                               match: { prefix: '/' },
                               direct_response: {
                                 status: 403,
-                                body: { inline_string: 'configamatron: host not allow-listed' },
+                                body: { inline_string: 'susentorno: host not allow-listed' },
                               },
                             },
                           ],

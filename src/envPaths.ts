@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-export const ENV_DIR_NAME = '.configamatron';
+export const ENV_DIR_NAME = '.susentorno';
 
 export interface VmSharedPaths {
   dir: string;
@@ -97,7 +97,7 @@ export function hasEnvironment(cwd: string): boolean {
  */
 export function requireEnvPathsOrExit(commandName: string, cwd = process.cwd()): EnvPaths | null {
   if (!hasEnvironment(cwd)) {
-    console.error(`${commandName}: no ${ENV_DIR_NAME} in ${cwd} — run 'configamatron init' first`);
+    console.error(`${commandName}: no ${ENV_DIR_NAME} in ${cwd} — run 'susentorno init' first`);
     process.exitCode = 1;
     return null;
   }

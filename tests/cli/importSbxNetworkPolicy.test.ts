@@ -7,7 +7,7 @@ import { join } from 'node:path';
 
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
 
-describe('configamatron import-sbx-network-policy', () => {
+describe('susentorno import-sbx-network-policy', () => {
   it('warns in help that import-sbx-network-policy regeneration drops comments', async () => {
     const { stdout, exitCode } = await execa('node', [
       cliPath,
@@ -21,7 +21,7 @@ describe('configamatron import-sbx-network-policy', () => {
   });
 
   it('parses a policy file into current-allow-list.txt with import-sbx-network-policy', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
+    const dir = mkdtempSync(join(tmpdir(), 'susentorno-'));
     const fixturePath = fileURLToPath(new URL('../fixtures/sample-policy.txt', import.meta.url));
 
     try {
@@ -50,7 +50,7 @@ describe('configamatron import-sbx-network-policy', () => {
   });
 
   it('warns and skips unsupported wildcard patterns but still writes the file', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
+    const dir = mkdtempSync(join(tmpdir(), 'susentorno-'));
     const fixturePath = fileURLToPath(new URL('../fixtures/sample-policy.txt', import.meta.url));
 
     try {

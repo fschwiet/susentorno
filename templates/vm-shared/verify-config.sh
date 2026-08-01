@@ -37,7 +37,7 @@ adv() {
 # in $? for the caller to read.
 curl_code() { curl -s -o /dev/null -w '%{http_code}' --max-time "$1" "$2"; }
 
-PLACEHOLDER='sk-ant-oat-CONFIGAMATRON-PLACEHOLDER'
+PLACEHOLDER='sk-ant-oat-susentorno-PLACEHOLDER'
 
 section 'Host IP'
 
@@ -63,17 +63,17 @@ fi
 
 section 'CA trust (05)'
 
-ca_src='/usr/local/share/ca-certificates/configamatron-proxy-certificate-authority.crt'
+ca_src='/usr/local/share/ca-certificates/susentorno-proxy-certificate-authority.crt'
 if [ -f "$ca_src" ]; then ok 'proxy CA installed'; else bad 'proxy CA installed' "missing $ca_src"; fi
 
-if [ -e '/etc/ssl/certs/configamatron-proxy-certificate-authority.pem' ]; then
+if [ -e '/etc/ssl/certs/susentorno-proxy-certificate-authority.pem' ]; then
   ok 'proxy CA present in system trust bundle'
 else
   bad 'proxy CA present in system trust bundle' 'no /etc/ssl/certs symlink -- did update-ca-certificates run?'
 fi
 
 node_ca="$(bash -lc 'echo $NODE_EXTRA_CA_CERTS')"
-if printf '%s' "$node_ca" | grep -q 'configamatron-proxy-certificate-authority.crt'; then
+if printf '%s' "$node_ca" | grep -q 'susentorno-proxy-certificate-authority.crt'; then
   ok 'NODE_EXTRA_CA_CERTS set for login shells'
 else
   bad 'NODE_EXTRA_CA_CERTS set for login shells' "got '${node_ca:-empty}'"
@@ -85,7 +85,7 @@ fi
 # SEC_ERROR_UNKNOWN_ISSUER on terminated hosts. So check the policy cert is
 # current AND readable from within the confinement, not just present on disk.
 ff_policy=/etc/firefox/policies/policies.json
-ff_ca=/etc/firefox/policies/configamatron-proxy-certificate-authority.pem
+ff_ca=/etc/firefox/policies/susentorno-proxy-certificate-authority.pem
 if command -v firefox > /dev/null 2>&1 || snap list firefox > /dev/null 2>&1; then
   if [ -f "$ff_ca" ] && cmp -s "$ff_ca" "$ca_src"; then
     ok 'firefox policy cert matches installed proxy CA'
@@ -177,10 +177,10 @@ else
   adv 'default route via the host' "unexpected route: $(printf '%s' "$route" | head -n1)"
 fi
 
-if ! systemctl is-active --quiet configamatron-egress.service 2>/dev/null; then
-  ok 'no configamatron-egress.service (routing comes from DHCP)'
+if ! systemctl is-active --quiet susentorno-egress.service 2>/dev/null; then
+  ok 'no susentorno-egress.service (routing comes from DHCP)'
 else
-  bad 'no configamatron-egress.service' 'the egress unit is still active -- remove it'
+  bad 'no susentorno-egress.service' 'the egress unit is still active -- remove it'
 fi
 
 section 'Placeholder credential'

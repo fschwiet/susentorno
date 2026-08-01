@@ -2,7 +2,7 @@
 
 `run-proxy` announces any abnormal exit — startup failures (Docker unavailable, an unreadable/invalid
 config, a certificate error, a port conflict, a failed relaunch) as well as runtime crashes — by
-speaking "Configamatron is down" once through the native Windows **SAPI COM** voice
+speaking "susentorno is down" once through the native Windows **SAPI COM** voice
 (`SAPI.SpVoice`), spawned as a detached PowerShell one-liner that Node does not wait on. A clean
 shutdown (Ctrl-C/SIGINT, or SIGTERM) stays silent.
 

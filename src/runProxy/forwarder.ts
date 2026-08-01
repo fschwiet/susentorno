@@ -1,6 +1,6 @@
 import { networkInterfaces, type NetworkInterfaceInfo } from 'node:os';
 
-export const DEFAULT_INTERNAL_SWITCH_ADAPTER = 'vEthernet (configamatron-internal)';
+export const DEFAULT_INTERNAL_SWITCH_ADAPTER = 'vEthernet (susentorno-internal)';
 export interface InternalSwitchNetwork {
   address: string;
   netmask: string;

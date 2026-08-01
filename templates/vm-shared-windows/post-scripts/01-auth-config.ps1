@@ -6,7 +6,7 @@ $shareRoot = Split-Path -Parent $scriptDir
 
 $configPath = Join-Path $shareRoot 'github-config.txt'
 if (-not (Test-Path $configPath)) {
-  Write-Error "06-auth-config: $configPath not found. Run 'configamatron write-github-config' on the host first."
+  Write-Error "06-auth-config: $configPath not found. Run 'susentorno write-github-config' on the host first."
   exit 1
 }
 

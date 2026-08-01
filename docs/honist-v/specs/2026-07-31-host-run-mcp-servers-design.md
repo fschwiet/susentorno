@@ -2,14 +2,14 @@
 
 ## Purpose
 
-Configamatron can launch MCP (Model Context Protocol) servers on the host and expose each to an isolated guest as an HTTPS endpoint on a dedicated hostname, so a guest's coding agents can use tools backed by host credentials and host filesystem access without those credentials ever entering the guest. This reuses the existing proxy boundary end to end — Envoy already terminates TLS for a small set of hosts and forwards elsewhere (ADR [[egress-through-host-envoy-proxy]]) — rather than opening any new network path.
+susentorno can launch MCP (Model Context Protocol) servers on the host and expose each to an isolated guest as an HTTPS endpoint on a dedicated hostname, so a guest's coding agents can use tools backed by host credentials and host filesystem access without those credentials ever entering the guest. This reuses the existing proxy boundary end to end — Envoy already terminates TLS for a small set of hosts and forwards elsewhere (ADR [[egress-through-host-envoy-proxy]]) — rather than opening any new network path.
 
 See ADR [[host-run-mcp-servers]] for the accepted architecture, rejected alternatives, and the trade-offs behind it. This spec is the implementation detail the ADR doesn't carry: file schema, exact sequencing, error conditions, and testing.
 
 ## Architecture & data flow
 
 ```
-.configamatron/mcp-servers.yaml (per environment)
+.susentorno/mcp-servers.yaml (per environment)
         │  read once at run-proxy startup
         ▼
 run-proxy: for each entry — allocate loopback port, spawn `command`
@@ -40,7 +40,7 @@ Envoy bring-up does **not** wait for MCP servers to become ready — see "Startu
 
 ## `mcp-servers.yaml` schema
 
-Location: `.configamatron/mcp-servers.yaml`, one file per environment (matching the per-directory environment model, ADR [[per-directory-environment-model]]). Optional — an environment with no MCP servers simply omits the file.
+Location: `.susentorno/mcp-servers.yaml`, one file per environment (matching the per-directory environment model, ADR [[per-directory-environment-model]]). Optional — an environment with no MCP servers simply omits the file.
 
 ```yaml
 servers:
@@ -56,7 +56,7 @@ Fields:
 
 - **`name`** (required, string): identifier used for log-line prefixes (`[filesystem] ...`), readiness/failure reporting, and as the server identifier passed to `claude mcp add`/`codex mcp add`. Must be unique across all entries in the file.
 - **`hostname`** (required, string): the SNI hostname a guest uses to reach this server. Becomes an Envoy `filter_chain_match` server name and a leaf cert SAN. Must be unique across all entries in the file. Not validated against any particular domain suffix — `.internal` is a written recommendation in the file's own template comment, not an enforced rule.
-- **`command`** (required, string): a shell string, spawned through a shell (not argv form). `{ip}` and `{port}` are substituted with `127.0.0.1` and the port Configamatron assigned to this server before spawning. Since every substituted value is Configamatron's own (never guest- or network-supplied) input, there is no injection concern in going through a shell here.
+- **`command`** (required, string): a shell string, spawned through a shell (not argv form). `{ip}` and `{port}` are substituted with `127.0.0.1` and the port susentorno assigned to this server before spawning. Since every substituted value is susentorno's own (never guest- or network-supplied) input, there is no injection concern in going through a shell here.
 - **`cwd`** (optional, string): working directory for the spawned process. Omitted → inherits run-proxy's own working directory.
 - **`env`** (optional, map of string→string): extra environment variables. Merged **over** run-proxy's own inherited process environment (so PATH, host tool locations, etc. are still present); on a key collision, the YAML's value wins.
 
@@ -128,7 +128,7 @@ Each MCP server gets its own filter chain in `envoy.yaml`'s `listener_443`, alon
 - `filter_chain_match: { server_names: [hostname] }`.
 - Downstream TLS: terminates on the same leaf cert as every other terminated chain (`/etc/envoy/ca/leaf-cert.pem` / `leaf-key.pem`).
 - `http_connection_manager` → single route → a per-server cluster, `timeout: '0s'` (matching the Claude/Codex chains, so a long-lived MCP tool call isn't cut off at Envoy's default 15s route timeout).
-- `http_filters`: **router only**. No `configamatron.auth_pre`/`auth_post` lua gates, no `credential_injector` — this destination kind has no auth of any form (see ADR [[host-run-mcp-servers]] for why).
+- `http_filters`: **router only**. No `susentorno.auth_pre`/`auth_post` lua gates, no `credential_injector` — this destination kind has no auth of any form (see ADR [[host-run-mcp-servers]] for why).
 - Access log: new pathId `mcp`, using the same `accessLog()`/`CFGM|...` format as the Claude/Codex/GitHub chains (ADR [[envoy-access-log-contract]]). `classify.ts` maps pathId `mcp` to a new friendly tag `ALLOW MCP`.
 
 Cluster (per server): `STRICT_DNS`, `dns_lookup_family: V4_ONLY`, single endpoint `host.docker.internal:<assigned-port>` — **not** `127.0.0.1`, since that would resolve inside the Envoy container rather than on the host — with **no `transport_socket`** — cleartext upstream. This needs a new small builder distinct from the existing `buildTlsUpstreamCluster` (which unconditionally sets `UpstreamTlsContext`), since every other terminated chain's upstream is itself TLS and this one deliberately isn't.
@@ -152,7 +152,7 @@ codex mcp add filesystem https://filesystem.internal
 
 (`codex mcp` has no `--scope` flag; `claude mcp` uses `--scope user` on both the remove and the add.) This is regenerated fresh on every `update-shares` run — same "stage, then atomically swap in" mechanism already used for every other built-in/custom script. The `|| true` on each `remove` absorbs the harmless "not found" case on first run; this is a post-isolation step because the endpoint only resolves-to-host and routes through the proxy once the guest is isolated and run-proxy is up (an earlier, pre-isolation registration attempt would have nothing to reach).
 
-**This converges additions and edits, not removals.** The script only ever mentions servers currently declared in `mcp-servers.yaml` — deleting or renaming an entry means the post-script simply stops mentioning the old name, but never removes its existing guest registration. A stale `claude mcp`/`codex mcp` entry pointing at a hostname that no longer has a server (or a server behind a different name) is left behind until someone removes it by hand in the guest (`claude mcp remove --scope user <old-name>`, `codex mcp remove <old-name>`). This is a known, accepted limitation — automatic removal would need Configamatron to track what it registered on a *previous* run (e.g. a small state file persisted somewhere `update-shares` can read/write across runs), which is more machinery than this feature's first version needs.
+**This converges additions and edits, not removals.** The script only ever mentions servers currently declared in `mcp-servers.yaml` — deleting or renaming an entry means the post-script simply stops mentioning the old name, but never removes its existing guest registration. A stale `claude mcp`/`codex mcp` entry pointing at a hostname that no longer has a server (or a server behind a different name) is left behind until someone removes it by hand in the guest (`claude mcp remove --scope user <old-name>`, `codex mcp remove <old-name>`). This is a known, accepted limitation — automatic removal would need susentorno to track what it registered on a *previous* run (e.g. a small state file persisted somewhere `update-shares` can read/write across runs), which is more machinery than this feature's first version needs.
 
 The exact Codex CLI subcommand syntax for removal should be double-checked against the installed `codex` CLI version during implementation; the shape (remove-then-add, no scope flag) is expected to hold regardless.
 

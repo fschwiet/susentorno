@@ -5,7 +5,7 @@ if [ "$(id -u)" != 0 ]; then
   exit 1
 fi
 
-STATE="${CFGM_VMTEST_STATE:-/root/.cache/configamatron-vmtest}"
+STATE="${CFGM_VMTEST_STATE:-/root/.cache/susentorno-vmtest}"
 RUN="$STATE/run"
 BRIDGE=cfgmbr0
 BRIDGE_IP=10.213.87.1

@@ -11,15 +11,15 @@ const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json',
 const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
 
 let dir: string;
-const caCert = () => join(dir, '.configamatron', 'proxy', 'ca', 'cert.pem');
-const caKey = () => join(dir, '.configamatron', 'proxy', 'ca', 'key.pem');
-const caLeafCert = () => join(dir, '.configamatron', 'proxy', 'ca', 'leaf-cert.pem');
-const caLeafKey = () => join(dir, '.configamatron', 'proxy', 'ca', 'leaf-key.pem');
-const vmCert = () => join(dir, '.configamatron', 'vm-shared', 'cert.pem');
-const vmWindowsCert = () => join(dir, '.configamatron', 'vm-shared-windows', 'cert.pem');
+const caCert = () => join(dir, '.susentorno', 'proxy', 'ca', 'cert.pem');
+const caKey = () => join(dir, '.susentorno', 'proxy', 'ca', 'key.pem');
+const caLeafCert = () => join(dir, '.susentorno', 'proxy', 'ca', 'leaf-cert.pem');
+const caLeafKey = () => join(dir, '.susentorno', 'proxy', 'ca', 'leaf-key.pem');
+const vmCert = () => join(dir, '.susentorno', 'vm-shared', 'cert.pem');
+const vmWindowsCert = () => join(dir, '.susentorno', 'vm-shared-windows', 'cert.pem');
 
 beforeEach(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'configamatron-ca-'));
+  dir = mkdtempSync(join(tmpdir(), 'susentorno-ca-'));
   await execa(
     'node',
     [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
@@ -31,7 +31,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe('configamatron generate-ca', () => {
+describe('susentorno generate-ca', () => {
   it('writes the root CA and a leaf, and copies the root cert.pem into vm-shared', async () => {
     const { exitCode } = await execa('node', [cliPath, 'generate-ca'], { cwd: dir });
     expect(exitCode).toBe(0);
@@ -46,7 +46,7 @@ describe('configamatron generate-ca', () => {
     expect(readFileSync(vmWindowsCert(), 'utf8')).toBe(readFileSync(caCert(), 'utf8'));
 
     const root = new X509Certificate(readFileSync(caCert(), 'utf8'));
-    expect(root.subject).toContain('configamatron-proxy-certificate-authority');
+    expect(root.subject).toContain('susentorno-proxy-certificate-authority');
     expect(root.ca).toBe(true);
     expect(root.subjectAltName).toBeUndefined(); // root carries no server SANs
 
@@ -103,14 +103,14 @@ describe('configamatron generate-ca', () => {
   });
 
   it('exits 1 without an environment', async () => {
-    const bare = mkdtempSync(join(tmpdir(), 'configamatron-bare-'));
+    const bare = mkdtempSync(join(tmpdir(), 'susentorno-bare-'));
     try {
       const { exitCode, stderr } = await execa('node', [cliPath, 'generate-ca'], {
         cwd: bare,
         reject: false,
       });
       expect(exitCode).toBe(1);
-      expect(stderr).toContain("run 'configamatron init' first");
+      expect(stderr).toContain("run 'susentorno init' first");
     } finally {
       rmSync(bare, { recursive: true, force: true });
     }

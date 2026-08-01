@@ -122,8 +122,8 @@ describe('proxy stack policy enforcement', () => {
 
       // Handshake succeeded with `ca: caCertPem` (rejectUnauthorized defaults true), so the leaf
       // already chained to the installed root. Confirm it is a distinct leaf, not the CA itself.
-      expect(peer.subjectCN).toBe('configamatron-proxy-leaf');
-      expect(peer.issuerCN).toBe('configamatron-proxy-certificate-authority');
+      expect(peer.subjectCN).toBe('susentorno-proxy-leaf');
+      expect(peer.issuerCN).toBe('susentorno-proxy-certificate-authority');
       expect(peer.subjectCN).not.toBe(peer.issuerCN);
     });
   });
@@ -223,7 +223,7 @@ describe('proxy stack credential injection', () => {
       expect(statusCode).toBe(200);
       const received = mockUpstream.receivedHeaders.slice(before);
       expect(received[0].authorization).toBe(REAL_AUTH);
-      expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+      expect(received[0]['x-susentorno-no-auth']).toBeUndefined();
     });
 
     it('passes a non-placeholder Authorization header through to the upstream unmodified, with no marker leak or unrelated-header changes', async () => {
@@ -235,7 +235,7 @@ describe('proxy stack credential injection', () => {
       expect(statusCode).toBe(200);
       const received = mockUpstream.receivedHeaders.slice(before);
       expect(received[0].authorization).toBe('Bearer something-else');
-      expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+      expect(received[0]['x-susentorno-no-auth']).toBeUndefined();
       expect(received[0]['x-test-probe']).toBe('keep-me');
     });
 
@@ -247,26 +247,26 @@ describe('proxy stack credential injection', () => {
       const received = mockUpstream.receivedHeaders.slice(before);
       expect(received).toHaveLength(1);
       expect(received[0].authorization).toBeUndefined();
-      expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+      expect(received[0]['x-susentorno-no-auth']).toBeUndefined();
     });
 
     it('strips a client-forged no-auth marker header instead of trusting it', async () => {
       const before = mockUpstream.receivedHeaders.length;
       const { statusCode } = await requestThroughClaudeHost('Bearer something-else', {
-        'x-configamatron-no-auth': '1',
+        'x-susentorno-no-auth': '1',
       });
 
       expect(statusCode).toBe(200);
       const received = mockUpstream.receivedHeaders.slice(before);
       // The forged marker must not cause the post-filter to strip this credential.
       expect(received[0].authorization).toBe('Bearer something-else');
-      expect(received[0]['x-configamatron-no-auth']).toBeUndefined();
+      expect(received[0]['x-susentorno-no-auth']).toBeUndefined();
     });
 
     it('still injects the real credential when the placeholder is presented alongside a forged no-auth marker header', async () => {
       const before = mockUpstream.receivedAuthorizationHeaders.length;
       const { statusCode } = await requestThroughClaudeHost(PLACEHOLDER_AUTH, {
-        'x-configamatron-no-auth': '1',
+        'x-susentorno-no-auth': '1',
       });
 
       expect(statusCode).toBe(200);

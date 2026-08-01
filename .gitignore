@@ -4,13 +4,13 @@
 node_modules/
 dist/
 test-results/
-.configamatron/
+.susentorno/
 
 # .NET project builds
 bin/
 obj/
 
-# GitHub proxy credential (real PAT); belt-and-suspenders on top of .configamatron/
+# GitHub proxy credential (real PAT); belt-and-suspenders on top of .susentorno/
 github-basic-secret.yaml
 github-api-token-secret.yaml
 codex-secret.yaml

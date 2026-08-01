@@ -5,7 +5,7 @@ Opens inbound traffic from the VM's Hyper-V Internal-switch adapter:
   TCP 80/443  - Envoy, via run-proxy's gateway
   UDP 53      - run-proxy's DNS responder
   UDP 67      - run-proxy's DHCP server
-  TCP 445     - the configamatron-share SMB share (Internal-switch and NAT)
+  TCP 445     - the susentorno-share SMB share (Internal-switch and NAT)
 
 and prints the host IP to pass to the guest setup scripts.
 
@@ -44,7 +44,7 @@ TCP and UDP under one -Protocol - this mirrors the plain port rules' own
 three-way split.
 
 The dedicated node.exe lives at a fixed, host-wide path
-(%USERPROFILE%\.configamatron-host\run-proxy-node.exe) that run-proxy creates
+(%USERPROFILE%\.susentorno-host\run-proxy-node.exe) that run-proxy creates
 on its first forwarded start. The path is a known constant, not discovered -
 New-NetFirewallRule -Program does not require the file to exist yet, so this
 script can run before that first start.
@@ -53,7 +53,7 @@ Safe to re-run: replaces any existing rules with the same names.
 #>
 [CmdletBinding()]
 param(
-    [string]$AdapterAlias = "vEthernet (configamatron-internal)",
+    [string]$AdapterAlias = "vEthernet (susentorno-internal)",
     [string]$NatAdapterAlias = "vEthernet (Default Switch)"
 )
 
@@ -74,13 +74,13 @@ if (-not $natHostIp) {
     throw "No IPv4 address on adapter '$NatAdapterAlias'. The SMB share rule needs this adapter's address; pass -NatAdapterAlias if your NAT switch is named differently."
 }
 
-$nodePath = Join-Path $env:USERPROFILE ".configamatron-host\run-proxy-node.exe"
+$nodePath = Join-Path $env:USERPROFILE ".susentorno-host\run-proxy-node.exe"
 
-$tcpRuleName = "Configamatron Envoy Proxy (VM inbound)"
-$dnsRuleName = "Configamatron DNS stub (VM inbound)"
-$dhcpRuleName = "Configamatron DHCP (VM inbound)"
-$smbRuleName = "Configamatron share (VM inbound)"
-$nodeRuleName = "Configamatron run-proxy node (VM inbound)"
+$tcpRuleName = "susentorno Envoy Proxy (VM inbound)"
+$dnsRuleName = "susentorno DNS stub (VM inbound)"
+$dhcpRuleName = "susentorno DHCP (VM inbound)"
+$smbRuleName = "susentorno share (VM inbound)"
+$nodeRuleName = "susentorno run-proxy node (VM inbound)"
 
 foreach ($name in @($tcpRuleName, $dnsRuleName, $dhcpRuleName, $smbRuleName, $nodeRuleName)) {
     Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue | Remove-NetFirewallRule

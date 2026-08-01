@@ -1,8 +1,8 @@
 import { X509Certificate, createPrivateKey } from 'node:crypto';
 import forge from 'node-forge';
 
-export const CA_COMMON_NAME = 'configamatron-proxy-certificate-authority';
-export const LEAF_COMMON_NAME = 'configamatron-proxy-leaf';
+export const CA_COMMON_NAME = 'susentorno-proxy-certificate-authority';
+export const LEAF_COMMON_NAME = 'susentorno-proxy-leaf';
 
 const VALIDITY_DAYS = 3650;
 

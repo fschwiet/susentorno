@@ -29,7 +29,7 @@ export async function checkNoRunningProxy(): Promise<void> {
   if (http && https) {
     throw new Error(
       `Something is already serving both 127.0.0.1:80 and 127.0.0.1:443 — almost certainly ` +
-        `'configamatron run-proxy'. It manages the same Envoy containers this suite does, and ` +
+        `'susentorno run-proxy'. It manages the same Envoy containers this suite does, and ` +
         `the two will clobber each other. Stop run-proxy and re-run; start it again afterwards ` +
         `to restore the VM's proxy.`,
     );

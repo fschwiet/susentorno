@@ -12,7 +12,7 @@ function Ok($m) { $script:pass++; Write-Host "  PASS  $m" }
 function Bad($m, $d) { $script:fail++; if ($d) { Write-Host "  FAIL  $m -- $d" } else { Write-Host "  FAIL  $m" } }
 function Adv($m, $d) { $script:warn++; if ($d) { Write-Host "  WARN  $m -- $d" } else { Write-Host "  WARN  $m" } }
 
-$PLACEHOLDER = 'sk-ant-oat-CONFIGAMATRON-PLACEHOLDER'
+$PLACEHOLDER = 'sk-ant-oat-susentorno-PLACEHOLDER'
 
 # The DHCP-assigned DNS server is a reliable stand-in for "the host IP" on
 # this branch's host-side-DNS design: the host serves both DNS and the
@@ -39,7 +39,7 @@ if ($HostIp) {
 }
 
 Section 'CA trust (05)'
-$root = Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like '*configamatron-proxy-certificate-authority*' }
+$root = Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like '*susentorno-proxy-certificate-authority*' }
 if ($root) { Ok 'proxy CA present in LocalMachine\Root' } else { Bad 'proxy CA present in LocalMachine\Root' 'certutil import missing?' }
 $nodeCa = [Environment]::GetEnvironmentVariable('NODE_EXTRA_CA_CERTS', 'Machine')
 if ($nodeCa -and (Test-Path $nodeCa)) { Ok "NODE_EXTRA_CA_CERTS set ($nodeCa)" } else { Bad 'NODE_EXTRA_CA_CERTS set and file exists' "got '$nodeCa'" }
@@ -52,7 +52,7 @@ if ($HostIp) {
   $ans = (Resolve-DnsName -Name example.com -Type A -DnsOnly -ErrorAction SilentlyContinue | Where-Object Type -eq 'A' | Select-Object -First 1).IPAddress
   if ($ans -eq $HostIp) { Ok "names resolve to the host ($ans)" } else { Bad 'names resolve to the host' "example.com -> '$ans', expected $HostIp" }
 }
-if (-not (Get-ScheduledTask -TaskName 'ConfigamatronDnsResponder' -ErrorAction SilentlyContinue)) { Ok 'no in-guest DNS responder task' } else { Bad 'no in-guest DNS responder task' 'remove ConfigamatronDnsResponder' }
+if (-not (Get-ScheduledTask -TaskName 'SusentornoDnsResponder' -ErrorAction SilentlyContinue)) { Ok 'no in-guest DNS responder task' } else { Bad 'no in-guest DNS responder task' 'remove SusentornoDnsResponder' }
 
 Section 'Placeholder credential (06)'
 $cred = Join-Path $env:USERPROFILE '.claude\.credentials.json'

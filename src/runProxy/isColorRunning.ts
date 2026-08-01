@@ -16,7 +16,7 @@ import type { Color } from './types';
  * container has already died at least once and is not going to serve — a healthy
  * Envoy under this restart policy never exits, so its RestartCount stays 0.
  *
- * The container is named `configamatron-envoy-<color>` (an explicit
+ * The container is named `susentorno-envoy-<color>` (an explicit
  * container_name in the compose template), which is what `docker inspect`
  * matches — the compose *service* name `envoy_<color>` would not resolve here.
  */
@@ -24,12 +24,7 @@ export async function isColorRunning(color: Color, composeDir: string): Promise<
   try {
     const { stdout } = await execa(
       'docker',
-      [
-        'inspect',
-        '--format',
-        '{{.State.Status}} {{.RestartCount}}',
-        `configamatron-envoy-${color}`,
-      ],
+      ['inspect', '--format', '{{.State.Status}} {{.RestartCount}}', `susentorno-envoy-${color}`],
       { cwd: composeDir },
     );
     const [status, restarts] = stdout.trim().split(/\s+/);

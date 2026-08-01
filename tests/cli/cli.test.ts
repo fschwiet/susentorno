@@ -26,7 +26,7 @@ describe('CLI interface', () => {
   });
 
   it('run-proxy names the missing prerequisite command', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'configamatron-'));
+    const dir = mkdtempSync(join(tmpdir(), 'susentorno-'));
     try {
       await execa(
         'node',
@@ -38,7 +38,7 @@ describe('CLI interface', () => {
         reject: false,
       });
       expect(exitCode).toBe(1);
-      expect(stderr).toContain("run 'configamatron generate-ca' first");
+      expect(stderr).toContain("run 'susentorno generate-ca' first");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

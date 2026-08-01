@@ -30,7 +30,7 @@ export function createAbnormalExitAlert(deps: AbnormalExitAlertDeps): AbnormalEx
   };
 }
 
-const SPOKEN_MESSAGE = 'Configamatron is down';
+const SPOKEN_MESSAGE = 'susentorno is down';
 
 /** Builds the PowerShell one-liner that drives the SAPI COM voice (not System.Speech: SAPI needs no NuGet package under pwsh 7). */
 export function buildSpeakCommand(message: string): string {

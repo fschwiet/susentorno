@@ -1,6 +1,6 @@
 # `run-proxy` Abnormal-Exit Audible Alert Implementation Plan
 
-**Goal:** `run-proxy` speaks "Configamatron is down" once through Windows SAPI whenever it exits
+**Goal:** `run-proxy` speaks "susentorno is down" once through Windows SAPI whenever it exits
 abnormally (startup failure or runtime crash), and stays silent on a clean Ctrl-C/SIGINT or
 SIGTERM shutdown.
 
@@ -24,7 +24,7 @@ spawning, Windows `powershell.exe` + `SAPI.SpVoice` COM object for speech.
 
 ## Global Constraints
 
-- Spoken message is exactly: `Configamatron is down` — spoken once via the native Windows **SAPI
+- Spoken message is exactly: `susentorno is down` — spoken once via the native Windows **SAPI
   COM** voice (`SAPI.SpVoice`), not the managed `System.Speech` synthesizer.
 - The alert is spawned as a **detached PowerShell one-liner that Node does not wait on**.
 - A clean shutdown — **Ctrl-C/SIGINT, or SIGTERM** — stays silent.
@@ -414,10 +414,10 @@ Then add two new `describe` blocks at the end of the file:
 ```ts
 describe('buildSpeakCommand', () => {
   it('drives the SAPI COM voice, not System.Speech', () => {
-    const command = buildSpeakCommand('Configamatron is down');
+    const command = buildSpeakCommand('susentorno is down');
 
     expect(command).toContain('New-Object -ComObject SAPI.SpVoice');
-    expect(command).toContain(".Speak('Configamatron is down')");
+    expect(command).toContain(".Speak('susentorno is down')");
   });
 
   it('escapes an embedded single quote for PowerShell single-quoted strings', () => {
@@ -459,7 +459,7 @@ import { execa } from 'execa';
 ```
 
 ```ts
-const SPOKEN_MESSAGE = 'Configamatron is down';
+const SPOKEN_MESSAGE = 'susentorno is down';
 
 /** Builds the PowerShell one-liner that drives the SAPI COM voice (not System.Speech: SAPI needs no NuGet package under pwsh 7). */
 export function buildSpeakCommand(message: string): string {
@@ -842,7 +842,7 @@ git commit -m "run-proxy: speak an audible alert on abnormal exit"
 Automated coverage stops at the unit-tested building blocks — there is no way to assert "the
 Windows SAPI voice was actually heard" in CI, and the ADR itself notes there is no confirmation
 that the speech was heard or even started. Verify by ear on a real Windows host with a working
-`.configamatron` environment (`configamatron init` already run) and Docker Desktop available.
+`.susentorno` environment (`susentorno init` already run) and Docker Desktop available.
 
 - [ ] **Step 1: Build**
 
@@ -854,7 +854,7 @@ Expected: succeeds, `dist/cli.js` is produced.
 Run: `node dist/cli.js run-proxy --credentials C:\does\not\exist.json`
 Expected: the console prints `run-proxy: could not read claude credentials at
 C:\does\not\exist.json` (from `runProxyLoop`'s `fatal()`), the process exits with a nonzero code,
-and — audibly — you hear "Configamatron is down" spoken once shortly after.
+and — audibly — you hear "susentorno is down" spoken once shortly after.
 
 - [ ] **Step 3: Confirm a clean Ctrl-C stays silent**
 
@@ -891,13 +891,13 @@ which does reach `fatal()` at `runProxyLoop.ts:169` (`fatal(\`failed to rebuild 
 1. Start `node dist/cli.js run-proxy` in a working environment and wait for
    `run-proxy: watching credentials and allowlist; ...`.
 2. In another terminal, make the rendered `envoy.yaml` path read-only, e.g.
-   `attrib +R .configamatron\proxy\envoy.yaml` (adjust to your environment's actual
+   `attrib +R .susentorno\proxy\envoy.yaml` (adjust to your environment's actual
    `paths.envoyConfig` location).
 3. Touch `proxy/allowlist.txt` (append a blank line and save) to trigger a watched rebuild.
 
 Expected: the console prints `run-proxy: failed to rebuild the proxy config: ...`, the process
-exits nonzero, and you hear "Configamatron is down" once. Afterward, run
-`attrib -R .configamatron\proxy\envoy.yaml` to restore write access before any further testing.
+exits nonzero, and you hear "susentorno is down" once. Afterward, run
+`attrib -R .susentorno\proxy\envoy.yaml` to restore write access before any further testing.
 
 - [ ] **Step 6: Confirm the message never repeats within one process**
 
