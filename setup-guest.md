@@ -17,8 +17,7 @@ This doc continues as if `192.168.67.x` was chosen as the subnet and the host wa
 - To start with your own image: "Hyper-V Manager -> Action -> New -> Virtual Machine"
   - Ubuntu can be downloaded from: https://ubuntu.com/download
   - A 90-day evaluation ISO for Windows Enterprise can be downloaded from https://info.microsoft.com/ww-landing-windows-11-enterprise.html
-
-Observation: the included Windows 11 dev VM used 54.6 GB for Windows with updates and its included applications, then took 71.5 GB after running the susentorno install scripts.
+- It was observed that the included Windows image took 54.6GB of disk space after running all Windows updates while the evaluation ISO for Windows Enterprise took 26.7 GB for Windows with updates
 
 ### VM creation
 
