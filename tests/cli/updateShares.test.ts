@@ -82,7 +82,9 @@ describe.skipIf(!hasJq)('susentorno update-shares', () => {
       });
       expect(exitCode).toBe(1);
       expect(stderr).toContain('not copying');
-      expect(existsSync(join(dir, '.susentorno', 'vm-shared-linux', 'home-jq-transforms'))).toBe(false);
+      expect(existsSync(join(dir, '.susentorno', 'vm-shared-linux', 'home-jq-transforms'))).toBe(
+        false,
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

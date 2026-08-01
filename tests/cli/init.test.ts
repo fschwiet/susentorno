@@ -23,9 +23,13 @@ describe('susentorno init', () => {
       expect(stdout).toContain('update-shares');
       expect(stdout).toContain('home-jq-transforms');
       expect(existsSync(join(dir, '.susentorno', 'proxy', 'allowlist.txt'))).toBe(true);
-      expect(existsSync(join(dir, '.susentorno', 'vm-shared-linux', 'credentials.json'))).toBe(true);
+      expect(existsSync(join(dir, '.susentorno', 'vm-shared-linux', 'credentials.json'))).toBe(
+        true,
+      );
       expect(
-        existsSync(join(dir, '.susentorno', 'vm-shared-linux', 'pre-scripts', '05-configure-network.sh')),
+        existsSync(
+          join(dir, '.susentorno', 'vm-shared-linux', 'pre-scripts', '05-configure-network.sh'),
+        ),
       ).toBe(true);
       expect(existsSync(join(dir, '.susentorno', 'pre-scripts', 'README.md'))).toBe(true);
     } finally {

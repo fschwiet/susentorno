@@ -149,7 +149,9 @@ describe('susentorno write-github-config', () => {
 
       expect(exitCode).toBe(1);
       expect(stderr).toContain('invalid token');
-      expect(existsSync(join(dir, '.susentorno', 'vm-shared-linux', 'github-config.txt'))).toBe(false);
+      expect(existsSync(join(dir, '.susentorno', 'vm-shared-linux', 'github-config.txt'))).toBe(
+        false,
+      );
       expect(
         existsSync(join(dir, '.susentorno', 'proxy', 'secrets', 'github-basic-secret.yaml')),
       ).toBe(false);
