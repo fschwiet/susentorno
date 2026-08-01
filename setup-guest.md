@@ -71,7 +71,7 @@ A reference on setting up nested virtualization with Hyper-V: https://learn.micr
     dism /online /enable-feature /featurename:HypervisorPlatform /all /norestart
     dism /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
     ```
-  - While the VM is off, run (elevated):
+  - While the VM is off, run (elevated, you'll be prompted for the VM name):
     ```powershell
     Set-VMProcessor -ExposeVirtualizationExtensions $true
     ```
