@@ -70,7 +70,7 @@ Install the project's Node dependencies before running any tier.
 | `unit` | None. |
 | `cli` | A production build (`pnpm build`). The default pipeline builds before this tier. Tests that need the external `jq` command self-skip when it is unavailable. |
 | `proxy-stack` | A production build (`pnpm build`), plus Docker and Docker Compose running. Stop any live `configamatron run-proxy` process first. No guest or real credential is required. |
-| `guest` | Windows with WSL2, Docker, KVM available in WSL2, and a Debian-based default WSL distro with the harness packages installed. WSL must use mirrored networking and reserve UDP port 67 with `ignoredPorts=67`. Stop any live `configamatron run-proxy` process first. |
+| `guest` | Windows with WSL2, Docker, KVM available in WSL2, and a Debian-based default WSL distro with the harness packages installed. WSL must use mirrored networking and reserve UDP port 67 with `ignoredPorts=67`. Stop any live `configamatron run-proxy` process first — it manages the same docker-compose Envoy stack, so leaving it running gets its Envoy torn down mid-suite (the reachability guard then reports `000`, which looks like a Docker/WSL problem) while `run-proxy` itself is left serving with no backend. |
 
 The guest harness setup and exact WSL configuration are documented in the
 Development section of [README.md](../README.md) and the testing section of
