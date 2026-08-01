@@ -121,5 +121,3 @@ New-NetFirewallRule -DisplayName $nodeRuleName -Direction Inbound -Protocol UDP 
 Write-Host "Firewall rules created, scoped to interface '$AdapterAlias'."
 Write-Host "Host IP for this network: $hostIp"
 Write-Host "Program rules created for $nodePath"
-Write-Host "Use this as <host-ip> in:"
-Write-Host "  bash vm/vm-setup-persistence.sh $hostIp"
