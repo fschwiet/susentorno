@@ -35,7 +35,15 @@ export function initEnvironment(options: InitOptions): void {
   const paths = envPaths(options.cwd);
   if (existsSync(paths.root)) {
     throw new Error(
-      `${paths.root} already exists — delete it to rebuild the environment from scratch. To preserve configuration changes, put them in source control first then revert them after 'susentorno init' runs. `,
+      `${paths.root} already exists — delete it to rebuild the environment from scratch.
+
+To preserve configuration changes:
+- ensure they're in in source control
+- delete the .susentorno directory
+- run 'susentorno init'
+- revert you configuration changes that were lost
+- run 'susentorno update-shares' 
+`,
     );
   }
 
