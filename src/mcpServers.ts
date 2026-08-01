@@ -61,7 +61,7 @@ export function parseMcpServers(content: string): McpServerConfig[] {
   try {
     doc = parse(content);
   } catch (err) {
-    throw new Error(`mcp-servers.yaml is not valid YAML: ${String(err)}`);
+    throw new Error(`mcp-servers.yaml is not valid YAML: ${String(err)}`, { cause: err });
   }
   if (
     typeof doc !== 'object' ||

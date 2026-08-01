@@ -18,6 +18,11 @@ export default tseslint.config(
   tseslint.configs.recommended,
   prettier,
   {
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    },
+  },
+  {
     files: ['src/**/*.ts', 'tests/**/*.ts', 'tests/**/*.mjs', '*.config.ts', '*.config.mjs'],
     languageOptions: {
       globals: globals.node,
