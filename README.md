@@ -1,4 +1,4 @@
-# susentorno
+# susentorno (sus·entorno)
 
 susentorno sets up isolated environments for coding agents. A Windows and/or Linux VM is isolated behind an Envoy proxy running in Docker on the host; the proxy restricts network access to an allow list and injects credentials so the VM never holds them. Each environment lives in a `.susentorno` folder inside whatever working directory you find appropriate.
 
