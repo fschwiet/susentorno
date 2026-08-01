@@ -59,3 +59,9 @@ Put `NN-name.sh` and/or `NN-name.ps1` steps in `.configamatron/pre-scripts/` or 
 ## Development
 
 See [development.md](development.md) for the requirements and setup to run configamatron's own test suite, and [testing.md](testing.md) for how the tests are organized.
+
+## Why Hyper-V?
+
+I chose Hyper-V because its the only way I could find I could nested virtualization to work without disabling Windows security features and WSL which rely on Hyper-V. And nested virtualization is necessary to support docker running on a Windows guest VM. It is what it is.
+
+If you want to run a different virtualization platform it should work as long as you can support the network topology. I couldn't get the current topology working with VMWare Workstation as it only allow me to bind to vmnetN network endpoints which did not seem to allow the host to bind to their DHCP and/or SMB port. I had previously used VMWare by configuring them to use static IP addresses and setting up the guest DNS config to always point to the VMNet endpoint (where run-proxy bound its proxy). I didn't want to try to support that going forward but am mentioning it here in case you want to go down that path.
