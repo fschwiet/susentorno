@@ -1,6 +1,6 @@
 # Guest setup
 
-Create and configure a guest VM under Hyper-V, isolated behind the host proxy. May be repeated for any number of guests; each guest pairs with one environment via its shared folder. Complete [setup-machine.md](setup-machine.md) and [setup-environment.md](setup-environment.md) first, so the environment's `vm-shared/` and `vm-shared-windows/` folders contain `cert.pem`, `github-config.txt`, and `credentials.json`.
+Create and configure a guest VM under Hyper-V, isolated behind the host proxy. May be repeated for any number of guests; each guest pairs with one environment via its shared folder. Complete [setup-machine.md](setup-machine.md) and [setup-environment.md](setup-environment.md) first, so the environment's `vm-shared-linux/` and `vm-shared-windows/` folders contain `cert.pem`, `github-config.txt`, and `credentials.json`.
 
 Both guest OSes stay on **DHCP** throughout: on the Default Switch they lease from Hyper-V's ICS (real gateway and DNS, so packages install) during setup, and on `susentorno-internal` they lease from `run-proxy` once isolated, which supplies the host as both router and DNS. Nothing inside the guest changes between the two, which is what makes switching networks a purely host-side operation.
 
@@ -108,13 +108,13 @@ password=<the password from setup-environment.md>
 EOF
 sudo chmod 600 /etc/susentorno-share.cred
 
-sudo mkdir -p /mnt/vm-shared
+sudo mkdir -p /mnt/vm-shared-linux
 # /etc/fstab — auto-mounts at boot so the credentials symlink resolves:
-echo '//192.168.67.1/vm-shared  /mnt/vm-shared  cifs  ro,credentials=/etc/susentorno-share.cred,uid=1000,gid=1000,_netdev,x-systemd.automount  0  0' | sudo tee -a /etc/fstab
+echo '//192.168.67.1/vm-shared-linux  /mnt/vm-shared-linux  cifs  ro,credentials=/etc/susentorno-share.cred,uid=1000,gid=1000,_netdev,x-systemd.automount  0  0' | sudo tee -a /etc/fstab
 sudo systemctl daemon-reload && sudo mount -a
 ```
 
-Use the **Default Switch** host IP in that `fstab` line during the NAT phase and the Internal-switch host IP afterwards. The share then lives at `/mnt/vm-shared` — the numbered scripts run from there.
+Use the **Default Switch** host IP in that `fstab` line during the NAT phase and the Internal-switch host IP afterwards. The share then lives at `/mnt/vm-shared-linux` — the numbered scripts run from there.
 
 **Windows guest** — leave the adapter on DHCP. Default Switch uses Hyper-V ICS; `susentorno-internal` uses `run-proxy` with the host as router and DNS. Save credentials with:
 
@@ -142,7 +142,7 @@ cmdkey /add:192.168.67.1 /user:susentorno-share /pass:<the password from setup-e
 
 Run without `sudo`/outside an elevated shell only where noted; each script elevates internally where needed. The exact count may vary when custom steps are present.
 
-**Ubuntu**, from `/mnt/vm-shared`:
+**Ubuntu**, from `/mnt/vm-shared-linux`:
 
 1. `cd` into `pre-scripts/` and run every script in number order. The last step is `05-configure-network.sh <host-ip>` when there are no custom scripts.
 2. Isolate the VM's network (see "Isolate" below), then reboot.

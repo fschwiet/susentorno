@@ -1955,7 +1955,7 @@ it('folds a generated post-script into the post-scripts plan as a built-in, afte
     generatedPostScripts: [{ ext: 'sh', remainder: 'mcp-servers.sh', sourcePath: genPath }],
   });
 
-  const shPostScripts = plans.find((p) => p.livePhaseDir === paths.vmShared + '/post-scripts' || p.livePhaseDir.endsWith('vm-shared/post-scripts'));
+  const shPostScripts = plans.find((p) => p.livePhaseDir === paths.vmShared + '/post-scripts' || p.livePhaseDir.endsWith('vm-shared-linux/post-scripts'));
   const names = shPostScripts!.actions.map((a) => a.destRel);
   expect(names).toContain('02-mcp-servers.sh'); // after the one on-disk built-in (01-existing.sh)
 
@@ -1993,7 +1993,7 @@ export function planAllPhases(opts: {
   generatedPostScripts?: GeneratedScript[];
 }): PhasePlan[] {
   const platforms = [
-    { ext: 'sh' as const, template: 'vm-shared', output: opts.paths.vmShared, insensitive: false },
+    { ext: 'sh' as const, template: 'vm-shared-linux', output: opts.paths.vmShared, insensitive: false },
     {
       ext: 'ps1' as const,
       template: 'vm-shared-windows',
@@ -2100,7 +2100,7 @@ git commit -m "weaveShares: allow a generated script to be folded into post-scri
 
 - [ ] **Step 1: Write the failing test**
 
-Open `tests/cli/updateShares.test.ts` to match its existing style (it runs the built CLI end-to-end against a temp environment and inspects the resulting `vm-shared*/post-scripts` files), then add:
+Open `tests/cli/updateShares.test.ts` to match its existing style (it runs the built CLI end-to-end against a temp environment and inspects the resulting `vm-shared-linux*/post-scripts` files), then add:
 
 ```ts
 it('generates a re-runnable MCP registration post-script when mcp-servers.yaml declares servers', async () => {
@@ -2115,7 +2115,7 @@ it('generates a re-runnable MCP registration post-script when mcp-servers.yaml d
 
   await execa('node', [cliPath, 'update-shares'], { cwd: envParent });
 
-  const shDir = join(envRoot, 'vm-shared', 'post-scripts');
+  const shDir = join(envRoot, 'vm-shared-linux', 'post-scripts');
   const generatedName = readdirSync(shDir).find((f) => f.includes('mcp-servers'));
   expect(generatedName).toBeDefined();
   const content = readFileSync(join(shDir, generatedName!), 'utf8');
@@ -2129,7 +2129,7 @@ it('generates a re-runnable MCP registration post-script when mcp-servers.yaml d
 it('emits no MCP post-script when mcp-servers.yaml is absent', async () => {
   // Same fixture setup as above, but without writing mcp-servers.yaml.
   await execa('node', [cliPath, 'update-shares'], { cwd: envParent });
-  const shDir = join(envRoot, 'vm-shared', 'post-scripts');
+  const shDir = join(envRoot, 'vm-shared-linux', 'post-scripts');
   expect(readdirSync(shDir).some((f) => f.includes('mcp-servers'))).toBe(false);
 });
 ```

@@ -72,7 +72,7 @@ describe.skipIf(!hasJq)('susentorno update-shares', () => {
       await initEnv(dir);
       const src = join(dir, '.susentorno', 'home-jq-transforms', 'vscode-settings.jq');
       writeFileSync(src, '.["x"] = (1 / 0 broken'); // invalid jq
-      rmSync(join(dir, '.susentorno', 'vm-shared', 'home-jq-transforms'), {
+      rmSync(join(dir, '.susentorno', 'vm-shared-linux', 'home-jq-transforms'), {
         recursive: true,
         force: true,
       });
@@ -82,7 +82,7 @@ describe.skipIf(!hasJq)('susentorno update-shares', () => {
       });
       expect(exitCode).toBe(1);
       expect(stderr).toContain('not copying');
-      expect(existsSync(join(dir, '.susentorno', 'vm-shared', 'home-jq-transforms'))).toBe(false);
+      expect(existsSync(join(dir, '.susentorno', 'vm-shared-linux', 'home-jq-transforms'))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -95,7 +95,7 @@ describe.skipIf(!hasJq)('susentorno update-shares', () => {
       const preSrc = join(dir, '.susentorno', 'pre-scripts');
       writeFileSync(join(preSrc, '01-docker.sh'), 'echo docker\n');
       await execa('node', [cliPath, 'update-shares'], { cwd: dir });
-      const wovenPre = join(dir, '.susentorno', 'vm-shared', 'pre-scripts');
+      const wovenPre = join(dir, '.susentorno', 'vm-shared-linux', 'pre-scripts');
       expect(existsSync(join(wovenPre, '05-docker.sh'))).toBe(true);
       expect(existsSync(join(wovenPre, '06-configure-network.sh'))).toBe(true);
       rmSync(join(preSrc, '01-docker.sh'));
@@ -115,7 +115,7 @@ describe.skipIf(!hasJq)('susentorno update-shares', () => {
       const existing = join(
         dir,
         '.susentorno',
-        'vm-shared',
+        'vm-shared-linux',
         'post-scripts',
         '02-apply-home-jq-transforms.sh',
       );
@@ -148,7 +148,7 @@ describe.skipIf(!hasJq)('susentorno update-shares', () => {
 
       await execa('node', [cliPath, 'update-shares'], { cwd: dir });
 
-      const shDir = join(dir, '.susentorno', 'vm-shared', 'post-scripts');
+      const shDir = join(dir, '.susentorno', 'vm-shared-linux', 'post-scripts');
       const generatedName = readdirSync(shDir).find((f) => f.includes('mcp-servers'));
       expect(generatedName).toBeDefined();
       const content = readFileSync(join(shDir, generatedName!), 'utf8');
@@ -169,7 +169,7 @@ describe.skipIf(!hasJq)('susentorno update-shares', () => {
     try {
       await initEnv(dir);
       await execa('node', [cliPath, 'update-shares'], { cwd: dir });
-      const shDir = join(dir, '.susentorno', 'vm-shared', 'post-scripts');
+      const shDir = join(dir, '.susentorno', 'vm-shared-linux', 'post-scripts');
       expect(readdirSync(shDir).some((f) => f.includes('mcp-servers'))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });

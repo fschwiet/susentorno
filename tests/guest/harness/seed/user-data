@@ -60,5 +60,5 @@ runcmd:
   # dnsmasq" assertion is meaningful: it proves nothing ENABLED it, rather than
   # passing trivially because the package is absent.
   - systemctl disable --now dnsmasq || true
-  - mkdir -p /mnt/vm-shared
-  - printf 'vmshared /mnt/vm-shared 9p trans=virtio,ro,nofail,version=9p2000.L 0 0\n' >> /etc/fstab
+  - mkdir -p /mnt/vm-shared-linux
+  - printf 'vmshared /mnt/vm-shared-linux 9p trans=virtio,ro,nofail,version=9p2000.L 0 0\n' >> /etc/fstab

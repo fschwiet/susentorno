@@ -15,7 +15,7 @@ const caCert = () => join(dir, '.susentorno', 'proxy', 'ca', 'cert.pem');
 const caKey = () => join(dir, '.susentorno', 'proxy', 'ca', 'key.pem');
 const caLeafCert = () => join(dir, '.susentorno', 'proxy', 'ca', 'leaf-cert.pem');
 const caLeafKey = () => join(dir, '.susentorno', 'proxy', 'ca', 'leaf-key.pem');
-const vmCert = () => join(dir, '.susentorno', 'vm-shared', 'cert.pem');
+const vmCert = () => join(dir, '.susentorno', 'vm-shared-linux', 'cert.pem');
 const vmWindowsCert = () => join(dir, '.susentorno', 'vm-shared-windows', 'cert.pem');
 
 beforeEach(async () => {
@@ -32,14 +32,14 @@ afterEach(() => {
 });
 
 describe('susentorno generate-ca', () => {
-  it('writes the root CA and a leaf, and copies the root cert.pem into vm-shared', async () => {
+  it('writes the root CA and a leaf, and copies the root cert.pem into vm-shared-linux', async () => {
     const { exitCode } = await execa('node', [cliPath, 'generate-ca'], { cwd: dir });
     expect(exitCode).toBe(0);
     expect(existsSync(caKey())).toBe(true);
     expect(existsSync(caLeafCert())).toBe(true);
     expect(existsSync(caLeafKey())).toBe(true);
 
-    // vm-shared gets the ROOT, not the leaf
+    // vm-shared-linux gets the ROOT, not the leaf
     expect(readFileSync(vmCert(), 'utf8')).toBe(readFileSync(caCert(), 'utf8'));
 
     // The Windows shared folder gets the same root cert.pem.

@@ -7,14 +7,14 @@ import { parseAllowlist } from '../../src/allowlist';
 import { NO_AUTH_MARKER_HEADER, NO_AUTH_SENTINEL_VALUE } from '../../src/envoyConfig';
 
 const expectedTemplateFiles = [
-  'vm-shared/pre-scripts/01-apt-packages.sh',
-  'vm-shared/pre-scripts/02-install-pnpm.sh',
-  'vm-shared/pre-scripts/03-install-tools.sh',
-  'vm-shared/pre-scripts/04-configure-tools.sh',
-  'vm-shared/pre-scripts/nn-configure-network.sh',
-  'vm-shared/post-scripts/01-auth-config.sh',
-  'vm-shared/post-scripts/02-apply-home-jq-transforms.sh',
-  'vm-shared/verify-config.sh',
+  'vm-shared-linux/pre-scripts/01-apt-packages.sh',
+  'vm-shared-linux/pre-scripts/02-install-pnpm.sh',
+  'vm-shared-linux/pre-scripts/03-install-tools.sh',
+  'vm-shared-linux/pre-scripts/04-configure-tools.sh',
+  'vm-shared-linux/pre-scripts/nn-configure-network.sh',
+  'vm-shared-linux/post-scripts/01-auth-config.sh',
+  'vm-shared-linux/post-scripts/02-apply-home-jq-transforms.sh',
+  'vm-shared-linux/verify-config.sh',
   'proxy/docker-compose.yml',
   'proxy/gate.lua',
   'proxy/host-allow-vm-inbound.ps1',
@@ -167,7 +167,7 @@ describe('generated provisioning inventory', () => {
   describe('ubuntu pre-/post-isolation step scripts', () => {
     it('ubuntu 01-apt-packages installs jq and gh', () => {
       const s = readFileSync(
-        join(templatesDir(), 'vm-shared', 'pre-scripts', '01-apt-packages.sh'),
+        join(templatesDir(), 'vm-shared-linux', 'pre-scripts', '01-apt-packages.sh'),
         'utf8',
       );
       expect(s).toMatch(/apt install -y .*\bjq\b/);
@@ -176,7 +176,7 @@ describe('generated provisioning inventory', () => {
 
     it('ubuntu 05-configure-network leaves addressing and DNS to DHCP', () => {
       const s = readFileSync(
-        join(templatesDir(), 'vm-shared', 'pre-scripts', 'nn-configure-network.sh'),
+        join(templatesDir(), 'vm-shared-linux', 'pre-scripts', 'nn-configure-network.sh'),
         'utf8',
       );
       expect(s).toContain('come from the host via DHCP');

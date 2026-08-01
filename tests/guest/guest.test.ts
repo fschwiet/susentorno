@@ -80,9 +80,9 @@ beforeAll(async () => {
     );
   }
 
-  // Stage the environment's real vm-shared folder (numbered scripts + the
+  // Stage the environment's real vm-shared-linux folder (numbered scripts + the
   // generate-ca cert.pem) as the guest's read-only share, mimicking the SMB mount.
-  const wslVmShared = await wslPath(join(envRoot, 'vm-shared'));
+  const wslVmShared = await wslPath(join(envRoot, 'vm-shared-linux'));
   shareDir = (await harness('share.sh', wslVmShared)).stdout.trim();
 
   await harness('guest.sh', 'start', 'g1', '--share', shareDir);
@@ -104,7 +104,7 @@ describe('provisioning during the setup phase', () => {
   it('runs 05-configure-network.sh from the VM share', async () => {
     const { stdout } = await guest(
       'g1',
-      `bash /mnt/vm-shared/pre-scripts/05-configure-network.sh ${BRIDGE_IP}`,
+      `bash /mnt/vm-shared-linux/pre-scripts/05-configure-network.sh ${BRIDGE_IP}`,
     );
     expect(stdout).toContain('05-configure-network:');
   });
@@ -140,7 +140,7 @@ describe('guest home & authentication configuration', () => {
   it('the home settings transform sets hasCompletedOnboarding on a fresh ~/.claude.json', async () => {
     await guest(
       'g1',
-      'rm -f "$HOME/.claude.json" && bash /mnt/vm-shared/post-scripts/02-apply-home-jq-transforms.sh',
+      'rm -f "$HOME/.claude.json" && bash /mnt/vm-shared-linux/post-scripts/02-apply-home-jq-transforms.sh',
     );
     const { stdout } = await guest(
       'g1',
@@ -152,7 +152,7 @@ describe('guest home & authentication configuration', () => {
   it('the home settings transform merges into an existing ~/.claude.json without clobbering', async () => {
     await guest(
       'g1',
-      `printf '%s' '{"someExisting": 123}' > "$HOME/.claude.json" && bash /mnt/vm-shared/post-scripts/02-apply-home-jq-transforms.sh`,
+      `printf '%s' '{"someExisting": 123}' > "$HOME/.claude.json" && bash /mnt/vm-shared-linux/post-scripts/02-apply-home-jq-transforms.sh`,
     );
     const { stdout } = await guest(
       'g1',
@@ -172,10 +172,10 @@ describe('guest home & authentication configuration', () => {
     );
     await guest(
       'g1',
-      `printf '#!/bin/sh\\nexit 0\\n' | sudo tee /usr/local/bin/gh >/dev/null && sudo chmod +x /usr/local/bin/gh && bash /mnt/vm-shared/post-scripts/01-auth-config.sh`,
+      `printf '#!/bin/sh\\nexit 0\\n' | sudo tee /usr/local/bin/gh >/dev/null && sudo chmod +x /usr/local/bin/gh && bash /mnt/vm-shared-linux/post-scripts/01-auth-config.sh`,
     );
     const link = await guest('g1', 'readlink "$HOME/.claude/.credentials.json"');
-    expect(link.stdout.trim()).toBe('/mnt/vm-shared/credentials.json');
+    expect(link.stdout.trim()).toBe('/mnt/vm-shared-linux/credentials.json');
     const body = await guest('g1', 'cat "$HOME/.claude/.credentials.json"');
     expect(body.stdout).toContain('sk-ant-oat-susentorno-PLACEHOLDER');
   });
@@ -183,7 +183,7 @@ describe('guest home & authentication configuration', () => {
   it('06 merges the CA into an existing firefox policies.json, preserving other keys', async () => {
     await guest(
       'g1',
-      `printf '#!/bin/sh\\n' | sudo tee /usr/local/bin/firefox >/dev/null && sudo chmod +x /usr/local/bin/firefox && sudo mkdir -p /etc/firefox/policies && printf '%s' '{"policies":{"SomeOther":true,"Certificates":{"Install":["/usr/local/share/ca-certificates/susentorno-proxy-certificate-authority.crt"]}}}' | sudo tee /etc/firefox/policies/policies.json >/dev/null && bash /mnt/vm-shared/pre-scripts/05-configure-network.sh ${BRIDGE_IP}`,
+      `printf '#!/bin/sh\\n' | sudo tee /usr/local/bin/firefox >/dev/null && sudo chmod +x /usr/local/bin/firefox && sudo mkdir -p /etc/firefox/policies && printf '%s' '{"policies":{"SomeOther":true,"Certificates":{"Install":["/usr/local/share/ca-certificates/susentorno-proxy-certificate-authority.crt"]}}}' | sudo tee /etc/firefox/policies/policies.json >/dev/null && bash /mnt/vm-shared-linux/pre-scripts/05-configure-network.sh ${BRIDGE_IP}`,
     );
     const { stdout } = await guest(
       'g1',
@@ -409,7 +409,7 @@ describe('a fresh guest starting in the isolated phase', () => {
 
     const run = await guest(
       'g2',
-      `bash /mnt/vm-shared/pre-scripts/05-configure-network.sh ${BRIDGE_IP}`,
+      `bash /mnt/vm-shared-linux/pre-scripts/05-configure-network.sh ${BRIDGE_IP}`,
     );
     expect(run.stdout).toContain('05-configure-network:');
 

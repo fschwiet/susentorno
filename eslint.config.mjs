@@ -10,7 +10,7 @@ export default tseslint.config(
       'scripts/',
       '.susentorno/',
       'test-results/',
-      'templates/vm-shared/post-scripts/apply-home-jq-transforms.mjs',
+      'templates/vm-shared-linux/post-scripts/apply-home-jq-transforms.mjs',
       'templates/vm-shared-windows/post-scripts/apply-home-jq-transforms.mjs',
     ],
   },

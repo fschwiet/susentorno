@@ -14,14 +14,14 @@ let templates: string;
 beforeEach(() => {
   work = mkdtempSync(join(tmpdir(), 'weave-shares-'));
   templates = join(work, 'templates');
-  for (const share of ['vm-shared', 'vm-shared-windows']) {
+  for (const share of ['vm-shared-linux', 'vm-shared-windows']) {
     mkdirSync(join(templates, share, 'pre-scripts'), { recursive: true });
     mkdirSync(join(templates, share, 'post-scripts'), { recursive: true });
   }
-  writeFileSync(join(templates, 'vm-shared', 'pre-scripts', '01-apt.sh'), 'apt');
-  writeFileSync(join(templates, 'vm-shared', 'pre-scripts', 'nn-network.sh'), 'net');
-  writeFileSync(join(templates, 'vm-shared', 'pre-scripts', 'dnsmasq.conf'), 'conf');
-  writeFileSync(join(templates, 'vm-shared', 'post-scripts', '01-auth.sh'), 'auth');
+  writeFileSync(join(templates, 'vm-shared-linux', 'pre-scripts', '01-apt.sh'), 'apt');
+  writeFileSync(join(templates, 'vm-shared-linux', 'pre-scripts', 'nn-network.sh'), 'net');
+  writeFileSync(join(templates, 'vm-shared-linux', 'pre-scripts', 'dnsmasq.conf'), 'conf');
+  writeFileSync(join(templates, 'vm-shared-linux', 'post-scripts', '01-auth.sh'), 'auth');
   writeFileSync(join(templates, 'vm-shared-windows', 'pre-scripts', '01-pkg.ps1'), 'pkg');
   writeFileSync(join(templates, 'vm-shared-windows', 'pre-scripts', 'nn-network.ps1'), 'net');
   writeFileSync(join(templates, 'vm-shared-windows', 'post-scripts', '01-auth.ps1'), 'auth');
@@ -115,7 +115,7 @@ describe('VM share weaving', () => {
           generatedPostScripts: [{ ext: 'sh', remainder: 'mcp-servers.sh', sourcePath: genPath }],
         });
 
-        const shPostScripts = findPlan(plans, 'vm-shared/post-scripts');
+        const shPostScripts = findPlan(plans, 'vm-shared-linux/post-scripts');
         const names = shPostScripts!.actions.map((a) => a.destRel);
         expect(names).toContain('02-mcp-servers.sh'); // after the one on-disk built-in (01-auth.sh)
 

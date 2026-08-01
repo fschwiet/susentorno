@@ -44,7 +44,7 @@ export interface EnvPaths {
 
 export function envPaths(cwd: string): EnvPaths {
   const root = join(cwd, ENV_DIR_NAME);
-  const vmShared = join(root, 'vm-shared');
+  const vmShared = join(root, 'vm-shared-linux');
   const vmSharedWindows = join(root, 'vm-shared-windows');
   const proxy = join(root, 'proxy');
   const target = (dir: string): VmSharedPaths => ({

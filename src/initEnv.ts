@@ -83,7 +83,7 @@ export function initEnvironment(options: InitOptions): void {
   writeFileSync(join(paths.postScripts, 'README.md'), POST_SCRIPTS_README);
   const plans = planAllPhases({ templatesDir: options.templatesDir, paths });
 
-  cpSync(join(options.templatesDir, 'vm-shared'), paths.vmShared, { recursive: true });
+  cpSync(join(options.templatesDir, 'vm-shared-linux'), paths.vmShared, { recursive: true });
   cpSync(join(options.templatesDir, 'vm-shared-windows'), paths.vmSharedWindows, {
     recursive: true,
     filter: () => true,

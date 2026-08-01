@@ -55,7 +55,7 @@ A missing live-tier prerequisite is an environmental failure, not a product fail
 
 `pnpm test` runs formatting, linting, type checking, the `unit` tier, a production build, the `cli` tier, and the `proxy-stack` tier in fail-fast order. The Verification Pipeline section of [development.md](development.md) is the source of truth for the exact step order.
 
-The `guest` tier is not part of `pnpm test`. Run it separately with `pnpm test:guest` when changing `templates/vm-shared/` or proxy configuration. Guest boots and reboots take minutes.
+The `guest` tier is not part of `pnpm test`. Run it separately with `pnpm test:guest` when changing `templates/vm-shared-linux/` or proxy configuration. Guest boots and reboots take minutes.
 
 ## Test support and residue
 

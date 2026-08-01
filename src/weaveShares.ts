@@ -41,7 +41,7 @@ export function planAllPhases(opts: {
   generatedPostScripts?: GeneratedScript[];
 }): PhasePlan[] {
   const platforms = [
-    { ext: 'sh' as const, template: 'vm-shared', output: opts.paths.vmShared, insensitive: false },
+    { ext: 'sh' as const, template: 'vm-shared-linux', output: opts.paths.vmShared, insensitive: false },
     {
       ext: 'ps1' as const,
       template: 'vm-shared-windows',

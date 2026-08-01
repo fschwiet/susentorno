@@ -67,7 +67,7 @@ export function registerWriteGithubConfig(program: Command): void {
 
       // Never echo the token.
       console.log(
-        `write-github-config: wrote placeholder github-config.txt to vm-shared and vm-shared-windows, ` +
+        `write-github-config: wrote placeholder github-config.txt to vm-shared-linux and vm-shared-windows, ` +
           `and the real credential to github-basic-secret.yaml and github-api-token-secret.yaml ` +
           `for ${username} <${email}>`,
       );

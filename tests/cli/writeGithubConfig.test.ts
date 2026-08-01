@@ -43,7 +43,7 @@ describe('susentorno write-github-config', () => {
     });
     expect(exitCode).toBe(0);
 
-    for (const folder of ['vm-shared', 'vm-shared-windows']) {
+    for (const folder of ['vm-shared-linux', 'vm-shared-windows']) {
       const cfg = readFileSync(join(dir, '.susentorno', folder, 'github-config.txt'), 'utf8');
       expect(cfg, folder).toContain('GITHUB_USERNAME="octo"');
       expect(cfg, folder).toContain('GITHUB_EMAIL="octo@example.com"');
@@ -93,7 +93,7 @@ describe('susentorno write-github-config', () => {
 
       // VM share gets identity + the placeholder PAT, never the real token.
       const vmConfig = readFileSync(
-        join(dir, '.susentorno', 'vm-shared', 'github-config.txt'),
+        join(dir, '.susentorno', 'vm-shared-linux', 'github-config.txt'),
         'utf8',
       );
       expect(vmConfig).toBe(
@@ -149,7 +149,7 @@ describe('susentorno write-github-config', () => {
 
       expect(exitCode).toBe(1);
       expect(stderr).toContain('invalid token');
-      expect(existsSync(join(dir, '.susentorno', 'vm-shared', 'github-config.txt'))).toBe(false);
+      expect(existsSync(join(dir, '.susentorno', 'vm-shared-linux', 'github-config.txt'))).toBe(false);
       expect(
         existsSync(join(dir, '.susentorno', 'proxy', 'secrets', 'github-basic-secret.yaml')),
       ).toBe(false);

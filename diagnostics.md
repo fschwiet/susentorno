@@ -7,7 +7,7 @@ Diagnosing issues with an environment or guest setup, and maintaining the allow 
 Read-only diagnostic scripts report whether the proxy and a guest are set up correctly. None of them change any state; each prints a `PASS`/`FAIL`/`WARN` line per check and exits non-zero if anything failed.
 
 - **Host (proxy):** from the environment directory, with the proxy up, run `.susentorno\proxy\verify-proxy.ps1`.
-- **Ubuntu guest:** inside the VM, run `/mnt/vm-shared/verify-config.sh [host-ip]`. Pass `<host-ip>` (from `setup-machine.md`) to assert the rules point at it; omit it to have the script discover and report the IP from the installed rules.
+- **Ubuntu guest:** inside the VM, run `/mnt/vm-shared-linux/verify-config.sh [host-ip]`. Pass `<host-ip>` (from `setup-machine.md`) to assert the rules point at it; omit it to have the script discover and report the IP from the installed rules.
 - **Windows guest:** from the mounted `vm-shared-windows` share, run `.\verify-config.ps1` to discover the host when exactly one IPv4 DNS server is configured, or `.\verify-config.ps1 -HostIp <host-ip>` to check an explicit address. It checks that the configured resolver is the host and that names resolve to the host.
 
 ## Watching proxy traffic

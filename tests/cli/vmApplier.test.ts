@@ -19,7 +19,7 @@ const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
 const applierUbuntu = join(
   repoRoot,
   'templates',
-  'vm-shared',
+  'vm-shared-linux',
   'post-scripts',
   'apply-home-jq-transforms.mjs',
 );
@@ -51,7 +51,7 @@ describe('vm applier bundle', () => {
       { cwd: repoRoot },
     );
     const files: string[] = JSON.parse(stdout).files.map((f: { path: string }) => f.path);
-    expect(files).toContain('templates/vm-shared/post-scripts/apply-home-jq-transforms.mjs');
+    expect(files).toContain('templates/vm-shared-linux/post-scripts/apply-home-jq-transforms.mjs');
     expect(files).toContain(
       'templates/vm-shared-windows/post-scripts/apply-home-jq-transforms.mjs',
     );
@@ -113,7 +113,7 @@ describe('vm applier bundle', () => {
           join(
             repoRoot,
             'templates',
-            'vm-shared',
+            'vm-shared-linux',
             'post-scripts',
             '02-apply-home-jq-transforms.sh',
           ),

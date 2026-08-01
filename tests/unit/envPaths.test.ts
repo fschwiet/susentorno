@@ -10,7 +10,7 @@ describe('environment paths & layout', () => {
       const paths = envPaths('/some/dir');
       const root = join('/some/dir', ENV_DIR_NAME);
       expect(paths.root).toBe(root);
-      expect(paths.vmShared).toBe(join(root, 'vm-shared'));
+      expect(paths.vmShared).toBe(join(root, 'vm-shared-linux'));
       expect(paths.proxy).toBe(join(root, 'proxy'));
       expect(paths.allowlist).toBe(join(root, 'proxy', 'allowlist.txt'));
       expect(paths.envoyConfig).toBe(join(root, 'proxy', 'envoy.yaml'));
@@ -28,22 +28,22 @@ describe('environment paths & layout', () => {
       expect(paths.githubApiTokenSecret).toBe(
         join(root, 'proxy', 'secrets', 'github-api-token-secret.yaml'),
       );
-      expect(paths.vmCert).toBe(join(root, 'vm-shared', 'cert.pem'));
-      expect(paths.vmCredentials).toBe(join(root, 'vm-shared', 'credentials.json'));
-      expect(paths.githubConfig).toBe(join(root, 'vm-shared', 'github-config.txt'));
+      expect(paths.vmCert).toBe(join(root, 'vm-shared-linux', 'cert.pem'));
+      expect(paths.vmCredentials).toBe(join(root, 'vm-shared-linux', 'credentials.json'));
+      expect(paths.githubConfig).toBe(join(root, 'vm-shared-linux', 'github-config.txt'));
 
       // Windows guest shared folder + the both-folders target list.
       expect(paths.vmSharedWindows).toBe(join(root, 'vm-shared-windows'));
       expect(paths.vmSharedTargets).toHaveLength(2);
       expect(paths.vmSharedTargets[0]).toEqual({
-        dir: join(root, 'vm-shared'),
-        cert: join(root, 'vm-shared', 'cert.pem'),
-        credentials: join(root, 'vm-shared', 'credentials.json'),
-        authJson: join(root, 'vm-shared', 'auth.json'),
-        githubConfig: join(root, 'vm-shared', 'github-config.txt'),
-        homeJqTransforms: join(root, 'vm-shared', 'home-jq-transforms'),
-        preScripts: join(root, 'vm-shared', 'pre-scripts'),
-        postScripts: join(root, 'vm-shared', 'post-scripts'),
+        dir: join(root, 'vm-shared-linux'),
+        cert: join(root, 'vm-shared-linux', 'cert.pem'),
+        credentials: join(root, 'vm-shared-linux', 'credentials.json'),
+        authJson: join(root, 'vm-shared-linux', 'auth.json'),
+        githubConfig: join(root, 'vm-shared-linux', 'github-config.txt'),
+        homeJqTransforms: join(root, 'vm-shared-linux', 'home-jq-transforms'),
+        preScripts: join(root, 'vm-shared-linux', 'pre-scripts'),
+        postScripts: join(root, 'vm-shared-linux', 'post-scripts'),
       });
       expect(paths.mcpServers).toBe(join(root, 'mcp-servers.yaml'));
 
@@ -72,10 +72,10 @@ describe('environment paths & layout', () => {
   });
 
   describe('VM share locations', () => {
-    it('places the codex placeholder auth.json in each vm-shared target', () => {
+    it('places the codex placeholder auth.json in each vm-shared-linux target', () => {
       const paths = envPaths('/work');
       expect(paths.vmSharedTargets.map((t) => t.authJson)).toEqual([
-        join('/work', '.susentorno', 'vm-shared', 'auth.json'),
+        join('/work', '.susentorno', 'vm-shared-linux', 'auth.json'),
         join('/work', '.susentorno', 'vm-shared-windows', 'auth.json'),
       ]);
     });

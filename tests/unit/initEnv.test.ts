@@ -33,16 +33,16 @@ function options(overrides: Partial<Parameters<typeof initEnvironment>[0]> = {})
 
 describe('environment initialization', () => {
   describe('scaffolding VM shares, proxy config, and allowlist', () => {
-    it('copies vm-shared and proxy templates, the allowlist, and sanitized credentials', () => {
+    it('copies vm-shared-linux and proxy templates, the allowlist, and sanitized credentials', () => {
       initEnvironment(options());
 
       const root = join(dir, ENV_DIR_NAME);
       for (const file of [
-        'vm-shared/pre-scripts/01-apt-packages.sh',
-        'vm-shared/pre-scripts/05-configure-network.sh',
-        'vm-shared/post-scripts/01-auth-config.sh',
-        'vm-shared/post-scripts/02-apply-home-jq-transforms.sh',
-        'vm-shared/credentials.json',
+        'vm-shared-linux/pre-scripts/01-apt-packages.sh',
+        'vm-shared-linux/pre-scripts/05-configure-network.sh',
+        'vm-shared-linux/post-scripts/01-auth-config.sh',
+        'vm-shared-linux/post-scripts/02-apply-home-jq-transforms.sh',
+        'vm-shared-linux/credentials.json',
         'proxy/docker-compose.yml',
         'proxy/gate.lua',
         'proxy/host-allow-vm-inbound.ps1',
@@ -57,7 +57,7 @@ describe('environment initialization', () => {
         expect(existsSync(join(root, file)), file).toBe(true);
       }
 
-      const credentials = readFileSync(join(root, 'vm-shared', 'credentials.json'), 'utf8');
+      const credentials = readFileSync(join(root, 'vm-shared-linux', 'credentials.json'), 'utf8');
       expect(credentials).not.toContain('\r');
       expect(credentials).not.toContain('sk-ant-oat-test-fixture-token');
       expect(JSON.parse(credentials).claudeAiOauth.accessToken).toBe(
@@ -83,7 +83,7 @@ describe('environment initialization', () => {
     it('writes the sanitized placeholder credential into both shared folders', () => {
       initEnvironment(options());
       const root = join(dir, ENV_DIR_NAME);
-      for (const folder of ['vm-shared', 'vm-shared-windows']) {
+      for (const folder of ['vm-shared-linux', 'vm-shared-windows']) {
         const credentials = readFileSync(join(root, folder, 'credentials.json'), 'utf8');
         expect(JSON.parse(credentials).claudeAiOauth.accessToken, folder).toBe(
           'sk-ant-oat-susentorno-PLACEHOLDER',
@@ -94,7 +94,7 @@ describe('environment initialization', () => {
     it('writes the sanitized placeholder auth.json into both shared folders', () => {
       initEnvironment(options());
       const root = join(dir, ENV_DIR_NAME);
-      for (const folder of ['vm-shared', 'vm-shared-windows']) {
+      for (const folder of ['vm-shared-linux', 'vm-shared-windows']) {
         const auth = readFileSync(join(root, folder, 'auth.json'), 'utf8');
         const parsed = JSON.parse(auth);
         expect(parsed.tokens.account_id, folder).toBe('acct-uuid-1234'); // pass-through
@@ -110,7 +110,7 @@ describe('environment initialization', () => {
       for (const rel of [
         'home-jq-transforms/manifest.yaml',
         'home-jq-transforms/vscode-settings.jq',
-        'vm-shared/home-jq-transforms/manifest.yaml',
+        'vm-shared-linux/home-jq-transforms/manifest.yaml',
         'vm-shared-windows/home-jq-transforms/manifest.yaml',
       ]) {
         expect(existsSync(join(root, rel)), rel).toBe(true);
