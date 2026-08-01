@@ -34,7 +34,10 @@ export interface McpSupervisorHandle {
  * until the probe first succeeds — either signal, for any server, at any time,
  * fires onFatal exactly once.
  */
-export function startMcpServers(specs: McpServerSpec[], deps: McpSupervisorDeps): McpSupervisorHandle {
+export function startMcpServers(
+  specs: McpServerSpec[],
+  deps: McpSupervisorDeps,
+): McpSupervisorHandle {
   let fatalFired = false;
   const pids: number[] = [];
 
@@ -62,7 +65,9 @@ export function startMcpServers(specs: McpServerSpec[], deps: McpSupervisorDeps)
     let exited = false;
     handle.onExit((code, signal) => {
       exited = true;
-      fireFatal(`mcp server '${spec.name}' exited (code ${code ?? 'null'}, signal ${signal ?? 'null'})`);
+      fireFatal(
+        `mcp server '${spec.name}' exited (code ${code ?? 'null'}, signal ${signal ?? 'null'})`,
+      );
     });
 
     void deps.probeReady(spec.port, deps.readyTimeoutMs).then((ready) => {

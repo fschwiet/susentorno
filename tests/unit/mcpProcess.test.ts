@@ -21,7 +21,9 @@ describe('spawnMcpServer', () => {
     const lines: string[] = [];
     const isWin = process.platform === 'win32';
     const command = isWin ? 'echo %MCP_TEST_VAR%' : 'echo $MCP_TEST_VAR';
-    const handle = spawnMcpServer(command, { env: { MCP_TEST_VAR: 'from-env' } }, (line) => lines.push(line));
+    const handle = spawnMcpServer(command, { env: { MCP_TEST_VAR: 'from-env' } }, (line) =>
+      lines.push(line),
+    );
     try {
       await new Promise<void>((resolve) => handle.onExit(() => resolve()));
       expect(lines.some((l) => l.includes('from-env'))).toBe(true);

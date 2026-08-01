@@ -69,7 +69,8 @@ describe('access-log line parsing', () => {
   });
 
   it('parses a well-formed mcp line', () => {
-    const line = 'CFGM|mcp|2026-07-06T12:04:31|filesystem.internal|filesystem.internal|via_upstream|200|-|12|34';
+    const line =
+      'CFGM|mcp|2026-07-06T12:04:31|filesystem.internal|filesystem.internal|via_upstream|200|-|12|34';
     expect(parseLine(line)).toEqual({
       pathId: 'mcp',
       time: '2026-07-06T12:04:31',

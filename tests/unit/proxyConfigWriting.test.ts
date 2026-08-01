@@ -52,7 +52,9 @@ describe('proxy configuration writing', () => {
       };
       const listener443 = config.static_resources.listeners.find((l) => l.name === 'listener_443');
       expect(
-        listener443!.filter_chains.some((fc: any) => fc.filter_chain_match?.server_names?.includes('fs.internal')),
+        listener443!.filter_chains.some((fc: any) =>
+          fc.filter_chain_match?.server_names?.includes('fs.internal'),
+        ),
       ).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });

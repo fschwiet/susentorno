@@ -1,6 +1,11 @@
 import { writeFileSync } from 'node:fs';
 import { stringify } from 'yaml';
-import { generateEnvoyConfig, type UpstreamOverride, type InjectFault, type McpServerUpstream } from '../envoyConfig';
+import {
+  generateEnvoyConfig,
+  type UpstreamOverride,
+  type InjectFault,
+  type McpServerUpstream,
+} from '../envoyConfig';
 import type { Allowlist } from '../allowlist';
 
 /**
@@ -15,5 +20,8 @@ export function writeEnvoyConfig(
   fault?: InjectFault,
   mcpServers?: McpServerUpstream[],
 ): void {
-  writeFileSync(outputPath, stringify(generateEnvoyConfig(allowlist, { overrides, fault, mcpServers })));
+  writeFileSync(
+    outputPath,
+    stringify(generateEnvoyConfig(allowlist, { overrides, fault, mcpServers })),
+  );
 }

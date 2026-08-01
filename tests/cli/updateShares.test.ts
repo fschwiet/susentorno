@@ -139,9 +139,13 @@ describe.skipIf(!hasJq)('configamatron update-shares', () => {
       await initEnv(dir);
       writeFileSync(
         join(dir, '.configamatron', 'mcp-servers.yaml'),
-        ['servers:', '  - name: filesystem', '    hostname: filesystem.internal', '    command: run-fs', ''].join(
-          '\n',
-        ),
+        [
+          'servers:',
+          '  - name: filesystem',
+          '    hostname: filesystem.internal',
+          '    command: run-fs',
+          '',
+        ].join('\n'),
       );
 
       await execa('node', [cliPath, 'update-shares'], { cwd: dir });

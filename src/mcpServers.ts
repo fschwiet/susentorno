@@ -63,7 +63,11 @@ export function parseMcpServers(content: string): McpServerConfig[] {
   } catch (err) {
     throw new Error(`mcp-servers.yaml is not valid YAML: ${String(err)}`);
   }
-  if (typeof doc !== 'object' || doc === null || !Array.isArray((doc as Record<string, unknown>).servers)) {
+  if (
+    typeof doc !== 'object' ||
+    doc === null ||
+    !Array.isArray((doc as Record<string, unknown>).servers)
+  ) {
     throw new Error("mcp-servers.yaml must have a top-level 'servers' list");
   }
 

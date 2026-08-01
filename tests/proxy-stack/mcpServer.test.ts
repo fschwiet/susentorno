@@ -31,18 +31,25 @@ async function waitForLine(needle: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     if (stdoutLines.some((l) => l.includes(needle))) return;
-    if (Date.now() > deadline) throw new Error(`timed out waiting for '${needle}'\n${stdoutLines.join('\n')}`);
+    if (Date.now() > deadline)
+      throw new Error(`timed out waiting for '${needle}'\n${stdoutLines.join('\n')}`);
     await new Promise((r) => setTimeout(r, 250));
   }
 }
 
-function requestThrough(servername: string, path: string): Promise<{ statusCode?: number; body: string }> {
+function requestThrough(
+  servername: string,
+  path: string,
+): Promise<{ statusCode?: number; body: string }> {
   return new Promise((resolve, reject) => {
-    const req = httpsRequest({ host: '127.0.0.1', port: HTTPS_PORT, servername, ca: caCertPem, path }, (res) => {
-      let body = '';
-      res.on('data', (chunk) => (body += chunk));
-      res.on('end', () => resolve({ statusCode: res.statusCode, body }));
-    });
+    const req = httpsRequest(
+      { host: '127.0.0.1', port: HTTPS_PORT, servername, ca: caCertPem, path },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk) => (body += chunk));
+        res.on('end', () => resolve({ statusCode: res.statusCode, body }));
+      },
+    );
     req.on('error', reject);
     req.end();
   });
@@ -125,7 +132,11 @@ afterAll(async () => {
   } catch {
     /* ignore */
   }
-  await execa('docker', ['compose', 'down'], { cwd: proxyDir, env: { ...process.env, ...envoyEnv }, reject: false });
+  await execa('docker', ['compose', 'down'], {
+    cwd: proxyDir,
+    env: { ...process.env, ...envoyEnv },
+    reject: false,
+  });
   rmSync(tempDir, { recursive: true, force: true });
 }, 60000);
 
@@ -141,11 +152,16 @@ describe('host-run MCP server, reached through the proxy on loopback', () => {
     await requestThrough('faketool.internal', '/another-call');
 
     const deadline = Date.now() + 5000;
-    while (Date.now() < deadline && !stdoutLines.slice(before).some((l) => l.includes('ALLOW MCP'))) {
+    while (
+      Date.now() < deadline &&
+      !stdoutLines.slice(before).some((l) => l.includes('ALLOW MCP'))
+    ) {
       await new Promise((r) => setTimeout(r, 100));
     }
     expect(
-      stdoutLines.slice(before).some((l) => l.includes('ALLOW MCP') && l.includes('faketool.internal')),
+      stdoutLines
+        .slice(before)
+        .some((l) => l.includes('ALLOW MCP') && l.includes('faketool.internal')),
     ).toBe(true);
   });
 });

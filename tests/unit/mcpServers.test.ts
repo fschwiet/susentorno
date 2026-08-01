@@ -2,7 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseMcpServers, readMcpServers, resolveMcpAllowlistCollisions } from '../../src/mcpServers';
+import {
+  parseMcpServers,
+  readMcpServers,
+  resolveMcpAllowlistCollisions,
+} from '../../src/mcpServers';
 import type { Allowlist } from '../../src/allowlist';
 
 describe('mcp-servers.yaml parsing & validation', () => {
@@ -30,9 +34,13 @@ describe('mcp-servers.yaml parsing & validation', () => {
   });
 
   it('parses a minimal entry with only the required fields', () => {
-    const content = ['servers:', '  - name: fs', '    hostname: fs.internal', '    command: fs-cmd', ''].join(
-      '\n',
-    );
+    const content = [
+      'servers:',
+      '  - name: fs',
+      '    hostname: fs.internal',
+      '    command: fs-cmd',
+      '',
+    ].join('\n');
     expect(parseMcpServers(content)).toEqual([
       { name: 'fs', hostname: 'fs.internal', command: 'fs-cmd', cwd: undefined, env: undefined },
     ]);
@@ -47,14 +55,24 @@ describe('mcp-servers.yaml parsing & validation', () => {
   });
 
   it('throws when name has invalid characters', () => {
-    const content = ['servers:', '  - name: "bad name!"', '    hostname: fs.internal', '    command: x', ''].join(
-      '\n',
-    );
+    const content = [
+      'servers:',
+      '  - name: "bad name!"',
+      '    hostname: fs.internal',
+      '    command: x',
+      '',
+    ].join('\n');
     expect(() => parseMcpServers(content)).toThrow('servers[0].name');
   });
 
   it('throws when hostname is not a valid DNS hostname', () => {
-    const content = ['servers:', '  - name: fs', '    hostname: "not a host!"', '    command: x', ''].join('\n');
+    const content = [
+      'servers:',
+      '  - name: fs',
+      '    hostname: "not a host!"',
+      '    command: x',
+      '',
+    ].join('\n');
     expect(() => parseMcpServers(content)).toThrow('servers[0].hostname');
   });
 
@@ -125,7 +143,10 @@ describe('resolveMcpAllowlistCollisions', () => {
   };
 
   it('removes a passthrough entry that collides with an MCP hostname and warns', () => {
-    const allowlist: Allowlist = { ...baseAllowlist, passthrough: ['filesystem.internal:443', 'other.com:443'] };
+    const allowlist: Allowlist = {
+      ...baseAllowlist,
+      passthrough: ['filesystem.internal:443', 'other.com:443'],
+    };
     const servers = [{ name: 'fs', hostname: 'filesystem.internal', command: 'x' }];
 
     const resolved = resolveMcpAllowlistCollisions(allowlist, servers);

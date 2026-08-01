@@ -309,7 +309,8 @@ export function registerRunProxy(program: Command): void {
           error: (message) => console.error(message),
           now: () => Date.now(),
           allocateMcpPorts,
-          spawnMcpServer: (spec, onLine) => spawnMcpServer(spec.command, { cwd: spec.cwd, env: spec.env }, onLine),
+          spawnMcpServer: (spec, onLine) =>
+            spawnMcpServer(spec.command, { cwd: spec.cwd, env: spec.env }, onLine),
           probeMcpReady,
           killProcessTree,
         };

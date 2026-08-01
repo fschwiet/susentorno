@@ -115,7 +115,9 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
       for (const watcher of watchers) watcher.close();
       const pre = beforeTeardown ? beforeTeardown() : Promise.resolve();
       void pre
-        .then(() => Promise.all([deps.stopLogStream(), mcpSupervisorHandle?.stopAll() ?? Promise.resolve()]))
+        .then(() =>
+          Promise.all([deps.stopLogStream(), mcpSupervisorHandle?.stopAll() ?? Promise.resolve()]),
+        )
         .then(() => resolve(code));
     };
 
@@ -319,15 +321,21 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
         }
       }
 
-      const mcpPorts = mcpServerConfigs.length > 0 ? await deps.allocateMcpPorts(mcpServerConfigs.length) : [];
-      mcpServersWithPorts = mcpServerConfigs.map((s, i) => ({ hostname: s.hostname, port: mcpPorts[i] }));
+      const mcpPorts =
+        mcpServerConfigs.length > 0 ? await deps.allocateMcpPorts(mcpServerConfigs.length) : [];
+      mcpServersWithPorts = mcpServerConfigs.map((s, i) => ({
+        hostname: s.hostname,
+        port: mcpPorts[i],
+      }));
       // {ip} is always 127.0.0.1: the spawned process itself must bind loopback only
       // (see the design spec) — only the Envoy cluster upstream uses host.docker.internal.
       const mcpSpecs: McpServerSpec[] = mcpServerConfigs.map((s, i) => ({
         name: s.name,
         hostname: s.hostname,
         port: mcpPorts[i],
-        command: s.command.replaceAll('{ip}', '127.0.0.1').replaceAll('{port}', String(mcpPorts[i])),
+        command: s.command
+          .replaceAll('{ip}', '127.0.0.1')
+          .replaceAll('{port}', String(mcpPorts[i])),
         cwd: s.cwd,
         env: s.env,
       }));

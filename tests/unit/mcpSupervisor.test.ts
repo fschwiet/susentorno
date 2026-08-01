@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { startMcpServers, type McpSupervisorDeps, type McpServerSpec } from '../../src/runProxy/mcpSupervisor';
+import {
+  startMcpServers,
+  type McpSupervisorDeps,
+  type McpServerSpec,
+} from '../../src/runProxy/mcpSupervisor';
 
 function spec(overrides: Partial<McpServerSpec> = {}): McpServerSpec {
   return { name: 'fs', hostname: 'fs.internal', port: 1234, command: 'run-fs', ...overrides };
@@ -20,7 +24,11 @@ function makeDeps(overrides: Partial<McpSupervisorDeps> = {}): {
     spawn: vi.fn((s: McpServerSpec) => {
       const pid = nextPid++;
       pids.set(s.name, pid);
-      return { pid, onExit: (cb: (code: number | null, signal: string | null) => void) => exitCallbacks.set(s.name, cb) };
+      return {
+        pid,
+        onExit: (cb: (code: number | null, signal: string | null) => void) =>
+          exitCallbacks.set(s.name, cb),
+      };
     }),
     probeReady: vi.fn(
       (port: number) =>
@@ -48,7 +56,10 @@ describe('startMcpServers', () => {
       now: vi.fn().mockReturnValueOnce(0).mockReturnValueOnce(0).mockReturnValueOnce(500),
     });
     startMcpServers(
-      [spec({ name: 'fs', port: 1111 }), spec({ name: 'git', hostname: 'git.internal', port: 2222 })],
+      [
+        spec({ name: 'fs', port: 1111 }),
+        spec({ name: 'git', hostname: 'git.internal', port: 2222 }),
+      ],
       deps,
     );
 
@@ -60,7 +71,10 @@ describe('startMcpServers', () => {
 
   it('calls onFatal exactly once when a server exits, regardless of other servers', () => {
     const { deps, exitCallbacks } = makeDeps();
-    startMcpServers([spec({ name: 'fs' }), spec({ name: 'git', hostname: 'git.internal', port: 2 })], deps);
+    startMcpServers(
+      [spec({ name: 'fs' }), spec({ name: 'git', hostname: 'git.internal', port: 2 })],
+      deps,
+    );
 
     exitCallbacks.get('fs')!(1, null);
     exitCallbacks.get('git')!(1, null);
@@ -76,7 +90,9 @@ describe('startMcpServers', () => {
     resolveProbe.get('3333')!(false);
     await Promise.resolve();
 
-    expect(deps.onFatal).toHaveBeenCalledWith(expect.stringContaining('did not become ready within 60000ms'));
+    expect(deps.onFatal).toHaveBeenCalledWith(
+      expect.stringContaining('did not become ready within 60000ms'),
+    );
     expect(deps.onReady).not.toHaveBeenCalled();
   });
 
@@ -87,7 +103,10 @@ describe('startMcpServers', () => {
       }),
     });
 
-    startMcpServers([spec({ name: 'fs' }), spec({ name: 'git', hostname: 'git.internal', port: 2 })], deps);
+    startMcpServers(
+      [spec({ name: 'fs' }), spec({ name: 'git', hostname: 'git.internal', port: 2 })],
+      deps,
+    );
 
     expect(deps.spawn).toHaveBeenCalledTimes(1);
     expect(deps.onFatal).toHaveBeenCalledTimes(1);
@@ -95,7 +114,10 @@ describe('startMcpServers', () => {
 
   it('stopAll kills every spawned process via killProcessTree', async () => {
     const { deps, pids } = makeDeps();
-    const handle = startMcpServers([spec({ name: 'fs' }), spec({ name: 'git', hostname: 'git.internal', port: 2 })], deps);
+    const handle = startMcpServers(
+      [spec({ name: 'fs' }), spec({ name: 'git', hostname: 'git.internal', port: 2 })],
+      deps,
+    );
 
     await handle.stopAll();
 

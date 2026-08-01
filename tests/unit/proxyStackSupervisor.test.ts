@@ -136,7 +136,9 @@ function makeHarness(
     watchClose,
     log: vi.fn(),
     error: vi.fn(),
-    allocateMcpPorts: vi.fn(async (count: number) => Array.from({ length: count }, (_, i) => 30000 + i)),
+    allocateMcpPorts: vi.fn(async (count: number) =>
+      Array.from({ length: count }, (_, i) => 30000 + i),
+    ),
     spawnMcpServer: vi.fn((_spec: { name: string }, _onLine: (line: string) => void) => ({
       pid: 9000,
       onExit: () => {},
@@ -832,7 +834,9 @@ describe('proxy stack supervision', () => {
       expect(h.mocks.ensureLeaf).toHaveBeenCalledWith(
         expect.arrayContaining(['api.anthropic.com', 'fs.internal']),
       );
-      expect(h.mocks.buildConfig.mock.calls[0][1]).toEqual([{ hostname: 'fs.internal', port: 30000 }]);
+      expect(h.mocks.buildConfig.mock.calls[0][1]).toEqual([
+        { hostname: 'fs.internal', port: 30000 },
+      ]);
     });
 
     it('does not wait for MCP readiness before bringing up Envoy', async () => {
@@ -912,12 +916,16 @@ describe('proxy stack supervision', () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
       const config = {
         ...baseConfig([h.channelConfig]),
-        mcpServers: [{ name: 'fs', hostname: 'fs.internal', command: 'run-fs --host {ip} --port {port}' }],
+        mcpServers: [
+          { name: 'fs', hostname: 'fs.internal', command: 'run-fs --host {ip} --port {port}' },
+        ],
       };
       void runProxyLoop(config, h.deps);
       await flush();
 
-      expect(h.mocks.spawnMcpServer.mock.calls[0][0].command).toBe('run-fs --host 127.0.0.1 --port 30000');
+      expect(h.mocks.spawnMcpServer.mock.calls[0][0].command).toBe(
+        'run-fs --host 127.0.0.1 --port 30000',
+      );
     });
 
     it('a SIGINT racing in while an mcp fatal is stopping the Envoy colors does not win with a clean exit', async () => {

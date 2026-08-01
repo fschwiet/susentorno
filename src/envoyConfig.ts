@@ -719,7 +719,9 @@ function buildMcpEntry(server: McpServerUpstream) {
           lb_endpoints: [
             {
               endpoint: {
-                address: { socket_address: { address: 'host.docker.internal', port_value: server.port } },
+                address: {
+                  socket_address: { address: 'host.docker.internal', port_value: server.port },
+                },
               },
             },
           ],
