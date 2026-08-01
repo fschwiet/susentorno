@@ -4,7 +4,7 @@ Per-environment setup, done from the environment directory (e.g. `e:\repo`) afte
 
 If you run more than one environment on this machine, give each one distinct share and share-account names in the steps below — the defaults used here (`vm-shared-linux`, `vm-shared-windows`, `susentorno-share`) collide if reused across environments. You don't need to redo this setup each time you switch which environment you're actively using, but you do need to keep track of which share name belongs to which environment.
 
-## Initialize the environment
+## Initialize the environment's directory
 
 1. `susentorno init` — creates `.susentorno/` scaffolding. Its `.gitignore` is an allowlist: commit only `.gitignore`, `pre-scripts/`, `post-scripts/`, `home-jq-transforms/`, and `proxy/allowlist.txt`; generated files and secrets remain ignored. Run `susentorno update-shares` after changing authored inputs.
 2. `susentorno generate-ca` — writes the root certificate authority the proxy's https certificates chain to. Run once per environment; `run-proxy` reissues the per-host leaf certificate automatically as the allow list changes.
@@ -15,7 +15,11 @@ If this is the first environment you've set up on this machine, also open the ho
 
 When upgrading an older environment, remember that `.gitignore` does not untrack indexed files. Either delete and re-run `init`, or run `git rm -r --cached .susentorno && git add .susentorno`, then commit, to re-apply the allowlist while keeping files on disk.
 
-## Create the environment's share account
+## Enable shared drives
+
+Once the directory is ready, the appropriate sub-directories are turned into shares. They'll be locked down to a user account whose password you'll need to save for use when setting up the guest VMs.
+
+### Create the environment's share account
 
 Storing a host credential inside the VM is a real exposure: the isolation boundary is **code running in the VM vs. the host**, and the SMB credential has to sit in a file the guest reads at boot — so VM-resident code can read it too. Make the account powerless so a leak grants nothing beyond the folder read the VM already has. Remember this password for when you set up guests against this environment.
 
@@ -50,7 +54,7 @@ New-NetFirewallRule -DisplayName "susentorno VM share (SMB inbound)" `
 
 Why the shared folder must be **live** rather than copied in: the guest's `~/.claude/.credentials.json` is symlinked to the shared `credentials.json`, and the proxy rotates that file as credentials refresh; a one-time copy-in (ISO, `Copy-VMFile`) would freeze the credential and is not an option. The credential files synced to the guest do not contain real credentials, only placeholders — the proxy injects the real values on the wire.
 
-## Security note: the share account
+### Security note: the share account
 
 The isolation boundary susentorno enforces is **code running in the VM vs. the host**, not merely a human operator. Because the SMB credential must be stored where the guest can read it at boot, code inside the VM can read it too. That is why `susentorno-share` is scoped to read-only access on the two shared folders and denied interactive logon: even if VM-resident code exfiltrates the credential, all it grants is the folder read the VM already had.
 
