@@ -14,9 +14,9 @@ susentorno sets up isolated environments for coding agents. A Windows and/or Lin
 
 ## Network Topology
 
-A dedicated network endpoint is created on the host machine to act as the uplink to guest virtual machines. In Hyper-V, this is configured as a "Virtual Switch". This endpoint provides DHCP so the guest can join the network and get an IP address and provides a socket-level proxy to gate internet access and inject credentials. SMB is unblocked on the host for file sharing, the guest may want to run an SSH server to allow remote console access.
+A dedicated network endpoint is created on the host machine to act as the uplink to guest virtual machines. In Hyper-V, this is configured as a "Virtual Switch". This endpoint provides DHCP so the guest can join the network and get an IP address and provide a socket-level proxy to gate internet access and inject credentials. SMB is unblocked on the host for file sharing.
 
-Only one proxy container can run on the host at a time (it binds to ports 80/443 on a network endpoint dedicated to susentorno environments). Starting any environment's proxy — or running this repo's test suite — replaces whichever proxy container was running. Run one environment at a time; running `susentorno run-proxy` in an environment's directory restores its proxy.
+Only one susentorno environment can run on the host at a time (the run-proxy command to the necessary ports on the network endpoint dedicated to susentorno environments). Starting any environment — or running this repo's test suite — replaces whichever proxy container was running. Run one environment at a time; running `susentorno run-proxy` in an environment's directory restores its proxy.
 
 ## Installation
 
