@@ -2,7 +2,7 @@
 
 Configamatron's automated tests are divided into four tiers: `unit`, `cli`, `proxy-stack`, and `guest`. Each tier is named for the **highest observable interface it crosses**—its test surface—not for its size or importance. This makes both test placement and runtime prerequisites predictable.
 
-The tier names use the project's domain vocabulary (see [CONTEXT.md](../CONTEXT.md)). In particular, `guest` names the domain actor whose behavior is observed, not the virtualization mechanism used by the harness.
+The tier names use the project's domain vocabulary (see [CONTEXT.md](CONTEXT.md)). In particular, `guest` names the domain actor whose behavior is observed, not the virtualization mechanism used by the harness.
 
 | Tier | Package command | Directory | Vitest config | Observable surface |
 | --- | --- | --- | --- | --- |
@@ -19,7 +19,7 @@ The tier names use the project's domain vocabulary (see [CONTEXT.md](../CONTEXT.
 
 - **`proxy-stack`** tests bring up the real proxy stack, including Envoy in Docker, networking, and local mock upstreams. They observe stack behavior without booting a guest.
 
-- **`guest`** tests make their observations from inside a disposable guest. They generally cross the CLI and proxy stack too, but the guest is the highest exercised surface. The test harness boots QEMU under WSL2; Hyper-V remains the production guest platform and is not the test runtime (see [ADR-0010](adr/0010-vm-tests-via-qemu-in-wsl2.md)). On failure, diagnostics (serial console, guest journal, route/NAT/resolver dumps) land in `test-results/guest/<timestamp>/`.
+- **`guest`** tests make their observations from inside a disposable guest. They generally cross the CLI and proxy stack too, but the guest is the highest exercised surface. The test harness boots QEMU under WSL2; Hyper-V remains the production guest platform and is not the test runtime (see [ADR-0010](docs/adr/0010-vm-tests-via-qemu-in-wsl2.md)). On failure, diagnostics (serial console, guest journal, route/NAT/resolver dumps) land in `test-results/guest/<timestamp>/`.
 
 ## Placing a new test
 
@@ -45,15 +45,15 @@ Install the project's Node dependencies before running any tier.
 | `unit` | None. |
 | `cli` | A production build (`pnpm build`). The default pipeline builds before this tier. Tests that need the external `jq` command self-skip when it is unavailable. |
 | `proxy-stack` | A production build (`pnpm build`), plus Docker and Docker Compose running. Stop any live `configamatron run-proxy` process first. No guest or real credential is required. |
-| `guest` | Windows with WSL2, Docker, KVM available in WSL2, and a Debian-based default WSL distro with the harness packages installed. WSL must use mirrored networking and reserve UDP port 67 with `ignoredPorts=67`. Stop any live `configamatron run-proxy` process first — it manages the same docker-compose Envoy stack, so leaving it running gets its Envoy torn down mid-suite (the reachability guard then reports `000`, which looks like a Docker/WSL problem) while `run-proxy` itself is left serving with no backend. |
+| `guest` | WSL2/Docker/KVM set up per [development.md](development.md). Stop any live `configamatron run-proxy` process first — it manages the same docker-compose Envoy stack, so leaving it running gets its Envoy torn down mid-suite (the reachability guard then reports `000`, which looks like a Docker/WSL problem) while `run-proxy` itself is left serving with no backend. |
 
-The guest harness setup and exact WSL configuration are documented in the Development section of [README.md](../README.md). The harness creates or refreshes its cached golden image automatically at `/root/.cache/configamatron-vmtest`; the first run takes longer.
+See [development.md](development.md) for how to install and configure the guest harness's WSL prerequisites. The harness creates or refreshes its cached golden image automatically at `/root/.cache/configamatron-vmtest`; the first run takes longer.
 
 A missing live-tier prerequisite is an environmental failure, not a product failure. Both live tiers fail fast when Docker is unavailable or `run-proxy` would conflict with their shared proxy stack. The guest tier also checks its WSL configuration and harness dependencies before booting a guest.
 
 ## Default verification pipeline
 
-`pnpm test` runs formatting, linting, type checking, the `unit` tier, a production build, the `cli` tier, and the `proxy-stack` tier in fail-fast order. The Verification Pipeline section of [README.md](../README.md) is the source of truth for the exact step order.
+`pnpm test` runs formatting, linting, type checking, the `unit` tier, a production build, the `cli` tier, and the `proxy-stack` tier in fail-fast order. The Verification Pipeline section of [development.md](development.md) is the source of truth for the exact step order.
 
 The `guest` tier is not part of `pnpm test`. Run it separately with `pnpm test:guest` when changing `templates/vm-shared/` or proxy configuration. Guest boots and reboots take minutes.
 

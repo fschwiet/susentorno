@@ -7,12 +7,12 @@ Only one proxy container can run on the host at a time (it binds ports 80/443). 
 ## Host prerequisites
 
 - Windows host
-- **Hyper-V** for the isolated VM (see `usage-hyper-v.md`).
+- **Hyper-V** for the isolated VM (see [setup-machine.md](setup-machine.md) and [setup-guest.md](setup-guest.md)).
 - Docker and Docker Compose.
 - Node.js >= 18 and pnpm.
 - The `claude` CLI installed and logged in (so `~/.claude/.credentials.json` exists).
 - The `codex` CLI installed and logged in (so `~/.codex/auth.json` exists).
-- The host firewall's ports 80 and 443 for the VM's Internal-switch adapter are opened by a supplied script. Running on other platforms may work but is untested; you would need those same ports reachable from the host to the VM.
+- The host firewall's ports 80 and 443 for the VM's Internal-switch adapter, opened via [setup-machine.md](setup-machine.md). Running on other platforms may work but is untested; you would need those same ports reachable from the host to the VM.
 
 ## Installation
 
@@ -22,36 +22,15 @@ pnpm build
 pnpm install -g .
 ```
 
-## Proxy setup
+## Setup
 
-Usually done once per environment. Run every command from the environment directory (the folder that owns the environment, e.g. `e:\repo`):
+Setup is split across three docs, done in order:
 
-1. `configamatron init` — creates `.configamatron/` scaffolding. Its `.gitignore` is an allowlist: commit only `.gitignore`, `pre-scripts/`, `post-scripts/`, `home-jq-transforms/`, and `proxy/allowlist.txt`; generated files and secrets remain ignored. Run `configamatron update-shares` after changing authored inputs.
-2. `configamatron generate-ca` — writes the root certificate authority the proxy's https certificates chain to. Run once per environment; `run-proxy` reissues the per-host leaf certificate automatically as the allow list changes.
-3. `configamatron write-github-config` — prompts for a GitHub fine-grained personal access token and writes `vm-shared/github-config.txt` (username/email come from your global git config). Create the token at https://github.com/settings/personal-access-tokens/new, scoped to the repositories the agent should use, with read/write permission to 'Contents'.
-4. `configamatron run-proxy` — builds `proxy/envoy.yaml` from `proxy/allowlist.txt` and launches the proxy in a docker container with the latest Claude credentials. While it runs it watches both files: editing the allow list takes effect live (config rebuilt, leaf certificate reissued if the TLS-terminated hosts changed, proxy restarted), and credential rotations propagate automatically. It also streams the proxy's access log inline (see "Watching proxy traffic" below) and forwards the Hyper-V Internal-switch interface's `:80`/`:443` to Envoy on loopback, so it must stay running for the VM to reach the proxy (Envoy is published on `127.0.0.1` only). Pass `--no-forward` to disable forwarding, or `--forward-listen <ip>` to override the bind address.
-5. **Windows hosts only:** in an **Administrator** PowerShell, run `powershell -File .configamatron\proxy\host-allow-vm-inbound.ps1`. This opens inbound TCP 80/443 (Envoy) from the VM's Internal-switch adapter, and _prints the host IP you need to use in VM-side setup_.
+1. [setup-machine.md](setup-machine.md) — one-time per Windows host: the Internal virtual switch and host IP, and the host firewall.
+2. [setup-environment.md](setup-environment.md) — one-time per environment: `configamatron init` and the rest of the proxy setup, plus the environment's share account and SMB shares.
+3. [setup-guest.md](setup-guest.md) — one-time per guest VM: creating the VM under Hyper-V and running its numbered setup scripts, for either an Ubuntu or a Windows guest.
 
-- It defaults to the `vEthernet (configamatron-internal)` adapter; pass `-AdapterAlias` if your Internal switch uses a different name (`Get-NetIPConfiguration` lists them). Safe to re-run if the host's IP on that network changes.
-
-## VM setup
-
-May be repeated for any number of VMs; each VM pairs with one environment via its shared folder.
-
-VM creation, the Internal virtual switch, the host IP, and the SMB share are covered in **`usage-hyper-v.md`** — for both guests (which stay on DHCP):
-
-- **Ubuntu guest:** follow `usage-hyper-v.md` to create the VM and mount the share at `/mnt/vm-shared`, then run the numbered scripts below.
-- **Windows guest:** follow `usage-hyper-v.md` for the VM and share, then `usage-windows-vm.md` for the guest-side scripts.
-
-### Run the numbered scripts from the VM
-
-Complete "Proxy setup" first, so `vm-shared` contains `cert.pem`, `github-config.txt`, and `credentials.json`.
-
-Run without `sudo`; each script elevates internally where needed. The exact count may vary when custom steps are present.
-
-1. `cd` into `vm-shared/pre-scripts/` and run every script in number order. The last step is `05-configure-network.sh <host-ip>` when there are no custom scripts.
-2. Isolate the VM's network — remove the temporary Default Switch adapter (see `usage-hyper-v.md`), then reboot.
-3. `cd` into `vm-shared/post-scripts/` and run every script in order: normally `01-auth-config.sh`, then `02-apply-home-jq-transforms.sh`.
+Once set up, see [diagnostics.md](diagnostics.md) to verify the environment and guest, and to interpret the proxy's live traffic log.
 
 ## Customizing settings transforms
 
@@ -63,68 +42,6 @@ Put `NN-name.sh` and/or `NN-name.ps1` steps in `.configamatron/pre-scripts/` or 
 
 When upgrading an older environment, remember that `.gitignore` does not untrack indexed files. Either delete and re-run `init`, or run `git rm -r --cached .configamatron && git add .configamatron`, then commit, to re-apply the allowlist while keeping files on disk.
 
-## Verifying an environment
-
-Two read-only diagnostic scripts report whether the proxy and the VM are set up correctly. Neither changes any state; each prints a `PASS`/`FAIL`/`WARN` line per check and exits non-zero if anything failed.
-
-- **Host (proxy):** from the environment directory, with the proxy up, run `.configamatron\proxy\verify-proxy.ps1`.
-- **VM (configuration):** inside the VM, run `/mnt/vm-shared/verify-config.sh [host-ip]`. Pass the `<host-ip>` from proxy setup to assert the rules point at it; omit it to have the script discover and report the IP from the installed rules.
-
-## Watching proxy traffic
-
-`configamatron run-proxy` streams how the proxy handled each host, inline with its own status lines. Each host/handling pair is printed once; the tracking resets when an allow-list edit restarts the proxy (so you can immediately see how the edited entries are handled) and survives credential-rotation restarts.
-
-- `ALLOW CRED` — :443, TLS-terminated, real token injected
-- `ALLOW PASS` — :443, SNI passthrough (VM's own TLS)
-- `ALLOW HTTP` — :80, allowed
-- `BLOCK TLS` — :443, no allow-list match (connection dropped)
-- `BLOCK HTTP` — :80, not allow-listed (403)
-
 ## Development
 
-### Prequisites
-
-- all host prerequisites except a VM guest (the dev test suite uses WSL2/QEMU, not a Hyper-V guest)
-- WSL installed and configured appropriately
-  - test startup gates will verify the wsl configuration and give guidance about what is missing
-  - Ubuntu needs to be installed and set as default
-    ```powershell
-    wsl --install -d Ubuntu # will prompt about creating a user/password
-    wsl --set-default Ubuntu
-    ```
-  - `wsl.exe` is invoked without `-d` throughout the harness, so it runs whatever distro is default
-  - ~/.wslconfig must contain:
-    ```ini
-    [wsl2]
-    networkingMode=mirrored
-
-    [experimental]
-    ignoredPorts=67
-    ```
-  - Run 'wsl --shutdown' after to apply default and .wslconfig changes
-  - Run `wsl.exe -u root bash <repo>/tests/guest/harness/setup-wsl.sh` to install test dependencies within WSL
-
-### Verification Pipeline
-
-Run these commands in order to verify a change is correct (fail-fast order):
-
-| Step | Command | What it checks |
-| --- | --- | --- |
-| 1 | `pnpm format:check` | Prettier formatting |
-| 2 | `pnpm lint` | ESLint rules |
-| 3 | `pnpm typecheck` | TypeScript types (no emit) |
-| 4 | `pnpm test:unit` | Unit tests (Vitest) |
-| 5 | `pnpm build` | Production build (tsup → `dist/cli.js`) |
-| 6 | `pnpm test:cli` | Packaged CLI behavior and the artifacts it generates (against `dist/cli.js`) |
-| 7 | `pnpm test:proxy-stack` | Proxy stack tests against a live Envoy stack |
-| 8 | `pnpm test:guest` | Guest tests (QEMU in WSL2) — run when touching `templates/vm-shared/` or proxy config; **not** part of `pnpm test` |
-
-See [testing.md](testing.md) for what each tier's test surface is, how to choose the tier for a new test, and each tier's prerequisites.
-
-Run the full pipeline (steps 1–7) in one command:
-
-```
-pnpm test
-```
-
-> The cli suite shells out to `jq`; install it on the dev host (and CI) or the jq-dependent tests self-skip.
+See [development.md](development.md) for the requirements and setup to run configamatron's own test suite, and [testing.md](testing.md) for how the tests are organized.

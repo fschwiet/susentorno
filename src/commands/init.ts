@@ -46,8 +46,8 @@ export function registerInit(program: Command): void {
         `  (Windows) admin PowerShell: powershell -File ${ENV_DIR_NAME}/proxy/host-allow-vm-inbound.ps1`,
       );
       console.log(
-        `  Then share ${ENV_DIR_NAME}/vm-shared (Ubuntu, see README.md) or ` +
-          `${ENV_DIR_NAME}/vm-shared-windows (Windows, see usage-windows-vm.md) into the VM`,
+        `  Then share ${ENV_DIR_NAME}/vm-shared (Ubuntu) or ` +
+          `${ENV_DIR_NAME}/vm-shared-windows (Windows) into the VM, see setup-guest.md`,
       );
       console.log(
         `  Customize settings transforms in ${ENV_DIR_NAME}/home-jq-transforms (commit them; ` +
