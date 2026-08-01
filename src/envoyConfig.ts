@@ -20,7 +20,7 @@ export const NO_AUTH_MARKER_HEADER = 'x-configamatron-no-auth';
 /** Placeholder Authorization value used only to make the header non-absent for the
  * injector's benefit; its content is never inspected — only NO_AUTH_MARKER_HEADER
  * controls whether the post-filter strips it. */
-export const NO_AUTH_SENTINEL_VALUE = 'sandbox-no-credential';
+export const NO_AUTH_SENTINEL_VALUE = 'configamatron-no-credential';
 
 // Shared by every authenticated chain (Claude, Codex, both GitHub gates): runs after
 // credential_injector to undo the marker/sentinel a pre-filter sets for a genuinely
@@ -485,7 +485,7 @@ function buildClaudeEntry(entry: string, overrides: UpstreamOverride[]) {
                       'type.googleapis.com/envoy.extensions.http.injected_credentials.generic.v3.Generic',
                     header: 'Authorization',
                     credential: {
-                      name: 'sandbox_bearer_token',
+                      name: 'configamatron_bearer_token',
                       sds_config: {
                         path_config_source: {
                           path: '/etc/envoy/secrets/sds-secret.yaml',
@@ -846,7 +846,7 @@ export function generateEnvoyConfig(
   const hasWildcardHttp80 = http80WildcardHosts.length > 0;
 
   return {
-    node: { id: 'sandbox-proxy', cluster: 'sandbox-proxy' },
+    node: { id: 'configamatron-proxy', cluster: 'configamatron-proxy' },
     admin: {
       address: { socket_address: { address: '0.0.0.0', port_value: adminPortValue } },
     },
@@ -941,7 +941,7 @@ export function generateEnvoyConfig(
                               match: { prefix: '/' },
                               direct_response: {
                                 status: 403,
-                                body: { inline_string: 'sandbox: host not allow-listed' },
+                                body: { inline_string: 'configamatron: host not allow-listed' },
                               },
                             },
                           ],

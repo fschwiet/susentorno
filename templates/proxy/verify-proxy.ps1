@@ -380,13 +380,13 @@ $hostIpUnresolved = -not $hostIp
 # protocol, port, program, and state are always checked. SkipAddress on a
 # tuple narrows only that tuple's address comparison when its specific
 # source IP didn't resolve - it never skips the rest of the check.
-Test-RuleSet -Label 'TCP 80/443' -DisplayName 'Envoy Sandbox Proxy (VM inbound)' -Expected @(
+Test-RuleSet -Label 'TCP 80/443' -DisplayName 'Configamatron Envoy Proxy (VM inbound)' -Expected @(
     @{ Protocol = 'TCP'; LocalPort = 80, 443; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; SkipAddress = $hostIpUnresolved }
 )
-Test-RuleSet -Label 'DNS 53' -DisplayName 'Envoy Sandbox Proxy DNS stub (VM inbound)' -Expected @(
+Test-RuleSet -Label 'DNS 53' -DisplayName 'Configamatron DNS stub (VM inbound)' -Expected @(
     @{ Protocol = 'UDP'; LocalPort = 53; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; SkipAddress = $hostIpUnresolved }
 )
-Test-RuleSet -Label 'DHCP 67' -DisplayName 'Envoy Sandbox Proxy DHCP (VM inbound)' -Expected @(
+Test-RuleSet -Label 'DHCP 67' -DisplayName 'Configamatron DHCP (VM inbound)' -Expected @(
     @{ Protocol = 'UDP'; LocalPort = 67; InterfaceAlias = $AdapterAlias; LocalAddress = $null }
 )
 Test-RuleSet -Label 'SMB 445' -DisplayName 'Configamatron share (VM inbound)' -Expected @(

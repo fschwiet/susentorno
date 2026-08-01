@@ -2,8 +2,8 @@
  * Placeholder values written into the VM's credentials file. The accessToken value
  * must match exactly what the proxy's gate.lua swaps for the real token.
  */
-export const PLACEHOLDER_ACCESS_TOKEN = 'sk-ant-oat-SANDBOX-PLACEHOLDER';
-export const PLACEHOLDER_REFRESH_TOKEN = 'sandbox-placeholder-refresh-token';
+export const PLACEHOLDER_ACCESS_TOKEN = 'sk-ant-oat-CONFIGAMATRON-PLACEHOLDER';
+export const PLACEHOLDER_REFRESH_TOKEN = 'configamatron-placeholder-refresh-token';
 export const PLACEHOLDER_EXPIRES_AT = 4102444800000;
 
 /**

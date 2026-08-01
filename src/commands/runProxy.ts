@@ -324,7 +324,7 @@ export function registerRunProxy(program: Command): void {
           credentialsPath: options.credentials,
           secretPath,
           readCredentials,
-          writeSecret: (token, path) => writeSecret(token, path, 'sandbox_bearer_token'),
+          writeSecret: (token, path) => writeSecret(token, path, 'configamatron_bearer_token'),
           nudgeRefresh,
           refreshWindowMs,
           retryIntervalMs,

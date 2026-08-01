@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Read-only diagnostics for the sandbox VM's isolation configuration.
+# Read-only diagnostics for the guest's isolation configuration.
 #
 # Usage: bash verify-config.sh [host-ip]
 #   host-ip  Expected proxy host IP. If omitted, it is discovered from the
@@ -37,7 +37,7 @@ adv() {
 # in $? for the caller to read.
 curl_code() { curl -s -o /dev/null -w '%{http_code}' --max-time "$1" "$2"; }
 
-PLACEHOLDER='sk-ant-oat-SANDBOX-PLACEHOLDER'
+PLACEHOLDER='sk-ant-oat-CONFIGAMATRON-PLACEHOLDER'
 
 section 'Host IP'
 

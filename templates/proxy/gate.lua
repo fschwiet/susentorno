@@ -1,6 +1,6 @@
-local PLACEHOLDER = "Bearer sk-ant-oat-SANDBOX-PLACEHOLDER"
+local PLACEHOLDER = "Bearer sk-ant-oat-CONFIGAMATRON-PLACEHOLDER"
 local NO_AUTH_MARKER = "x-configamatron-no-auth"
-local NO_AUTH_SENTINEL = "sandbox-no-credential"
+local NO_AUTH_SENTINEL = "configamatron-no-credential"
 
 function envoy_on_request(request_handle)
   local headers = request_handle:headers()

@@ -12,7 +12,7 @@ const program = new Command();
 
 program
   .name('configamatron')
-  .description('CLI for building the Envoy sandbox proxy config from a network policy allow list')
+  .description('sets up isolated environments for coding agents.')
   .version(packageJson.version, '-v, --version', 'output the version number');
 
 registerInit(program);

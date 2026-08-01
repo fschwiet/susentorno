@@ -10,8 +10,8 @@ import { buildJwt } from '../src/jwt';
 
 export const HTTPS_PORT = 18443;
 export const HTTP_PORT = 18080;
-export const PLACEHOLDER_AUTH = 'Bearer sk-ant-oat-SANDBOX-PLACEHOLDER';
-export const REAL_TOKEN = 'sandbox-test-real-token-12345';
+export const PLACEHOLDER_AUTH = 'Bearer sk-ant-oat-CONFIGAMATRON-PLACEHOLDER';
+export const REAL_TOKEN = 'configamatron-test-real-token-12345';
 export const REAL_AUTH = `Bearer ${REAL_TOKEN}`;
 
 const cliPath = join(repoRoot, 'dist', 'cli.js');

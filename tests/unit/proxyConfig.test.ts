@@ -414,7 +414,7 @@ describe('proxy configuration generation', () => {
       ]);
       // Gate is inline (no mounted file) and embeds a base64 decoder + placeholder check.
       const lua = hcm.http_filters[0].typed_config.default_source_code.inline_string;
-      expect(lua).toContain('ghp-SANDBOX-PLACEHOLDER');
+      expect(lua).toContain('ghp-CONFIGAMATRON-PLACEHOLDER');
       expect(lua).toContain('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/');
       expect(lua).toContain(NO_AUTH_MARKER_HEADER);
       expect(lua).toContain(NO_AUTH_SENTINEL_VALUE);
@@ -449,8 +449,8 @@ describe('proxy configuration generation', () => {
         'envoy.filters.http.router',
       ]);
       const lua = hcm.http_filters[0].typed_config.default_source_code.inline_string;
-      expect(lua).toContain('token ghp-SANDBOX-PLACEHOLDER');
-      expect(lua).toContain('Bearer ghp-SANDBOX-PLACEHOLDER');
+      expect(lua).toContain('token ghp-CONFIGAMATRON-PLACEHOLDER');
+      expect(lua).toContain('Bearer ghp-CONFIGAMATRON-PLACEHOLDER');
       // Still a plain exact match — no base64 decoder embedded (that's the Basic gate only).
       expect(lua).not.toContain('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz');
       const injector = hcm.http_filters[1].typed_config;

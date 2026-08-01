@@ -177,7 +177,7 @@ describe('guest home & authentication configuration', () => {
     const link = await guest('g1', 'readlink "$HOME/.claude/.credentials.json"');
     expect(link.stdout.trim()).toBe('/mnt/vm-shared/credentials.json');
     const body = await guest('g1', 'cat "$HOME/.claude/.credentials.json"');
-    expect(body.stdout).toContain('sk-ant-oat-SANDBOX-PLACEHOLDER');
+    expect(body.stdout).toContain('sk-ant-oat-CONFIGAMATRON-PLACEHOLDER');
   });
 
   it('06 merges the CA into an existing firefox policies.json, preserving other keys', async () => {

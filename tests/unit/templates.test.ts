@@ -158,7 +158,7 @@ describe('generated provisioning inventory', () => {
         join(templatesDir(), 'vm-shared-windows', 'verify-config.ps1'),
         'utf8',
       );
-      expect(v).toContain('sk-ant-oat-SANDBOX-PLACEHOLDER'); // no real token may live in the guest
+      expect(v).toContain('sk-ant-oat-CONFIGAMATRON-PLACEHOLDER'); // no real token may live in the guest
       expect(v).toContain('api.anthropic.com'); // credential-gate check
       expect(v).toContain('curl.exe'); // live egress via bundled curl
     });

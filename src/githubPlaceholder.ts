@@ -4,4 +4,4 @@
  * and the credential_injector swaps it for the real credential. It is never a
  * real token, so it is safe to ship into the VM share.
  */
-export const GITHUB_PLACEHOLDER_PAT = 'ghp-SANDBOX-PLACEHOLDER';
+export const GITHUB_PLACEHOLDER_PAT = 'ghp-CONFIGAMATRON-PLACEHOLDER';

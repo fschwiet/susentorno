@@ -1,4 +1,4 @@
-# Read-only diagnostics for the Windows sandbox guest's isolation configuration.
+# Read-only diagnostics for the Windows guest's isolation configuration.
 # Usage: powershell -File verify-config.ps1 [host-ip]
 #   host-ip  Expected proxy host IP. If omitted, it is discovered from the
 #            installed responder config and reported. If given, the config is
@@ -12,7 +12,7 @@ function Ok($m) { $script:pass++; Write-Host "  PASS  $m" }
 function Bad($m, $d) { $script:fail++; if ($d) { Write-Host "  FAIL  $m -- $d" } else { Write-Host "  FAIL  $m" } }
 function Adv($m, $d) { $script:warn++; if ($d) { Write-Host "  WARN  $m -- $d" } else { Write-Host "  WARN  $m" } }
 
-$PLACEHOLDER = 'sk-ant-oat-SANDBOX-PLACEHOLDER'
+$PLACEHOLDER = 'sk-ant-oat-CONFIGAMATRON-PLACEHOLDER'
 
 # The DHCP-assigned DNS server is a reliable stand-in for "the host IP" on
 # this branch's host-side-DNS design: the host serves both DNS and the

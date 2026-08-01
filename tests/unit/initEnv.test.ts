@@ -61,7 +61,7 @@ describe('environment initialization', () => {
       expect(credentials).not.toContain('\r');
       expect(credentials).not.toContain('sk-ant-oat-test-fixture-token');
       expect(JSON.parse(credentials).claudeAiOauth.accessToken).toBe(
-        'sk-ant-oat-SANDBOX-PLACEHOLDER',
+        'sk-ant-oat-CONFIGAMATRON-PLACEHOLDER',
       );
     });
 
@@ -86,7 +86,7 @@ describe('environment initialization', () => {
       for (const folder of ['vm-shared', 'vm-shared-windows']) {
         const credentials = readFileSync(join(root, folder, 'credentials.json'), 'utf8');
         expect(JSON.parse(credentials).claudeAiOauth.accessToken, folder).toBe(
-          'sk-ant-oat-SANDBOX-PLACEHOLDER',
+          'sk-ant-oat-CONFIGAMATRON-PLACEHOLDER',
         );
       }
     });

@@ -14,7 +14,7 @@ describe('CA creation', () => {
   describe('root CA issuance', () => {
     const ca = generateRootCa();
 
-    it('is a self-signed CA with the sandbox CN and no server SANs', () => {
+    it('is a self-signed CA with the configamatron CN and no server SANs', () => {
       const cert = new X509Certificate(ca.caCertPem);
       expect(cert.subject).toContain(CA_COMMON_NAME);
       expect(cert.issuer).toContain(CA_COMMON_NAME); // self-signed

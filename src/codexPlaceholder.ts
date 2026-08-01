@@ -4,8 +4,8 @@ import { buildJwt } from './jwt';
 export const CODEX_PLACEHOLDER_EXP_SECONDS = 4102444800;
 
 const PLACEHOLDER_CLAIMS = {
-  sub: 'sandbox-user',
-  email: 'sandbox@configamatron.invalid',
+  sub: 'configamatron-user',
+  email: 'configamatron@configamatron.invalid',
   exp: CODEX_PLACEHOLDER_EXP_SECONDS,
 };
 
@@ -21,4 +21,4 @@ export const CODEX_PLACEHOLDER_ACCESS_TOKEN = buildJwt(PLACEHOLDER_CLAIMS);
 export const CODEX_PLACEHOLDER_ID_TOKEN = buildJwt(PLACEHOLDER_CLAIMS);
 
 /** Never used: the access token never appears expired, so no refresh is attempted. */
-export const CODEX_PLACEHOLDER_REFRESH_TOKEN = 'sandbox-placeholder-codex-refresh-token';
+export const CODEX_PLACEHOLDER_REFRESH_TOKEN = 'configamatron-placeholder-codex-refresh-token';

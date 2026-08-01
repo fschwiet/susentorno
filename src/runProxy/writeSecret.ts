@@ -5,7 +5,7 @@ import { dirname } from 'node:path';
  * Render an Envoy file-based SDS secret carrying a single `Bearer <token>` generic
  * secret under `resourceName`. Each Envoy SDS subscription watches its own
  * single-resource file, so the resource name is chosen by the caller (Claude uses
- * `sandbox_bearer_token`, Codex uses `codex_bearer_token`).
+ * `configamatron_bearer_token`, Codex uses `codex_bearer_token`).
  */
 export function formatSecret(token: string, resourceName: string): string {
   return [

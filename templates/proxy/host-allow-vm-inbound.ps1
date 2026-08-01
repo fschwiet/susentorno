@@ -76,9 +76,9 @@ if (-not $natHostIp) {
 
 $nodePath = Join-Path $env:USERPROFILE ".configamatron-host\run-proxy-node.exe"
 
-$tcpRuleName = "Envoy Sandbox Proxy (VM inbound)"
-$dnsRuleName = "Envoy Sandbox Proxy DNS stub (VM inbound)"
-$dhcpRuleName = "Envoy Sandbox Proxy DHCP (VM inbound)"
+$tcpRuleName = "Configamatron Envoy Proxy (VM inbound)"
+$dnsRuleName = "Configamatron DNS stub (VM inbound)"
+$dhcpRuleName = "Configamatron DHCP (VM inbound)"
 $smbRuleName = "Configamatron share (VM inbound)"
 $nodeRuleName = "Configamatron run-proxy node (VM inbound)"
 

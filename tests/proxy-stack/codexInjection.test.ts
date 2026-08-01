@@ -246,7 +246,7 @@ describe('chatgpt.com codex Bearer injection', () => {
       const before = mockUpstream.receivedAuthorizationHeaders.length;
       const { statusCode } = await requestThrough(
         'api.anthropic.com',
-        'Bearer sk-ant-oat-SANDBOX-PLACEHOLDER',
+        'Bearer sk-ant-oat-CONFIGAMATRON-PLACEHOLDER',
       );
       expect(statusCode).toBe(200);
       expect(mockUpstream.receivedAuthorizationHeaders.slice(before)).toEqual([
