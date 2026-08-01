@@ -30,7 +30,12 @@ export function registerWriteGithubConfig(program: Command): void {
       if (!paths) return;
 
       const rl = createInterface({ input: process.stdin, output: process.stdout });
-      const token = (await rl.question('GitHub fine-grained PAT: ')).trim();
+      const token = (
+        await rl.question(
+          "Github personal access tokens can be created at https://github.com/settings/personal-access-tokens/new. To allow changes to a repository be sure to allow access to 'Contents' with read+write permissions.\n\n" +
+            'GitHub fine-grained PAT: ',
+        )
+      ).trim();
       rl.close();
 
       const tokenError = validateGithubTokenFormat(token);
