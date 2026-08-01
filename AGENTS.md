@@ -4,7 +4,7 @@ Configamatron is a project to support deploying isolated VMs for agentic develop
 
 The test suites build their throwaway configamatron environment under `test-results/.configamatron` (gitignored test residue), not at the repository root. A bare `.configamatron` at the repository root is not created by normal test runs and does not represent a long-running deployment. If you find one, do not assume it is disposable — it may be an environment someone created by running the CLI manually. Leave it alone unless you know it is stale test residue.
 
-Tests are split across the `unit`, `cli`, `proxy-stack`, and `guest` tiers, named for the highest interface each exercises. Before adding a test, read `docs/testing.md` for the tier surfaces, placement rules, and per-tier prerequisites.
+Tests are split across the `unit`, `cli`, `proxy-stack`, and `guest` tiers, named for the highest interface each exercises. Before adding a test, read `testing.md` for the tier surfaces, placement rules, and per-tier prerequisites.
 
 ## Agent skills
 

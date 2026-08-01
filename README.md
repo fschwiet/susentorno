@@ -85,16 +85,24 @@ Two read-only diagnostic scripts report whether the proxy and the VM are set up 
 ### Prequisites
 
 - all host prerequisites except a VM guest (the dev test suite uses WSL2/QEMU, not a Hyper-V guest)
-- A real Ubuntu (or other Debian-based) WSL2 distro must be installed and set as the **default** distro (`wsl --install -d Ubuntu`, then `wsl --set-default Ubuntu` if needed). `wsl.exe` is invoked without `-d` throughout the harness, so it runs whatever distro is default — if Docker Desktop's own minimal `docker-desktop` distro ends up default (e.g. on a fresh machine with no other distro registered), `wsl.exe -u root -e bash ...` fails with `execvpe(bash) failed: No such file or directory`, since that distro is BusyBox-based with no bash or apt. Check with `wsl -l -v`.
-- wsl2 is used to spin up a vm for testing purposes. The ~/.wslconfig must contain:
+- WSL installed and configured appropriately
+  - test startup gates will verify the wsl configuration and give guidance about what is missing
+  - Ubuntu needs to be installed and set as default
+    ```powershell
+    wsl --install -d Ubuntu # will prompt about creating a user/password
+    wsl --set-default Ubuntu
+    ```
+  - `wsl.exe` is invoked without `-d` throughout the harness, so it runs whatever distro is default
+  - ~/.wslconfig must contain:
+    ```ini
+    [wsl2]
+    networkingMode=mirrored
 
-```ini
-[wsl2]
-networkingMode=mirrored
-
-[experimental]
-ignoredPorts=67
-```
+    [experimental]
+    ignoredPorts=67
+    ```
+  - Run 'wsl --shutdown' after to apply default and .wslconfig changes
+  - Run `wsl.exe -u root bash <repo>/tests/guest/harness/setup-wsl.sh` to install test dependencies within WSL
 
 ### Verification Pipeline
 
@@ -111,7 +119,7 @@ Run these commands in order to verify a change is correct (fail-fast order):
 | 7 | `pnpm test:proxy-stack` | Proxy stack tests against a live Envoy stack |
 | 8 | `pnpm test:guest` | Guest tests (QEMU in WSL2) — run when touching `templates/vm-shared/` or proxy config; **not** part of `pnpm test` |
 
-See [docs/testing.md](docs/testing.md) for what each tier's test surface is, how to choose the tier for a new test, and each tier's prerequisites.
+See [testing.md](testing.md) for what each tier's test surface is, how to choose the tier for a new test, and each tier's prerequisites.
 
 Run the full pipeline (steps 1–7) in one command:
 
