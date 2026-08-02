@@ -29,7 +29,7 @@ Renamed, in full, with no back-compat alias — consistent with this repo's exis
 **Source code:**
 
 - `src/commands/runProxy.ts` → `src/commands/runHosting.ts`; `registerRunProxy` → `registerRunHosting`; the registered command string `'run-proxy'` → `'run-hosting'`.
-- `src/runProxy/` directory → `src/runHosting/` (all ~35 files move; the one file whose name itself embeds "Proxy", `runProxyLoop.ts`, is renamed to `runHostingLoop.ts`).
+- `src/runProxy/` directory → `src/runHosting/` (all 37 files move; the one file whose name itself embeds "Proxy", `runProxyLoop.ts`, is renamed to `runHostingLoop.ts`).
 - Types/functions embedding the name: `RunProxyOptions` → `RunHostingOptions`, `RunProxyDeps` → `RunHostingDeps`, `runProxyLoop` → `runHostingLoop`, and any other identifier following the same pattern.
 - Console log/error message prefixes: every `run-proxy: ...` string (gateway/DNS/DHCP startup lines, error paths, the `uncaughtException`/`unhandledRejection` handlers, etc.) → `run-hosting: ...`.
 
