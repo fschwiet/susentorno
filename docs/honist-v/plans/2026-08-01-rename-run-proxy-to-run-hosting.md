@@ -69,7 +69,7 @@ In `src/runHosting/runHostingLoop.ts`, apply these exact substitutions:
 | 29 | `export interface RunProxyDeps {` | `export interface RunHostingDeps {` |
 | 84 | `export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promise<number> {` | `export function runHostingLoop(config: RunHostingConfig, deps: RunHostingDeps): Promise<number> {` |
 
-Then replace every literal occurrence of the substring `run-proxy:` with `run-hosting:` in this same file — there are 16 occurrences, on lines 126, 145, 177, 182, 188, 239, 249, 261, 277, 278, 293, 309, 349, and 424 (two lines, 126 and 145, share the identical template `` `run-proxy: ${message}` ``; the rest are distinct messages). Each is a simple substring replacement inside an existing template literal — do not otherwise change the surrounding text.
+Then replace every literal occurrence of the substring `run-proxy:` with `run-hosting:` in this same file — there are 14 occurrences, on lines 126, 145, 177, 182, 188, 239, 249, 261, 277, 278, 293, 309, 349, and 424 (two lines, 126 and 145, share the identical template `` `run-proxy: ${message}` ``; the rest are distinct messages). Each is a simple substring replacement inside an existing template literal — do not otherwise change the surrounding text.
 
 - [ ] **Step 4: Update the six other files with comment/log-prefix mentions**
 
@@ -133,7 +133,7 @@ tests/proxyStack.ts
 
 (`tests/unit/proxyStackSupervisor.test.ts`, `tests/unit/readCredentials.test.ts`, `tests/unit/readCodexCredentials.test.ts`, `tests/unit/templates.test.ts`, and `tests/unit/runtimeRelaunch.test.ts` also need their import fixed, but have additional content changes handled in later steps/tasks below — fix their import path here too, in this same step, since it's the same mechanical substitution.)
 
-In `tests/unit/proxyStackSupervisor.test.ts`, additionally rename every use of the imported symbols to match Step 3: `runProxyLoop` → `runHostingLoop` (appears ~30 times as a function call), `RunProxyConfig` → `RunHostingConfig` (line 60), `RunProxyDeps` → `RunHostingDeps` (lines 70, 150), and the import list itself (lines 3–6). Also replace the `run-proxy:` log-message prefixes this file asserts against on lines 370, 376, 425, 427, 445, 450, and 777 (e.g. `'run-proxy: restarting proxy — allowlist changed'` → `'run-hosting: restarting proxy — allowlist changed'`) to match Step 3's renamed log output.
+In `tests/unit/proxyStackSupervisor.test.ts`, additionally rename every use of the imported symbols to match Step 3: `runProxyLoop` → `runHostingLoop` (34 call sites: lines 213, 232, 252, 271, 283, 296, 313, 336, 355, 388, 411, 439, 456, 469, 494, 514, 539, 567, 609, 626, 649, 668, 687, 711, 739, 801, 823, 852, 868, 889, 905, 923, 946, 972), `RunProxyConfig` → `RunHostingConfig` (line 60), `RunProxyDeps` → `RunHostingDeps` (lines 70, 150), and the import list itself (lines 3–6). Also replace the `run-proxy:` log-message prefixes this file asserts against on lines 370, 376, 425, 427, 445, 450, and 777 (e.g. `'run-proxy: restarting proxy — allowlist changed'` → `'run-hosting: restarting proxy — allowlist changed'`) to match Step 3's renamed log output.
 
 - [ ] **Step 6: Verify the build**
 
@@ -188,9 +188,9 @@ git mv src/commands/runProxy.ts src/commands/runHosting.ts
 | `interface RunProxyOptions {` (line 39) | `interface RunHostingOptions {` |
 | `.action(async (options: RunProxyOptions) => {` (line 132) | `.action(async (options: RunHostingOptions) => {` |
 
-Also replace every remaining literal `run-proxy:` log prefix in this file with `run-hosting:` (in `installAbnormalExitHandlers` — `` `run-proxy: uncaught exception: ${String(err)}` `` and `` `run-proxy: unhandled rejection: ${String(reason)}` `` — and in the action handler's error paths, e.g. `` `run-proxy: failed to relaunch through the dedicated node.exe copy: ${String(err)}` ``, `` `run-proxy: ${paths...}` `` messages, `` `run-proxy: gateway listening on...` ``, `` `run-proxy: DNS responder listening...` ``, `` `run-proxy: DHCP server listening...` `` — every occurrence of the literal substring `run-proxy:` in this file becomes `run-hosting:`).
+Replace every literal occurrence of the substring `run-proxy:` with `run-hosting:` in this file — there are 15 occurrences, on lines 74, 79, 145, 159, 170, 188, 204, 209, 219, 224, 229, 237, 238, 243, and 249 (e.g. `` `run-proxy: uncaught exception: ${String(err)}` `` on line 74, `` `run-proxy: gateway listening on ${listenAddresses.join(', ')} :${httpPort}/${httpsPort}` `` on line 209). Each is a simple substring replacement — do not otherwise change the surrounding text.
 
-Update the command's `.description(...)` text if it contains "the Envoy proxy end to end" phrasing that implies proxy-only scope — leave the technical description of what it does unchanged (build envoy.yaml, watch files, stream the log), since that's still accurate; only the literal string prefixes above need to change.
+The command's `.description(...)` text does not contain the literal string `run-proxy` — it refers to "the Envoy proxy" (the domain concept, out of scope for this rename per the spec), so it needs no change.
 
 - [ ] **Step 3: Update `src/cli.ts`**
 
