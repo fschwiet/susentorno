@@ -57,7 +57,7 @@ function requestThrough(
 
 beforeAll(async () => {
   tempDir = mkdtempSync(join(tmpdir(), 'mcp-proxy-stack-'));
-  // Written BEFORE run-proxy is spawned: run-proxy reads credentials synchronously
+  // Written BEFORE run-hosting is spawned: run-hosting reads credentials synchronously
   // at startup and fails fast if they're missing, so this must not race the spawn.
   writeFileSync(
     join(tempDir, '.credentials.json'),
@@ -102,7 +102,7 @@ beforeAll(async () => {
     'node',
     [
       cliPath,
-      'run-proxy',
+      'run-hosting',
       '--no-refresh',
       '--no-forward',
       '--credentials',
@@ -118,13 +118,13 @@ beforeAll(async () => {
   }
   await waitForLine('serving the current token', 60000);
   // Confirms the fixture server actually came up and passed its readiness probe —
-  // not just that run-proxy itself started.
+  // not just that run-hosting itself started.
   await waitForLine('[faketool] ready in', 60000);
   caCertPem = readFileSync(join(proxyDir, 'ca', 'cert.pem'), 'utf8');
 }, 120000);
 
 afterAll(async () => {
-  // run-proxy's own SIGINT shutdown kills the faketool child it spawned (Task 10);
+  // run-hosting's own SIGINT shutdown kills the faketool child it spawned (Task 10);
   // no separate cleanup of that process is needed here.
   if (proxyProc?.pid !== undefined) await killProcessTree(proxyProc.pid, 'SIGINT');
   try {

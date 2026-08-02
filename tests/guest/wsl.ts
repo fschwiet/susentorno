@@ -50,7 +50,7 @@ export async function checkWslDistro(): Promise<void> {
 }
 
 // Guard: mirrored networking is required (see README.md's Development
-// Prerequisites). Under NAT mode WSL cannot reach run-proxy's gateway at all
+// Prerequisites). Under NAT mode WSL cannot reach run-hosting's gateway at all
 // — it is a plain Windows process on loopback, and only mirrored mode shares
 // the Windows localhost with WSL. See
 // docs/superpowers/specs/2026-07-12-vm-test-wsl-mirrored-networking-design.md.

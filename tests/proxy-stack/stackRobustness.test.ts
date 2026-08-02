@@ -62,7 +62,7 @@ function spawnProxy(fault: 'crash-config' | 'never-ready'): ResultPromise {
     'node',
     [
       cliPath,
-      'run-proxy',
+      'run-hosting',
       '--no-refresh',
       '--no-forward',
       '--credentials',
@@ -87,7 +87,7 @@ function spawnProxyPlain(): ResultPromise {
     'node',
     [
       cliPath,
-      'run-proxy',
+      'run-hosting',
       '--no-refresh',
       '--no-forward',
       '--credentials',
@@ -110,7 +110,7 @@ async function waitForLine(needle: string, timeoutMs: number): Promise<void> {
     if (lines.some((l) => l.includes(needle))) return;
     if (Date.now() > deadline) {
       throw new Error(
-        `timed out waiting for run-proxy output containing '${needle}'\n` +
+        `timed out waiting for run-hosting output containing '${needle}'\n` +
           `--- output ---\n${lines.join('\n')}`,
       );
     }
@@ -128,7 +128,7 @@ async function waitFor(cond: () => Promise<boolean>, timeoutMs: number): Promise
 }
 
 beforeAll(async () => {
-  tempDir = mkdtempSync(join(tmpdir(), 'run-proxy-robust-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'run-hosting-robust-'));
   credentialsPath = join(tempDir, '.credentials.json');
   codexCredentialsPath = join(tempDir, 'auth.json');
   writeCredentials('token-robust');
@@ -181,7 +181,7 @@ describe('proxy stack robustness under failure', () => {
 
   it('responds to SIGINT promptly while parked waiting for a never-ready color', async () => {
     proxyProc = spawnProxy('never-ready');
-    // Once the container is running, run-proxy is parked in the startup waitColorReady.
+    // Once the container is running, run-hosting is parked in the startup waitColorReady.
     await waitFor(() => isColorRunning('blue', proxyDir), 60000);
 
     const t0 = Date.now();

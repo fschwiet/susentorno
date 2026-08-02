@@ -146,7 +146,7 @@ beforeAll(async () => {
     'node',
     [
       cliPath,
-      'run-proxy',
+      'run-hosting',
       '--no-refresh',
       '--no-forward',
       '--credentials',

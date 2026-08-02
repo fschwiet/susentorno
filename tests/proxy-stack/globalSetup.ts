@@ -4,9 +4,9 @@ import { checkNodeNotFirewallBlocked } from '../checkNodeNotFirewallBlocked';
 
 export default async function setup() {
   // Cheap host-side checks first, matching the guest suite: Docker Desktop down or
-  // a live run-proxy fighting this suite for the Envoy containers are the most
+  // a live run-hosting fighting this suite for the Envoy containers are the most
   // common self-inflicted failures. The proxy-stack suite runs `docker compose
-  // down` on the same stack, so a live run-proxy is left serving :80/:443 with
+  // down` on the same stack, so a live run-hosting is left serving :80/:443 with
   // no backend — the real VM silently loses egress. Fail fast instead.
   await checkDockerRunning();
   await checkNoRunningProxy();

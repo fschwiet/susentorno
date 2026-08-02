@@ -8,7 +8,7 @@ let dir: string;
 let path: string;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'run-proxy-creds-'));
+  dir = mkdtempSync(join(tmpdir(), 'run-hosting-creds-'));
   path = join(dir, '.credentials.json');
 });
 

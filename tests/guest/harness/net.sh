@@ -39,7 +39,7 @@ case "${1:?usage: net.sh up|down|dhcp <gateway|hostonly>}" in
         echo "dhcp-option=option:router,$BRIDGE_IP"
         echo "dhcp-option=option:dns-server,$BRIDGE_IP"
       else
-        # Mirror run-proxy's host-side DHCP and DNS behaviour on the isolated
+        # Mirror run-hosting's host-side DHCP and DNS behaviour on the isolated
         # network: the host is router and resolver, and every name resolves to
         # it. `port=53` is load-bearing -- this branch used to set `port=0`
         # (DHCP only, DNS disabled) because the guest ran its own in-guest stub

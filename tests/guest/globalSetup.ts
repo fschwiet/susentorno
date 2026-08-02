@@ -9,7 +9,7 @@ import {
 
 export default async function setup() {
   // First: instant, needs nothing installed, and they are the most common
-  // self-inflicted failures — Docker Desktop not running, or a live run-proxy
+  // self-inflicted failures — Docker Desktop not running, or a live run-hosting
   // fighting this suite for the Envoy containers. Everything below is slower
   // and some of it is destructive.
   await checkDockerRunning();

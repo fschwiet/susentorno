@@ -291,7 +291,7 @@ describe('proxy stack credential injection', () => {
 describe('proxy stack access logging', () => {
   async function readEnvoyLogs(): Promise<string> {
     // The stack never rotates credentials or the allowlist in this suite, so
-    // it stays on the color run-proxy always starts with.
+    // it stays on the color run-hosting always starts with.
     const { stdout } = await execa('docker', ['compose', 'logs', '--no-color', 'envoy_blue'], {
       cwd: stack.proxyDir,
       env: stack.composeEnv,

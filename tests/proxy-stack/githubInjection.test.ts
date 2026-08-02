@@ -119,7 +119,7 @@ beforeAll(async () => {
   );
 
   // Stage an allowlist with both github hosts under the new pragma so generate-ca
-  // puts them in the leaf SANs and run-proxy builds the two injection chains.
+  // puts them in the leaf SANs and run-hosting builds the two injection chains.
   writeFileSync(
     join(proxyDir, 'allowlist.txt'),
     ['#pragma github authenticated', 'github.com:443', 'api.github.com:443', ''].join('\n'),
@@ -142,7 +142,7 @@ beforeAll(async () => {
     'node',
     [
       cliPath,
-      'run-proxy',
+      'run-hosting',
       '--no-refresh',
       '--no-forward',
       '--credentials',

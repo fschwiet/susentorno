@@ -65,8 +65,8 @@ async function waitForLine(needle: string, timeoutMs: number, fromIndex = 0): Pr
     }
     if (Date.now() > deadline) {
       throw new Error(
-        `timed out waiting for run-proxy output containing '${needle}'\n` +
-          `--- run-proxy output ---\n${stdoutLines.join('\n')}`,
+        `timed out waiting for run-hosting output containing '${needle}'\n` +
+          `--- run-hosting output ---\n${stdoutLines.join('\n')}`,
       );
     }
     await new Promise((r) => setTimeout(r, 250));
@@ -75,7 +75,7 @@ async function waitForLine(needle: string, timeoutMs: number, fromIndex = 0): Pr
 
 beforeAll(async () => {
   mockUpstream = await startMockUpstream();
-  tempDir = mkdtempSync(join(tmpdir(), 'run-proxy-int-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'run-hosting-int-'));
   credentialsPath = join(tempDir, '.credentials.json');
   codexCredentialsPath = join(tempDir, 'auth.json');
   writeCredentials('token-initial');
@@ -98,7 +98,7 @@ beforeAll(async () => {
     'node',
     [
       cliPath,
-      'run-proxy',
+      'run-hosting',
       '--no-refresh',
       '--no-forward',
       '--credentials',

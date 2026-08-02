@@ -25,11 +25,11 @@ export interface ProxyStack {
   proxyDir: string;
   composeEnv: NodeJS.ProcessEnv;
   proxyProc: ResultPromise;
-  /** Every stdout/stderr line run-proxy has produced so far, in order. */
+  /** Every stdout/stderr line run-hosting has produced so far, in order. */
   stdoutLines: string[];
   /** The environment's live allowlist — edit it to trigger a proxy restart. */
   allowlistPath: string;
-  /** The mutable credentials file run-proxy watches — rotate it to trigger a restart. */
+  /** The mutable credentials file run-hosting watches — rotate it to trigger a restart. */
   credentialsPath: string;
 }
 
@@ -69,7 +69,7 @@ export function countProxyLines(stack: ProxyStack, needle: string): number {
 }
 
 /**
- * Wait until run-proxy prints a line containing `needle` at index >= fromIndex.
+ * Wait until run-hosting prints a line containing `needle` at index >= fromIndex.
  * Returns the matching index; capture `stack.stdoutLines.length` before an
  * action to assert on output the action caused.
  */
@@ -86,8 +86,8 @@ export async function waitForProxyLine(
     }
     if (Date.now() > deadline) {
       throw new Error(
-        `timed out waiting for run-proxy output containing '${needle}'\n` +
-          `--- run-proxy output ---\n${stack.stdoutLines.join('\n')}`,
+        `timed out waiting for run-hosting output containing '${needle}'\n` +
+          `--- run-hosting output ---\n${stack.stdoutLines.join('\n')}`,
       );
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -105,7 +105,7 @@ async function waitForStartupLine(
     await sleep(250);
   }
   throw new Error(
-    `run-proxy never logged '${needle}'\n--- run-proxy output ---\n${lines.join('\n')}`,
+    `run-hosting never logged '${needle}'\n--- run-hosting output ---\n${lines.join('\n')}`,
   );
 }
 
@@ -128,17 +128,17 @@ export async function startProxyStack(): Promise<ProxyStack> {
   );
 
   // Stage the test allowlist as the environment's own before generate-ca so
-  // the leaf SANs derive from it; run-proxy then builds envoy.yaml from it too.
+  // the leaf SANs derive from it; run-hosting then builds envoy.yaml from it too.
   const allowlistPath = join(proxyDir, 'allowlist.txt');
   copyFileSync(allowlistFixture, allowlistPath);
   await execa('node', [cliPath, 'generate-ca'], { cwd: envParent });
 
-  // run-proxy owns the SDS secret now: the token in this mutable credentials
+  // run-hosting owns the SDS secret now: the token in this mutable credentials
   // file becomes the injected `Bearer ${REAL_TOKEN}` header.
-  const credentialsPath = join(envRoot, 'run-proxy-credentials.json');
+  const credentialsPath = join(envRoot, 'run-hosting-credentials.json');
   writeCredentialsFile(credentialsPath, REAL_TOKEN);
 
-  const codexCredentialsPath = join(envRoot, 'run-proxy-auth.json');
+  const codexCredentialsPath = join(envRoot, 'run-hosting-auth.json');
   writeCodexAuthFile(
     codexCredentialsPath,
     buildJwt({ exp: Math.floor(Date.now() / 1000) + 86400 }),
@@ -148,7 +148,7 @@ export async function startProxyStack(): Promise<ProxyStack> {
     'node',
     [
       cliPath,
-      'run-proxy',
+      'run-hosting',
       '--no-refresh',
       '--no-forward',
       '--credentials',
@@ -168,11 +168,11 @@ export async function startProxyStack(): Promise<ProxyStack> {
     if (!stream) continue;
     createInterface({ input: stream }).on('line', (line) => {
       stdoutLines.push(line);
-      console.log(`run-proxy| ${line}`);
+      console.log(`run-hosting| ${line}`);
     });
   }
 
-  // run-proxy builds envoy.yaml, writes the secret, and force-recreates; ready
+  // run-hosting builds envoy.yaml, writes the secret, and force-recreates; ready
   // means the whole startup sequence completed.
   await waitForStartupLine(stdoutLines, 'serving the current token', 60000);
   const caCertPem = readFileSync(join(proxyDir, 'ca', 'cert.pem'), 'utf8');
@@ -189,7 +189,7 @@ export async function startProxyStack(): Promise<ProxyStack> {
 }
 
 export async function stopProxyStack(stack: ProxyStack): Promise<void> {
-  // Kill the whole tree: run-proxy's docker-logs child holds a stdout pipe
+  // Kill the whole tree: run-hosting's docker-logs child holds a stdout pipe
   // that would otherwise keep `await proxyProc` hanging on Windows.
   if (stack.proxyProc.pid !== undefined) {
     await killProcessTree(stack.proxyProc.pid, 'SIGINT');
