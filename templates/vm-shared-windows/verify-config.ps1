@@ -56,7 +56,7 @@ if (-not (Get-ScheduledTask -TaskName 'SusentornoDnsResponder' -ErrorAction Sile
 
 Section 'Placeholder credential (06)'
 $cred = Join-Path $env:USERPROFILE '.claude\.credentials.json'
-if (-not (Test-Path $cred)) { Bad 'placeholder credential in place' "missing $cred -- run 06-auth-config.ps1" }
+if (-not (Test-Path $cred)) { Bad 'placeholder credential in place' "missing $cred -- run 01-auth-config.ps1" }
 elseif ((Get-Content $cred -Raw).Contains($PLACEHOLDER)) { Ok 'credentials.json is the placeholder' }
 else { Bad 'credentials.json is the placeholder' 'a NON-placeholder token is present -- must never live in the guest' }
 

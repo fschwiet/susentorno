@@ -161,8 +161,8 @@ describe('guest home & authentication configuration', () => {
     expect(stdout.trim()).toBe('True 123');
   });
 
-  it('06-auth-config symlinks the placeholder credential into place (gh stubbed)', async () => {
-    // The credential symlink moved into 06-auth-config.sh, which also runs
+  it('01-auth-config symlinks the placeholder credential into place (gh stubbed)', async () => {
+    // The credential symlink moved into 01-auth-config.sh, which also runs
     // `gh auth login` (network, only meaningful post-isolation). Stub gh so this
     // stays an offline check like the firefox stub test above. The share is
     // read-only in the guest (virtfs readonly=on), so github-config.txt is

@@ -8,7 +8,7 @@ dir="$(dirname "$script_dir")"
 
 config_path="$dir/github-config.txt"
 if [ ! -f "$config_path" ]; then
-  echo "06-auth-config: $config_path not found. Run 'susentorno write-github-config' on the host first." >&2
+  echo "01-auth-config: $config_path not found. Run 'susentorno write-github-config' on the host first." >&2
   exit 1
 fi
 
@@ -16,7 +16,7 @@ fi
 source "$config_path"
 
 if [ -z "${GITHUB_USERNAME:-}" ] || [ -z "${GITHUB_EMAIL:-}" ] || [ -z "${GITHUB_TOKEN:-}" ]; then
-  echo "06-auth-config: $config_path is missing GITHUB_USERNAME, GITHUB_EMAIL, or GITHUB_TOKEN" >&2
+  echo "01-auth-config: $config_path is missing GITHUB_USERNAME, GITHUB_EMAIL, or GITHUB_TOKEN" >&2
   exit 1
 fi
 
@@ -37,4 +37,4 @@ ln -sfn "${dir}/credentials.json" "$HOME/.claude/.credentials.json"
 mkdir -p "$HOME/.codex"
 ln -sfn "${dir}/auth.json" "$HOME/.codex/auth.json"
 
-echo "06-auth-config: git identity + gh auth configured for $GITHUB_USERNAME <$GITHUB_EMAIL>; linked placeholder claude + codex credentials"
+echo "01-auth-config: git identity + gh auth configured for $GITHUB_USERNAME <$GITHUB_EMAIL>; linked placeholder claude + codex credentials"

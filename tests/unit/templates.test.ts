@@ -120,7 +120,7 @@ describe('generated provisioning inventory', () => {
   });
 
   describe('windows pre-/post-isolation step scripts', () => {
-    it('windows 06-auth-config parses the double-quoted github-config format', () => {
+    it('windows 01-auth-config parses the double-quoted github-config format', () => {
       const script = readFileSync(
         join(templatesDir(), 'vm-shared-windows', 'post-scripts', '01-auth-config.ps1'),
         'utf8',
@@ -129,7 +129,7 @@ describe('generated provisioning inventory', () => {
       expect(script).toContain("Trim('\"')");
     });
 
-    it('windows 06-auth-config fails loudly when gh auth login or setup-git fails', () => {
+    it('windows 01-auth-config fails loudly when gh auth login or setup-git fails', () => {
       const script = readFileSync(
         join(templatesDir(), 'vm-shared-windows', 'post-scripts', '01-auth-config.ps1'),
         'utf8',
@@ -138,7 +138,7 @@ describe('generated provisioning inventory', () => {
       expect(script).toMatch(/gh auth setup-git\r?\n\s*if \(\$LASTEXITCODE -ne 0\)/);
     });
 
-    it('windows 05-configure-network covers CA trust surfaces; 06-auth-config installs the placeholder', () => {
+    it('windows 05-configure-network covers CA trust surfaces; 01-auth-config installs the placeholder', () => {
       const net = readFileSync(
         join(templatesDir(), 'vm-shared-windows', 'pre-scripts', 'nn-configure-network.ps1'),
         'utf8',

@@ -6,7 +6,7 @@ $shareRoot = Split-Path -Parent $scriptDir
 
 $configPath = Join-Path $shareRoot 'github-config.txt'
 if (-not (Test-Path $configPath)) {
-  Write-Error "06-auth-config: $configPath not found. Run 'susentorno write-github-config' on the host first."
+  Write-Error "01-auth-config: $configPath not found. Run 'susentorno write-github-config' on the host first."
   exit 1
 }
 
@@ -17,16 +17,16 @@ foreach ($line in Get-Content $configPath) {
 }
 foreach ($k in 'GITHUB_USERNAME', 'GITHUB_EMAIL', 'GITHUB_TOKEN') {
   if (-not $cfg.ContainsKey($k) -or [string]::IsNullOrEmpty($cfg[$k])) {
-    Write-Error "06-auth-config: $configPath is missing $k"; exit 1
+    Write-Error "01-auth-config: $configPath is missing $k"; exit 1
   }
 }
 
 git config --global user.name  $cfg['GITHUB_USERNAME']
 git config --global user.email $cfg['GITHUB_EMAIL']
 $cfg['GITHUB_TOKEN'] | gh auth login --with-token
-if ($LASTEXITCODE -ne 0) { Write-Error "06-auth-config: gh auth login failed"; exit 1 }
+if ($LASTEXITCODE -ne 0) { Write-Error "01-auth-config: gh auth login failed"; exit 1 }
 gh auth setup-git
-if ($LASTEXITCODE -ne 0) { Write-Error "06-auth-config: gh auth setup-git failed"; exit 1 }
+if ($LASTEXITCODE -ne 0) { Write-Error "01-auth-config: gh auth setup-git failed"; exit 1 }
 
 # --- Claude placeholder credential (onboarding flag is applied in step 07) ---
 
@@ -40,4 +40,4 @@ $codexDir = Join-Path $env:USERPROFILE '.codex'
 New-Item -ItemType Directory -Force -Path $codexDir | Out-Null
 Copy-Item -Force (Join-Path $shareRoot 'auth.json') (Join-Path $codexDir 'auth.json')
 
-Write-Host "06-auth-config: gh auth configured for $($cfg['GITHUB_USERNAME']) <$($cfg['GITHUB_EMAIL'])>; placeholder claude + codex credentials installed"
+Write-Host "01-auth-config: gh auth configured for $($cfg['GITHUB_USERNAME']) <$($cfg['GITHUB_EMAIL'])>; placeholder claude + codex credentials installed"
