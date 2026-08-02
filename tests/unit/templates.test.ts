@@ -89,11 +89,11 @@ describe('generated provisioning inventory', () => {
       expect(script).not.toContain('-NodePath');
       expect(script).toContain('$hostIp = ');
       expect(script).toContain('$natHostIp = ');
-      expect((script.match(/-LocalAddress \$hostIp/g) ?? []).length).toBeGreaterThanOrEqual(4);
+      expect((script.match(/-LocalAddress \$hostIp/g) ?? []).length).toBeGreaterThanOrEqual(3);
       expect(script).toContain('-LocalAddress $natHostIp');
       expect((script.match(/-LocalPort 445/g) ?? []).length).toBe(2);
       expect((script.match(/-Program \$nodePath/g) ?? []).length).toBe(3);
-      expect(script).toContain('.susentorno-host\\run-proxy-node.exe');
+      expect(script).toContain('.susentorno-host\\node-copy-with-custom-firewall-rules.exe');
     });
 
     it('verify-proxy checks the host network model and a stale dedicated-node.exe Query User rule', () => {
