@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import net from 'node:net';
-import { allocateColorPorts } from '../../src/runProxy/allocateColorPorts';
+import { allocateColorPorts } from '../../src/runHosting/allocateColorPorts';
 
 function canBind(port: number): Promise<boolean> {
   return new Promise((resolve) => {

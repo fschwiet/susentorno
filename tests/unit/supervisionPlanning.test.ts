@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { planNextActions } from '../../src/runProxy/planNextActions';
-import type { PlanInput } from '../../src/runProxy/types';
+import { planNextActions } from '../../src/runHosting/planNextActions';
+import type { PlanInput } from '../../src/runHosting/types';
 
 const MIN = 60_000;
 

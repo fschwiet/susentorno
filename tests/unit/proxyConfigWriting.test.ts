@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from 'yaml';
-import { writeEnvoyConfig } from '../../src/runProxy/buildConfig';
+import { writeEnvoyConfig } from '../../src/runHosting/buildConfig';
 import { parseAllowlist } from '../../src/allowlist';
 
 const ALLOWLIST = [

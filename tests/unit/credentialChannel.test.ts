@@ -3,8 +3,8 @@ import {
   CredentialChannel,
   type CredentialChannelConfig,
   type CredentialChannelDeps,
-} from '../../src/runProxy/credentialChannel';
-import type { Credentials } from '../../src/runProxy/types';
+} from '../../src/runHosting/credentialChannel';
+import type { Credentials } from '../../src/runHosting/types';
 
 const MIN = 60_000;
 

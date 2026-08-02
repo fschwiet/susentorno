@@ -5,8 +5,8 @@ import { writeFileSync, mkdirSync, mkdtempSync, rmSync, copyFileSync } from 'nod
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { killProcessTree } from '../../src/runProxy/killProcessTree';
-import { isColorRunning } from '../../src/runProxy/isColorRunning';
+import { killProcessTree } from '../../src/runHosting/killProcessTree';
+import { isColorRunning } from '../../src/runHosting/isColorRunning';
 import { rmEnvRoot } from '../rmEnvRoot';
 import { envParent, envRoot } from '../testEnvRoot';
 import { buildJwt } from '../../src/jwt';

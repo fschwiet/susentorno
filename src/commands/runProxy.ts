@@ -2,39 +2,42 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Command } from 'commander';
-import { readCredentials } from '../runProxy/readCredentials';
-import { readCodexCredentials } from '../runProxy/readCodexCredentials';
-import { writeSecret } from '../runProxy/writeSecret';
-import { nudgeRefresh } from '../runProxy/nudgeRefresh';
-import { nudgeCodexRefresh } from '../runProxy/nudgeCodexRefresh';
-import { watchFile } from '../runProxy/watchFile';
-import { runProxyLoop, type RunProxyDeps } from '../runProxy/runProxyLoop';
-import type { CredentialChannelConfig } from '../runProxy/credentialChannel';
-import { writeEnvoyConfig } from '../runProxy/buildConfig';
-import { startLogStream, type LogStreamHandle } from '../runProxy/logStream';
+import { readCredentials } from '../runHosting/readCredentials';
+import { readCodexCredentials } from '../runHosting/readCodexCredentials';
+import { writeSecret } from '../runHosting/writeSecret';
+import { nudgeRefresh } from '../runHosting/nudgeRefresh';
+import { nudgeCodexRefresh } from '../runHosting/nudgeCodexRefresh';
+import { watchFile } from '../runHosting/watchFile';
+import { runHostingLoop, type RunHostingDeps } from '../runHosting/runHostingLoop';
+import type { CredentialChannelConfig } from '../runHosting/credentialChannel';
+import { writeEnvoyConfig } from '../runHosting/buildConfig';
+import { startLogStream, type LogStreamHandle } from '../runHosting/logStream';
 import { ensureLeaf } from '../leaf';
 import { requireEnvPathsOrExit } from '../envPaths';
 import type { UpstreamOverride, InjectFault } from '../envoyConfig';
-import { resolveForwardListenAddress, resolveInternalSwitchNetwork } from '../runProxy/forwarder';
-import { startGateway, type GatewayHandle } from '../runProxy/gateway';
-import { startDnsResponder } from '../runProxy/dnsResponder';
-import { createServiceStack } from '../runProxy/serviceStack';
-import { startDhcpServer } from '../runProxy/dhcpServer';
-import { allocateColorPorts } from '../runProxy/allocateColorPorts';
-import { bringUpColor, stopColor } from '../runProxy/colorContainer';
-import { waitColorReady } from '../runProxy/waitColorReady';
-import { isColorRunning } from '../runProxy/isColorRunning';
-import type { Color, ColorPorts } from '../runProxy/types';
+import { resolveForwardListenAddress, resolveInternalSwitchNetwork } from '../runHosting/forwarder';
+import { startGateway, type GatewayHandle } from '../runHosting/gateway';
+import { startDnsResponder } from '../runHosting/dnsResponder';
+import { createServiceStack } from '../runHosting/serviceStack';
+import { startDhcpServer } from '../runHosting/dhcpServer';
+import { allocateColorPorts } from '../runHosting/allocateColorPorts';
+import { bringUpColor, stopColor } from '../runHosting/colorContainer';
+import { waitColorReady } from '../runHosting/waitColorReady';
+import { isColorRunning } from '../runHosting/isColorRunning';
+import type { Color, ColorPorts } from '../runHosting/types';
 import {
   relaunchIfNeeded,
   createRelaunchDeps,
   relaunchFailedWithNoChild,
-} from '../runProxy/relaunchViaDedicatedNode';
-import { createRealAbnormalExitAlert, type AbnormalExitAlert } from '../runProxy/abnormalExitAlert';
+} from '../runHosting/relaunchViaDedicatedNode';
+import {
+  createRealAbnormalExitAlert,
+  type AbnormalExitAlert,
+} from '../runHosting/abnormalExitAlert';
 import { readMcpServers } from '../mcpServers';
-import { allocateMcpPorts } from '../runProxy/allocateMcpPorts';
-import { spawnMcpServer, probeMcpReady } from '../runProxy/mcpProcess';
-import { killProcessTree } from '../runProxy/killProcessTree';
+import { allocateMcpPorts } from '../runHosting/allocateMcpPorts';
+import { spawnMcpServer, probeMcpReady } from '../runHosting/mcpProcess';
+import { killProcessTree } from '../runHosting/killProcessTree';
 
 interface RunProxyOptions {
   credentials: string;
@@ -250,7 +253,7 @@ export function registerRunProxy(program: Command): void {
           );
         }
 
-        const deps: RunProxyDeps = {
+        const deps: RunHostingDeps = {
           readAllowlist: (path) => {
             try {
               return readFileSync(path, 'utf8');
@@ -346,7 +349,7 @@ export function registerRunProxy(program: Command): void {
         };
 
         try {
-          const exitCode = await runProxyLoop(
+          const exitCode = await runHostingLoop(
             {
               channels: [claudeChannel, codexChannel],
               allowlistPath: paths.allowlist,

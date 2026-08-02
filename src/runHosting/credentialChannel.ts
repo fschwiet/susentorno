@@ -29,7 +29,7 @@ export interface PrepareResult {
 
 /**
  * One credential source's full state machine, extracted verbatim from the old
- * Claude-only runProxyLoop: watched file -> secret write -> restart signalling, plus
+ * Claude-only runHostingLoop: watched file -> secret write -> restart signalling, plus
  * the independent nudge timer / retry-backoff. The loop owns the blue-green restart;
  * a channel only decides *whether* a restart is needed and, after the swap succeeds,
  * commits its new token as applied.

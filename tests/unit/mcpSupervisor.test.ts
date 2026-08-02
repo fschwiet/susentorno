@@ -3,7 +3,7 @@ import {
   startMcpServers,
   type McpSupervisorDeps,
   type McpServerSpec,
-} from '../../src/runProxy/mcpSupervisor';
+} from '../../src/runHosting/mcpSupervisor';
 
 function spec(overrides: Partial<McpServerSpec> = {}): McpServerSpec {
   return { name: 'fs', hostname: 'fs.internal', port: 1234, command: 'run-fs', ...overrides };

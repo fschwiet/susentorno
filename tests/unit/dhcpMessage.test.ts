@@ -6,7 +6,7 @@ import {
   clientIdentity,
   requestedAddress,
   serverIdentifier,
-} from '../../src/runProxy/dhcpMessage';
+} from '../../src/runHosting/dhcpMessage';
 const mac = Buffer.from([0, 0x15, 0x5d, 0, 0x71, 0x10]);
 function packet(type: number, extra: Array<[number, Buffer]> = []): Buffer {
   const b = Buffer.alloc(300);

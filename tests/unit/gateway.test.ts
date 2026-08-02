@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import net from 'node:net';
-import { startGateway } from '../../src/runProxy/gateway';
+import { startGateway } from '../../src/runHosting/gateway';
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {

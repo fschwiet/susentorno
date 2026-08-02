@@ -3,7 +3,7 @@ import { createInterface } from 'node:readline';
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { startMockUpstream, stopMockUpstream, type MockUpstream } from './proxy-stack/mockUpstream';
-import { killProcessTree } from '../src/runProxy/killProcessTree';
+import { killProcessTree } from '../src/runHosting/killProcessTree';
 import { rmEnvRoot } from './rmEnvRoot';
 import { repoRoot, envParent, envRoot } from './testEnvRoot';
 import { buildJwt } from '../src/jwt';

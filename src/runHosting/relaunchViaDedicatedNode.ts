@@ -135,9 +135,9 @@ export async function relaunchIfNeeded(deps: RelaunchDeps): Promise<RelaunchResu
     return { relaunched: true, childMayHaveAlerted: true, exitCode: result.exitCode };
   }
   if (result.signal !== undefined) {
-    deps.error(`run-proxy: dedicated node.exe copy was terminated by signal ${result.signal}`);
+    deps.error(`run-hosting: dedicated node.exe copy was terminated by signal ${result.signal}`);
   } else {
-    deps.error('run-proxy: failed to launch the dedicated node.exe copy');
+    deps.error('run-hosting: failed to launch the dedicated node.exe copy');
   }
   return { relaunched: true, childMayHaveAlerted: false, exitCode: FALLBACK_EXIT_CODE };
 }

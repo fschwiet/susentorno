@@ -4,7 +4,7 @@ import {
   DEFAULT_INTERNAL_SWITCH_ADAPTER,
   resolveForwardListenAddress,
   resolveInternalSwitchNetwork,
-} from '../../src/runProxy/forwarder';
+} from '../../src/runHosting/forwarder';
 
 function ipv4(address: string, internal = false): NetworkInterfaceInfo {
   return {

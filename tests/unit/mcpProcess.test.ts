@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import net from 'node:net';
-import { spawnMcpServer, probeMcpReady } from '../../src/runProxy/mcpProcess';
-import { killProcessTree } from '../../src/runProxy/killProcessTree';
+import { spawnMcpServer, probeMcpReady } from '../../src/runHosting/mcpProcess';
+import { killProcessTree } from '../../src/runHosting/killProcessTree';
 
 describe('spawnMcpServer', () => {
   it('spawns the shell command and streams its stdout lines', async () => {

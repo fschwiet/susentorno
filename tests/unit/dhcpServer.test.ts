@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import dgram from 'node:dgram';
-import { startDhcpServer, type DhcpServerHandle } from '../../src/runProxy/dhcpServer';
+import { startDhcpServer, type DhcpServerHandle } from '../../src/runHosting/dhcpServer';
 let handle: DhcpServerHandle | null = null;
 afterEach(async () => {
   await handle?.close();

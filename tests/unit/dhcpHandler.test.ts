@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { handleDhcp } from '../../src/runProxy/dhcpHandler';
-import { DHCP, parsePacket } from '../../src/runProxy/dhcpMessage';
-import { createLeaseTable } from '../../src/runProxy/dhcpLeases';
+import { handleDhcp } from '../../src/runHosting/dhcpHandler';
+import { DHCP, parsePacket } from '../../src/runHosting/dhcpMessage';
+import { createLeaseTable } from '../../src/runHosting/dhcpLeases';
 const base = () => ({
   hostIp: '192.168.67.1',
   netmask: '255.255.255.0',

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import dgram from 'node:dgram';
-import { startDnsResponder, type DnsResponderHandle } from '../../src/runProxy/dnsResponder';
+import { startDnsResponder, type DnsResponderHandle } from '../../src/runHosting/dnsResponder';
 
 let handle: DnsResponderHandle | null = null;
 afterEach(async () => {

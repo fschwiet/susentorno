@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readCredentials } from '../../src/runProxy/readCredentials';
+import { readCredentials } from '../../src/runHosting/readCredentials';
 
 let dir: string;
 let path: string;

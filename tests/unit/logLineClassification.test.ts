@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { classify } from '../../src/runProxy/classify';
-import type { AccessLine } from '../../src/runProxy/parseLine';
+import { classify } from '../../src/runHosting/classify';
+import type { AccessLine } from '../../src/runHosting/parseLine';
 
 function line(over: Partial<AccessLine>): AccessLine {
   return {

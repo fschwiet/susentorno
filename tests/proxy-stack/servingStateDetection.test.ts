@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { execa } from 'execa';
 import { tmpdir } from 'node:os';
-import { isColorRunning } from '../../src/runProxy/isColorRunning';
+import { isColorRunning } from '../../src/runHosting/isColorRunning';
 
 // Guarantee the containers do not exist, regardless of other proxy-stack tests.
 beforeAll(async () => {

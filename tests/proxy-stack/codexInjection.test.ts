@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'nod
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { killProcessTree } from '../../src/runProxy/killProcessTree';
+import { killProcessTree } from '../../src/runHosting/killProcessTree';
 import { rmEnvRoot } from '../rmEnvRoot';
 import { buildJwt } from '../../src/jwt';
 import { CODEX_PLACEHOLDER_ACCESS_TOKEN } from '../../src/codexPlaceholder';

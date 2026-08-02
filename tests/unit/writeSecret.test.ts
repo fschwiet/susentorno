@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatSecret } from '../../src/runProxy/writeSecret';
+import { formatSecret } from '../../src/runHosting/writeSecret';
 
 describe('credential secret formatting', () => {
   it('emits the SDS secret structure with a Bearer-prefixed inline_string and the given resource name', () => {

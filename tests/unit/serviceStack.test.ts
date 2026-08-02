@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createServiceStack, type Closable } from '../../src/runProxy/serviceStack';
+import { createServiceStack, type Closable } from '../../src/runHosting/serviceStack';
 function fake(name: string, log: string[]): Closable {
   return {
     close: async () => {

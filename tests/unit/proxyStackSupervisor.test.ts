@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
-  runProxyLoop,
-  type RunProxyConfig,
-  type RunProxyDeps,
-} from '../../src/runProxy/runProxyLoop';
-import type { CredentialChannelConfig } from '../../src/runProxy/credentialChannel';
-import type { Credentials, ColorPorts, Color } from '../../src/runProxy/types';
+  runHostingLoop,
+  type RunHostingConfig,
+  type RunHostingDeps,
+} from '../../src/runHosting/runHostingLoop';
+import type { CredentialChannelConfig } from '../../src/runHosting/credentialChannel';
+import type { Credentials, ColorPorts, Color } from '../../src/runHosting/types';
 
 const MIN = 60_000;
 
@@ -57,7 +57,7 @@ function claudeChannelConfig(
   };
 }
 
-function baseConfig(channels: CredentialChannelConfig[]): RunProxyConfig {
+function baseConfig(channels: CredentialChannelConfig[]): RunHostingConfig {
   return {
     channels,
     allowlistPath: '/fake/allowlist.txt',
@@ -67,7 +67,7 @@ function baseConfig(channels: CredentialChannelConfig[]): RunProxyConfig {
 }
 
 interface Harness {
-  deps: RunProxyDeps;
+  deps: RunHostingDeps;
   creds: { value: Credentials };
   allowlist: { value: string | null };
   channelConfig: CredentialChannelConfig;
@@ -147,7 +147,7 @@ function makeHarness(
     killProcessTree: vi.fn().mockResolvedValue(undefined),
   };
   const channelConfig = claudeChannelConfig(creds, mocks);
-  const deps: RunProxyDeps = {
+  const deps: RunHostingDeps = {
     readAllowlist: () => allowlist.value,
     buildConfig: mocks.buildConfig,
     ensureLeaf: mocks.ensureLeaf,
@@ -210,7 +210,7 @@ describe('proxy stack supervision', () => {
   describe('startup', () => {
     it('builds config, ensures leaf, writes secret, brings up blue, sets backend, logs', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-      void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      void runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
 
       expect(h.mocks.ensureLeaf).toHaveBeenCalledWith(['api.anthropic.com']);
@@ -229,7 +229,7 @@ describe('proxy stack supervision', () => {
 
     it('warns but still brings up the proxy on an invalid-syntax allowlist', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN }, INVALID_ALLOWLIST);
-      const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      const exit = runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
 
       expect(h.mocks.error).toHaveBeenCalledWith(
@@ -249,7 +249,7 @@ describe('proxy stack supervision', () => {
 
     it('warns and resolves a collision, then brings up the proxy from the resolved config', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN }, COLLISION_ALLOWLIST);
-      void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      void runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
 
       expect(h.mocks.error).toHaveBeenCalledWith(
@@ -268,7 +268,7 @@ describe('proxy stack supervision', () => {
 
     it('exits 1 when the allowlist is unreadable', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN }, null);
-      const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      const exit = runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
 
       await expect(exit).resolves.toBe(1);
@@ -280,7 +280,7 @@ describe('proxy stack supervision', () => {
     it('exits 1 when blue never becomes ready on startup', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
       h.mocks.waitColorReady.mockResolvedValue({ ready: false, reason: 'timeout' });
-      const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      const exit = runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
 
       await expect(exit).resolves.toBe(1);
@@ -293,7 +293,7 @@ describe('proxy stack supervision', () => {
     it('exits 1 with the exit hint when blue exits during startup', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
       h.mocks.waitColorReady.mockResolvedValue({ ready: false, reason: 'exited' });
-      const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      const exit = runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
 
       await expect(exit).resolves.toBe(1);
@@ -310,7 +310,7 @@ describe('proxy stack supervision', () => {
             release = resolve;
           }),
       );
-      void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      void runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush(); // startup bring-up in flight; both watchers already armed
 
       h.allowlist.value = VALID_ALLOWLIST.replace(
@@ -333,7 +333,7 @@ describe('proxy stack supervision', () => {
   describe('inline access logging', () => {
     it('prints each parsed host+handling once and ignores non-CFGM lines', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-      void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      void runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
       h.mocks.log.mockClear();
 
@@ -352,7 +352,7 @@ describe('proxy stack supervision', () => {
   describe('allowlist changes', () => {
     it('rebuilds config, reissues leaf, swaps to green, and clears unique tracking', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-      void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      void runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
       h.feedLogLine(PASS_LINE); // pypi.org now tracked as seen
       h.mocks.buildConfig.mockClear();
@@ -367,13 +367,13 @@ describe('proxy stack supervision', () => {
       expect(h.mocks.ensureLeaf).toHaveBeenCalledWith(['api.anthropic.com']);
       expect(h.mocks.buildConfig).toHaveBeenCalledTimes(1);
       expect(h.mocks.buildConfig.mock.calls[0][0].passthrough).toContain('example.org:443');
-      expect(h.mocks.log).toHaveBeenCalledWith('run-proxy: restarting proxy — allowlist changed');
+      expect(h.mocks.log).toHaveBeenCalledWith('run-hosting: restarting proxy — allowlist changed');
       expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1);
       expect(h.mocks.bringUpColor.mock.calls[0][0]).toBe('green');
       expect(h.mocks.stopLogStream).toHaveBeenCalledTimes(1);
       expect(h.mocks.drainBackend).toHaveBeenCalledTimes(1);
       expect(h.mocks.stopColor).toHaveBeenCalledWith('blue');
-      expect(h.mocks.log).toHaveBeenCalledWith('run-proxy: swap complete — now serving green');
+      expect(h.mocks.log).toHaveBeenCalledWith('run-hosting: swap complete — now serving green');
       expect(h.mocks.startLogStream).toHaveBeenCalledTimes(2); // startup(blue) + swap(green)
       expect(h.mocks.startLogStream.mock.calls[1][0]).toBe('green');
 
@@ -385,7 +385,7 @@ describe('proxy stack supervision', () => {
 
     it('applies the resolved config on a flawed edit and warns instead of keeping previous', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-      void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      void runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
       h.mocks.buildConfig.mockClear();
       h.mocks.bringUpColor.mockClear();
@@ -408,7 +408,7 @@ describe('proxy stack supervision', () => {
   describe('credential changes', () => {
     it('propagates a changed token via a swap, preserving unique tracking', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-      void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      void runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
       h.feedLogLine(PASS_LINE); // pypi.org tracked as seen
       h.mocks.writeSecret.mockClear();
@@ -422,9 +422,9 @@ describe('proxy stack supervision', () => {
       expect(h.mocks.writeSecret).toHaveBeenCalledWith('B', '/fake/sds-secret.yaml');
       expect(h.mocks.bringUpColor).toHaveBeenCalledWith('green', expect.anything());
       expect(h.mocks.log).toHaveBeenCalledWith(
-        'run-proxy: restarting proxy — claude credentials changed',
+        'run-hosting: restarting proxy — claude credentials changed',
       );
-      expect(h.mocks.log).toHaveBeenCalledWith('run-proxy: swap complete — now serving green');
+      expect(h.mocks.log).toHaveBeenCalledWith('run-hosting: swap complete — now serving green');
 
       // Unique tracking survived the credential swap.
       h.mocks.log.mockClear();
@@ -436,24 +436,24 @@ describe('proxy stack supervision', () => {
 
     it('alternates the active color across successive swaps', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-      void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      void runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
 
       h.creds.value = { accessToken: 'B', expiresAt: 60 * MIN };
       h.fireCredentials();
       await flush();
-      expect(h.mocks.log).toHaveBeenCalledWith('run-proxy: swap complete — now serving green');
+      expect(h.mocks.log).toHaveBeenCalledWith('run-hosting: swap complete — now serving green');
 
       h.creds.value = { accessToken: 'C', expiresAt: 60 * MIN };
       h.fireCredentials();
       await flush();
-      expect(h.mocks.log).toHaveBeenCalledWith('run-proxy: swap complete — now serving blue');
+      expect(h.mocks.log).toHaveBeenCalledWith('run-hosting: swap complete — now serving blue');
       expect(h.mocks.stopColor.mock.calls.map((c) => c[0])).toEqual(['blue', 'green']);
     });
 
     it('does not swap when the token is unchanged', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-      void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      void runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
       h.mocks.bringUpColor.mockClear();
 
@@ -466,7 +466,7 @@ describe('proxy stack supervision', () => {
 
     it('keeps the old color serving (non-fatal) when the new color never becomes ready', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-      const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      const exit = runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
       h.mocks.setActiveBackend.mockClear();
 
@@ -491,7 +491,7 @@ describe('proxy stack supervision', () => {
 
     it('keeps the previous proxy and logs the exit hint when a swap color exits during startup', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-      const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      const exit = runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
 
       h.mocks.waitColorReady.mockResolvedValueOnce({ ready: false, reason: 'exited' });
@@ -511,7 +511,7 @@ describe('proxy stack supervision', () => {
 
     it('keeps the old color serving when docker fails to bring up the new color', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-      const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      const exit = runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
       h.mocks.setActiveBackend.mockClear();
 
@@ -536,7 +536,7 @@ describe('proxy stack supervision', () => {
   describe('coalescing', () => {
     it('collapses events during an in-flight swap into exactly one follow-up swap', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-      void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      void runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
       h.mocks.bringUpColor.mockClear();
 
@@ -564,7 +564,7 @@ describe('proxy stack supervision', () => {
 
     it('clears unique tracking when both sources changed during an in-flight swap', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-      void runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      void runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
       h.feedLogLine(PASS_LINE); // tracked
       h.mocks.bringUpColor.mockClear();
@@ -606,7 +606,7 @@ describe('proxy stack supervision', () => {
     it('exits non-zero after maxAttempts consecutive no-advance nudges', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 1 * MIN });
       const channel = claudeChannelConfig(h.creds, h.mocks, { maxAttempts: 3 });
-      const exit = runProxyLoop(baseConfig([channel]), h.deps);
+      const exit = runHostingLoop(baseConfig([channel]), h.deps);
       await flush();
 
       await vi.advanceTimersByTimeAsync(2 * MIN);
@@ -623,7 +623,7 @@ describe('proxy stack supervision', () => {
     it('resets the failure counter when a refresh succeeds mid-sequence', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 1 * MIN });
       const channel = claudeChannelConfig(h.creds, h.mocks, { maxAttempts: 3 });
-      const exit = runProxyLoop(baseConfig([channel]), h.deps);
+      const exit = runHostingLoop(baseConfig([channel]), h.deps);
       await flush();
       await vi.advanceTimersByTimeAsync(2 * MIN);
 
@@ -646,7 +646,7 @@ describe('proxy stack supervision', () => {
   describe('shutdown', () => {
     it('SIGINT tears everything down once and exits 0; a second SIGINT is a no-op', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-      const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      const exit = runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
       h.mocks.log.mockClear();
       h.mocks.bringUpColor.mockClear();
@@ -665,7 +665,7 @@ describe('proxy stack supervision', () => {
 
     it('SIGTERM tears everything down once and exits 0, same as SIGINT', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-      const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      const exit = runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
       h.mocks.log.mockClear();
       h.mocks.bringUpColor.mockClear();
@@ -684,7 +684,7 @@ describe('proxy stack supervision', () => {
 
     it('a SIGINT after a SIGTERM (or vice versa) is a no-op — only the first shutdown signal wins', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
-      const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      const exit = runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush();
 
       h.fireSigterm();
@@ -708,7 +708,7 @@ describe('proxy stack supervision', () => {
             });
           }),
       );
-      const exit = runProxyLoop(baseConfig([h.channelConfig]), h.deps);
+      const exit = runHostingLoop(baseConfig([h.channelConfig]), h.deps);
       await flush(); // parked in the startup waitColorReady
 
       h.fireSigint();
@@ -736,7 +736,7 @@ describe('proxy stack supervision', () => {
         maxAttempts: 3,
         refreshEnabled: true,
       };
-      void runProxyLoop(baseConfig([h.channelConfig, codexChannel]), h.deps);
+      void runHostingLoop(baseConfig([h.channelConfig, codexChannel]), h.deps);
       await flush();
       h.mocks.bringUpColor.mockClear();
       h.mocks.writeSecret.mockClear();
@@ -774,7 +774,7 @@ describe('proxy stack supervision', () => {
       expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(2); // blocked swap + one follow-up
       expect(h.mocks.writeSecret).toHaveBeenCalledWith('B', '/fake/sds-secret.yaml');
       expect(codexWrite).toHaveBeenCalledWith('Y', '/fake/codex-secret.yaml');
-      expect(h.mocks.log).toHaveBeenCalledWith('run-proxy: swap complete — now serving blue');
+      expect(h.mocks.log).toHaveBeenCalledWith('run-hosting: swap complete — now serving blue');
 
       // Both are committed: presenting the same tokens again needs no further swap.
       h.mocks.bringUpColor.mockClear();
@@ -798,7 +798,7 @@ describe('proxy stack supervision', () => {
         maxAttempts: 3,
         refreshEnabled: true,
       };
-      const exit = runProxyLoop(baseConfig([h.channelConfig, codexChannel]), h.deps);
+      const exit = runHostingLoop(baseConfig([h.channelConfig, codexChannel]), h.deps);
       await flush();
 
       // Codex's token is inside the refresh window and every nudge fails -> exhaustion.
@@ -820,7 +820,7 @@ describe('proxy stack supervision', () => {
         ...baseConfig([h.channelConfig]),
         mcpServers: [{ name: 'fs', hostname: 'fs.internal', command: 'run-fs' }],
       };
-      void runProxyLoop(config, h.deps);
+      void runHostingLoop(config, h.deps);
       await flush();
 
       expect(h.mocks.allocateMcpPorts).toHaveBeenCalledWith(1);
@@ -849,7 +849,7 @@ describe('proxy stack supervision', () => {
         ...baseConfig([h.channelConfig]),
         mcpServers: [{ name: 'fs', hostname: 'fs.internal', command: 'run-fs' }],
       };
-      void runProxyLoop(config, h.deps);
+      void runHostingLoop(config, h.deps);
       await flush();
 
       expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1); // Envoy started despite the pending probe
@@ -865,7 +865,7 @@ describe('proxy stack supervision', () => {
         ...baseConfig([h.channelConfig]),
         mcpServers: [{ name: 'fs', hostname: 'fs.internal', command: 'run-fs' }],
       };
-      const exit = runProxyLoop(config, h.deps);
+      const exit = runHostingLoop(config, h.deps);
       await flush();
 
       await expect(exit).resolves.toBe(1);
@@ -886,7 +886,7 @@ describe('proxy stack supervision', () => {
         ...baseConfig([h.channelConfig]),
         mcpServers: [{ name: 'fs', hostname: 'fs.internal', command: 'run-fs' }],
       };
-      const exit = runProxyLoop(config, h.deps);
+      const exit = runHostingLoop(config, h.deps);
       await flush(); // proxy fully serving, mcp already reported ready
 
       exitCb(1, null);
@@ -902,7 +902,7 @@ describe('proxy stack supervision', () => {
         ...baseConfig([h.channelConfig]),
         mcpServers: [{ name: 'fs', hostname: 'fs.internal', command: 'run-fs' }],
       };
-      const exit = runProxyLoop(config, h.deps);
+      const exit = runHostingLoop(config, h.deps);
       await flush();
 
       h.fireSigint();
@@ -920,7 +920,7 @@ describe('proxy stack supervision', () => {
           { name: 'fs', hostname: 'fs.internal', command: 'run-fs --host {ip} --port {port}' },
         ],
       };
-      void runProxyLoop(config, h.deps);
+      void runHostingLoop(config, h.deps);
       await flush();
 
       expect(h.mocks.spawnMcpServer.mock.calls[0][0].command).toBe(
@@ -943,7 +943,7 @@ describe('proxy stack supervision', () => {
         ...baseConfig([h.channelConfig]),
         mcpServers: [{ name: 'fs', hostname: 'fs.internal', command: 'run-fs' }],
       };
-      const exit = runProxyLoop(config, h.deps);
+      const exit = runHostingLoop(config, h.deps);
       await flush();
 
       exitCb(1, null); // mcpFatal begins; its first stopColor call is blocked
@@ -969,7 +969,7 @@ describe('proxy stack supervision', () => {
         ...baseConfig([h.channelConfig]),
         mcpServers: [{ name: 'fs', hostname: 'fs.internal', command: 'run-fs' }],
       };
-      const exit = runProxyLoop(config, h.deps);
+      const exit = runHostingLoop(config, h.deps);
       await flush(); // mcp probe fails and mcpFatal runs while allocatePorts() is still pending
 
       expect(h.mocks.error).toHaveBeenCalledWith(expect.stringContaining('did not become ready'));

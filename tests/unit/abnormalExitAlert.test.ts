@@ -4,7 +4,7 @@ import {
   buildSpeakCommand,
   speakAlert,
   type AbnormalExitAlertDeps,
-} from '../../src/runProxy/abnormalExitAlert';
+} from '../../src/runHosting/abnormalExitAlert';
 
 const mockUnref = vi.fn();
 const mockExeca = vi.fn<(...args: unknown[]) => { unref: typeof mockUnref }>(() => ({

@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'nod
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { killProcessTree } from '../../src/runProxy/killProcessTree';
+import { killProcessTree } from '../../src/runHosting/killProcessTree';
 import { rmEnvRoot } from '../rmEnvRoot';
 import { formatGithubBasicSecret, formatGithubApiTokenSecret } from '../../src/githubSecret';
 import { GITHUB_PLACEHOLDER_PAT } from '../../src/githubPlaceholder';

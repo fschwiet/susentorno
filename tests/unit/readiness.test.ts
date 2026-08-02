@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { createServer, type Server } from 'node:http';
-import { waitColorReady } from '../../src/runProxy/waitColorReady';
+import { waitColorReady } from '../../src/runHosting/waitColorReady';
 
 let server: Server | undefined;
 const alive = async (): Promise<boolean> => true;

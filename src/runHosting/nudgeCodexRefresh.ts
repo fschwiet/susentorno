@@ -13,7 +13,7 @@ const NUDGE_PROMPT = 'Reply with the single word: ok';
  * seeing a new JWT exp.
  *
  * `stdin: 'ignore'` is mandatory: `codex exec` peeks at stdin ("Reading additional
- * input from stdin...") even with a prompt argument, and run-proxy's own long-lived
+ * input from stdin...") even with a prompt argument, and run-hosting's own long-lived
  * stdin must never let a nudge hang waiting on it.
  */
 export async function nudgeCodexRefresh(): Promise<NudgeResult> {

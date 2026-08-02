@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { execa, type ResultPromise } from 'execa';
 import { createInterface } from 'node:readline';
 import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, copyFileSync } from 'node:fs';
-import { killProcessTree } from '../../src/runProxy/killProcessTree';
+import { killProcessTree } from '../../src/runHosting/killProcessTree';
 import { rmEnvRoot } from '../rmEnvRoot';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';

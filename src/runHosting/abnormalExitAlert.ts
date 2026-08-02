@@ -24,7 +24,7 @@ export function createAbnormalExitAlert(deps: AbnormalExitAlertDeps): AbnormalEx
       try {
         deps.speak();
       } catch {
-        // best-effort: a failed/slow alert must never affect run-proxy's exit result
+        // best-effort: a failed/slow alert must never affect run-hosting's exit result
       }
     },
   };
@@ -40,9 +40,9 @@ export function buildSpeakCommand(message: string): string {
 
 /**
  * Fires a detached, unreferenced PowerShell process and returns immediately — never
- * awaited, so a slow or failed spawn cannot delay or change run-proxy's own exit.
+ * awaited, so a slow or failed spawn cannot delay or change run-hosting's own exit.
  * Pinned to the OS temp dir (not the inherited cwd) so the orphaned process never
- * locks whatever directory run-proxy happened to be running from.
+ * locks whatever directory run-hosting happened to be running from.
  */
 export function speakAlert(): void {
   const child = execa(

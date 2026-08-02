@@ -8,7 +8,7 @@ export interface LogStreamHandle {
 
 /**
  * Follow the proxy container's log via `docker compose logs --follow` and feed
- * every raw line to onLine. run-proxy starts a fresh follow right after each
+ * every raw line to onLine. run-hosting starts a fresh follow right after each
  * force-recreate — a follow attached to the previous container dies with it —
  * so no --tail/--since handling is needed: a fresh container's history is
  * empty and the follow sees every line from its birth.

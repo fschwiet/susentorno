@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { parseQuery, buildResponse, buildFormErr, answerFor } from '../../src/runProxy/dnsMessage';
+import {
+  parseQuery,
+  buildResponse,
+  buildFormErr,
+  answerFor,
+} from '../../src/runHosting/dnsMessage';
 
 function query(
   name: string,

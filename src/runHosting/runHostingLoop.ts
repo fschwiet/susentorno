@@ -12,7 +12,7 @@ import { resolveMcpAllowlistCollisions } from '../mcpServers';
 import type { McpServerUpstream } from '../envoyConfig';
 import { startMcpServers, type McpServerSpec, type McpSupervisorHandle } from './mcpSupervisor';
 
-export interface RunProxyConfig {
+export interface RunHostingConfig {
   /** One entry per credential source (Claude, Codex). Each drives its own file watch, secret, and nudge timer. */
   channels: CredentialChannelConfig[];
   allowlistPath: string;
@@ -26,7 +26,7 @@ export interface RunProxyConfig {
   mcpReadyTimeoutMs?: number;
 }
 
-export interface RunProxyDeps {
+export interface RunHostingDeps {
   /** Raw allowlist file content, or null when unreadable. */
   readAllowlist: (path: string) => string | null;
   /** Render and write envoy.yaml (upstream overrides are baked in by the caller). */
@@ -81,7 +81,7 @@ export interface RunProxyDeps {
  * (container left running), 1 on any fatal error (including any channel exhausting its
  * refresh attempts).
  */
-export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promise<number> {
+export function runHostingLoop(config: RunHostingConfig, deps: RunHostingDeps): Promise<number> {
   return new Promise<number>((resolve) => {
     let settled = false;
     let restarting = false;
@@ -123,7 +123,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
 
     const fatal = (message: string): void => {
       if (settled) return;
-      deps.error(`run-proxy: ${message}`);
+      deps.error(`run-hosting: ${message}`);
       shutdown(1);
     };
 
@@ -135,14 +135,14 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
      * prevent. stopColor on a color that was never brought up (or already stopped) is
      * expected to no-op or fail harmlessly; Promise.allSettled tolerates either. Note
      * this does NOT cover the process-level uncaughtException/unhandledRejection
-     * safety net installed in commands/runProxy.ts, which calls process.exit()
+     * safety net installed in commands/runHosting.ts, which calls process.exit()
      * directly and — like every other resource this codebase owns (including the
      * Envoy container itself) — is not expected to run any cleanup on a genuine crash;
      * that safety net's job is only the spoken alert, not graceful teardown.
      */
     const mcpFatal = (message: string): void => {
       if (settled) return;
-      deps.error(`run-proxy: ${message}`);
+      deps.error(`run-hosting: ${message}`);
       shutdown(1, () =>
         Promise.allSettled([deps.stopColor('blue'), deps.stopColor('green')]).then(() => undefined),
       );
@@ -174,18 +174,20 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
       const content = deps.readAllowlist(config.allowlistPath);
       if (content === null) {
         deps.error(
-          `run-proxy: could not read allowlist at ${config.allowlistPath}, keeping previous config`,
+          `run-hosting: could not read allowlist at ${config.allowlistPath}, keeping previous config`,
         );
         return null;
       }
       const allowlist = resolveMcpAllowlistCollisions(parseAllowlist(content), mcpServerConfigs);
-      for (const warning of allowlist.warnings) deps.error(`run-proxy: ${warning}`);
+      for (const warning of allowlist.warnings) deps.error(`run-hosting: ${warning}`);
       return allowlist;
     };
 
     /** Reissue the leaf if the TLS-terminated hosts changed and rewrite envoy.yaml. */
     const applyAllowlist = (allowlist: Allowlist): void => {
-      deps.log(`run-proxy: ${deps.ensureLeaf([...terminateTlsHosts(allowlist), ...mcpHostnames])}`);
+      deps.log(
+        `run-hosting: ${deps.ensureLeaf([...terminateTlsHosts(allowlist), ...mcpHostnames])}`,
+      );
       deps.buildConfig(allowlist, mcpServersWithPorts);
     };
 
@@ -236,7 +238,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
             if (result.readable) readableChannels.push(channel);
             else
               deps.error(
-                `run-proxy: skipped ${channel.name} credentials event (unreadable or partial write)`,
+                `run-hosting: skipped ${channel.name} credentials event (unreadable or partial write)`,
               );
             if (result.restartNeeded) {
               restartNeeded = true;
@@ -246,7 +248,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
           }
 
           if (restartNeeded && activePorts !== null) {
-            deps.log(`run-proxy: restarting proxy — ${reasons.join(', ')}`);
+            deps.log(`run-hosting: restarting proxy — ${reasons.join(', ')}`);
             const idle = otherColor(activeColor);
             const oldColor = activeColor;
             const oldPorts = activePorts;
@@ -258,7 +260,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
             } catch (err) {
               broughtUp = false;
               deps.error(
-                `run-proxy: could not start the new proxy (${idle}) — keeping the current proxy: ${String(err)}`,
+                `run-hosting: could not start the new proxy (${idle}) — keeping the current proxy: ${String(err)}`,
               );
             }
             if (settled) return;
@@ -274,8 +276,8 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
               if (!result.ready) {
                 deps.error(
                   result.reason === 'exited'
-                    ? `run-proxy: new proxy (${idle}) exited during startup — likely config issue, check the logs`
-                    : `run-proxy: new proxy (${idle}) did not become ready — keeping the current proxy`,
+                    ? `run-hosting: new proxy (${idle}) exited during startup — likely config issue, check the logs`
+                    : `run-hosting: new proxy (${idle}) did not become ready — keeping the current proxy`,
                 );
                 await deps.stopColor(idle).catch(() => {});
               } else {
@@ -290,7 +292,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
                 // Retire the old color once its connections drain (bounded).
                 await deps.drainBackend(oldPorts, config.drainTimeoutMs, shutdownAbort.signal);
                 await deps.stopColor(oldColor).catch(() => {});
-                deps.log(`run-proxy: swap complete — now serving ${activeColor}`);
+                deps.log(`run-hosting: swap complete — now serving ${activeColor}`);
               }
             }
           }
@@ -306,7 +308,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
     const onStopSignal = (signalName: 'SIGINT' | 'SIGTERM'): void => {
       if (stopSignalSeen || settled) return;
       stopSignalSeen = true;
-      deps.log(`run-proxy: ${signalName} received, stopping (container left running)`);
+      deps.log(`run-hosting: ${signalName} received, stopping (container left running)`);
       shutdown(0);
     };
 
@@ -346,7 +348,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
         return;
       }
       const allowlist = resolveMcpAllowlistCollisions(parseAllowlist(content), mcpServerConfigs);
-      for (const warning of allowlist.warnings) deps.error(`run-proxy: ${warning}`);
+      for (const warning of allowlist.warnings) deps.error(`run-hosting: ${warning}`);
 
       // Arm all watchers before the (slow) startup recreate: a change landing
       // mid-startup coalesces into one follow-up restart instead of being dropped.
@@ -421,7 +423,7 @@ export function runProxyLoop(config: RunProxyConfig, deps: RunProxyDeps): Promis
 
       for (const channel of channels) channel.armTimer();
       deps.log(
-        `run-proxy: watching credentials and allowlist; proxy is serving the current token (${activeColor})`,
+        `run-hosting: watching credentials and allowlist; proxy is serving the current token (${activeColor})`,
       );
 
       // Apply anything that landed during the startup recreate.

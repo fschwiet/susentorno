@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { allocateMcpPorts } from '../../src/runProxy/allocateMcpPorts';
+import { allocateMcpPorts } from '../../src/runHosting/allocateMcpPorts';
 
 describe('allocateMcpPorts', () => {
   it('returns the requested number of distinct ports', async () => {

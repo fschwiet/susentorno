@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ipToInt, intToIp, networkAddress, prefixLength } from '../../src/runProxy/ip';
+import { ipToInt, intToIp, networkAddress, prefixLength } from '../../src/runHosting/ip';
 describe('IPv4 addressing helpers', () => {
   it('round-trips addresses and uses unsigned integers', () => {
     for (const ip of ['0.0.0.0', '192.168.67.1', '10.0.0.255', '255.255.255.255'])

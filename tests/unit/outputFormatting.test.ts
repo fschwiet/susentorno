@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatOutput } from '../../src/runProxy/formatOutput';
+import { formatOutput } from '../../src/runHosting/formatOutput';
 
 describe('access-log output formatting', () => {
   it('formats an entry as time  TAG  domain', () => {

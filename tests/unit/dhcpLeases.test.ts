@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createLeaseTable } from '../../src/runProxy/dhcpLeases';
+import { createLeaseTable } from '../../src/runHosting/dhcpLeases';
 const make = (o = {}) =>
   createLeaseTable({ hostIp: '192.168.67.1', netmask: '255.255.255.0', leaseSeconds: 3600, ...o });
 describe('DHCP lease table', () => {

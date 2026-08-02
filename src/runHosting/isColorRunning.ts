@@ -4,7 +4,7 @@ import type { Color } from './types';
 /**
  * True only when this color's Envoy container is up and staying up. A container
  * that has exited, is crash-looping, or does not exist yields false — the signal
- * run-proxy uses to fast-fail instead of waiting out the readiness timeout. Any
+ * run-hosting uses to fast-fail instead of waiting out the readiness timeout. Any
  * inspect failure is treated as "not running".
  *
  * We check `.State.Status == "running"` AND `.RestartCount == 0` rather than the

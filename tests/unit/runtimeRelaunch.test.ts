@@ -6,7 +6,7 @@ import {
   relaunchFailedWithNoChild,
   type EnsureCopyDeps,
   type RelaunchDeps,
-} from '../../src/runProxy/relaunchViaDedicatedNode';
+} from '../../src/runHosting/relaunchViaDedicatedNode';
 
 describe('dedicated-node runtime relaunch', () => {
   describe('dedicated node path resolution', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sleep } from '../../src/runProxy/abortableSleep';
+import { sleep } from '../../src/runHosting/abortableSleep';
 
 describe('abortable sleep seam', () => {
   it('resolves after the delay when there is no signal', async () => {
