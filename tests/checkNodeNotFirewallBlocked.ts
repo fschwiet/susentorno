@@ -9,8 +9,8 @@ function buildQueryCommand(execPath: string): string {
   const escaped = escapeForSingleQuotedPowerShellString(execPath);
   return (
     'try { ' +
-    'Get-NetFirewallRule -Action Block -ErrorAction Stop | Where-Object { ' +
-    `$_.Name -like '*Query User*' -and $_.Name.EndsWith('${escaped}', [StringComparison]::OrdinalIgnoreCase) ` +
+    'Get-NetFirewallRule -ErrorAction Stop | Where-Object { ' +
+    `$_.Action -like 'Block' -and $_.Name -like '*Query User*' -and $_.Name.EndsWith('${escaped}', [StringComparison]::OrdinalIgnoreCase) ` +
     '} | Select-Object -ExpandProperty Name ' +
     '} catch { Write-Error $_.Exception.Message; exit 2 }'
   );
