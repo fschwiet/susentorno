@@ -27,8 +27,8 @@ $packages = @(
   'Python.Python.3.14',        # codex comes bundles with some python helper scripts
   'WinMerge.WinMerge',
 
-  // "pnpm exec playwright install" complained about missing msvcp140_1.dll
-  'Microsoft.VCRedist.2015+.x64',   
+  # "pnpm exec playwright install" complained about missing msvcp140_1.dll
+  'Microsoft.VCRedist.2015+.x64'
 )
 
 foreach ($id in $packages) {
