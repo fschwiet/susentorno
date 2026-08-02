@@ -4,7 +4,7 @@ The guest never holds a usable credential. Each supported provider seeds the gue
 
 ## Status
 
-accepted — began Claude-only (2026-07-01), generalized to GitHub (2026-07-19) and Codex (2026-07-20); the per-credential state machine lives in `src/runProxy/credentialChannel.ts`.
+accepted — began Claude-only (2026-07-01), generalized to GitHub (2026-07-19) and Codex (2026-07-20); the per-credential state machine lives in `src/runHosting/credentialChannel.ts`.
 
 ## Considered Options
 

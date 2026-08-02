@@ -4,6 +4,6 @@ Every command except `init` and `import-sbx-network-policy` treats the current w
 
 ## Consequences
 
-- Running `pnpm test` replaces a running deployment's proxy container (accepted single-proxy semantics), but no longer corrupts its files; re-running `run-proxy` in the environment directory restores it.
+- Running `pnpm test` replaces a running deployment's proxy container (accepted single-proxy semantics), but no longer corrupts its files; re-running `run-hosting` in the environment directory restores it.
 - The user is responsible for running one environment at a time.
 - Motivated by the original problem that generated files lived mixed into the repo and `pnpm test` clobbered live deployment files; the fix was to make an environment a property of the directory.

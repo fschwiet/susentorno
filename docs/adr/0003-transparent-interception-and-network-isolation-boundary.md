@@ -4,7 +4,7 @@ The guest reaches the proxy transparently — every DNS name resolves to the hos
 
 ## Consequences
 
-- Host-side firewall enforcement is asserted, not assumed: rules are scoped to the Internal-switch address and the specific ports, and `run-proxy` is admitted through a **dedicated private copy of `node.exe`** so the firewall's program-scoped rule can't be inherited by any other use of a shared interpreter.
+- Host-side firewall enforcement is asserted, not assumed: rules are scoped to the Internal-switch address and the specific ports, and `run-hosting` is admitted through a **dedicated private copy of `node.exe`** so the firewall's program-scoped rule can't be inherited by any other use of a shared interpreter.
 - DHCP is deliberately the exception to destination-address scoping because clients without an address send to the limited broadcast address; its rule remains interface-scoped. The verifier separately fails if `WeakHostReceive` or forwarding would let the guest pivot to another host address.
 - This is why resolving every name to the host IP is safe (see [[host-side-dns-and-dhcp]]) — the host firewall does not expose the host's other services to the guest.
 - Because the boundary is the adapter, switching a guest between isolated and NAT networks is a pure host-side adapter reassignment with no guest-side change.
