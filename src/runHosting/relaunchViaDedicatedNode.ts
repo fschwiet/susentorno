@@ -102,7 +102,7 @@ function samePath(a: string, b: string): boolean {
 
 /**
  * Relaunches through a dedicated copy of node.exe on Windows when forwarding is
- * enabled — the only case where run-proxy binds the Internal-switch adapter and can
+ * enabled — the only case where run-hosting binds the Internal-switch adapter and can
  * trigger Windows' listen-time firewall prompt. Resolves once the relaunched child
  * has exited, with its exit code (or a fixed fallback if it died by signal, or
  * couldn't be launched at all).

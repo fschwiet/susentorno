@@ -17,7 +17,7 @@ const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json',
 const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
 const proxyDir = join(envRoot, 'proxy');
 
-// Distinct from runProxy.test.ts's ports to avoid any lingering-socket overlap.
+// Distinct from runHosting.test.ts's ports to avoid any lingering-socket overlap.
 const HTTPS_PORT = 18545;
 const HTTP_PORT = 18182;
 const envoyEnv = {
