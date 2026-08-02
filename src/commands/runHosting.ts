@@ -39,7 +39,7 @@ import { allocateMcpPorts } from '../runHosting/allocateMcpPorts';
 import { spawnMcpServer, probeMcpReady } from '../runHosting/mcpProcess';
 import { killProcessTree } from '../runHosting/killProcessTree';
 
-interface RunProxyOptions {
+interface RunHostingOptions {
   credentials: string;
   secret?: string;
   codexCredentials: string;
@@ -74,20 +74,20 @@ function collectOverride(value: string, previous: UpstreamOverride[]): UpstreamO
  */
 function installAbnormalExitHandlers(alert: AbnormalExitAlert): void {
   process.on('uncaughtException', (err) => {
-    console.error(`run-proxy: uncaught exception: ${String(err)}`);
+    console.error(`run-hosting: uncaught exception: ${String(err)}`);
     alert.trigger();
     process.exit(1);
   });
   process.on('unhandledRejection', (reason) => {
-    console.error(`run-proxy: unhandled rejection: ${String(reason)}`);
+    console.error(`run-hosting: unhandled rejection: ${String(reason)}`);
     alert.trigger();
     process.exit(1);
   });
 }
 
-export function registerRunProxy(program: Command): void {
+export function registerRunHosting(program: Command): void {
   program
-    .command('run-proxy')
+    .command('run-hosting')
     .description(
       'Own the Envoy proxy end to end: build envoy.yaml from the allowlist, write the SDS ' +
         'secret, recreate the container, then watch allowlist.txt and credentials.json — ' +
@@ -132,7 +132,7 @@ export function registerRunProxy(program: Command): void {
       '--inject-fault <crash-config|never-ready>',
       'render a deliberately broken envoy.yaml to exercise proxy robustness (test use only)',
     )
-    .action(async (options: RunProxyOptions) => {
+    .action(async (options: RunHostingOptions) => {
       const alert = createRealAbnormalExitAlert();
       installAbnormalExitHandlers(alert);
 
@@ -145,7 +145,7 @@ export function registerRunProxy(program: Command): void {
         }
       } catch (err) {
         console.error(
-          `run-proxy: failed to relaunch through the dedicated node.exe copy: ${String(err)}`,
+          `run-hosting: failed to relaunch through the dedicated node.exe copy: ${String(err)}`,
         );
         process.exitCode = 1;
         alert.trigger();
@@ -153,13 +153,13 @@ export function registerRunProxy(program: Command): void {
       }
 
       try {
-        const paths = requireEnvPathsOrExit('run-proxy');
+        const paths = requireEnvPathsOrExit('run-hosting');
         if (!paths) return;
-        // run-proxy reissues the leaf itself but never the root: the root must
+        // run-hosting reissues the leaf itself but never the root: the root must
         // already exist (and be trusted in the guest) via generate-ca.
         if (!existsSync(paths.caCert) || !existsSync(paths.caKey)) {
           console.error(
-            `run-proxy: proxy CA not found in ${paths.caDir} — run 'susentorno generate-ca' first`,
+            `run-hosting: proxy CA not found in ${paths.caDir} — run 'susentorno generate-ca' first`,
           );
           process.exitCode = 1;
           return;
@@ -170,7 +170,7 @@ export function registerRunProxy(program: Command): void {
         try {
           mcpServers = readMcpServers(paths.mcpServers);
         } catch (err) {
-          console.error(`run-proxy: ${(err as Error).message}`);
+          console.error(`run-hosting: ${(err as Error).message}`);
           process.exitCode = 1;
           return;
         }
@@ -188,7 +188,7 @@ export function registerRunProxy(program: Command): void {
           const forwardIp = options.forwardListen ?? resolveForwardListenAddress();
           if (!forwardIp) {
             console.error(
-              'run-proxy: could not find the Hyper-V Internal-switch adapter IP to forward from. ' +
+              'run-hosting: could not find the Hyper-V Internal-switch adapter IP to forward from. ' +
                 'Pass --forward-listen <ip>, or --no-forward to disable forwarding.',
             );
             process.exitCode = 1;
@@ -204,12 +204,12 @@ export function registerRunProxy(program: Command): void {
             startGateway({ listenAddresses, httpsListenPort: httpsPort, httpListenPort: httpPort }),
           );
         } catch (err) {
-          console.error(`run-proxy: failed to start the gateway forwarder: ${String(err)}`);
+          console.error(`run-hosting: failed to start the gateway forwarder: ${String(err)}`);
           process.exitCode = 1;
           return;
         }
         console.log(
-          `run-proxy: gateway listening on ${listenAddresses.join(', ')} :${httpPort}/${httpsPort}`,
+          `run-hosting: gateway listening on ${listenAddresses.join(', ')} :${httpPort}/${httpsPort}`,
         );
 
         if (options.forward) {
@@ -219,17 +219,17 @@ export function registerRunProxy(program: Command): void {
               startDnsResponder({
                 listenAddress: dnsIp,
                 answerIp: dnsIp,
-                onError: (message) => console.error(`run-proxy: ${message}`),
+                onError: (message) => console.error(`run-hosting: ${message}`),
               }),
             );
           } catch (err) {
             console.error(
-              `run-proxy: failed to bind DNS on ${dnsIp}:53 — ${String(err)}. Another process may hold that specific address; a wildcard 0.0.0.0:53 holder (e.g. the ICS service) is expected and does not conflict.`,
+              `run-hosting: failed to bind DNS on ${dnsIp}:53 — ${String(err)}. Another process may hold that specific address; a wildcard 0.0.0.0:53 holder (e.g. the ICS service) is expected and does not conflict.`,
             );
             process.exitCode = 1;
             return;
           }
-          console.log(`run-proxy: DNS responder listening on ${dnsIp}:53 (all A -> ${dnsIp})`);
+          console.log(`run-hosting: DNS responder listening on ${dnsIp}:53 (all A -> ${dnsIp})`);
           const network = resolveInternalSwitchNetwork();
           const netmask = network?.address === dnsIp ? network.netmask : '255.255.255.0';
           try {
@@ -237,19 +237,19 @@ export function registerRunProxy(program: Command): void {
               startDhcpServer({
                 listenAddress: dnsIp,
                 netmask,
-                onWarn: (message) => console.warn(`run-proxy: ${message}`),
-                onError: (message) => console.error(`run-proxy: ${message}`),
+                onWarn: (message) => console.warn(`run-hosting: ${message}`),
+                onError: (message) => console.error(`run-hosting: ${message}`),
               }),
             );
           } catch (err) {
             console.error(
-              `run-proxy: failed to bind DHCP on ${dnsIp}:67 — ${String(err)}. Guests on the Internal switch cannot get an address without this.`,
+              `run-hosting: failed to bind DHCP on ${dnsIp}:67 — ${String(err)}. Guests on the Internal switch cannot get an address without this.`,
             );
             process.exitCode = 1;
             return;
           }
           console.log(
-            `run-proxy: DHCP server listening on ${dnsIp}:67 (router and DNS -> ${dnsIp}, mask ${netmask})`,
+            `run-hosting: DHCP server listening on ${dnsIp}:67 (router and DNS -> ${dnsIp}, mask ${netmask})`,
           );
         }
 

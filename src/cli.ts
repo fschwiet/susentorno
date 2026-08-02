@@ -5,7 +5,7 @@ import { registerInit } from './commands/init';
 import { registerGenerateCa } from './commands/generateCa';
 import { registerImportSbxNetworkPolicy } from './commands/importSbxNetworkPolicy';
 import { registerWriteGithubConfig } from './commands/writeGithubConfig';
-import { registerRunProxy } from './commands/runProxy';
+import { registerRunHosting } from './commands/runHosting';
 import { registerUpdateShares } from './commands/updateShares';
 
 const program = new Command();
@@ -19,7 +19,7 @@ registerInit(program);
 registerGenerateCa(program);
 registerImportSbxNetworkPolicy(program);
 registerWriteGithubConfig(program);
-registerRunProxy(program);
+registerRunHosting(program);
 registerUpdateShares(program);
 
 await program.parseAsync();

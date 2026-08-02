@@ -16,8 +16,8 @@ describe('CLI interface', () => {
     expect(exitCode).toBe(0);
   });
 
-  it('lists run-proxy with its flags in help output', async () => {
-    const { stdout, exitCode } = await execa('node', [cliPath, 'run-proxy', '--help']);
+  it('lists run-hosting with its flags in help output', async () => {
+    const { stdout, exitCode } = await execa('node', [cliPath, 'run-hosting', '--help']);
     expect(exitCode).toBe(0);
     expect(stdout).toContain('--credentials');
     expect(stdout).toContain('--codex-credentials');
@@ -25,7 +25,7 @@ describe('CLI interface', () => {
     expect(stdout).toContain('--upstream-override');
   });
 
-  it('run-proxy names the missing prerequisite command', async () => {
+  it('run-hosting names the missing prerequisite command', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'susentorno-'));
     try {
       await execa(
@@ -33,7 +33,7 @@ describe('CLI interface', () => {
         [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
         { cwd: dir },
       );
-      const { exitCode, stderr } = await execa('node', [cliPath, 'run-proxy'], {
+      const { exitCode, stderr } = await execa('node', [cliPath, 'run-hosting'], {
         cwd: dir,
         reject: false,
       });
