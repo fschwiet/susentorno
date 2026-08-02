@@ -44,12 +44,12 @@ Install the project's Node dependencies before running any tier.
 | --- | --- |
 | `unit` | None. |
 | `cli` | A production build (`pnpm build`). The default pipeline builds before this tier. Tests that need the external `jq` command self-skip when it is unavailable. |
-| `proxy-stack` | A production build (`pnpm build`), plus Docker and Docker Compose running. Stop any live `susentorno run-proxy` process first. No guest or real credential is required. |
-| `guest` | WSL2/Docker/KVM set up per [development.md](development.md). Stop any live `susentorno run-proxy` process first — it manages the same docker-compose Envoy stack, so leaving it running gets its Envoy torn down mid-suite (the reachability guard then reports `000`, which looks like a Docker/WSL problem) while `run-proxy` itself is left serving with no backend. |
+| `proxy-stack` | A production build (`pnpm build`), plus Docker and Docker Compose running. Stop any live `susentorno run-hosting` process first. No guest or real credential is required. |
+| `guest` | WSL2/Docker/KVM set up per [development.md](development.md). Stop any live `susentorno run-hosting` process first — it manages the same docker-compose Envoy stack, so leaving it running gets its Envoy torn down mid-suite (the reachability guard then reports `000`, which looks like a Docker/WSL problem) while `run-hosting` itself is left serving with no backend. |
 
 See [development.md](development.md) for how to install and configure the guest harness's WSL prerequisites. The harness creates or refreshes its cached golden image automatically at `/root/.cache/susentorno-vmtest`; the first run takes longer.
 
-A missing live-tier prerequisite is an environmental failure, not a product failure. Both live tiers fail fast when Docker is unavailable or `run-proxy` would conflict with their shared proxy stack. The guest tier also checks its WSL configuration and harness dependencies before booting a guest.
+A missing live-tier prerequisite is an environmental failure, not a product failure. Both live tiers fail fast when Docker is unavailable or `run-hosting` would conflict with their shared proxy stack. The guest tier also checks its WSL configuration and harness dependencies before booting a guest.
 
 ## Default verification pipeline
 

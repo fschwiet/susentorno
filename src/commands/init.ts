@@ -41,7 +41,7 @@ export function registerInit(program: Command): void {
       console.log(`init: created ${ENV_DIR_NAME}. Next steps:`);
       console.log('  1. susentorno generate-ca');
       console.log('  2. susentorno write-github-config');
-      console.log('  3. susentorno run-proxy');
+      console.log('  3. susentorno run-hosting');
       console.log(
         `  (Windows) admin PowerShell: powershell -File ${ENV_DIR_NAME}/proxy/host-allow-vm-inbound.ps1`,
       );

@@ -64,7 +64,7 @@ fi
 
 # Nothing to do. The adapter stays on DHCP for both networks: on the Default Switch
 # it leases from Hyper-V's ICS, and on susentorno-internal it leases from
-# run-proxy, which supplies the host as both router (option 3) and DNS (option 6).
+# run-hosting, which supplies the host as both router (option 3) and DNS (option 6).
 #
 # Deleted along with this section: the dnsmasq stub (names now resolve to the host,
 # not a placeholder), the iptables DNAT rules for 80/443 (nothing needs redirecting

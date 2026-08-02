@@ -16,7 +16,7 @@ susentorno sets up isolated environments for coding agents. A Windows and/or Lin
 
 A dedicated network endpoint is created on the host machine to act as the uplink to guest virtual machines. In Hyper-V, this is configured as a "Virtual Switch". This endpoint provides DHCP so the guest can join the network and get an IP address and provide a socket-level proxy to gate internet access and inject credentials. SMB is unblocked on the host for file sharing.
 
-Only one susentorno environment can run on the host at a time (the run-proxy command to the necessary ports on the network endpoint dedicated to susentorno environments). Starting any environment — or running this repo's test suite — replaces whichever proxy container was running. Run one environment at a time; running `susentorno run-proxy` in an environment's directory restores its proxy.
+Only one susentorno environment can run on the host at a time (the run-hosting command to the necessary ports on the network endpoint dedicated to susentorno environments). Starting any environment — or running this repo's test suite — replaces whichever proxy container was running. Run one environment at a time; running `susentorno run-hosting` in an environment's directory restores its proxy.
 
 ## Installation
 
@@ -62,4 +62,4 @@ See [development.md](development.md) for the requirements and setup to run susen
 
 I chose Hyper-V because its the only way I could find I could nested virtualization to work without disabling Windows security features and WSL which rely on Hyper-V. And nested virtualization is necessary to support docker running on a Windows guest VM. It is what it is.
 
-If you want to run a different virtualization platform it should work as long as you can support the network topology. I couldn't get the current topology working with VMWare Workstation as it only allow me to bind to vmnetN network endpoints which did not seem to allow the host to bind to their DHCP and/or SMB port. I had previously used VMWare by configuring them to use static IP addresses and setting up the guest DNS config to always point to the VMNet endpoint (where run-proxy bound its proxy). I didn't want to try to support that going forward but am mentioning it here in case you want to go down that path.
+If you want to run a different virtualization platform it should work as long as you can support the network topology. I couldn't get the current topology working with VMWare Workstation as it only allow me to bind to vmnetN network endpoints which did not seem to allow the host to bind to their DHCP and/or SMB port. I had previously used VMWare by configuring them to use static IP addresses and setting up the guest DNS config to always point to the VMNet endpoint (where run-hosting bound its proxy). I didn't want to try to support that going forward but am mentioning it here in case you want to go down that path.

@@ -2,7 +2,7 @@
 
 Create and configure a guest VM under Hyper-V, isolated behind the host proxy. May be repeated for any number of guests; each guest pairs with one environment via its shared folder. Complete [setup-machine.md](setup-machine.md) and [setup-environment.md](setup-environment.md) first, so the environment's `vm-shared-linux/` and `vm-shared-windows/` folders contain `cert.pem`, `github-config.txt`, and `credentials.json`.
 
-Both guest OSes stay on **DHCP** throughout: on the Default Switch they lease from Hyper-V's ICS (real gateway and DNS, so packages install) during setup, and on `susentorno-internal` they lease from `run-proxy` once isolated, which supplies the host as both router and DNS. Nothing inside the guest changes between the two, which is what makes switching networks a purely host-side operation.
+Both guest OSes stay on **DHCP** throughout: on the Default Switch they lease from Hyper-V's ICS (real gateway and DNS, so packages install) during setup, and on `susentorno-internal` they lease from `run-hosting` once isolated, which supplies the host as both router and DNS. Nothing inside the guest changes between the two, which is what makes switching networks a purely host-side operation.
 
 This doc continues as if `192.168.67.x` was chosen as the subnet and the host was assigned `192.168.67.1` in `setup-machine.md`.
 
@@ -115,7 +115,7 @@ sudo systemctl daemon-reload && sudo mount -a
 
 Use the **Default Switch** host IP in that `fstab` line during the NAT phase and the Internal-switch host IP afterwards. The share then lives at `/mnt/vm-shared-linux` — the numbered scripts run from there.
 
-**Windows guest** — leave the adapter on DHCP. Default Switch uses Hyper-V ICS; `susentorno-internal` uses `run-proxy` with the host as router and DNS. Save credentials with:
+**Windows guest** — leave the adapter on DHCP. Default Switch uses Hyper-V ICS; `susentorno-internal` uses `run-hosting` with the host as router and DNS. Save credentials with:
 
 ```powershell
 cmdkey /add:192.168.67.1 /user:susentorno-share /pass:<the password from setup-environment.md>
@@ -126,14 +126,14 @@ cmdkey /add:192.168.67.1 /user:susentorno-share /pass:<the password from setup-e
 - `<default-switch-host-ip>` — the temporary address used to reach the SMB share while the VM is attached to the Default Switch.
 - `<internal-switch-host-ip>` — the stable address assigned to `vEthernet (susentorno-internal)` in `setup-machine.md`. Pass this address to the network configuration script and use it after isolation.
 
-> **If a guest ever comes up with no address**, `run-proxy` was not running when it booted. Start `run-proxy` and the guest will pick up a lease on its next retry — no action is needed inside the guest, but allow up to ~5 minutes before treating it as a failure. On **Windows** the guest falls back to a `169.254.x.x` self-assigned address and re-attempts on roughly a five-minute cycle (measured: 4m55s). On **Ubuntu** there is **no** APIPA fallback — `eth0` simply has no IPv4 address — and NetworkManager retries every 45s for three minutes, then goes quiet for about five minutes before trying again (measured: 2m53s from starting `run-proxy`, all of it spent inside that quiet gap). Neither wait can be shortened from the host. With `run-proxy` already running before boot, leases bind in well under a second. As a last resort, the Hyper-V console plus a static address (an IP in the Internal-switch subnet, no gateway, `nameserver = <host-ip>`) still works and is a supported fallback.
+> **If a guest ever comes up with no address**, `run-hosting` was not running when it booted. Start `run-hosting` and the guest will pick up a lease on its next retry — no action is needed inside the guest, but allow up to ~5 minutes before treating it as a failure. On **Windows** the guest falls back to a `169.254.x.x` self-assigned address and re-attempts on roughly a five-minute cycle (measured: 4m55s). On **Ubuntu** there is **no** APIPA fallback — `eth0` simply has no IPv4 address — and NetworkManager retries every 45s for three minutes, then goes quiet for about five minutes before trying again (measured: 2m53s from starting `run-hosting`, all of it spent inside that quiet gap). Neither wait can be shortened from the host. With `run-hosting` already running before boot, leases bind in well under a second. As a last resort, the Hyper-V console plus a static address (an IP in the Internal-switch subnet, no gateway, `nameserver = <host-ip>`) still works and is a supported fallback.
 >
-> **Before waiting out that timer, check the host firewall.** A guest with no address looks identical whether the DHCP server is absent or its replies are being dropped. `run-proxy` binds `:53` and `:67` on the Internal-switch adapter, whose network category is `Public`, so Windows may raise an "allow `node.exe` on public networks?" dialog and write a broad `Query User{…}` rule from whatever gets clicked — **Block** silently overrides all four correctly-scoped rules, and **Allow** masks their absence. Delete any such rule for the `run-proxy` `node.exe` (it is pnpm's global shim, `C:\Users\<user>\AppData\Local\pnpm\bin\node.exe`, not the repo's `dist/`) and add a program-scoped rule so the dialog has nothing to ask:
+> **Before waiting out that timer, check the host firewall.** A guest with no address looks identical whether the DHCP server is absent or its replies are being dropped. `run-hosting` binds `:53` and `:67` on the Internal-switch adapter, whose network category is `Public`, so Windows may raise an "allow `node.exe` on public networks?" dialog and write a broad `Query User{…}` rule from whatever gets clicked — **Block** silently overrides all four correctly-scoped rules, and **Allow** masks their absence. Delete any such rule for the `run-hosting` `node.exe` (it is pnpm's global shim, `C:\Users\<user>\AppData\Local\pnpm\bin\node.exe`, not the repo's `dist/`) and add a program-scoped rule so the dialog has nothing to ask:
 >
 > ```powershell
 > $node = "$env:LOCALAPPDATA\pnpm\bin\node.exe"
 > Get-NetFirewallRule | Where-Object { $_.Name -like '*Query User*' -and $_.Name -like '*pnpm\bin\node.exe' } | Remove-NetFirewallRule
-> New-NetFirewallRule -DisplayName 'susentorno run-proxy node (VM inbound)' -Direction Inbound `
+> New-NetFirewallRule -DisplayName 'susentorno run-hosting node (VM inbound)' -Direction Inbound `
 >   -Program $node -InterfaceAlias 'vEthernet (susentorno-internal)' -Action Allow -Profile Any
 > ```
 
@@ -155,7 +155,7 @@ Set-ExecutionPolicy Bypass
 ```
 
 1. `cd .\pre-scripts` and run every script in order. With no custom steps, the last is `.\05-configure-network.ps1 -HostIp <internal-switch-host-ip>`.
-2. Isolate the VM — reassign its single adapter to `susentorno-internal` (see "Isolate" below), with `run-proxy` already running.
+2. Isolate the VM — reassign its single adapter to `susentorno-internal` (see "Isolate" below), with `run-hosting` already running.
 3. Use the `cmdkey` entry for `<internal-switch-host-ip>`, then run every post-script in order from `\\<internal-switch-host-ip>\vm-shared-windows\post-scripts`: normally `.\01-auth-config.ps1`, then `.\02-apply-home-jq-transforms.ps1`.
 4. Restore the normal execution policy with `Set-ExecutionPolicy RemoteSigned`.
 
@@ -163,11 +163,11 @@ When a script asks for `<host-ip>` (`05-configure-network.sh` / `05-configure-ne
 
 ## 4. Isolate
 
-Confirm the host firewall is open and `run-proxy` is running (both from `setup-machine.md` / `setup-environment.md`) before booting a guest into the isolated network:
+Confirm the host firewall is open and `run-hosting` is running (both from `setup-machine.md` / `setup-environment.md`) before booting a guest into the isolated network:
 
 ```powershell
 powershell -File .susentorno\proxy\host-allow-vm-inbound.ps1
-susentorno run-proxy
+susentorno run-hosting
 ```
 
 Then isolate the VM by reassigning its single adapter:

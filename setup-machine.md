@@ -4,9 +4,9 @@ Per-machine setup for a Windows host, done once before setting up any environmen
 
 ## 1. Create the Internal switch and assign the host IP
 
-The isolated network for guests is a Hyper-V **Internal virtual switch** (host + VMs, no internet). `susentorno run-proxy` supplies DHCP and DNS on it. The host IP you assign here is stable, and it is the one value that threads through the entire setup:
+The isolated network for guests is a Hyper-V **Internal virtual switch** (host + VMs, no internet). `susentorno run-hosting` supplies DHCP and DNS on it. The host IP you assign here is stable, and it is the one value that threads through the entire setup:
 
-> **One host IP, used everywhere:** the static IPv4 you assign to the host's `vEthernet (<SwitchName>)` adapter is simultaneously the SMB server address, the IP that `host-allow-vm-inbound.ps1` reports, the `run-proxy --forward-listen` target, and the `<host-ip>` argument to the guest's `05-*` network scripts. This stays the same during guest setup (when network access is direct to the internet) and after the guest is isolated (when traffic must go through the proxy).
+> **One host IP, used everywhere:** the static IPv4 you assign to the host's `vEthernet (<SwitchName>)` adapter is simultaneously the SMB server address, the IP that `host-allow-vm-inbound.ps1` reports, the `run-hosting --forward-listen` target, and the `<host-ip>` argument to the guest's `05-*` network scripts. This stays the same during guest setup (when network access is direct to the internet) and after the guest is isolated (when traffic must go through the proxy).
 
 > **Two host addresses, only one stable.** The Default Switch address used during a guest's NAT phase is regenerated across host reboots. Look it up with `Get-NetIPAddress -InterfaceAlias 'vEthernet (Default Switch)' -AddressFamily IPv4` when needed.
 
@@ -34,4 +34,4 @@ This opens inbound Envoy (`80`/`443`), DNS (`53`), and DHCP (`67`) from the VM's
 
 - It defaults to the `vEthernet (susentorno-internal)` adapter; pass `-AdapterAlias` if your Internal switch uses a different name (`Get-NetIPConfiguration` lists them).
 - Safe to re-run if the host's IP on that network changes.
-- It runs `run-proxy` from a dedicated private copy of `node.exe` so the firewall's program-scoped rule can't be inherited by any other use of a shared interpreter (see [ADR-0003](docs/adr/0003-transparent-interception-and-network-isolation-boundary.md)).
+- It runs `run-hosting` from a dedicated private copy of `node.exe` so the firewall's program-scoped rule can't be inherited by any other use of a shared interpreter (see [ADR-0003](docs/adr/0003-transparent-interception-and-network-isolation-boundary.md)).

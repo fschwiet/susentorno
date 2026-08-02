@@ -12,7 +12,7 @@ Read-only diagnostic scripts report whether the proxy and a guest are set up cor
 
 ## Watching proxy traffic
 
-`susentorno run-proxy` streams how the proxy handled each host, inline with its own status lines. Each host/handling pair is printed once; the tracking resets when an allow-list edit restarts the proxy (so you can immediately see how the edited entries are handled) and survives credential-rotation restarts.
+`susentorno run-hosting` streams how the proxy handled each host, inline with its own status lines. Each host/handling pair is printed once; the tracking resets when an allow-list edit restarts the proxy (so you can immediately see how the edited entries are handled) and survives credential-rotation restarts.
 
 - `ALLOW CRED` — :443, TLS-terminated, real token injected
 - `ALLOW PASS` — :443, SNI passthrough (VM's own TLS)
@@ -28,4 +28,4 @@ Read-only diagnostic scripts report whether the proxy and a guest are set up cor
 susentorno import-sbx-network-policy <policy-file>
 ```
 
-It writes `current-allow-list.txt` in the current directory by default (`-o` to override). Run it in a checkout of this repository and commit the result. It is a maintenance command — not part of environment setup — and it never touches an environment's own `proxy/allowlist.txt` (edit that file directly for per-environment changes — a running `susentorno run-proxy` picks the edit up live).
+It writes `current-allow-list.txt` in the current directory by default (`-o` to override). Run it in a checkout of this repository and commit the result. It is a maintenance command — not part of environment setup — and it never touches an environment's own `proxy/allowlist.txt` (edit that file directly for per-environment changes — a running `susentorno run-hosting` picks the edit up live).

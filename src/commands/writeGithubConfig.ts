@@ -64,7 +64,7 @@ export function registerWriteGithubConfig(program: Command): void {
         );
       }
 
-      // Proxy watched dir: the real credential, in sibling SDS files run-proxy never rewrites.
+      // Proxy watched dir: the real credential, in sibling SDS files run-hosting never rewrites.
       // Envoy's filesystem SDS requires one resource per watched file, hence two files.
       mkdirSync(dirname(paths.githubBasicSecret), { recursive: true });
       writeFileSync(paths.githubBasicSecret, formatGithubBasicSecret(username, token));
