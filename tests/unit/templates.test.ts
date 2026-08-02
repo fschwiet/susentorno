@@ -115,7 +115,7 @@ describe('generated provisioning inventory', () => {
       expect(script).toContain('Action.ToString()');
       expect(script).toContain('$NatAdapterAlias');
       expect(script).toContain('SkipAddress');
-      expect((script.match(/Test-RuleSet -Label/g) ?? []).length).toBe(5);
+      expect((script.match(/Test-RuleSet -Label/g) ?? []).length).toBe(4);
     });
   });
 

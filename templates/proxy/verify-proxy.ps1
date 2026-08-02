@@ -182,7 +182,7 @@ $envoy = & docker ps `
     --filter 'label=com.docker.compose.project=susentorno' `
     --format '{{.Names}} {{.Status}}' 2>$null | Where-Object { $_ -match 'envoy' }
 if ($envoy -match 'Up') { Add-Pass "envoy container running ($(($envoy | Select-Object -First 1).Trim()))" }
-else { Add-Fail 'envoy container running' "no running susentorno envoy container ('$envoy') -- run 'susentorno run-proxy'" }
+else { Add-Fail 'envoy container running' "no running susentorno envoy container ('$envoy') -- run 'susentorno run-hosting'" }
 
 # A running envoy container's name is global (Docker doesn't namespace by
 # checkout), so finding one running says nothing about which environment it
@@ -247,7 +247,7 @@ Write-Section 'Credential secret (structural, no API call)'
 
 $hostCred = Join-Path $env:USERPROFILE '.claude\.credentials.json'
 if (-not (Test-Path $sdsFile)) {
-    Add-Fail 'SDS secret present' "missing $sdsFile -- run 'susentorno run-proxy'"
+    Add-Fail 'SDS secret present' "missing $sdsFile -- run 'susentorno run-hosting'"
 }
 elseif (-not (Test-Path $hostCred)) {
     Add-Warn 'SDS secret freshness' "cannot compare: no host credential at $hostCred"
@@ -260,7 +260,7 @@ else {
             Add-Pass 'SDS secret matches current host credential'
         }
         else {
-            Add-Fail 'SDS secret matches current host credential' 'token drift -- run-proxy is serving a stale token; restart it'
+            Add-Fail 'SDS secret matches current host credential' 'token drift -- run-hosting is serving a stale token; restart it'
         }
     }
     catch {
@@ -313,7 +313,7 @@ else {
     foreach ($port in 80, 443) {
         $listen = Get-NetTCPConnection -LocalAddress $vmIp -LocalPort $port -State Listen -ErrorAction SilentlyContinue
         if ($listen) { Add-Pass "forwarder listening on ${vmIp}:$port" }
-        else { Add-Fail "forwarder listening on ${vmIp}:$port" "no listener -- is 'susentorno run-proxy' running?" }
+        else { Add-Fail "forwarder listening on ${vmIp}:$port" "no listener -- is 'susentorno run-hosting' running?" }
     }
 
     $fwd80 = Invoke-CurlCode @('--resolve', "archive.ubuntu.com:80:$vmIp", '--max-time', '20', 'http://archive.ubuntu.com/')
@@ -385,31 +385,26 @@ $hostIpUnresolved = -not $hostIp
 # tuple narrows only that tuple's address comparison when its specific
 # source IP didn't resolve - it never skips the rest of the check.
 Test-RuleSet -Label 'TCP 80/443' -DisplayName 'susentorno Envoy Proxy (VM inbound)' -Expected @(
-    @{ Protocol = 'TCP'; LocalPort = 80, 443; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; SkipAddress = $hostIpUnresolved }
+    @{ Protocol = 'TCP'; LocalPort = 80, 443; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; Program = $nodePath; SkipAddress = $hostIpUnresolved }
 )
 Test-RuleSet -Label 'DNS 53' -DisplayName 'susentorno DNS stub (VM inbound)' -Expected @(
-    @{ Protocol = 'UDP'; LocalPort = 53; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; SkipAddress = $hostIpUnresolved }
+    @{ Protocol = 'UDP'; LocalPort = 53; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; Program = $nodePath; SkipAddress = $hostIpUnresolved }
 )
 Test-RuleSet -Label 'DHCP 67' -DisplayName 'susentorno DHCP (VM inbound)' -Expected @(
-    @{ Protocol = 'UDP'; LocalPort = 67; InterfaceAlias = $AdapterAlias; LocalAddress = $null }
+    @{ Protocol = 'UDP'; LocalPort = 67; InterfaceAlias = $AdapterAlias; LocalAddress = $null; Program = $nodePath }
 )
 Test-RuleSet -Label 'SMB 445' -DisplayName 'susentorno share (VM inbound)' -Expected @(
     @{ Protocol = 'TCP'; LocalPort = 445; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; SkipAddress = $hostIpUnresolved }
     @{ Protocol = 'TCP'; LocalPort = 445; InterfaceAlias = $NatAdapterAlias; LocalAddress = $natHostIp; SkipAddress = (-not $natHostIp) }
 )
-Test-RuleSet -Label 'run-proxy node.exe' -DisplayName 'susentorno run-proxy node (VM inbound)' -Expected @(
-    @{ Protocol = 'TCP'; LocalPort = 80, 443; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; Program = $nodePath; SkipAddress = $hostIpUnresolved }
-    @{ Protocol = 'UDP'; LocalPort = 53; InterfaceAlias = $AdapterAlias; LocalAddress = $hostIp; Program = $nodePath; SkipAddress = $hostIpUnresolved }
-    @{ Protocol = 'UDP'; LocalPort = 67; InterfaceAlias = $AdapterAlias; LocalAddress = $null; Program = $nodePath }
-)
 
 if ($hostIp) {
     $dnsListener = Get-NetUDPEndpoint -LocalAddress $hostIp -LocalPort 53 -ErrorAction SilentlyContinue
     if ($dnsListener) { Add-Pass "DNS responder listening on ${hostIp}:53" }
-    else { Add-Fail "DNS responder listening on ${hostIp}:53" "not found -- is run-proxy running? guests have no other resolver" }
+    else { Add-Fail "DNS responder listening on ${hostIp}:53" "not found -- is run-hosting running? guests have no other resolver" }
     $dhcpListener = Get-NetUDPEndpoint -LocalAddress $hostIp -LocalPort 67 -ErrorAction SilentlyContinue
     if ($dhcpListener) { Add-Pass "DHCP server listening on ${hostIp}:67" }
-    else { Add-Fail "DHCP server listening on ${hostIp}:67" "not found -- is run-proxy running? guests cannot get an address" }
+    else { Add-Fail "DHCP server listening on ${hostIp}:67" "not found -- is run-hosting running? guests cannot get an address" }
 }
 
 Write-Host ''
