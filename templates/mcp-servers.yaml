@@ -1,0 +1,15 @@
+# Declares MCP servers that susentorno launches on the host and exposes to the
+# guest over HTTPS through the proxy. See docs/adr/0020-host-run-mcp-servers.md.
+#
+# Uncomment and edit the example below to add a server. '#' marks required
+# fields, '##' marks optional ones — delete the leading '#' characters (and
+# remove the "servers: []" line above) to enable it.
+servers: []
+
+#servers:
+#  - name: example-server
+#    hostname: example-server.internal
+#    command: npx -y @some/mcp-server --host {ip} --port {port}
+##    cwd: /path/to/working/directory
+##    env:
+##      API_KEY: value

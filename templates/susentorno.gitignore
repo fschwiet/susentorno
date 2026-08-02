@@ -15,3 +15,4 @@
 !/home-jq-transforms/**
 !/proxy/
 !/proxy/allowlist.txt
+!/mcp-servers.yaml

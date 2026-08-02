@@ -98,6 +98,7 @@ To preserve configuration changes:
   });
   cpSync(join(options.templatesDir, 'proxy'), paths.proxy, { recursive: true });
   copyFileSync(options.allowlistSource, paths.allowlist);
+  copyFileSync(join(options.templatesDir, 'mcp-servers.yaml'), paths.mcpServers);
   for (const target of paths.vmSharedTargets) {
     writeFileSync(target.credentials, sanitized);
     writeFileSync(target.authJson, sanitizedCodex);
