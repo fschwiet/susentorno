@@ -93,7 +93,7 @@ In `src/runHosting/relaunchViaDedicatedNode.ts` lines 138 and 140, replace the `
 
 Replace every occurrence of the path segment `/runProxy/` with `/runHosting/` inside `from '...'` import specifiers, across every file below (the relative-path prefix before `runProxy` varies by file depth; only the `runProxy` → `runHosting` segment changes):
 
-`src/commands/runProxy.ts` (not yet renamed — Task 2 renames the file itself; here only fix its import: `from '../runProxy/runProxyLoop'` → `from '../runHosting/runHostingLoop'`, and update the named import `runProxyLoop, type RunProxyDeps` → `runHostingLoop, type RunHostingDeps` at that same import site), and every one of these test files:
+`src/commands/runProxy.ts` (not yet renamed — Task 2 renames the file itself; here fix its import — `from '../runProxy/runProxyLoop'` → `from '../runHosting/runHostingLoop'`, and the named import `runProxyLoop, type RunProxyDeps` → `runHostingLoop, type RunHostingDeps` — **and its two usage sites that reference those same renamed symbols: line 253, `const deps: RunProxyDeps = {` → `const deps: RunHostingDeps = {`; and line 349, `const exitCode = await runProxyLoop(` → `const exitCode = await runHostingLoop(`. Skipping these two would leave the file referencing undefined names and fail to build.**), and every one of these test files:
 
 ```
 tests/unit/abortableSleep.test.ts
@@ -140,10 +140,10 @@ In `tests/unit/proxyStackSupervisor.test.ts`, additionally rename every use of t
 Run: `pnpm build`
 Expected: succeeds with no TypeScript errors (a leftover `/runProxy/` import would fail here first)
 
-- [ ] **Step 7: Verify no old references remain outside the explicitly-excluded files**
+- [ ] **Step 7: Verify no old references remain outside the explicitly-excluded or not-yet-renamed files**
 
-Run: `grep -rn "runProxy\|RunProxy" src tests --include="*.ts" | grep -v "checkNoRunningProxy\|proxy-stack"`
-Expected: no output (empty)
+Run: `grep -rln "runProxy\|RunProxy" src tests --include="*.ts" | grep -v "checkNoRunningProxy\|commands/runProxy\|commands\\\\runProxy\|cli/cli.test\|cli\\\\cli.test"`
+Expected: no output (empty). `src/commands/runProxy.ts` and `tests/unit/commands/runProxy.test.ts` are excluded here because they still legitimately contain `RunProxyOptions`/`registerRunProxy`/`run-proxy` until Task 2 renames them; `tests/cli/cli.test.ts` is excluded because it still spawns the literal `'run-proxy'` command name until Task 2 renames the CLI string.
 
 - [ ] **Step 8: Run the full suite and compare to baseline**
 
@@ -190,6 +190,10 @@ git mv src/commands/runProxy.ts src/commands/runHosting.ts
 
 Replace every literal occurrence of the substring `run-proxy:` with `run-hosting:` in this file — there are 15 occurrences, on lines 74, 79, 145, 159, 170, 188, 204, 209, 219, 224, 229, 237, 238, 243, and 249 (e.g. `` `run-proxy: uncaught exception: ${String(err)}` `` on line 74, `` `run-proxy: gateway listening on ${listenAddresses.join(', ')} :${httpPort}/${httpsPort}` `` on line 209). Each is a simple substring replacement — do not otherwise change the surrounding text.
 
+Also fix two more references in this same file, not covered by the `run-proxy:` pattern above:
+- Line 153: `const paths = requireEnvPathsOrExit('run-proxy');` → `const paths = requireEnvPathsOrExit('run-hosting');`
+- Line 155: `// run-proxy reissues the leaf itself but never the root: the root must` → `// run-hosting reissues the leaf itself but never the root: the root must`
+
 The command's `.description(...)` text does not contain the literal string `run-proxy` — it refers to "the Envoy proxy" (the domain concept, out of scope for this rename per the spec), so it needs no change.
 
 - [ ] **Step 3: Update `src/cli.ts`**
@@ -235,10 +239,12 @@ Replace the four `run-proxy` references (the two test descriptions and two `exec
 | `it('run-proxy names the missing prerequisite command', async () => {` | `it('run-hosting names the missing prerequisite command', async () => {` |
 | `await execa('node', [cliPath, 'run-proxy'], {` | `await execa('node', [cliPath, 'run-hosting'], {` |
 
-- [ ] **Step 6: Run the full suite**
+- [ ] **Step 6: Run everything except the proxy-stack integration suite**
 
-Run: `pnpm test`
-Expected: passes, same pass count as Task 1's final run
+The CLI command string is now literally `run-hosting` — `tests/proxy-stack/*.test.ts` and `tests/proxyStack.ts` still spawn the old literal `'run-proxy'` argv at this point (that's Task 3's job), so the full `pnpm test` would fail here through no fault of this task. Run the equivalent of `pnpm test` minus its final `test:proxy-stack` stage instead:
+
+Run: `pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:unit && pnpm build && pnpm test:cli`
+Expected: passes
 
 - [ ] **Step 7: Commit**
 
@@ -334,28 +340,35 @@ git commit -m "Update proxy-stack/guest test references from run-proxy to run-ho
 
 ---
 
-### Task 4: Update user-facing docs and the template script comment
+### Task 4: Update user-facing docs, two source comments, and the template script comment
 
 **Files:**
 
 - Modify: `README.md`, `setup-environment.md`, `setup-guest.md`, `setup-machine.md`, `diagnostics.md`, `testing.md`
 - Modify: `templates/vm-shared-linux/pre-scripts/nn-configure-network.sh`
+- Modify: `src/commands/init.ts`, `src/commands/writeGithubConfig.ts`
 
 **Interfaces:** none (prose-only changes)
 
-- [ ] **Step 1: Update `README.md`**
+- [ ] **Step 1: Update the two remaining source-code prose mentions**
+
+`src/commands/init.ts` line 44: `console.log('  3. susentorno run-proxy');` → `console.log('  3. susentorno run-hosting');`
+
+`src/commands/writeGithubConfig.ts` line 67: `// Proxy watched dir: the real credential, in sibling SDS files run-proxy never rewrites.` → `// Proxy watched dir: the real credential, in sibling SDS files run-hosting never rewrites.`
+
+- [ ] **Step 2: Update `README.md`**
 
 Line 19: `Only one susentorno environment can run on the host at a time (the run-proxy command to the necessary ports on the network endpoint dedicated to susentorno environments). Starting any environment — or running this repo's test suite — replaces whichever proxy container was running. Run one environment at a time; running \`susentorno run-proxy\` in an environment's directory restores its proxy.` → replace `run-proxy` (bare) with `run-hosting` and `` `susentorno run-proxy` `` with `` `susentorno run-hosting` ``.
 
 Line 65: replace the `run-proxy` mention (in the VMWare Workstation discussion, "where run-proxy bound its proxy") with `run-hosting`.
 
-- [ ] **Step 2: Update `setup-environment.md`**
+- [ ] **Step 3: Update `setup-environment.md`**
 
 Line 10: `` `run-proxy` reissues the per-host leaf certificate automatically `` → `` `run-hosting` reissues the per-host leaf certificate automatically ``.
 
 Line 12: `` 4. `susentorno run-proxy` — builds `proxy/envoy.yaml`... `` → `` 4. `susentorno run-hosting` — builds `proxy/envoy.yaml`... `` (replace every `run-proxy` mention in this paragraph, including the `--no-forward`/`--forward-listen` flag descriptions, which stay on the same command).
 
-- [ ] **Step 3: Update `setup-guest.md`**
+- [ ] **Step 4: Update `setup-guest.md`**
 
 | Line | Old | New |
 |---|---|---|
@@ -368,7 +381,7 @@ Line 12: `` 4. `susentorno run-proxy` — builds `proxy/envoy.yaml`... `` → ``
 | 166 | `` Confirm the host firewall is open and `run-proxy` is running `` | `` Confirm the host firewall is open and `run-hosting` is running `` |
 | 170 | `susentorno run-proxy` (in a code block) | `susentorno run-hosting` |
 
-- [ ] **Step 4: Update `setup-machine.md`**
+- [ ] **Step 5: Update `setup-machine.md`**
 
 Line 7: `` `susentorno run-proxy` supplies DHCP and DNS on it `` → `` `susentorno run-hosting` supplies DHCP and DNS on it ``.
 
@@ -376,13 +389,13 @@ Line 9: `` the `run-proxy --forward-listen` target `` → `` the `run-hosting --
 
 Line 37: `` It runs `run-proxy` from a dedicated private copy of `node.exe` `` → `` It runs `run-hosting` from a dedicated private copy of `node.exe` ``.
 
-- [ ] **Step 5: Update `diagnostics.md`**
+- [ ] **Step 6: Update `diagnostics.md`**
 
 Line 15: `` `susentorno run-proxy` streams how the proxy handled each host `` → `` `susentorno run-hosting` streams how the proxy handled each host ``.
 
 Line 31: `` a running `susentorno run-proxy` picks the edit up live `` → `` a running `susentorno run-hosting` picks the edit up live ``.
 
-- [ ] **Step 6: Update `testing.md`**
+- [ ] **Step 7: Update `testing.md`**
 
 Line 47: `` Stop any live `susentorno run-proxy` process first. `` → `` Stop any live `susentorno run-hosting` process first. ``.
 
@@ -390,19 +403,24 @@ Line 48: `` Stop any live `susentorno run-proxy` process first — it manages th
 
 Line 52: `` Both live tiers fail fast when Docker is unavailable or `run-proxy` would conflict with their shared proxy stack. `` → `` ...or `run-hosting` would conflict... ``.
 
-- [ ] **Step 7: Update the template script comment**
+- [ ] **Step 8: Update the template script comment**
 
 `templates/vm-shared-linux/pre-scripts/nn-configure-network.sh` line 67: `# run-proxy, which supplies the host as both router (option 3) and DNS (option 6).` → `# run-hosting, which supplies the host as both router (option 3) and DNS (option 6).`
 
-- [ ] **Step 8: Verify no old references remain in these docs**
+- [ ] **Step 9: Verify no old references remain in these docs and source files**
 
-Run: `grep -rln "run-proxy" README.md setup-environment.md setup-guest.md setup-machine.md diagnostics.md testing.md templates/vm-shared-linux/pre-scripts/nn-configure-network.sh`
+Run: `grep -rln "run-proxy" README.md setup-environment.md setup-guest.md setup-machine.md diagnostics.md testing.md templates/vm-shared-linux/pre-scripts/nn-configure-network.sh src/commands/init.ts src/commands/writeGithubConfig.ts`
 Expected: no output (empty)
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Run the full suite**
+
+Run: `pnpm test`
+Expected: passes, same pass count as Task 3
+
+- [ ] **Step 11: Commit**
 
 ```bash
-git add README.md setup-environment.md setup-guest.md setup-machine.md diagnostics.md testing.md templates/vm-shared-linux/pre-scripts/nn-configure-network.sh
+git add README.md setup-environment.md setup-guest.md setup-machine.md diagnostics.md testing.md templates/vm-shared-linux/pre-scripts/nn-configure-network.sh src/commands/init.ts src/commands/writeGithubConfig.ts
 git commit -m "Update user-facing docs from run-proxy to run-hosting"
 ```
 
@@ -454,7 +472,8 @@ In `docs/honist-v/specs/2026-07-31-host-run-mcp-servers-design.md`, replace ever
 
 - [ ] **Step 4: Verify no old references remain**
 
-Run: `grep -rln "run-proxy\|runProxy" docs/adr docs/honist-v/specs | grep -v "_drafts"`
+Run: `grep -rln "run-proxy\|runProxy" docs/adr docs/honist-v/specs | grep -v "_drafts\|2026-08-01-rename-run-proxy-to-run-hosting-design"`
+Note: the design spec file `docs/honist-v/specs/2026-08-01-rename-run-proxy-to-run-hosting-design.md` is excluded above because it necessarily and intentionally documents the old name being renamed — it is not part of this task's scope.
 Expected: no output (empty)
 
 - [ ] **Step 5: Commit**
@@ -502,11 +521,18 @@ Replace line 68:
 - Old: `return join(homedir, '.susentorno-host', 'run-proxy-node.exe');`
 - New: `return join(homedir, '.susentorno-host', 'node-copy-with-custom-firewall-rules.exe');`
 
-- [ ] **Step 2: Update the mirrored path function in `verify-proxy.ps1`**
+- [ ] **Step 2: Update every dedicated-node.exe mention in `verify-proxy.ps1`**
 
-Line 65: `Join-Path $env:USERPROFILE ".susentorno-host\run-proxy-node.exe"` → `Join-Path $env:USERPROFILE ".susentorno-host\node-copy-with-custom-firewall-rules.exe"`
+| Line | Old | New |
+|---|---|---|
+| 62 | `# The fixed, host-wide path run-proxy relaunches itself through on Windows -` | `# The fixed, host-wide path run-hosting relaunches itself through on Windows -` |
+| 63 | `# mirrors the convention in src/runProxy/relaunchViaDedicatedNode.ts.` | `# mirrors the convention in src/runHosting/relaunchViaDedicatedNode.ts.` |
+| 65 | `Join-Path $env:USERPROFILE ".susentorno-host\run-proxy-node.exe"` | `Join-Path $env:USERPROFILE ".susentorno-host\node-copy-with-custom-firewall-rules.exe"` |
+| 349 | `# Scoped to the dedicated run-proxy-node.exe copy only (the binary` | `# Scoped to the dedicated node-copy-with-custom-firewall-rules.exe copy only (the binary` |
+| 361 | `Add-Pass 'no stale Query User rule for the dedicated run-proxy node.exe'` | `Add-Pass 'no stale Query User rule for the dedicated node-copy-with-custom-firewall-rules.exe'` |
+| 364 | `Add-Fail 'no stale Query User rule for the dedicated run-proxy node.exe' "$($rule.Action) rule '$($rule.Name)' -- rerun host-allow-vm-inbound.ps1, or investigate why Windows re-prompted"` | `Add-Fail 'no stale Query User rule for the dedicated node-copy-with-custom-firewall-rules.exe' "$($rule.Action) rule '$($rule.Name)' -- rerun host-allow-vm-inbound.ps1, or investigate why Windows re-prompted"` |
 
-Line 63 (the comment above it): `# mirrors the convention in src/runProxy/relaunchViaDedicatedNode.ts.` → `# mirrors the convention in src/runHosting/relaunchViaDedicatedNode.ts.`
+(Lines 185, 250, 263, 316, 400, 409, and 412 also mention `run-proxy` in this file, but as the general command name rather than the dedicated-node filename — those are Task 8's job, alongside the `Test-RuleSet` merge.)
 
 - [ ] **Step 3: Update `tests/unit/runtimeRelaunch.test.ts`**
 
@@ -555,7 +581,15 @@ git commit -m "Rename dedicated node.exe to node-copy-with-custom-firewall-rules
 
 - [ ] **Step 1: Rewrite the header comment's rationale**
 
-Replace the paragraph starting `It also establishes three program-scoped rules for a dedicated copy of` (through `...this script can run before that first start.`, roughly lines 30–50) with:
+First, fix the file's opening summary block (lines 5–7), which also names the old command:
+
+| Line | Old | New |
+|---|---|---|
+| 5 | `  TCP 80/443  - Envoy, via run-proxy's gateway` | `  TCP 80/443  - Envoy, via run-hosting's gateway` |
+| 6 | `  UDP 53      - run-proxy's DNS responder` | `  UDP 53      - run-hosting's DNS responder` |
+| 7 | `  UDP 67      - run-proxy's DHCP server` | `  UDP 67      - run-hosting's DHCP server` |
+
+Then replace the paragraph starting `It also establishes three program-scoped rules for a dedicated copy of` (through `...this script can run before that first start.`, roughly lines 30–50) with:
 
 ```
 Each of the three rules below (TCP 80/443, DNS 53, DHCP 67) also carries
@@ -742,16 +776,29 @@ Test-RuleSet -Label 'SMB 445' -DisplayName 'susentorno share (VM inbound)' -Expe
 
 (Recall from `Test-RuleTuple`'s existing logic, lines 94–99: `$Expected.Program` of `$null` means "expected unrestricted," not "don't care" — so adding `Program = $nodePath` to the TCP/DNS/DHCP tuples correctly asserts they're now program-scoped, while SMB's tuples correctly keep no `Program` key at all, meaning still-unrestricted.)
 
-- [ ] **Step 2: Update the affected assertion in `tests/unit/templates.test.ts`**
+- [ ] **Step 2: Update the remaining general `run-proxy` mentions in this file**
+
+These are the command-name references not related to the dedicated-node filename (Task 6 already handled those):
+
+| Line | Old | New |
+|---|---|---|
+| 185 | `else { Add-Fail 'envoy container running' "no running susentorno envoy container ('$envoy') -- run 'susentorno run-proxy'" }` | `else { Add-Fail 'envoy container running' "no running susentorno envoy container ('$envoy') -- run 'susentorno run-hosting'" }` |
+| 250 | `Add-Fail 'SDS secret present' "missing $sdsFile -- run 'susentorno run-proxy'"` | `Add-Fail 'SDS secret present' "missing $sdsFile -- run 'susentorno run-hosting'"` |
+| 263 | `Add-Fail 'SDS secret matches current host credential' 'token drift -- run-proxy is serving a stale token; restart it'` | `Add-Fail 'SDS secret matches current host credential' 'token drift -- run-hosting is serving a stale token; restart it'` |
+| 316 | `else { Add-Fail "forwarder listening on ${vmIp}:$port" "no listener -- is 'susentorno run-proxy' running?" }` | `else { Add-Fail "forwarder listening on ${vmIp}:$port" "no listener -- is 'susentorno run-hosting' running?" }` |
+| 409 | `else { Add-Fail "DNS responder listening on ${hostIp}:53" "not found -- is run-proxy running? guests have no other resolver" }` | `else { Add-Fail "DNS responder listening on ${hostIp}:53" "not found -- is run-hosting running? guests have no other resolver" }` |
+| 412 | `else { Add-Fail "DHCP server listening on ${hostIp}:67" "not found -- is run-proxy running? guests cannot get an address" }` | `else { Add-Fail "DHCP server listening on ${hostIp}:67" "not found -- is run-hosting running? guests cannot get an address" }` |
+
+- [ ] **Step 3: Update the affected assertion in `tests/unit/templates.test.ts`**
 
 Line 118: `expect((script.match(/Test-RuleSet -Label/g) ?? []).length).toBe(5);` → `expect((script.match(/Test-RuleSet -Label/g) ?? []).length).toBe(4);`
 
-- [ ] **Step 3: Verify no old references remain in this file**
+- [ ] **Step 4: Verify no old references remain in this file**
 
 Run: `grep -n "run-proxy" templates/proxy/verify-proxy.ps1`
 Expected: no output (empty)
 
-- [ ] **Step 4: Run the PowerShell lint and full suite**
+- [ ] **Step 5: Run the PowerShell lint and full suite**
 
 Run: `pnpm lint:ps1`
 Expected: passes
@@ -759,7 +806,7 @@ Expected: passes
 Run: `pnpm test`
 Expected: passes, same pass count as Task 7
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add templates/proxy/verify-proxy.ps1 tests/unit/templates.test.ts
