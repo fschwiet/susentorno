@@ -346,18 +346,22 @@ if (-not $netIf) {
 
 Write-Section 'Stale prompt-generated rules'
 
-# Scans for ANY node.exe, not just a specific path, so a rule left behind by a
-# different (e.g. repo-local dev) node.exe that once hosted run-proxy is also
-# caught -- reported, not deleted, since a match might be legitimate for an
-# unrelated program.
+# Scoped to the dedicated run-proxy-node.exe copy only (the binary
+# host-allow-vm-inbound.ps1 provisions program-scoped rules for) -- NOT "any
+# node.exe". Other node.exe binaries (e.g. the one running pnpm test) can
+# legitimately pick up their own prompt-generated rules unrelated to this
+# environment's VM path; this check only cares about the one binary the VM
+# path actually depends on. Reported, not deleted, since host-allow-vm-
+# inbound.ps1 owns cleaning up this specific path (it does so on every rerun).
+$dedicatedNodePath = Get-DedicatedNodePath
 $staleNodeRules = @(Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object {
-    $_.Name -like "*Query User*" -and $_.Name.EndsWith('node.exe', [StringComparison]::OrdinalIgnoreCase)
+    $_.Name -like "*Query User*" -and $_.Name.EndsWith($dedicatedNodePath, [StringComparison]::OrdinalIgnoreCase)
 })
 if ($staleNodeRules.Count -eq 0) {
-    Add-Pass 'no stale Query User rule for any node.exe'
+    Add-Pass 'no stale Query User rule for the dedicated run-proxy node.exe'
 } else {
     foreach ($rule in $staleNodeRules) {
-        Add-Fail 'no stale Query User rule for any node.exe' "$($rule.Action) rule '$($rule.Name)' -- rerun host-allow-vm-inbound.ps1, or investigate why Windows re-prompted"
+        Add-Fail 'no stale Query User rule for the dedicated run-proxy node.exe' "$($rule.Action) rule '$($rule.Name)' -- rerun host-allow-vm-inbound.ps1, or investigate why Windows re-prompted"
     }
 }
 

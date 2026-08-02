@@ -96,12 +96,12 @@ describe('generated provisioning inventory', () => {
       expect(script).toContain('.susentorno-host\\run-proxy-node.exe');
     });
 
-    it('verify-proxy checks the host network model and any stale node.exe Query User rule', () => {
+    it('verify-proxy checks the host network model and a stale dedicated-node.exe Query User rule', () => {
       const script = readFileSync(join(templatesDir(), 'proxy', 'verify-proxy.ps1'), 'utf8');
       expect(script).toContain('Get-NetIPInterface');
       expect(script).toContain('WeakHostReceive');
       expect(script).toContain('Forwarding');
-      expect(script).toContain("EndsWith('node.exe'");
+      expect(script).toContain('EndsWith($dedicatedNodePath');
     });
 
     it('verify-proxy validates rule filters and state, not just DisplayName presence', () => {
