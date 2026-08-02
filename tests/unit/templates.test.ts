@@ -71,7 +71,7 @@ describe('generated provisioning inventory', () => {
       const compose = readFileSync(join(templatesDir(), 'proxy', 'docker-compose.yml'), 'utf8');
       expect(compose).toContain('container_name: susentorno-envoy-blue');
       expect(compose).toContain('container_name: susentorno-envoy-green');
-      // Host ports are injected per-color by run-proxy; unset -> ephemeral.
+      // Host ports are injected per-color by run-hosting; unset -> ephemeral.
       expect(compose).toContain('127.0.0.1:${ENVOY_BLUE_HTTPS_PORT:-}:443');
       expect(compose).toContain('127.0.0.1:${ENVOY_GREEN_HTTPS_PORT:-}:443');
       expect(compose).toContain('127.0.0.1:${ENVOY_BLUE_ADMIN_PORT:-}:9901');

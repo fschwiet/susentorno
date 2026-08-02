@@ -59,10 +59,10 @@ function Invoke-CurlCode {
     return [pscustomobject]@{ Code = "$code".Trim(); Exit = $LASTEXITCODE }
 }
 
-# The fixed, host-wide path run-proxy relaunches itself through on Windows -
-# mirrors the convention in src/runProxy/relaunchViaDedicatedNode.ts.
+# The fixed, host-wide path run-hosting relaunches itself through on Windows -
+# mirrors the convention in src/runHosting/relaunchViaDedicatedNode.ts.
 function Get-DedicatedNodePath {
-    Join-Path $env:USERPROFILE ".susentorno-host\run-proxy-node.exe"
+    Join-Path $env:USERPROFILE ".susentorno-host\node-copy-with-custom-firewall-rules.exe"
 }
 
 # Checks one expected filter/state tuple against one resolved rule object.
@@ -346,7 +346,7 @@ if (-not $netIf) {
 
 Write-Section 'Stale prompt-generated rules'
 
-# Scoped to the dedicated run-proxy-node.exe copy only (the binary
+# Scoped to the dedicated node-copy-with-custom-firewall-rules.exe copy only (the binary
 # host-allow-vm-inbound.ps1 provisions program-scoped rules for) -- NOT "any
 # node.exe". Other node.exe binaries (e.g. the one running pnpm test) can
 # legitimately pick up their own prompt-generated rules unrelated to this
@@ -358,10 +358,10 @@ $staleNodeRules = @(Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Ob
     $_.Name -like "*Query User*" -and $_.Name.EndsWith($dedicatedNodePath, [StringComparison]::OrdinalIgnoreCase)
 })
 if ($staleNodeRules.Count -eq 0) {
-    Add-Pass 'no stale Query User rule for the dedicated run-proxy node.exe'
+    Add-Pass 'no stale Query User rule for the dedicated node-copy-with-custom-firewall-rules.exe'
 } else {
     foreach ($rule in $staleNodeRules) {
-        Add-Fail 'no stale Query User rule for the dedicated run-proxy node.exe' "$($rule.Action) rule '$($rule.Name)' -- rerun host-allow-vm-inbound.ps1, or investigate why Windows re-prompted"
+        Add-Fail 'no stale Query User rule for the dedicated node-copy-with-custom-firewall-rules.exe' "$($rule.Action) rule '$($rule.Name)' -- rerun host-allow-vm-inbound.ps1, or investigate why Windows re-prompted"
     }
 }
 

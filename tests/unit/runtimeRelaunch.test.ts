@@ -12,13 +12,14 @@ describe('dedicated-node runtime relaunch', () => {
   describe('dedicated node path resolution', () => {
     it('joins the given homedir with the fixed .susentorno-host convention', () => {
       expect(getDedicatedNodePath('C:\\Users\\alice')).toBe(
-        'C:\\Users\\alice\\.susentorno-host\\run-proxy-node.exe',
+        'C:\\Users\\alice\\.susentorno-host\\node-copy-with-custom-firewall-rules.exe',
       );
     });
   });
 
   describe('dedicated node copy freshness', () => {
-    const DEDICATED = 'C:\\Users\\alice\\.susentorno-host\\run-proxy-node.exe';
+    const DEDICATED =
+      'C:\\Users\\alice\\.susentorno-host\\node-copy-with-custom-firewall-rules.exe';
     const SOURCE = 'C:\\node\\node.exe';
 
     function makeDeps(overrides: Partial<EnsureCopyDeps> = {}): EnsureCopyDeps {
@@ -87,7 +88,8 @@ describe('dedicated-node runtime relaunch', () => {
   });
 
   describe('relaunch decision', () => {
-    const DEDICATED = 'C:\\Users\\alice\\.susentorno-host\\run-proxy-node.exe';
+    const DEDICATED =
+      'C:\\Users\\alice\\.susentorno-host\\node-copy-with-custom-firewall-rules.exe';
     const SOURCE = 'C:\\node\\node.exe';
 
     function makeDeps(overrides: Partial<RelaunchDeps> = {}): RelaunchDeps {
@@ -95,7 +97,7 @@ describe('dedicated-node runtime relaunch', () => {
         platform: 'win32',
         forward: true,
         execPath: SOURCE,
-        argv: [SOURCE, 'C:\\cli\\cli.js', 'run-proxy'],
+        argv: [SOURCE, 'C:\\cli\\cli.js', 'run-hosting'],
         cwd: 'C:\\project',
         env: { FOO: 'bar' },
         homedir: 'C:\\Users\\alice',
@@ -127,7 +129,7 @@ describe('dedicated-node runtime relaunch', () => {
 
     it('does nothing when already running the dedicated copy (case-insensitive)', async () => {
       const deps = makeDeps({
-        execPath: 'C:\\USERS\\ALICE\\.susentorno-HOST\\RUN-PROXY-NODE.EXE',
+        execPath: 'C:\\USERS\\ALICE\\.susentorno-HOST\\NODE-COPY-WITH-CUSTOM-FIREWALL-RULES.EXE',
       });
       const result = await relaunchIfNeeded(deps);
       expect(result).toEqual({ relaunched: false });
@@ -143,7 +145,7 @@ describe('dedicated-node runtime relaunch', () => {
 
       expect(deps.copyFile).toHaveBeenCalledWith(SOURCE, DEDICATED);
       expect(deps.onSigint).toHaveBeenCalledTimes(1);
-      expect(deps.spawn).toHaveBeenCalledWith(DEDICATED, ['C:\\cli\\cli.js', 'run-proxy'], {
+      expect(deps.spawn).toHaveBeenCalledWith(DEDICATED, ['C:\\cli\\cli.js', 'run-hosting'], {
         cwd: 'C:\\project',
         env: { FOO: 'bar' },
       });
