@@ -942,13 +942,25 @@ describe('resolveMcpAllowlistCollisions — block-list', () => {
     ]);
   });
 
-  it('leaves a wildcard block-list entry in place even if it would match an MCP hostname', () => {
+  it('leaves a wildcard block-list entry in place but still warns when it matches an MCP hostname', () => {
     const allowlist: Allowlist = { ...baseAllowlist, blocked: ['*.internal'] };
     const servers = [{ name: 'fs', hostname: 'filesystem.internal', command: 'x' }];
 
     const resolved = resolveMcpAllowlistCollisions(allowlist, servers);
 
     expect(resolved.blocked).toEqual(['*.internal']);
+    expect(resolved.warnings).toEqual([
+      "collision: 'filesystem.internal' listed in block-list.txt and mcp-servers.yaml; MCP servers are not subject to block-list pruning, so it stays reachable",
+    ]);
+  });
+
+  it('does not warn when a wildcard block-list entry does not match any MCP hostname', () => {
+    const allowlist: Allowlist = { ...baseAllowlist, blocked: ['*.other'] };
+    const servers = [{ name: 'fs', hostname: 'filesystem.internal', command: 'x' }];
+
+    const resolved = resolveMcpAllowlistCollisions(allowlist, servers);
+
+    expect(resolved.blocked).toEqual(['*.other']);
     expect(resolved.warnings).toEqual([]);
   });
 
@@ -1001,12 +1013,17 @@ export function resolveMcpAllowlistCollisions(
 
     // Block-list is never allowed to remove a declared MCP server's own chain: an
     // exact block-list entry equal to this hostname would otherwise produce two
-    // :443 filter chains matching the same SNI. A wildcard block pattern needs no
-    // such guard — Envoy always prefers the more specific exact MCP chain over a
-    // wildcard block chain for the same SNI.
+    // :443 filter chains matching the same SNI, so it's the one case removed here.
+    // A wildcard block pattern needs no removal — Envoy always prefers the more
+    // specific exact MCP chain over a wildcard block chain for the same SNI — but
+    // the mismatch is still surfaced as a warning either way, since a maintainer
+    // reading block-list.txt would otherwise have no way to know it doesn't apply.
     const blockedIdx = resolved.blocked.indexOf(server.hostname);
-    if (blockedIdx === -1) continue;
-    resolved.blocked.splice(blockedIdx, 1);
+    const matchingWildcard = resolved.blocked.some(
+      (pattern) => pattern.startsWith('*.') && server.hostname.endsWith(pattern.slice(1)),
+    );
+    if (blockedIdx === -1 && !matchingWildcard) continue;
+    if (blockedIdx !== -1) resolved.blocked.splice(blockedIdx, 1);
     resolved.warnings.push(
       `collision: '${server.hostname}' listed in block-list.txt and mcp-servers.yaml; ` +
         'MCP servers are not subject to block-list pruning, so it stays reachable',
@@ -1020,7 +1037,7 @@ export function resolveMcpAllowlistCollisions(
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run tests/unit/mcpServers.test.ts`
-Expected: PASS (all tests, including the 3 new ones and the pre-existing ones now that `baseAllowlist` has `blocked: []`).
+Expected: PASS (all tests, including the 4 new ones and the pre-existing ones now that `baseAllowlist` has `blocked: []`).
 
 - [ ] **Step 5: Commit**
 
@@ -1734,13 +1751,17 @@ git commit -m "feat(policy): split current-allow-list.txt into allow/auth/block 
 
 - Modify: `src/initEnv.ts`
 - Modify: `src/commands/init.ts`
+- Modify: `templates/susentorno.gitignore`
 - Modify: `tests/unit/initEnv.test.ts`
+- Modify: `tests/unit/gitignore.test.ts`
 - Modify: `tests/cli/init.test.ts`
 
 **Interfaces:**
 
 - Consumes: `packagedAllowList`, `packagedAuthList`, `packagedBlockList` from Task 6; `EnvPaths.allowList/authList/blockList` from Task 5.
 - Produces: `InitOptions.allowListSource/authListSource/blockListSource: string` — replacing `InitOptions.allowlistSource`.
+
+**Note:** `templates/susentorno.gitignore` currently re-includes only `!/proxy/allowlist.txt` (everything else under `.susentorno/` is ignored by default). Without updating it, the three new files this task starts writing into `.susentorno/proxy/` would silently stay untracked in every real environment. This is caught here rather than left as a Task 16 surprise.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1816,12 +1837,30 @@ with:
       expect(existsSync(join(dir, '.susentorno', 'proxy', 'block-list.txt'))).toBe(true);
 ```
 
-- [ ] **Step 2: Run the unit test to verify it fails**
+In `tests/unit/gitignore.test.ts`, replace:
 
-Run: `npx vitest run tests/unit/initEnv.test.ts`
-Expected: FAIL — `initEnvironment` doesn't accept `allowListSource`/`authListSource`/`blockListSource` yet and doesn't write the three files.
+```ts
+        '!/proxy/',
+        '!/proxy/allowlist.txt',
+      ]) {
+```
 
-- [ ] **Step 3: Update `src/initEnv.ts` and `src/commands/init.ts`**
+with:
+
+```ts
+        '!/proxy/',
+        '!/proxy/allow-list.txt',
+        '!/proxy/auth-list.txt',
+        '!/proxy/block-list.txt',
+      ]) {
+```
+
+- [ ] **Step 2: Run the unit tests to verify they fail**
+
+Run: `npx vitest run tests/unit/initEnv.test.ts tests/unit/gitignore.test.ts`
+Expected: FAIL — `initEnvironment` doesn't accept `allowListSource`/`authListSource`/`blockListSource` yet and doesn't write the three files; `templates/susentorno.gitignore` doesn't re-include the two new file names yet.
+
+- [ ] **Step 3: Update `src/initEnv.ts`, `src/commands/init.ts`, and `templates/susentorno.gitignore`**
 
 In `src/initEnv.ts`, replace:
 
@@ -1905,9 +1944,27 @@ with:
         });
 ```
 
-- [ ] **Step 4: Run the unit test to verify it passes**
+In `templates/susentorno.gitignore`, replace:
 
-Run: `npx vitest run tests/unit/initEnv.test.ts`
+```
+!/proxy/
+!/proxy/allowlist.txt
+!/mcp-servers.yaml
+```
+
+with:
+
+```
+!/proxy/
+!/proxy/allow-list.txt
+!/proxy/auth-list.txt
+!/proxy/block-list.txt
+!/mcp-servers.yaml
+```
+
+- [ ] **Step 4: Run the unit tests to verify they pass**
+
+Run: `npx vitest run tests/unit/initEnv.test.ts tests/unit/gitignore.test.ts`
 Expected: PASS
 
 (`tests/cli/init.test.ts` runs against the built CLI — verified in Task 16.)
@@ -1915,7 +1972,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/initEnv.ts src/commands/init.ts tests/unit/initEnv.test.ts tests/cli/init.test.ts
+git add src/initEnv.ts src/commands/init.ts templates/susentorno.gitignore tests/unit/initEnv.test.ts tests/unit/gitignore.test.ts tests/cli/init.test.ts
 git commit -m "feat(policy): init scaffolds allow-list.txt, auth-list.txt, block-list.txt"
 ```
 
@@ -4667,6 +4724,22 @@ with:
         }
 ```
 
+Still in `start()`, replace the startup status line:
+
+```ts
+      deps.log(
+        `run-hosting: watching credentials and allowlist; proxy is serving the current token (${activeColor})`,
+      );
+```
+
+with:
+
+```ts
+      deps.log(
+        `run-hosting: watching credentials, allow list, auth list, and block list; proxy is serving the current token (${activeColor})`,
+      );
+```
+
 Finally, replace the last line of `start()`:
 
 ```ts
@@ -4763,6 +4836,31 @@ interface RunHostingOptions {
   injectFault?: InjectFault;
   skipAllowList?: boolean;
 }
+```
+
+Update the command's user-facing description — replace:
+
+```ts
+    .description(
+      'Own the Envoy proxy end to end: build envoy.yaml from the allowlist, write the SDS ' +
+        'secret, recreate the container, then watch allowlist.txt and credentials.json — ' +
+        'rebuilding the config, reissuing the leaf certificate, and restarting the proxy as ' +
+        "they change — while streaming the proxy's tagged access log (each host+handling " +
+        'once). Foreground process; Ctrl-C to stop (leaves the container running).',
+    )
+```
+
+with:
+
+```ts
+    .description(
+      'Own the Envoy proxy end to end: build envoy.yaml from the allow list, auth list, and ' +
+        'block list, write the SDS secret, recreate the container, then watch allow-list.txt, ' +
+        'auth-list.txt, block-list.txt, and credentials.json — rebuilding the config, reissuing ' +
+        "the leaf certificate, and restarting the proxy as they change — while streaming the proxy's " +
+        'tagged access log (each host+handling once). Foreground process; Ctrl-C to stop (leaves ' +
+        'the container running).',
+    )
 ```
 
 Add the CLI option — replace:
@@ -5002,6 +5100,9 @@ This is the real-Envoy integration layer. It requires Docker; run it only where 
 - Modify: `tests/proxy-stack/stackLifecycle.test.ts`
 - Modify: `tests/proxy-stack/stackRobustness.test.ts`
 - Modify: `tests/proxy-stack/allowlistEnforcement.test.ts`
+- Modify: `tests/proxy-stack/githubInjection.test.ts`
+- Modify: `tests/proxy-stack/codexInjection.test.ts`
+- Modify: `tests/proxy-stack/mcpServer.test.ts`
 - Create: `tests/proxy-stack/skipAllowList.test.ts`
 
 **Interfaces:**
@@ -5341,6 +5442,110 @@ with:
   copyFileSync(allowListFixture, join(proxyDir, 'allow-list.txt'));
   copyFileSync(authListFixture, join(proxyDir, 'auth-list.txt'));
   copyFileSync(blockListFixture, join(proxyDir, 'block-list.txt'));
+```
+
+This same file has a **third**, unrelated write directly to `allowlist.txt` inside its own test body (not the shared setup) — a collision-resolution regression test that writes its own bespoke pragma content rather than using the fixture. Replace:
+
+```ts
+    writeFileSync(
+      join(proxyDir, 'allowlist.txt'),
+      [
+        '#pragma passthrough',
+        'shared.example.com:443',
+        '',
+        '#pragma claude authenticated',
+        'api.anthropic.com:443',
+        'shared.example.com:443',
+        '',
+      ].join('\n'),
+    );
+```
+
+with:
+
+```ts
+    writeFileSync(join(proxyDir, 'allow-list.txt'), 'shared.example.com:443\n');
+    writeFileSync(
+      join(proxyDir, 'auth-list.txt'),
+      [
+        '#pragma claude authenticated',
+        'api.anthropic.com:443',
+        'shared.example.com:443',
+        '',
+      ].join('\n'),
+    );
+```
+
+(This is the collision-resolution regression test — `shared.example.com:443` now lives in both `allow-list.txt` and `auth-list.txt`'s `claudeAuthenticated` section, still producing the same `collision: 'shared.example.com:443' listed in passthrough and claudeAuthenticated; using claudeAuthenticated` warning the test waits for.)
+
+Three other `tests/proxy-stack/*.test.ts` files stage their own bespoke `allowlist.txt` directly (not through the shared fixture) and need the same kind of split. In `tests/proxy-stack/githubInjection.test.ts`, replace:
+
+```ts
+  // Stage an allowlist with both github hosts under the new pragma so generate-ca
+  // puts them in the leaf SANs and run-hosting builds the two injection chains.
+  writeFileSync(
+    join(proxyDir, 'allowlist.txt'),
+    ['#pragma github authenticated', 'github.com:443', 'api.github.com:443', ''].join('\n'),
+  );
+```
+
+with:
+
+```ts
+  // Stage an allow list/auth list with both github hosts under the new pragma so
+  // generate-ca puts them in the leaf SANs and run-hosting builds the two
+  // injection chains.
+  writeFileSync(join(proxyDir, 'allow-list.txt'), '');
+  writeFileSync(
+    join(proxyDir, 'auth-list.txt'),
+    ['#pragma github authenticated', 'github.com:443', 'api.github.com:443', ''].join('\n'),
+  );
+```
+
+In `tests/proxy-stack/codexInjection.test.ts`, replace:
+
+```ts
+  writeFileSync(
+    join(proxyDir, 'allowlist.txt'),
+    [
+      '#pragma claude authenticated',
+      'api.anthropic.com:443',
+      '',
+      '#pragma codex authenticated',
+      'chatgpt.com:443',
+      '',
+    ].join('\n'),
+  );
+```
+
+with:
+
+```ts
+  writeFileSync(join(proxyDir, 'allow-list.txt'), '');
+  writeFileSync(
+    join(proxyDir, 'auth-list.txt'),
+    [
+      '#pragma claude authenticated',
+      'api.anthropic.com:443',
+      '',
+      '#pragma codex authenticated',
+      'chatgpt.com:443',
+      '',
+    ].join('\n'),
+  );
+```
+
+In `tests/proxy-stack/mcpServer.test.ts`, replace:
+
+```ts
+  writeFileSync(join(proxyDir, 'allowlist.txt'), '');
+```
+
+with:
+
+```ts
+  writeFileSync(join(proxyDir, 'allow-list.txt'), '');
+  writeFileSync(join(proxyDir, 'auth-list.txt'), '');
 ```
 
 - [ ] **Step 4: Add block-list assertions to `tests/proxy-stack/allowlistEnforcement.test.ts`**
