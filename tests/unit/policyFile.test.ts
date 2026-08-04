@@ -23,6 +23,7 @@ describe('policy import (network/allow → allowlist)', () => {
         githubAuthenticated: [],
         codexAuthenticated: [],
         authCandidate: [],
+        blocked: [],
         warnings: [],
       });
     });
@@ -42,6 +43,7 @@ describe('policy import (network/allow → allowlist)', () => {
         githubAuthenticated: [],
         codexAuthenticated: [],
         authCandidate: [],
+        blocked: [],
         warnings: ["unsupported wildcard syntax, excluded: 'foo*.bar.com:443'"],
       });
     });
@@ -60,6 +62,7 @@ describe('policy import (network/allow → allowlist)', () => {
         githubAuthenticated: [],
         codexAuthenticated: [],
         authCandidate: [],
+        blocked: [],
         warnings: [],
       });
     });

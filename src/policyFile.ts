@@ -59,6 +59,7 @@ export function parsePolicyFile(content: string): Allowlist {
     githubAuthenticated: [],
     codexAuthenticated: [],
     authCandidate: [],
+    blocked: [],
     warnings: [...warnings].sort(),
   };
 }
