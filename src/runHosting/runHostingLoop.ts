@@ -1,4 +1,5 @@
-import { parseAllowlist, terminateTlsHosts, type Allowlist } from '../allowlist';
+import { combinePolicy, parseAllowListFile, parseAuthListFile, terminateTlsHosts, type Allowlist } from '../allowlist';
+import { parseBlockListFile } from '../blockList';
 import { parseLine } from './parseLine';
 import { classify } from './classify';
 import { formatOutput } from './formatOutput';
@@ -15,7 +16,7 @@ import { startMcpServers, type McpServerSpec, type McpSupervisorHandle } from '.
 export interface RunHostingConfig {
   /** One entry per credential source (Claude, Codex). Each drives its own file watch, secret, and nudge timer. */
   channels: CredentialChannelConfig[];
-  allowlistPath: string;
+  policyPaths: { allowList: string; authList: string; blockList: string };
   /** How long to wait for a freshly-started color's admin /ready before giving up. */
   readyTimeoutMs: number;
   /** How long to let the old color's connections finish before force-closing them. */
@@ -28,7 +29,7 @@ export interface RunHostingConfig {
 
 export interface RunHostingDeps {
   /** Raw allowlist file content, or null when unreadable. */
-  readAllowlist: (path: string) => string | null;
+  readPolicyFile: (path: string) => string | null;
   /** Render and write envoy.yaml (upstream overrides are baked in by the caller). */
   buildConfig: (allowlist: Allowlist, mcpServers: McpServerUpstream[]) => void;
   /** Ensure the leaf covers `sans` (reissue if needed); returns a status line. */
@@ -85,7 +86,7 @@ export function runHostingLoop(config: RunHostingConfig, deps: RunHostingDeps): 
   return new Promise<number>((resolve) => {
     let settled = false;
     let restarting = false;
-    let pendingAllowlist = false;
+    let pendingPolicy = false;
     const dirtyChannels = new Set<CredentialChannel>();
     let stopSignalSeen = false;
     let activeColor: Color = 'blue';
@@ -170,30 +171,37 @@ export function runHostingLoop(config: RunHostingConfig, deps: RunHostingDeps): 
     };
 
     /** Read+parse the allowlist; null only when the file is unreadable (keep previous config). */
-    const readParsedAllowlist = (): Allowlist | null => {
-      const content = deps.readAllowlist(config.allowlistPath);
-      if (content === null) {
-        deps.error(
-          `run-hosting: could not read allowlist at ${config.allowlistPath}, keeping previous config`,
-        );
+    const readParsedPolicy = (): Allowlist | null => {
+      const contents = [
+        deps.readPolicyFile(config.policyPaths.allowList),
+        deps.readPolicyFile(config.policyPaths.authList),
+        deps.readPolicyFile(config.policyPaths.blockList),
+      ];
+      const paths = [config.policyPaths.allowList, config.policyPaths.authList, config.policyPaths.blockList];
+      const missing = contents.findIndex((content) => content === null);
+      if (missing !== -1) {
+        deps.error(`run-hosting: could not read policy at ${paths[missing]}, keeping previous config`);
         return null;
       }
-      const allowlist = resolveMcpAllowlistCollisions(parseAllowlist(content), mcpServerConfigs);
+      const allowlist = resolveMcpAllowlistCollisions(
+        combinePolicy(parseAllowListFile(contents[0]!), parseAuthListFile(contents[1]!), parseBlockListFile(contents[2]!)),
+        mcpServerConfigs,
+      );
       for (const warning of allowlist.warnings) deps.error(`run-hosting: ${warning}`);
       return allowlist;
     };
 
     /** Reissue the leaf if the TLS-terminated hosts changed and rewrite envoy.yaml. */
-    const applyAllowlist = (allowlist: Allowlist): void => {
+    const applyPolicy = (allowlist: Allowlist): void => {
       deps.log(
         `run-hosting: ${deps.ensureLeaf([...terminateTlsHosts(allowlist), ...mcpHostnames])}`,
       );
       deps.buildConfig(allowlist, mcpServersWithPorts);
     };
 
-    const requestRestart = (source: CredentialChannel | 'allowlist'): void => {
+    const requestRestart = (source: CredentialChannel | 'policy'): void => {
       if (settled) return;
-      if (source === 'allowlist') pendingAllowlist = true;
+      if (source === 'policy') pendingPolicy = true;
       else dirtyChannels.add(source);
       if (!restarting) void drainRestarts();
     };
@@ -206,28 +214,28 @@ export function runHostingLoop(config: RunHostingConfig, deps: RunHostingDeps): 
     const drainRestarts = async (): Promise<void> => {
       restarting = true;
       try {
-        while (!settled && (dirtyChannels.size > 0 || pendingAllowlist)) {
-          const allowlistDirty = pendingAllowlist;
+        while (!settled && (dirtyChannels.size > 0 || pendingPolicy)) {
+          const policyDirty = pendingPolicy;
           const channelsThisPass = [...dirtyChannels];
-          pendingAllowlist = false;
+          pendingPolicy = false;
           dirtyChannels.clear();
 
           let restartNeeded = false;
           let clearUnique = false;
           const reasons: string[] = [];
 
-          if (allowlistDirty) {
-            const allowlist = readParsedAllowlist();
+          if (policyDirty) {
+            const allowlist = readParsedPolicy();
             if (allowlist !== null) {
               try {
-                applyAllowlist(allowlist);
+                applyPolicy(allowlist);
               } catch (err) {
                 fatal(`failed to rebuild the proxy config: ${String(err)}`);
                 return;
               }
               restartNeeded = true;
               clearUnique = true; // wholesale reset, per design
-              reasons.push('allowlist changed');
+              reasons.push('policy changed');
             }
           }
 
@@ -342,12 +350,21 @@ export function runHostingLoop(config: RunHostingConfig, deps: RunHostingDeps): 
         env: s.env,
       }));
 
-      const content = deps.readAllowlist(config.allowlistPath);
-      if (content === null) {
-        fatal(`could not read allowlist at ${config.allowlistPath}`);
+      const contents = [
+        deps.readPolicyFile(config.policyPaths.allowList),
+        deps.readPolicyFile(config.policyPaths.authList),
+        deps.readPolicyFile(config.policyPaths.blockList),
+      ];
+      const paths = [config.policyPaths.allowList, config.policyPaths.authList, config.policyPaths.blockList];
+      const missing = contents.findIndex((content) => content === null);
+      if (missing !== -1) {
+        fatal(`could not read policy at ${paths[missing]}`);
         return;
       }
-      const allowlist = resolveMcpAllowlistCollisions(parseAllowlist(content), mcpServerConfigs);
+      const allowlist = resolveMcpAllowlistCollisions(
+        combinePolicy(parseAllowListFile(contents[0]!), parseAuthListFile(contents[1]!), parseBlockListFile(contents[2]!)),
+        mcpServerConfigs,
+      );
       for (const warning of allowlist.warnings) deps.error(`run-hosting: ${warning}`);
 
       // Arm all watchers before the (slow) startup recreate: a change landing
@@ -355,14 +372,14 @@ export function runHostingLoop(config: RunHostingConfig, deps: RunHostingDeps): 
       for (const channel of channels) {
         watchers.push(deps.watch(channel.credentialsPath, () => requestRestart(channel)));
       }
-      watchers.push(deps.watch(config.allowlistPath, () => requestRestart('allowlist')));
+      for (const path of paths) watchers.push(deps.watch(path, () => requestRestart('policy')));
       deps.onSigint(() => onStopSignal('SIGINT'));
       deps.onSigterm(() => onStopSignal('SIGTERM'));
 
       restarting = true; // hold watcher events as pending until the startup bring-up is done
       try {
         try {
-          applyAllowlist(allowlist);
+          applyPolicy(allowlist);
         } catch (err) {
           fatal(`failed to build the proxy config: ${String(err)}`);
           return;
@@ -423,11 +440,11 @@ export function runHostingLoop(config: RunHostingConfig, deps: RunHostingDeps): 
 
       for (const channel of channels) channel.armTimer();
       deps.log(
-        `run-hosting: watching credentials and allowlist; proxy is serving the current token (${activeColor})`,
+        `run-hosting: watching credentials and policy files; proxy is serving the current token (${activeColor})`,
       );
 
       // Apply anything that landed during the startup recreate.
-      if (dirtyChannels.size > 0 || pendingAllowlist) void drainRestarts();
+      if (dirtyChannels.size > 0 || pendingPolicy) void drainRestarts();
     };
 
     void start();

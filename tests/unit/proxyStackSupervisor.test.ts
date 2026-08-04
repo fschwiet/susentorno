@@ -9,26 +9,13 @@ import type { Credentials, ColorPorts, Color } from '../../src/runHosting/types'
 
 const MIN = 60_000;
 
-const VALID_ALLOWLIST = [
-  '#pragma passthrough',
-  'pypi.org:443',
-  '',
-  '#pragma claude authenticated',
-  'api.anthropic.com:443',
-  '',
-].join('\n');
+const VALID_ALLOWLIST = 'pypi.org:443\n';
+const VALID_AUTHLIST = '#pragma claude authenticated\napi.anthropic.com:443\n';
 
 const INVALID_ALLOWLIST = ['#pragma claude authenticated', '*.bad.example.com:443', ''].join('\n');
 
-const COLLISION_ALLOWLIST = [
-  '#pragma passthrough',
-  'shared.example.com:443',
-  '',
-  '#pragma claude authenticated',
-  'api.anthropic.com:443',
-  'shared.example.com:443',
-  '',
-].join('\n');
+const COLLISION_ALLOWLIST = 'shared.example.com:443\n';
+const COLLISION_AUTHLIST = '#pragma claude authenticated\napi.anthropic.com:443\nshared.example.com:443\n';
 
 const PASS_LINE = 'envoy-1  | CFGM|pass|2026-07-10T12:00:00|pypi.org|-|-|-|-|-|-';
 const CRED_LINE =
@@ -60,7 +47,7 @@ function claudeChannelConfig(
 function baseConfig(channels: CredentialChannelConfig[]): RunHostingConfig {
   return {
     channels,
-    allowlistPath: '/fake/allowlist.txt',
+    policyPaths: { allowList: '/fake/allow-list.txt', authList: '/fake/auth-list.txt', blockList: '/fake/block-list.txt' },
     readyTimeoutMs: 30_000,
     drainTimeoutMs: 30_000,
   };
@@ -148,7 +135,16 @@ function makeHarness(
   };
   const channelConfig = claudeChannelConfig(creds, mocks);
   const deps: RunHostingDeps = {
-    readAllowlist: () => allowlist.value,
+    readPolicyFile: (path) => {
+      if (path.endsWith('allow-list.txt')) return allowlist.value;
+      if (path.endsWith('auth-list.txt')) {
+        if (allowlist.value === INVALID_ALLOWLIST) return INVALID_ALLOWLIST;
+        if (allowlist.value === COLLISION_ALLOWLIST) return COLLISION_AUTHLIST;
+        return VALID_AUTHLIST;
+      }
+      if (path.endsWith('block-list.txt')) return '';
+      return null;
+    },
     buildConfig: mocks.buildConfig,
     ensureLeaf: mocks.ensureLeaf,
     allocatePorts: mocks.allocatePorts,
@@ -158,7 +154,7 @@ function makeHarness(
     drainBackend: mocks.drainBackend,
     stopColor: mocks.stopColor,
     watch: (path, onEvent) => {
-      if (path.endsWith('allowlist.txt')) allowlistCb = onEvent;
+      if (path.endsWith('allow-list.txt') || path.endsWith('auth-list.txt') || path.endsWith('block-list.txt')) allowlistCb = onEvent;
       else credentialCbs.set(path, onEvent);
       return { close: watchClose };
     },
@@ -273,7 +269,7 @@ describe('proxy stack supervision', () => {
 
       await expect(exit).resolves.toBe(1);
       expect(h.mocks.error).toHaveBeenCalledWith(
-        expect.stringContaining('could not read allowlist'),
+        expect.stringContaining('could not read policy'),
       );
     });
 
@@ -343,8 +339,8 @@ describe('proxy stack supervision', () => {
       h.feedLogLine(CRED_LINE);
 
       expect(h.mocks.log.mock.calls.map((c) => c[0])).toEqual([
-        '12:00:00  ALLOW PASS  pypi.org',
-        '12:00:01  ALLOW CRED  api.anthropic.com',
+        '12:00:00  ALLOW PASS  pypi.org:443',
+        '12:00:01  ALLOW CRED  api.anthropic.com:443',
       ]);
     });
   });
@@ -367,7 +363,7 @@ describe('proxy stack supervision', () => {
       expect(h.mocks.ensureLeaf).toHaveBeenCalledWith(['api.anthropic.com']);
       expect(h.mocks.buildConfig).toHaveBeenCalledTimes(1);
       expect(h.mocks.buildConfig.mock.calls[0][0].passthrough).toContain('example.org:443');
-      expect(h.mocks.log).toHaveBeenCalledWith('run-hosting: restarting proxy — allowlist changed');
+      expect(h.mocks.log).toHaveBeenCalledWith('run-hosting: restarting proxy — policy changed');
       expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1);
       expect(h.mocks.bringUpColor.mock.calls[0][0]).toBe('green');
       expect(h.mocks.stopLogStream).toHaveBeenCalledTimes(1);
@@ -380,7 +376,7 @@ describe('proxy stack supervision', () => {
       // Unique tracking was cleared: the same host+handling prints again.
       h.mocks.log.mockClear();
       h.feedLogLine(PASS_LINE);
-      expect(h.mocks.log).toHaveBeenCalledWith('12:00:00  ALLOW PASS  pypi.org');
+      expect(h.mocks.log).toHaveBeenCalledWith('12:00:00  ALLOW PASS  pypi.org:443');
     });
 
     it('applies the resolved config on a flawed edit and warns instead of keeping previous', async () => {
@@ -431,7 +427,7 @@ describe('proxy stack supervision', () => {
       h.feedLogLine(PASS_LINE);
       expect(h.mocks.log).not.toHaveBeenCalled();
       h.feedLogLine(CRED_LINE); // a new key still prints (stream is live)
-      expect(h.mocks.log).toHaveBeenCalledWith('12:00:01  ALLOW CRED  api.anthropic.com');
+      expect(h.mocks.log).toHaveBeenCalledWith('12:00:01  ALLOW CRED  api.anthropic.com:443');
     });
 
     it('alternates the active color across successive swaps', async () => {
@@ -598,7 +594,7 @@ describe('proxy stack supervision', () => {
       // The follow-up included the allowlist change, so unique was cleared.
       h.mocks.log.mockClear();
       h.feedLogLine(PASS_LINE);
-      expect(h.mocks.log).toHaveBeenCalledWith('12:00:00  ALLOW PASS  pypi.org');
+      expect(h.mocks.log).toHaveBeenCalledWith('12:00:00  ALLOW PASS  pypi.org:443');
     });
   });
 
@@ -658,7 +654,7 @@ describe('proxy stack supervision', () => {
       await expect(exit).resolves.toBe(0);
       const sigintLogs = h.mocks.log.mock.calls.filter((c) => String(c[0]).includes('SIGINT'));
       expect(sigintLogs).toHaveLength(1);
-      expect(h.mocks.watchClose).toHaveBeenCalledTimes(2);
+      expect(h.mocks.watchClose).toHaveBeenCalledTimes(4);
       expect(h.mocks.stopLogStream).toHaveBeenCalled();
       expect(h.mocks.bringUpColor).not.toHaveBeenCalled();
     });
@@ -677,7 +673,7 @@ describe('proxy stack supervision', () => {
       await expect(exit).resolves.toBe(0);
       const sigtermLogs = h.mocks.log.mock.calls.filter((c) => String(c[0]).includes('SIGTERM'));
       expect(sigtermLogs).toHaveLength(1);
-      expect(h.mocks.watchClose).toHaveBeenCalledTimes(2);
+      expect(h.mocks.watchClose).toHaveBeenCalledTimes(4);
       expect(h.mocks.stopLogStream).toHaveBeenCalled();
       expect(h.mocks.bringUpColor).not.toHaveBeenCalled();
     });
@@ -809,7 +805,7 @@ describe('proxy stack supervision', () => {
       await expect(exit).resolves.toBe(1);
       expect(h.mocks.error).toHaveBeenCalledWith(expect.stringContaining('codex boom'));
       // Both credentials watchers + the allowlist watcher were closed (3 total).
-      expect(h.mocks.watchClose).toHaveBeenCalledTimes(3);
+      expect(h.mocks.watchClose).toHaveBeenCalledTimes(5);
     });
   });
 
