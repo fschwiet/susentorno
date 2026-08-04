@@ -11,6 +11,7 @@ powercfg /change monitor-timeout-dc 0
 code --install-extension esbenp.prettier-vscode
 code --install-extension csharpier.csharpier-vscode
 code --install-extension JakubKozera.csharp-dev-tools
+code --install-extension 1YiB.svelte-bundle
 
 # VS Code settings are applied later by 07-apply-home-jq-transforms.ps1 from
 # home-jq-transforms/, so users can customize them.

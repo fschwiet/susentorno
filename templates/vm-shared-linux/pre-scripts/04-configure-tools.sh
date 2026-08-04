@@ -14,6 +14,7 @@ gsettings set org.gnome.desktop.session idle-delay 0
 code --install-extension esbenp.prettier-vscode
 code --install-extension csharpier.csharpier-vscode
 code --install-extension JakubKozera.csharp-dev-tools
+code --install-extension 1YiB.svelte-bundle
 
 # VS Code settings (files.autoSave, formatter, etc.) are applied later by
 # 07-apply-home-jq-transforms.sh from home-jq-transforms/, so users can customize them.
