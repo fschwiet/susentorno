@@ -18,13 +18,23 @@ susentorno creates development environments in which coding agents run inside is
 
 **Proxy stack**: The host-controlled network boundary through which an isolated guest's permitted external traffic flows. _Avoid_: Envoy, proxy container, forwarder
 
-**Allowlist**: An environment's policy describing which external destinations a guest may reach and how the proxy stack handles each one. _Avoid_: Allow list, network policy, firewall list
+**Network policy**: An environment's combined destination handling, resolved from its allow list, auth list, and block list into the proxy stack's actual configuration. _Avoid_: Allowlist, policy file
 
-**Passthrough destination**: An allowed destination whose encrypted traffic remains end-to-end between the guest and the external service. _Avoid_: Normal host, unprotected destination
+**Allow list**: The file naming plain passthrough destinations a guest may reach, with no credential handling. _Avoid_: Allowlist, passthrough list
 
-**Credential-injected destination**: An allowed destination where the proxy stack may replace a recognized placeholder credential with a host credential. _Avoid_: Authenticated destination, terminated host
+**Auth list**: The file naming destinations the proxy stack TLS-terminates — either to inject a host credential or to observe an authentication candidate. _Avoid_: Authenticated list, credential list
 
-**Authentication candidate**: An allowed destination whose requests remain unmodified while limited authentication-header evidence is reported to help classify it later. _Avoid_: Credential candidate, observed host
+**Block list**: The file naming destinations that are always denied, overriding a matching entry in the allow list or auth list even if one exists. _Avoid_: Blocklist, denylist, blacklist
+
+**Passthrough destination**: An allow list destination whose encrypted traffic remains end-to-end between the guest and the external service. _Avoid_: Normal host, unprotected destination
+
+**Credential-injected destination**: An auth list destination where the proxy stack may replace a recognized placeholder credential with a host credential. _Avoid_: Authenticated destination, terminated host
+
+**Authentication candidate**: An auth list destination whose requests remain unmodified while limited authentication-header evidence is reported to help classify it later. _Avoid_: Credential candidate, observed host
+
+**Open destination**: A destination reached only because `run-hosting --skip-allow-list` turned off allow list enforcement, not because it appears on the allow list, auth list, or block list. _Avoid_: Unlisted destination, skipped destination
+
+**Blocked destination**: A destination denied specifically because it appears on the block list, as distinct from one denied only for not appearing on the allow list. _Avoid_: Denied destination, blacklisted destination
 
 **Internal switch**: The Hyper-V network shared only by the host and isolated guests, with the host acting as the guests' constrained network edge. _Avoid_: Host-only network, VMnet
 
