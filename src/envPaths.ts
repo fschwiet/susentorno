@@ -24,7 +24,9 @@ export interface EnvPaths {
   postScripts: string;
   gitignore: string;
   proxy: string;
-  allowlist: string;
+  allowList: string;
+  authList: string;
+  blockList: string;
   mcpServers: string;
   envoyConfig: string;
   caDir: string;
@@ -68,7 +70,9 @@ export function envPaths(cwd: string): EnvPaths {
     postScripts: join(root, 'post-scripts'),
     gitignore: join(root, '.gitignore'),
     proxy,
-    allowlist: join(proxy, 'allowlist.txt'),
+    allowList: join(proxy, 'allow-list.txt'),
+    authList: join(proxy, 'auth-list.txt'),
+    blockList: join(proxy, 'block-list.txt'),
     mcpServers: join(root, 'mcp-servers.yaml'),
     envoyConfig: join(proxy, 'envoy.yaml'),
     caDir: join(proxy, 'ca'),

@@ -12,7 +12,9 @@ describe('environment paths & layout', () => {
       expect(paths.root).toBe(root);
       expect(paths.vmShared).toBe(join(root, 'vm-shared-linux'));
       expect(paths.proxy).toBe(join(root, 'proxy'));
-      expect(paths.allowlist).toBe(join(root, 'proxy', 'allowlist.txt'));
+      expect(paths.allowList).toBe(join(root, 'proxy', 'allow-list.txt'));
+      expect(paths.authList).toBe(join(root, 'proxy', 'auth-list.txt'));
+      expect(paths.blockList).toBe(join(root, 'proxy', 'block-list.txt'));
       expect(paths.envoyConfig).toBe(join(root, 'proxy', 'envoy.yaml'));
       expect(paths.caDir).toBe(join(root, 'proxy', 'ca'));
       expect(paths.caCert).toBe(join(root, 'proxy', 'ca', 'cert.pem'));
