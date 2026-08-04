@@ -54,6 +54,7 @@ export interface BuildEnvoyConfigOptions {
    */
   fault?: InjectFault;
   mcpServers?: McpServerUpstream[];
+  skipAllowList?: boolean;
 }
 
 function sanitizeName(host: string): string {
@@ -739,8 +740,34 @@ function buildWildcardHttp80VirtualHost(hosts: string[]) {
   return {
     name: 'http_wildcard',
     domains: hosts,
-    routes: [{ match: { prefix: '/' }, route: { cluster: 'dynamic_forward_proxy_cluster_http' } }],
+    routes: [{ name: 'matched', match: { prefix: '/' }, route: { cluster: 'dynamic_forward_proxy_cluster_http' } }],
   };
+}
+
+function buildBlockedHttp80VirtualHost(hosts: string[]) {
+  return {
+    name: 'blocked',
+    domains: hosts,
+    routes: [{ name: 'blocked', match: { prefix: '/' }, direct_response: { status: 403, body: { inline_string: 'susentorno: host blocked' } } }],
+  };
+}
+
+function http80AccessLog(): Record<string, unknown>[] {
+  return [{
+    name: 'envoy.access_loggers.file',
+    typed_config: {
+      '@type': 'type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog',
+      path: '/dev/stdout',
+      log_format: {
+        text_format_source: {
+          inline_string:
+            'CFGM|http|%START_TIME(%Y-%m-%dT%H:%M:%S)%|%REQUESTED_SERVER_NAME%|' +
+            '%REQ(:AUTHORITY)%|%RESPONSE_CODE_DETAILS%|%RESPONSE_CODE%|%RESPONSE_FLAGS%|' +
+            '%DURATION%|%BYTES_SENT%|%ROUTE_NAME%\n',
+        },
+      },
+    },
+  }];
 }
 
 function buildDynamicForwardProxyHttpCluster() {
@@ -782,7 +809,7 @@ function buildHttp80Entry(entry: string) {
   const virtualHost = {
     name: sanitizeName(host),
     domains: [host],
-    routes: [{ match: { prefix: '/' }, route: { cluster: clusterName } }],
+    routes: [{ name: 'matched', match: { prefix: '/' }, route: { cluster: clusterName } }],
   };
 
   const cluster = {
@@ -814,6 +841,7 @@ export function generateEnvoyConfig(
   options: BuildEnvoyConfigOptions = {},
 ): Record<string, unknown> {
   const overrides = options.overrides ?? [];
+  const skipAllowList = options.skipAllowList ?? false;
   const adminPortValue =
     options.fault === 'crash-config' ? 70000 : options.fault === 'never-ready' ? 9902 : 9901;
 
@@ -844,6 +872,9 @@ export function generateEnvoyConfig(
     .filter((e) => e.startsWith('*.'))
     .map((e) => e.split(':')[0]);
   const hasWildcardHttp80 = http80WildcardHosts.length > 0;
+  const blockListHosts = allowlist.blocked;
+  const hasBlockList = blockListHosts.length > 0;
+  const needsHttpDynamicForwardProxy = hasWildcardHttp80 || skipAllowList;
 
   return {
     node: { id: 'susentorno-proxy', cluster: 'susentorno-proxy' },
@@ -870,48 +901,56 @@ export function generateEnvoyConfig(
             ...authCandidateBuilt.map((b) => b.filterChain),
             ...githubBuilt.map((b) => b.filterChain),
             ...mcpBuilt.map((b) => b.filterChain),
-            {
-              filter_chain_match: { server_names: passthroughServerNames },
-              filters: [
-                {
-                  name: 'envoy.filters.network.sni_dynamic_forward_proxy',
-                  typed_config: {
-                    '@type':
-                      'type.googleapis.com/envoy.extensions.filters.network.sni_dynamic_forward_proxy.v3.FilterConfig',
-                    port_value: 443,
-                    dns_cache_config: {
-                      name: 'dynamic_forward_proxy_cache_config',
-                      dns_lookup_family: 'V4_ONLY',
+            ...(passthroughServerNames.length > 0
+              ? [{
+                  filter_chain_match: { server_names: passthroughServerNames },
+                  filters: [
+                    {
+                      name: 'envoy.filters.network.sni_dynamic_forward_proxy',
+                      typed_config: {
+                        '@type': 'type.googleapis.com/envoy.extensions.filters.network.sni_dynamic_forward_proxy.v3.FilterConfig',
+                        port_value: 443,
+                        dns_cache_config: { name: 'dynamic_forward_proxy_cache_config', dns_lookup_family: 'V4_ONLY' },
+                      },
                     },
-                  },
-                },
-                {
-                  name: 'envoy.filters.network.tcp_proxy',
-                  typed_config: {
-                    '@type':
-                      'type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy',
-                    stat_prefix: 'passthrough_443',
-                    cluster: 'dynamic_forward_proxy_cluster',
-                    access_log: accessLog('pass'),
-                  },
-                },
-              ],
-            },
+                    {
+                      name: 'envoy.filters.network.tcp_proxy',
+                      typed_config: {
+                        '@type': 'type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy',
+                        stat_prefix: 'passthrough_443', cluster: 'dynamic_forward_proxy_cluster', access_log: accessLog('pass'),
+                      },
+                    },
+                  ],
+                }]
+              : []),
+            ...(hasBlockList
+              ? [{
+                  filter_chain_match: { server_names: blockListHosts },
+                  filters: [{
+                    name: 'envoy.filters.network.tcp_proxy',
+                    typed_config: {
+                      '@type': 'type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy',
+                      stat_prefix: 'blocklist_443', cluster: 'blackhole', access_log: accessLog('blocklist'),
+                    },
+                  }],
+                }]
+              : []),
           ],
-          default_filter_chain: {
-            filters: [
-              {
-                name: 'envoy.filters.network.tcp_proxy',
-                typed_config: {
-                  '@type':
-                    'type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy',
-                  stat_prefix: 'blocked_443',
-                  cluster: 'blackhole',
-                  access_log: accessLog('deny443'),
-                },
-              },
-            ],
-          },
+          default_filter_chain: skipAllowList
+            ? { filters: [
+                { name: 'envoy.filters.network.sni_dynamic_forward_proxy', typed_config: {
+                  '@type': 'type.googleapis.com/envoy.extensions.filters.network.sni_dynamic_forward_proxy.v3.FilterConfig',
+                  port_value: 443, dns_cache_config: { name: 'dynamic_forward_proxy_cache_config', dns_lookup_family: 'V4_ONLY' },
+                } },
+                { name: 'envoy.filters.network.tcp_proxy', typed_config: {
+                  '@type': 'type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy',
+                  stat_prefix: 'open_443', cluster: 'dynamic_forward_proxy_cluster', access_log: accessLog('passopen'),
+                } },
+              ] }
+            : { filters: [{ name: 'envoy.filters.network.tcp_proxy', typed_config: {
+                '@type': 'type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy',
+                stat_prefix: 'blocked_443', cluster: 'blackhole', access_log: accessLog('deny443'),
+              } }] },
         },
         {
           name: 'listener_80',
@@ -925,7 +964,7 @@ export function generateEnvoyConfig(
                     '@type':
                       'type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager',
                     stat_prefix: 'passthrough_80',
-                    access_log: accessLog('http'),
+                    access_log: http80AccessLog(),
                     route_config: {
                       name: 'local_route_80',
                       virtual_hosts: [
@@ -933,23 +972,18 @@ export function generateEnvoyConfig(
                         ...(hasWildcardHttp80
                           ? [buildWildcardHttp80VirtualHost(http80WildcardHosts)]
                           : []),
+                        ...(hasBlockList ? [buildBlockedHttp80VirtualHost(blockListHosts)] : []),
                         {
                           name: 'default_deny',
                           domains: ['*'],
-                          routes: [
-                            {
-                              match: { prefix: '/' },
-                              direct_response: {
-                                status: 403,
-                                body: { inline_string: 'susentorno: host not allow-listed' },
-                              },
-                            },
-                          ],
+                          routes: skipAllowList
+                            ? [{ name: 'open', match: { prefix: '/' }, route: { cluster: 'dynamic_forward_proxy_cluster_http' } }]
+                            : [{ name: 'default-deny', match: { prefix: '/' }, direct_response: { status: 403, body: { inline_string: 'susentorno: host not allow-listed' } } }],
                         },
                       ],
                     },
                     http_filters: [
-                      ...(hasWildcardHttp80 ? [buildDynamicForwardProxyHttpFilter()] : []),
+                      ...(needsHttpDynamicForwardProxy ? [buildDynamicForwardProxyHttpFilter()] : []),
                       {
                         name: 'envoy.filters.http.router',
                         typed_config: {
@@ -972,7 +1006,7 @@ export function generateEnvoyConfig(
         ...githubBuilt.map((b) => b.cluster),
         ...mcpBuilt.map((b) => b.cluster),
         ...http80ExactBuilt.map((b) => b.cluster),
-        ...(hasWildcardHttp80 ? [buildDynamicForwardProxyHttpCluster()] : []),
+        ...(needsHttpDynamicForwardProxy ? [buildDynamicForwardProxyHttpCluster()] : []),
         {
           name: 'blackhole',
           type: 'STATIC',
