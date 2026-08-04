@@ -52,6 +52,7 @@ interface RunHostingOptions {
   forwardListen?: string;
   upstreamOverride: UpstreamOverride[];
   injectFault?: InjectFault;
+  skipAllowList?: boolean;
 }
 
 function collectOverride(value: string, previous: UpstreamOverride[]): UpstreamOverride[] {
@@ -89,8 +90,8 @@ export function registerRunHosting(program: Command): void {
   program
     .command('run-hosting')
     .description(
-      'Own the Envoy proxy end to end: build envoy.yaml from the allowlist, write the SDS ' +
-        'secret, recreate the container, then watch allowlist.txt and credentials.json — ' +
+      'Own the Envoy proxy end to end: build envoy.yaml from the allow list, auth list, and block list, write the SDS ' +
+        'secret, recreate the container, then watch the policy files and credentials.json — ' +
         'rebuilding the config, reissuing the leaf certificate, and restarting the proxy as ' +
         "they change — while streaming the proxy's tagged access log (each host+handling " +
         'once). Foreground process; Ctrl-C to stop (leaves the container running).',
@@ -132,6 +133,7 @@ export function registerRunHosting(program: Command): void {
       '--inject-fault <crash-config|never-ready>',
       'render a deliberately broken envoy.yaml to exercise proxy robustness (test use only)',
     )
+    .option('--skip-allow-list', 'do not enforce allow-list.txt; block-list.txt is still enforced')
     .action(async (options: RunHostingOptions) => {
       const alert = createRealAbnormalExitAlert();
       installAbnormalExitHandlers(alert);
@@ -165,6 +167,9 @@ export function registerRunHosting(program: Command): void {
           return;
         }
         const secretPath = options.secret ?? paths.sdsSecret;
+        if (options.skipAllowList) {
+          console.log('run-hosting: --skip-allow-list is set — hosts not on allow-list.txt will pass through and be logged as such');
+        }
 
         let mcpServers;
         try {
@@ -254,7 +259,7 @@ export function registerRunHosting(program: Command): void {
         }
 
         const deps: RunHostingDeps = {
-          readAllowlist: (path) => {
+          readPolicyFile: (path) => {
             try {
               return readFileSync(path, 'utf8');
             } catch {
@@ -268,6 +273,7 @@ export function registerRunHosting(program: Command): void {
               options.upstreamOverride,
               options.injectFault,
               mcpServersWithPorts,
+              options.skipAllowList,
             ),
           ensureLeaf: (sans) =>
             ensureLeaf(
@@ -352,7 +358,7 @@ export function registerRunHosting(program: Command): void {
           const exitCode = await runHostingLoop(
             {
               channels: [claudeChannel, codexChannel],
-              allowlistPath: paths.allowlist,
+              policyPaths: { allowList: paths.allowList, authList: paths.authList, blockList: paths.blockList },
               readyTimeoutMs: 60_000,
               drainTimeoutMs: 30_000,
               mcpServers,

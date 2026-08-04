@@ -11,4 +11,11 @@ describe('run-hosting command option surface', () => {
     const flags = runHostingCommand!.options.map((opt) => opt.flags);
     expect(flags.some((f) => f.includes('--forward-ports'))).toBe(false);
   });
+
+  it('exposes --skip-allow-list', () => {
+    const program = new Command();
+    registerRunHosting(program);
+    const command = program.commands.find((cmd) => cmd.name() === 'run-hosting');
+    expect(command?.options.some((option) => option.flags.includes('--skip-allow-list'))).toBe(true);
+  });
 });
