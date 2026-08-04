@@ -1,13 +1,13 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import type { Command } from 'commander';
 import { requireEnvPathsOrExit, type EnvPaths } from '../envPaths';
-import { parseAllowlist, terminateTlsHosts } from '../allowlist';
+import { parseAuthListFile, terminateTlsHosts } from '../allowlist';
 import { generateRootCa, validateCaPair } from '../ca';
 import { ensureLeaf } from '../leaf';
 
 function deriveSans(paths: EnvPaths): string[] {
-  if (!existsSync(paths.allowlist)) return [];
-  return terminateTlsHosts(parseAllowlist(readFileSync(paths.allowlist, 'utf8')));
+  if (!existsSync(paths.authList)) return [];
+  return terminateTlsHosts(parseAuthListFile(readFileSync(paths.authList, 'utf8')));
 }
 
 export function registerGenerateCa(program: Command): void {
@@ -15,7 +15,7 @@ export function registerGenerateCa(program: Command): void {
     .command('generate-ca')
     .description(
       'Generate the proxy root CA and the leaf it signs into .susentorno/proxy/ca, copy the ' +
-        'root cert.pem into vm-shared-linux, and derive the leaf SANs from the allowlist sections the ' +
+        'root cert.pem into vm-shared-linux, and derive the leaf SANs from the auth-list.txt sections the ' +
         'proxy terminates TLS for. Reuses existing valid material; reissues the leaf without ' +
         'touching the root.',
     )
