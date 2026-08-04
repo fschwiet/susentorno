@@ -85,7 +85,8 @@ beforeAll(async () => {
     { cwd: envParent },
   );
 
-  writeFileSync(join(proxyDir, 'allowlist.txt'), '');
+  writeFileSync(join(proxyDir, 'allow-list.txt'), '');
+  writeFileSync(join(proxyDir, 'auth-list.txt'), '');
   writeFileSync(
     join(envRoot, 'mcp-servers.yaml'),
     [

@@ -1,0 +1,8 @@
+pypi.org:443
+archive.ubuntu.com:80
+*.ubuntu.com:80
+
+# Allow-listed from startup but never contacted by tests except the guest probe.
+files.pythonhosted.org:443
+github.com:443
+www.google.com:443

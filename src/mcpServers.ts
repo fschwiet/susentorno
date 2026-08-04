@@ -104,7 +104,7 @@ const ALLOWLIST_SECTIONS = [
 ] as const;
 
 /**
- * MCP always wins a hostname collision with allowlist.txt: the colliding entry is
+ * MCP always wins a hostname collision with the policy lists: the colliding entry is
  * dropped from whichever section it was in, with a warning, so Envoy never sees two
  * filter chains matching one SNI. Resolved separately from parseAllowlist's own
  * intra-allowlist collision priority, since mcp-servers.yaml is a different file.

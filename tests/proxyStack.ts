@@ -15,7 +15,9 @@ export const REAL_TOKEN = 'susentorno-test-real-token-12345';
 export const REAL_AUTH = `Bearer ${REAL_TOKEN}`;
 
 const cliPath = join(repoRoot, 'dist', 'cli.js');
-const allowlistFixture = join(repoRoot, 'tests', 'proxy-stack', 'fixtures', 'allowlist.txt');
+const allowListFixture = join(repoRoot, 'tests', 'proxy-stack', 'fixtures', 'allow-list.txt');
+const authListFixture = join(repoRoot, 'tests', 'proxy-stack', 'fixtures', 'auth-list.txt');
+const blockListFixture = join(repoRoot, 'tests', 'proxy-stack', 'fixtures', 'block-list.txt');
 const credentialsFixture = join(repoRoot, 'tests', 'fixtures', 'credentials.json');
 const authFixture = join(repoRoot, 'tests', 'fixtures', 'auth.json');
 
@@ -28,7 +30,9 @@ export interface ProxyStack {
   /** Every stdout/stderr line run-hosting has produced so far, in order. */
   stdoutLines: string[];
   /** The environment's live allowlist — edit it to trigger a proxy restart. */
-  allowlistPath: string;
+  allowListPath: string;
+  authListPath: string;
+  blockListPath: string;
   /** The mutable credentials file run-hosting watches — rotate it to trigger a restart. */
   credentialsPath: string;
 }
@@ -109,7 +113,7 @@ async function waitForStartupLine(
   );
 }
 
-export async function startProxyStack(): Promise<ProxyStack> {
+export async function startProxyStack(extraArgs: string[] = []): Promise<ProxyStack> {
   const mockUpstream = await startMockUpstream();
   const proxyDir = join(envRoot, 'proxy');
   const composeEnv = {
@@ -129,8 +133,12 @@ export async function startProxyStack(): Promise<ProxyStack> {
 
   // Stage the test allowlist as the environment's own before generate-ca so
   // the leaf SANs derive from it; run-hosting then builds envoy.yaml from it too.
-  const allowlistPath = join(proxyDir, 'allowlist.txt');
-  copyFileSync(allowlistFixture, allowlistPath);
+  const allowListPath = join(proxyDir, 'allow-list.txt');
+  const authListPath = join(proxyDir, 'auth-list.txt');
+  const blockListPath = join(proxyDir, 'block-list.txt');
+  copyFileSync(allowListFixture, allowListPath);
+  copyFileSync(authListFixture, authListPath);
+  copyFileSync(blockListFixture, blockListPath);
   await execa('node', [cliPath, 'generate-ca'], { cwd: envParent });
 
   // run-hosting owns the SDS secret now: the token in this mutable credentials
@@ -159,6 +167,7 @@ export async function startProxyStack(): Promise<ProxyStack> {
       `api.anthropic.com=host.docker.internal:${mockUpstream.port}`,
       '--upstream-override',
       `auth-candidate.test=host.docker.internal:${mockUpstream.port}`,
+      ...extraArgs,
     ],
     { cwd: envParent, env: composeEnv, buffer: false, reject: false },
   );
@@ -183,7 +192,9 @@ export async function startProxyStack(): Promise<ProxyStack> {
     composeEnv,
     proxyProc,
     stdoutLines,
-    allowlistPath,
+    allowListPath,
+    authListPath,
+    blockListPath,
     credentialsPath,
   };
 }

@@ -129,8 +129,9 @@ beforeAll(async () => {
     { cwd: envParent },
   );
 
+  writeFileSync(join(proxyDir, 'allow-list.txt'), '');
   writeFileSync(
-    join(proxyDir, 'allowlist.txt'),
+    join(proxyDir, 'auth-list.txt'),
     [
       '#pragma claude authenticated',
       'api.anthropic.com:443',

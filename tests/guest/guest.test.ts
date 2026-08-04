@@ -347,9 +347,9 @@ describe('proxy stack access logging & replacement', () => {
     // The staged fixture ends with the '#pragma claude authenticated' section, so appending
     // adds a claude-authenticated host — the TLS-terminated host set changes and the
     // leaf-reissue path runs too, not just the config rebuild.
-    appendFileSync(stack.allowlistPath, 'example.org:443\n');
+    appendFileSync(stack.allowListPath, 'example.org:443\n');
 
-    await waitForProxyLine(stack, 'restarting proxy — allowlist changed', 120_000, mark);
+    await waitForProxyLine(stack, 'restarting proxy — policy changed', 120_000, mark);
     await waitForProxyLine(stack, 'swap complete', 120_000, mark);
 
     // HEAD, and no retry: the new-container gate above makes the passthrough

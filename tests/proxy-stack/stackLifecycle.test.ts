@@ -12,7 +12,9 @@ import { envParent, envRoot } from '../testEnvRoot';
 import { buildJwt } from '../../src/jwt';
 
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
-const allowlistFixture = fileURLToPath(new URL('./fixtures/allowlist.txt', import.meta.url));
+const allowListFixture = fileURLToPath(new URL('./fixtures/allow-list.txt', import.meta.url));
+const authListFixture = fileURLToPath(new URL('./fixtures/auth-list.txt', import.meta.url));
+const blockListFixture = fileURLToPath(new URL('./fixtures/block-list.txt', import.meta.url));
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
 const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
 const proxyDir = join(envRoot, 'proxy');
@@ -91,7 +93,9 @@ beforeAll(async () => {
     [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
     { cwd: envParent },
   );
-  copyFileSync(allowlistFixture, join(proxyDir, 'allowlist.txt'));
+  copyFileSync(allowListFixture, join(proxyDir, 'allow-list.txt'));
+  copyFileSync(authListFixture, join(proxyDir, 'auth-list.txt'));
+  copyFileSync(blockListFixture, join(proxyDir, 'block-list.txt'));
   await execa('node', [cliPath, 'generate-ca'], { cwd: envParent });
 
   proxyProc = execa(

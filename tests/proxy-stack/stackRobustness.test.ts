@@ -12,7 +12,9 @@ import { envParent, envRoot } from '../testEnvRoot';
 import { buildJwt } from '../../src/jwt';
 
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
-const allowlistFixture = fileURLToPath(new URL('./fixtures/allowlist.txt', import.meta.url));
+const allowListFixture = fileURLToPath(new URL('./fixtures/allow-list.txt', import.meta.url));
+const authListFixture = fileURLToPath(new URL('./fixtures/auth-list.txt', import.meta.url));
+const blockListFixture = fileURLToPath(new URL('./fixtures/block-list.txt', import.meta.url));
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
 const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
 const proxyDir = join(envRoot, 'proxy');
@@ -144,7 +146,9 @@ beforeAll(async () => {
     [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
     { cwd: envParent },
   );
-  copyFileSync(allowlistFixture, join(proxyDir, 'allowlist.txt'));
+  copyFileSync(allowListFixture, join(proxyDir, 'allow-list.txt'));
+  copyFileSync(authListFixture, join(proxyDir, 'auth-list.txt'));
+  copyFileSync(blockListFixture, join(proxyDir, 'block-list.txt'));
   await execa('node', [cliPath, 'generate-ca'], { cwd: envParent });
 }, 120000);
 
@@ -163,7 +167,9 @@ afterEach(async () => {
     env: { ...process.env, ...envoyEnv },
     reject: false,
   });
-  copyFileSync(allowlistFixture, join(proxyDir, 'allowlist.txt'));
+  copyFileSync(allowListFixture, join(proxyDir, 'allow-list.txt'));
+  copyFileSync(authListFixture, join(proxyDir, 'auth-list.txt'));
+  copyFileSync(blockListFixture, join(proxyDir, 'block-list.txt'));
 });
 
 afterAll(async () => {
@@ -192,18 +198,8 @@ describe('proxy stack robustness under failure', () => {
   }, 120000);
 
   it('starts cleanly on a passthrough+claudeAuthenticated collision (single filter chain per SNI)', async () => {
-    writeFileSync(
-      join(proxyDir, 'allowlist.txt'),
-      [
-        '#pragma passthrough',
-        'shared.example.com:443',
-        '',
-        '#pragma claude authenticated',
-        'api.anthropic.com:443',
-        'shared.example.com:443',
-        '',
-      ].join('\n'),
-    );
+    writeFileSync(join(proxyDir, 'allow-list.txt'), 'shared.example.com:443\n');
+    writeFileSync(join(proxyDir, 'auth-list.txt'), '#pragma claude authenticated\napi.anthropic.com:443\nshared.example.com:443\n');
 
     proxyProc = spawnProxyPlain();
     // The collision warning appears, and Envoy accepts the resolved config and

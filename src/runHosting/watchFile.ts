@@ -7,7 +7,7 @@ import { basename, dirname } from 'node:path';
  * Claude Code rewrite files via atomic rename (new inode) — the case where raw
  * fs.watch silently goes dead on Windows. The `watcher` package handles
  * rename/replace and debouncing cross-platform. Used for both credentials.json
- * and allowlist.txt.
+ * and the allow/auth/block policy files.
  */
 export function watchFile(filePath: string, onEvent: () => void): { close: () => void } {
   const dir = dirname(filePath);
