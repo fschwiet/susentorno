@@ -22,7 +22,9 @@ describe('susentorno init', () => {
       expect(stdout).toContain('generate-ca');
       expect(stdout).toContain('update-shares');
       expect(stdout).toContain('home-jq-transforms');
-      expect(existsSync(join(dir, '.susentorno', 'proxy', 'allowlist.txt'))).toBe(true);
+      expect(existsSync(join(dir, '.susentorno', 'proxy', 'allow-list.txt'))).toBe(true);
+      expect(existsSync(join(dir, '.susentorno', 'proxy', 'auth-list.txt'))).toBe(true);
+      expect(existsSync(join(dir, '.susentorno', 'proxy', 'block-list.txt'))).toBe(true);
       expect(existsSync(join(dir, '.susentorno', 'vm-shared-linux', 'credentials.json'))).toBe(
         true,
       );

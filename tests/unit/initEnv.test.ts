@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initEnvironment } from '../../src/initEnv';
-import { templatesDir, packagedAllowlist } from '../../src/templates';
+import { templatesDir, packagedAllowList, packagedAuthList, packagedBlockList } from '../../src/templates';
 import { ENV_DIR_NAME } from '../../src/envPaths';
 
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
@@ -26,7 +26,9 @@ function options(overrides: Partial<Parameters<typeof initEnvironment>[0]> = {})
     credentialsPath: credentialsFixture,
     codexCredentialsPath: authFixture,
     templatesDir: templatesDir(),
-    allowlistSource: packagedAllowlist(),
+    allowListSource: packagedAllowList(),
+    authListSource: packagedAuthList(),
+    blockListSource: packagedBlockList(),
     ...overrides,
   };
 }
@@ -46,7 +48,9 @@ describe('environment initialization', () => {
         'proxy/docker-compose.yml',
         'proxy/gate.lua',
         'proxy/host-allow-vm-inbound.ps1',
-        'proxy/allowlist.txt',
+        'proxy/allow-list.txt',
+        'proxy/auth-list.txt',
+        'proxy/block-list.txt',
         'vm-shared-windows/pre-scripts/01-install-packages.ps1',
         'vm-shared-windows/pre-scripts/05-configure-network.ps1',
         'vm-shared-windows/post-scripts/01-auth-config.ps1',

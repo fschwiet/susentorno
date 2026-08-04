@@ -18,7 +18,9 @@ describe('environment ignore rules', () => {
         '!/home-jq-transforms/',
         '!/home-jq-transforms/**',
         '!/proxy/',
-        '!/proxy/allowlist.txt',
+        '!/proxy/allow-list.txt',
+        '!/proxy/auth-list.txt',
+        '!/proxy/block-list.txt',
       ]) {
         expect(gitignore, line).toContain(line);
       }

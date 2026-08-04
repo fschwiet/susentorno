@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { Command } from 'commander';
 import { ENV_DIR_NAME } from '../envPaths';
 import { initEnvironment } from '../initEnv';
-import { packagedAllowlist, templatesDir } from '../templates';
+import { packagedAllowList, packagedAuthList, packagedBlockList, templatesDir } from '../templates';
 
 interface InitCommandOptions {
   credentials: string;
@@ -31,7 +31,9 @@ export function registerInit(program: Command): void {
           credentialsPath: options.credentials,
           codexCredentialsPath: options.codexCredentials,
           templatesDir: templatesDir(),
-          allowlistSource: packagedAllowlist(),
+          allowListSource: packagedAllowList(),
+          authListSource: packagedAuthList(),
+          blockListSource: packagedBlockList(),
         });
       } catch (error) {
         console.error(`init: ${(error as Error).message}`);
