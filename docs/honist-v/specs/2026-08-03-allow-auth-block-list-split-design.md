@@ -103,6 +103,10 @@ The repo-root maintainer seed files mirror the split:
 
 `import-sbx-network-policy` (which only ever produces passthrough and claude-authenticated entries from an upstream sandbox policy file) writes its passthrough output to `current-allow-list.txt` and its claude-authenticated output to `current-auth-list.txt`. It keeps its existing full-overwrite behavior — it does not preserve hand-added `github`/`codex`/`auth candidate` sections across a re-run, same limitation as today (already documented in its `--help` text).
 
+## Documentation
+
+`diagnostics.md`'s "Watching proxy traffic" tag table and "Maintaining the allow list" section are updated to describe the three files, the new `ALLOW OPEN`/`BLOCK LIST` tags, the `domain:port` log format, and `--skip-allow-list`. `README.md`'s one-line mention of "restricts network access to an allow list" needs no change.
+
 ## Testing
 
 - Unit tests for the new `allow-list.txt`/`auth-list.txt`/`block-list.txt` parsers, including block-list wildcard matching and the pruning pass that removes blocked hosts from the combined allow/auth entries.
