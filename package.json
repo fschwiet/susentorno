@@ -14,7 +14,9 @@
   "files": [
     "dist",
     "templates",
-    "current-allow-list.txt"
+    "current-allow-list.txt",
+    "current-auth-list.txt",
+    "current-block-list.txt"
   ],
   "scripts": {
     "build": "tsup && node scripts/copy-vm-applier.mjs",

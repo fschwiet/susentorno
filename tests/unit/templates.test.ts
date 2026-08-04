@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { packagedAllowlist, templatesDir } from '../../src/templates';
+import { packagedAllowList, packagedAuthList, packagedBlockList, templatesDir } from '../../src/templates';
 import { loadManifest } from '../../src/homeJqTransforms';
-import { parseAllowlist } from '../../src/allowlist';
+import { parseAllowListFile, parseAuthListFile } from '../../src/allowlist';
 import { NO_AUTH_MARKER_HEADER, NO_AUTH_SENTINEL_VALUE } from '../../src/envoyConfig';
 
 const expectedTemplateFiles = [
@@ -41,15 +41,18 @@ describe('generated provisioning inventory', () => {
       }
     });
 
-    it('ships the packaged allowlist', () => {
-      expect(existsSync(packagedAllowlist())).toBe(true);
+    it('ships the packaged allow list, auth list, and block list', () => {
+      expect(existsSync(packagedAllowList())).toBe(true);
+      expect(existsSync(packagedAuthList())).toBe(true);
+      expect(existsSync(packagedBlockList())).toBe(true);
     });
 
-    it('ships chatgpt.com under codex authenticated, not passthrough', () => {
-      const parsed = parseAllowlist(readFileSync(packagedAllowlist(), 'utf8'));
-      expect(parsed.codexAuthenticated).toContain('chatgpt.com:443');
-      expect(parsed.passthrough).not.toContain('chatgpt.com:443');
-      expect(parsed.passthrough).toContain('*.chatgpt.com:443');
+    it('ships chatgpt.com under codex authenticated, not the allow list', () => {
+      const authList = parseAuthListFile(readFileSync(packagedAuthList(), 'utf8'));
+      const allowList = parseAllowListFile(readFileSync(packagedAllowList(), 'utf8'));
+      expect(authList.codexAuthenticated).toContain('chatgpt.com:443');
+      expect(allowList.entries).not.toContain('chatgpt.com:443');
+      expect(allowList.entries).toContain('*.chatgpt.com:443');
     });
   });
 

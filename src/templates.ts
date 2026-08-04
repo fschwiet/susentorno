@@ -14,6 +14,14 @@ export function templatesDir(): string {
   return join(packageRoot(), 'templates');
 }
 
-export function packagedAllowlist(): string {
+export function packagedAllowList(): string {
   return join(packageRoot(), 'current-allow-list.txt');
+}
+
+export function packagedAuthList(): string {
+  return join(packageRoot(), 'current-auth-list.txt');
+}
+
+export function packagedBlockList(): string {
+  return join(packageRoot(), 'current-block-list.txt');
 }

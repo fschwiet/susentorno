@@ -1,0 +1,19 @@
+#pragma claude authenticated
+api.anthropic.com:443
+claude.com:443
+downloads.claude.ai:443
+mcp-proxy.anthropic.com:443
+platform.claude.com:443
+statsig.anthropic.com:443
+
+# added after original import from sandbox
+claude.ai:443
+a.claude.ai:443
+a-api.anthropic.com:443
+
+#pragma github authenticated
+api.github.com:443
+github.com:443
+
+#pragma codex authenticated
+chatgpt.com:443

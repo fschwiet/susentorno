@@ -1,5 +1,3 @@
-#pragma passthrough
-
 ## ubunto unblocked specifically for connectivity-check.ubuntu.com
 *.ubuntu.com:443
 *.ubuntu.com:80
@@ -217,23 +215,3 @@ visualstudio.com:443
 www.google.com:443
 yarnpkg.com:443
 ziglang.org:443
-
-#pragma github authenticated
-api.github.com:443
-github.com:443
-
-#pragma claude authenticated
-api.anthropic.com:443
-claude.com:443
-downloads.claude.ai:443
-mcp-proxy.anthropic.com:443
-platform.claude.com:443
-statsig.anthropic.com:443
-
-# added after original import from sandbox
-claude.ai:443
-a.claude.ai:443
-a-api.anthropic.com:443
-
-#pragma codex authenticated
-chatgpt.com:443
