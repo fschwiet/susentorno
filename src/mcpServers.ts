@@ -119,6 +119,7 @@ export function resolveMcpAllowlistCollisions(
     githubAuthenticated: [...allowlist.githubAuthenticated],
     codexAuthenticated: [...allowlist.codexAuthenticated],
     authCandidate: [...allowlist.authCandidate],
+    blocked: [...allowlist.blocked],
     warnings: [...allowlist.warnings],
   };
 
@@ -133,6 +134,17 @@ export function resolveMcpAllowlistCollisions(
         `collision: '${entry}' listed in ${label} and mcp-servers.yaml; using mcp-servers.yaml`,
       );
     }
+
+    const blockedIdx = resolved.blocked.indexOf(server.hostname);
+    const matchingWildcard = resolved.blocked.some(
+      (pattern) => pattern.startsWith('*.') && server.hostname.endsWith(pattern.slice(1)),
+    );
+    if (blockedIdx === -1 && !matchingWildcard) continue;
+    if (blockedIdx !== -1) resolved.blocked.splice(blockedIdx, 1);
+    resolved.warnings.push(
+      `collision: '${server.hostname}' listed in block-list.txt and mcp-servers.yaml; ` +
+        'MCP servers are not subject to block-list pruning, so it stays reachable',
+    );
   }
 
   return resolved;

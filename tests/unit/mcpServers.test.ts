@@ -139,6 +139,7 @@ describe('resolveMcpAllowlistCollisions', () => {
     githubAuthenticated: [],
     codexAuthenticated: [],
     authCandidate: [],
+    blocked: [],
     warnings: [],
   };
 
@@ -182,5 +183,44 @@ describe('resolveMcpAllowlistCollisions', () => {
     const allowlist: Allowlist = { ...baseAllowlist, warnings: ['pre-existing warning'] };
     const resolved = resolveMcpAllowlistCollisions(allowlist, []);
     expect(resolved.warnings).toEqual(['pre-existing warning']);
+  });
+});
+
+describe('resolveMcpAllowlistCollisions — block-list', () => {
+  const baseAllowlist: Allowlist = {
+    passthrough: [],
+    claudeAuthenticated: [],
+    githubAuthenticated: [],
+    codexAuthenticated: [],
+    authCandidate: [],
+    blocked: [],
+    warnings: [],
+  };
+
+  it('removes an exact block-list entry that collides with an MCP hostname and warns', () => {
+    const resolved = resolveMcpAllowlistCollisions(
+      { ...baseAllowlist, blocked: ['filesystem.internal', 'other.blocked'] },
+      [{ name: 'fs', hostname: 'filesystem.internal', command: 'x' }],
+    );
+    expect(resolved.blocked).toEqual(['other.blocked']);
+    expect(resolved.warnings).toEqual([
+      "collision: 'filesystem.internal' listed in block-list.txt and mcp-servers.yaml; MCP servers are not subject to block-list pruning, so it stays reachable",
+    ]);
+  });
+
+  it('leaves a matching wildcard block-list entry in place but warns', () => {
+    const resolved = resolveMcpAllowlistCollisions(
+      { ...baseAllowlist, blocked: ['*.internal'] },
+      [{ name: 'fs', hostname: 'filesystem.internal', command: 'x' }],
+    );
+    expect(resolved.blocked).toEqual(['*.internal']);
+    expect(resolved.warnings).toEqual([
+      "collision: 'filesystem.internal' listed in block-list.txt and mcp-servers.yaml; MCP servers are not subject to block-list pruning, so it stays reachable",
+    ]);
+  });
+
+  it('does not warn for a non-matching wildcard', () => {
+    const allowlist = { ...baseAllowlist, blocked: ['*.other'] };
+    expect(resolveMcpAllowlistCollisions(allowlist, [{ name: 'fs', hostname: 'filesystem.internal', command: 'x' }])).toEqual(allowlist);
   });
 });
