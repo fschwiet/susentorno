@@ -1,4 +1,4 @@
-import type { AccessLine } from './parseLine';
+import type { AccessLine, PathId } from './parseLine';
 import { CAND_HEADER_NAMES } from './parseLine';
 
 export type Tag =
@@ -6,21 +6,36 @@ export type Tag =
   | 'ALLOW PASS'
   | 'ALLOW HTTP'
   | 'ALLOW MCP'
+  | 'ALLOW OPEN'
   | 'BLOCK TLS'
   | 'BLOCK HTTP'
+  | 'BLOCK LIST'
   | 'AUTH CANDIDATE';
 
 export interface Entry {
   time: string;
   tag: Tag;
   domain: string;
+  port: number;
   protocol?: string;
   header?: string;
   value?: string;
 }
 
+const TAG_BY_443_PATH_ID: Partial<Record<PathId, Tag>> = {
+  term: 'ALLOW CRED', pass: 'ALLOW PASS', mcp: 'ALLOW MCP', deny443: 'BLOCK TLS', passopen: 'ALLOW OPEN', blocklist: 'BLOCK LIST',
+};
+const TAG_BY_HTTP_ROUTE_NAME: Record<string, Tag> = {
+  matched: 'ALLOW HTTP', blocked: 'BLOCK LIST', 'default-deny': 'BLOCK HTTP', open: 'ALLOW OPEN',
+};
+
+function stripPort(host: string): string {
+  const idx = host.lastIndexOf(':');
+  return idx === -1 ? host : host.slice(0, idx);
+}
+
 export function classify(line: AccessLine): Entry[] {
-  const domain = line.serverName !== '-' ? line.serverName : line.authority;
+  const domain = stripPort(line.serverName !== '-' ? line.serverName : line.authority);
 
   if (line.pathId === 'cand') {
     const values = line.authHeaders ?? [];
@@ -33,6 +48,7 @@ export function classify(line: AccessLine): Entry[] {
         time: line.time,
         tag: 'AUTH CANDIDATE',
         domain,
+        port: 443,
         protocol: 'https',
         header,
         value,
@@ -41,23 +57,10 @@ export function classify(line: AccessLine): Entry[] {
     return entries;
   }
 
-  let tag: Tag;
-  switch (line.pathId) {
-    case 'term':
-      tag = 'ALLOW CRED';
-      break;
-    case 'pass':
-      tag = 'ALLOW PASS';
-      break;
-    case 'mcp':
-      tag = 'ALLOW MCP';
-      break;
-    case 'deny443':
-      tag = 'BLOCK TLS';
-      break;
-    case 'http':
-      tag = line.codeDetails === 'direct_response' ? 'BLOCK HTTP' : 'ALLOW HTTP';
-      break;
+  if (line.pathId === 'http') {
+    const tag = TAG_BY_HTTP_ROUTE_NAME[line.routeName ?? ''];
+    return tag ? [{ time: line.time, tag, domain, port: 80 }] : [];
   }
-  return [{ time: line.time, tag, domain }];
+  const tag = TAG_BY_443_PATH_ID[line.pathId];
+  return tag ? [{ time: line.time, tag, domain, port: 443 }] : [];
 }
