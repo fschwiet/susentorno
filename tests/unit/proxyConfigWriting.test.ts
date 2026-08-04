@@ -4,23 +4,22 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 import { writeEnvoyConfig } from '../../src/runHosting/buildConfig';
-import { parseAllowlist } from '../../src/allowlist';
+import { combinePolicy, parseAllowListFile, parseAuthListFile } from '../../src/allowlist';
+import { parseBlockListFile } from '../../src/blockList';
 
 const ALLOWLIST = [
-  '#pragma passthrough',
   'pypi.org:443',
   '',
-  '#pragma claude authenticated',
-  'api.anthropic.com:443',
-  '',
 ].join('\n');
+const AUTH_LIST = ['#pragma claude authenticated', 'api.anthropic.com:443', ''].join('\n');
+const policy = () => combinePolicy(parseAllowListFile(ALLOWLIST), parseAuthListFile(AUTH_LIST), parseBlockListFile(''));
 
 describe('proxy configuration writing', () => {
   it('writes envoy.yaml with upstream overrides applied', () => {
     const dir = mkdtempSync(join(tmpdir(), 'buildconfig-'));
     const outputPath = join(dir, 'envoy.yaml');
     try {
-      writeEnvoyConfig(parseAllowlist(ALLOWLIST), outputPath, [
+      writeEnvoyConfig(policy(), outputPath, [
         { sniHost: 'api.anthropic.com', target: '127.0.0.1:9443' },
       ]);
 
@@ -43,7 +42,7 @@ describe('proxy configuration writing', () => {
     const dir = mkdtempSync(join(tmpdir(), 'buildconfig-'));
     const outputPath = join(dir, 'envoy.yaml');
     try {
-      writeEnvoyConfig(parseAllowlist(ALLOWLIST), outputPath, [], undefined, [
+      writeEnvoyConfig(policy(), outputPath, [], undefined, [
         { hostname: 'fs.internal', port: 9999 },
       ]);
 
@@ -56,6 +55,19 @@ describe('proxy configuration writing', () => {
           fc.filter_chain_match?.server_names?.includes('fs.internal'),
         ),
       ).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('threads skipAllowList through to the generated config', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'buildconfig-'));
+    const outputPath = join(dir, 'envoy.yaml');
+    try {
+      writeEnvoyConfig(policy(), outputPath, [], undefined, undefined, true);
+      const config = parse(readFileSync(outputPath, 'utf8')) as any;
+      const listener443 = config.static_resources.listeners.find((l: any) => l.name === 'listener_443');
+      expect(listener443.default_filter_chain.filters[1].typed_config.cluster).toBe('dynamic_forward_proxy_cluster');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

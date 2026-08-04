@@ -19,9 +19,10 @@ export function writeEnvoyConfig(
   overrides: UpstreamOverride[],
   fault?: InjectFault,
   mcpServers?: McpServerUpstream[],
+  skipAllowList?: boolean,
 ): void {
   writeFileSync(
     outputPath,
-    stringify(generateEnvoyConfig(allowlist, { overrides, fault, mcpServers })),
+    stringify(generateEnvoyConfig(allowlist, { overrides, fault, mcpServers, skipAllowList })),
   );
 }
