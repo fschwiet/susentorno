@@ -96,6 +96,7 @@ export function runHostingLoop(config: RunHostingConfig, deps: RunHostingDeps): 
     const watchers: { close: () => void }[] = [];
 
     const mcpServerConfigs = config.mcpServers ?? [];
+    const policyPaths = [config.policyPaths.allowList, config.policyPaths.authList, config.policyPaths.blockList];
     const mcpReadyTimeoutMs = config.mcpReadyTimeoutMs ?? 60_000;
     const mcpHostnames = mcpServerConfigs.map((s) => s.hostname);
     let mcpServersWithPorts: McpServerUpstream[] = [];
@@ -350,29 +351,18 @@ export function runHostingLoop(config: RunHostingConfig, deps: RunHostingDeps): 
         env: s.env,
       }));
 
-      const contents = [
-        deps.readPolicyFile(config.policyPaths.allowList),
-        deps.readPolicyFile(config.policyPaths.authList),
-        deps.readPolicyFile(config.policyPaths.blockList),
-      ];
-      const paths = [config.policyPaths.allowList, config.policyPaths.authList, config.policyPaths.blockList];
-      const missing = contents.findIndex((content) => content === null);
-      if (missing !== -1) {
-        fatal(`could not read policy at ${paths[missing]}`);
+      const allowlist = readParsedPolicy();
+      if (allowlist === null) {
+        fatal('could not read policy files');
         return;
       }
-      const allowlist = resolveMcpAllowlistCollisions(
-        combinePolicy(parseAllowListFile(contents[0]!), parseAuthListFile(contents[1]!), parseBlockListFile(contents[2]!)),
-        mcpServerConfigs,
-      );
-      for (const warning of allowlist.warnings) deps.error(`run-hosting: ${warning}`);
 
       // Arm all watchers before the (slow) startup recreate: a change landing
       // mid-startup coalesces into one follow-up restart instead of being dropped.
       for (const channel of channels) {
         watchers.push(deps.watch(channel.credentialsPath, () => requestRestart(channel)));
       }
-      for (const path of paths) watchers.push(deps.watch(path, () => requestRestart('policy')));
+      for (const path of policyPaths) watchers.push(deps.watch(path, () => requestRestart('policy')));
       deps.onSigint(() => onStopSignal('SIGINT'));
       deps.onSigterm(() => onStopSignal('SIGTERM'));
 
@@ -440,7 +430,7 @@ export function runHostingLoop(config: RunHostingConfig, deps: RunHostingDeps): 
 
       for (const channel of channels) channel.armTimer();
       deps.log(
-        `run-hosting: watching credentials and policy files; proxy is serving the current token (${activeColor})`,
+        `run-hosting: watching credentials, allow list, auth list, and block list; proxy is serving the current token (${activeColor})`,
       );
 
       // Apply anything that landed during the startup recreate.

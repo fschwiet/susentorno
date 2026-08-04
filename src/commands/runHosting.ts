@@ -90,7 +90,7 @@ export function registerRunHosting(program: Command): void {
   program
     .command('run-hosting')
     .description(
-      'Own the Envoy proxy end to end: build envoy.yaml from the allow list, auth list, and block list, write the SDS ' +
+      'Own the proxy stack end to end: build its configuration from the allow list, auth list, and block list, write the SDS ' +
         'secret, recreate the container, then watch the policy files and credentials.json — ' +
         'rebuilding the config, reissuing the leaf certificate, and restarting the proxy as ' +
         "they change — while streaming the proxy's tagged access log (each host+handling " +
