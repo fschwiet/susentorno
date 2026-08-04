@@ -3,7 +3,7 @@ import { UniqueTracker } from '../../src/runHosting/uniqueTracker';
 import type { Entry } from '../../src/runHosting/classify';
 
 function e(domain: string, tag: Entry['tag'] = 'ALLOW PASS'): Entry {
-  return { time: '2026-07-10T12:00:00', tag, domain };
+  return { time: '2026-07-10T12:00:00', tag, domain, port: 443 };
 }
 
 describe('first-occurrence access-log deduplication', () => {
@@ -30,6 +30,7 @@ describe('first-occurrence access-log deduplication', () => {
       time: '2026-07-18T09:00:00',
       tag: 'AUTH CANDIDATE',
       domain: 'partner.example.com',
+      port: 443,
       protocol: 'https',
       header,
       value,
