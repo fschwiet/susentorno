@@ -16,6 +16,8 @@ describe('run-hosting command option surface', () => {
     const program = new Command();
     registerRunHosting(program);
     const command = program.commands.find((cmd) => cmd.name() === 'run-hosting');
-    expect(command?.options.some((option) => option.flags.includes('--skip-allow-list'))).toBe(true);
+    expect(command?.options.some((option) => option.flags.includes('--skip-allow-list'))).toBe(
+      true,
+    );
   });
 });

@@ -23,9 +23,13 @@ describe('allow-list parsing', () => {
   it('dedupes, rejects unsupported wildcards, and prunes covered exact entries', () => {
     expect(
       parseAllowListFile(
-        ['*.ubuntu.com:80', 'archive.ubuntu.com:80', 'archive.ubuntu.com:443', '**.bad.com:80', ''].join(
-          '\n',
-        ),
+        [
+          '*.ubuntu.com:80',
+          'archive.ubuntu.com:80',
+          'archive.ubuntu.com:443',
+          '**.bad.com:80',
+          '',
+        ].join('\n'),
       ),
     ).toEqual({
       entries: ['*.ubuntu.com:80', 'archive.ubuntu.com:443'],
@@ -70,7 +74,11 @@ describe('auth-list parsing', () => {
   });
 
   it('ignores orphan and comment lines, but rejects invalid pragmas and legacy terminate', () => {
-    expect(parseAuthListFile('orphan.example.com:443\n#pragma claude authenticated\n## c\napi.example.com:443\n').claudeAuthenticated).toEqual(['api.example.com:443']);
+    expect(
+      parseAuthListFile(
+        'orphan.example.com:443\n#pragma claude authenticated\n## c\napi.example.com:443\n',
+      ).claudeAuthenticated,
+    ).toEqual(['api.example.com:443']);
     expect(() => parseAuthListFile('#pragma bogus\n')).toThrow('Invalid pragma: "#pragma bogus"');
     expect(() => parseAuthListFile('# terminate\n')).toThrow(
       'Legacy allowlist header "# terminate"; use "#pragma claude authenticated"',
@@ -80,9 +88,12 @@ describe('auth-list parsing', () => {
   it('rejects wildcards and dedupes entries within sections', () => {
     expect(
       parseAuthListFile(
-        ['#pragma claude authenticated', '*.anthropic.com:443', 'api.anthropic.com:443', 'api.anthropic.com:443'].join(
-          '\n',
-        ),
+        [
+          '#pragma claude authenticated',
+          '*.anthropic.com:443',
+          'api.anthropic.com:443',
+          'api.anthropic.com:443',
+        ].join('\n'),
       ),
     ).toEqual({
       claudeAuthenticated: ['api.anthropic.com:443'],
@@ -131,9 +142,14 @@ describe('combinePolicy', () => {
   it('combines lists and resolves exact collisions by auth priority', () => {
     const allowList = parseAllowListFile('shared.example.com:443\n');
     const authList = parseAuthListFile(
-      ['#pragma claude authenticated', 'shared.example.com:443', '', '#pragma auth candidate', 'shared.example.com:443', ''].join(
-        '\n',
-      ),
+      [
+        '#pragma claude authenticated',
+        'shared.example.com:443',
+        '',
+        '#pragma auth candidate',
+        'shared.example.com:443',
+        '',
+      ].join('\n'),
     );
     expect(combinePolicy(allowList, authList, noBlocks)).toEqual({
       passthrough: [],
@@ -149,11 +165,17 @@ describe('combinePolicy', () => {
   });
 
   it('prunes exact and wildcard block matches before collision resolution', () => {
-    const allowList = parseAllowListFile('blocked.example.com:443\nads.doubleclick.net:80\ndoubleclick.net:80\n');
+    const allowList = parseAllowListFile(
+      'blocked.example.com:443\nads.doubleclick.net:80\ndoubleclick.net:80\n',
+    );
     const authList = parseAuthListFile(
       ['#pragma claude authenticated', 'blocked.example.com:443', ''].join('\n'),
     );
-    const result = combinePolicy(allowList, authList, parseBlockListFile('blocked.example.com\n*.doubleclick.net\n'));
+    const result = combinePolicy(
+      allowList,
+      authList,
+      parseBlockListFile('blocked.example.com\n*.doubleclick.net\n'),
+    );
     expect(result.passthrough).toEqual(['doubleclick.net:80']);
     expect(result.claudeAuthenticated).toEqual([]);
     expect(result.blocked).toEqual(['blocked.example.com', '*.doubleclick.net']);

@@ -1,4 +1,10 @@
-import { combinePolicy, parseAllowListFile, parseAuthListFile, terminateTlsHosts, type Allowlist } from '../allowlist';
+import {
+  combinePolicy,
+  parseAllowListFile,
+  parseAuthListFile,
+  terminateTlsHosts,
+  type Allowlist,
+} from '../allowlist';
 import { parseBlockListFile } from '../blockList';
 import { parseLine } from './parseLine';
 import { classify } from './classify';
@@ -96,7 +102,11 @@ export function runHostingLoop(config: RunHostingConfig, deps: RunHostingDeps): 
     const watchers: { close: () => void }[] = [];
 
     const mcpServerConfigs = config.mcpServers ?? [];
-    const policyPaths = [config.policyPaths.allowList, config.policyPaths.authList, config.policyPaths.blockList];
+    const policyPaths = [
+      config.policyPaths.allowList,
+      config.policyPaths.authList,
+      config.policyPaths.blockList,
+    ];
     const mcpReadyTimeoutMs = config.mcpReadyTimeoutMs ?? 60_000;
     const mcpHostnames = mcpServerConfigs.map((s) => s.hostname);
     let mcpServersWithPorts: McpServerUpstream[] = [];
@@ -178,14 +188,24 @@ export function runHostingLoop(config: RunHostingConfig, deps: RunHostingDeps): 
         deps.readPolicyFile(config.policyPaths.authList),
         deps.readPolicyFile(config.policyPaths.blockList),
       ];
-      const paths = [config.policyPaths.allowList, config.policyPaths.authList, config.policyPaths.blockList];
+      const paths = [
+        config.policyPaths.allowList,
+        config.policyPaths.authList,
+        config.policyPaths.blockList,
+      ];
       const missing = contents.findIndex((content) => content === null);
       if (missing !== -1) {
-        deps.error(`run-hosting: could not read policy at ${paths[missing]}, keeping previous config`);
+        deps.error(
+          `run-hosting: could not read policy at ${paths[missing]}, keeping previous config`,
+        );
         return null;
       }
       const allowlist = resolveMcpAllowlistCollisions(
-        combinePolicy(parseAllowListFile(contents[0]!), parseAuthListFile(contents[1]!), parseBlockListFile(contents[2]!)),
+        combinePolicy(
+          parseAllowListFile(contents[0]!),
+          parseAuthListFile(contents[1]!),
+          parseBlockListFile(contents[2]!),
+        ),
         mcpServerConfigs,
       );
       for (const warning of allowlist.warnings) deps.error(`run-hosting: ${warning}`);
@@ -362,7 +382,8 @@ export function runHostingLoop(config: RunHostingConfig, deps: RunHostingDeps): 
       for (const channel of channels) {
         watchers.push(deps.watch(channel.credentialsPath, () => requestRestart(channel)));
       }
-      for (const path of policyPaths) watchers.push(deps.watch(path, () => requestRestart('policy')));
+      for (const path of policyPaths)
+        watchers.push(deps.watch(path, () => requestRestart('policy')));
       deps.onSigint(() => onStopSignal('SIGINT'));
       deps.onSigterm(() => onStopSignal('SIGTERM'));
 

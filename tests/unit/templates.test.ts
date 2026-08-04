@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { packagedAllowList, packagedAuthList, packagedBlockList, templatesDir } from '../../src/templates';
+import {
+  packagedAllowList,
+  packagedAuthList,
+  packagedBlockList,
+  templatesDir,
+} from '../../src/templates';
 import { loadManifest } from '../../src/homeJqTransforms';
 import { parseAllowListFile, parseAuthListFile } from '../../src/allowlist';
 import { NO_AUTH_MARKER_HEADER, NO_AUTH_SENTINEL_VALUE } from '../../src/envoyConfig';

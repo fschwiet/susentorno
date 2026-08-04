@@ -7,12 +7,14 @@ import { writeEnvoyConfig } from '../../src/runHosting/buildConfig';
 import { combinePolicy, parseAllowListFile, parseAuthListFile } from '../../src/allowlist';
 import { parseBlockListFile } from '../../src/blockList';
 
-const ALLOWLIST = [
-  'pypi.org:443',
-  '',
-].join('\n');
+const ALLOWLIST = ['pypi.org:443', ''].join('\n');
 const AUTH_LIST = ['#pragma claude authenticated', 'api.anthropic.com:443', ''].join('\n');
-const policy = () => combinePolicy(parseAllowListFile(ALLOWLIST), parseAuthListFile(AUTH_LIST), parseBlockListFile(''));
+const policy = () =>
+  combinePolicy(
+    parseAllowListFile(ALLOWLIST),
+    parseAuthListFile(AUTH_LIST),
+    parseBlockListFile(''),
+  );
 
 describe('proxy configuration writing', () => {
   it('writes envoy.yaml with upstream overrides applied', () => {
@@ -66,8 +68,12 @@ describe('proxy configuration writing', () => {
     try {
       writeEnvoyConfig(policy(), outputPath, [], undefined, undefined, true);
       const config = parse(readFileSync(outputPath, 'utf8')) as any;
-      const listener443 = config.static_resources.listeners.find((l: any) => l.name === 'listener_443');
-      expect(listener443.default_filter_chain.filters[1].typed_config.cluster).toBe('dynamic_forward_proxy_cluster');
+      const listener443 = config.static_resources.listeners.find(
+        (l: any) => l.name === 'listener_443',
+      );
+      expect(listener443.default_filter_chain.filters[1].typed_config.cluster).toBe(
+        'dynamic_forward_proxy_cluster',
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

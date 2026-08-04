@@ -209,10 +209,9 @@ describe('resolveMcpAllowlistCollisions — block-list', () => {
   });
 
   it('leaves a matching wildcard block-list entry in place but warns', () => {
-    const resolved = resolveMcpAllowlistCollisions(
-      { ...baseAllowlist, blocked: ['*.internal'] },
-      [{ name: 'fs', hostname: 'filesystem.internal', command: 'x' }],
-    );
+    const resolved = resolveMcpAllowlistCollisions({ ...baseAllowlist, blocked: ['*.internal'] }, [
+      { name: 'fs', hostname: 'filesystem.internal', command: 'x' },
+    ]);
     expect(resolved.blocked).toEqual(['*.internal']);
     expect(resolved.warnings).toEqual([
       "collision: 'filesystem.internal' listed in block-list.txt and mcp-servers.yaml; MCP servers are not subject to block-list pruning, so it stays reachable",
@@ -221,6 +220,10 @@ describe('resolveMcpAllowlistCollisions — block-list', () => {
 
   it('does not warn for a non-matching wildcard', () => {
     const allowlist = { ...baseAllowlist, blocked: ['*.other'] };
-    expect(resolveMcpAllowlistCollisions(allowlist, [{ name: 'fs', hostname: 'filesystem.internal', command: 'x' }])).toEqual(allowlist);
+    expect(
+      resolveMcpAllowlistCollisions(allowlist, [
+        { name: 'fs', hostname: 'filesystem.internal', command: 'x' },
+      ]),
+    ).toEqual(allowlist);
   });
 });

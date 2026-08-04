@@ -15,7 +15,8 @@ const VALID_AUTHLIST = '#pragma claude authenticated\napi.anthropic.com:443\n';
 const INVALID_ALLOWLIST = ['#pragma claude authenticated', '*.bad.example.com:443', ''].join('\n');
 
 const COLLISION_ALLOWLIST = 'shared.example.com:443\n';
-const COLLISION_AUTHLIST = '#pragma claude authenticated\napi.anthropic.com:443\nshared.example.com:443\n';
+const COLLISION_AUTHLIST =
+  '#pragma claude authenticated\napi.anthropic.com:443\nshared.example.com:443\n';
 
 const PASS_LINE = 'envoy-1  | CFGM|pass|2026-07-10T12:00:00|pypi.org|-|-|-|-|-|-';
 const CRED_LINE =
@@ -47,7 +48,11 @@ function claudeChannelConfig(
 function baseConfig(channels: CredentialChannelConfig[]): RunHostingConfig {
   return {
     channels,
-    policyPaths: { allowList: '/fake/allow-list.txt', authList: '/fake/auth-list.txt', blockList: '/fake/block-list.txt' },
+    policyPaths: {
+      allowList: '/fake/allow-list.txt',
+      authList: '/fake/auth-list.txt',
+      blockList: '/fake/block-list.txt',
+    },
     readyTimeoutMs: 30_000,
     drainTimeoutMs: 30_000,
   };
@@ -154,7 +159,12 @@ function makeHarness(
     drainBackend: mocks.drainBackend,
     stopColor: mocks.stopColor,
     watch: (path, onEvent) => {
-      if (path.endsWith('allow-list.txt') || path.endsWith('auth-list.txt') || path.endsWith('block-list.txt')) allowlistCb = onEvent;
+      if (
+        path.endsWith('allow-list.txt') ||
+        path.endsWith('auth-list.txt') ||
+        path.endsWith('block-list.txt')
+      )
+        allowlistCb = onEvent;
       else credentialCbs.set(path, onEvent);
       return { close: watchClose };
     },
@@ -268,9 +278,7 @@ describe('proxy stack supervision', () => {
       await flush();
 
       await expect(exit).resolves.toBe(1);
-      expect(h.mocks.error).toHaveBeenCalledWith(
-        expect.stringContaining('could not read policy'),
-      );
+      expect(h.mocks.error).toHaveBeenCalledWith(expect.stringContaining('could not read policy'));
     });
 
     it('exits 1 when blue never becomes ready on startup', async () => {

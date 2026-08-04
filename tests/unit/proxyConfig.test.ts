@@ -225,7 +225,8 @@ describe('proxy configuration generation', () => {
       );
 
       const expectedSuffix = '|%RESPONSE_CODE%|%RESPONSE_FLAGS%|%DURATION%|%BYTES_SENT%\n';
-      const expectedHttpSuffix = '|%RESPONSE_CODE%|%RESPONSE_FLAGS%|%DURATION%|%BYTES_SENT%|%ROUTE_NAME%\n';
+      const expectedHttpSuffix =
+        '|%RESPONSE_CODE%|%RESPONSE_FLAGS%|%DURATION%|%BYTES_SENT%|%ROUTE_NAME%\n';
 
       const termChain = listener443.filter_chains.find((fc: any) =>
         fc.filter_chain_match?.server_names?.includes('api.anthropic.com'),
@@ -604,32 +605,73 @@ describe('proxy configuration generation', () => {
 
 describe('proxy policy block-list and skip-allow-list routing', () => {
   it('adds explicit block-list chains and HTTP vhosts', () => {
-    const config = generateEnvoyConfig({ ...allowlist, blocked: ['blocked.example.com', '*.blocked-wild.com'] }) as any;
-    const listener443 = config.static_resources.listeners.find((l: any) => l.name === 'listener_443');
-    const chain = listener443.filter_chains.find((fc: any) => fc.filter_chain_match?.server_names?.includes('blocked.example.com'));
+    const config = generateEnvoyConfig({
+      ...allowlist,
+      blocked: ['blocked.example.com', '*.blocked-wild.com'],
+    }) as any;
+    const listener443 = config.static_resources.listeners.find(
+      (l: any) => l.name === 'listener_443',
+    );
+    const chain = listener443.filter_chains.find((fc: any) =>
+      fc.filter_chain_match?.server_names?.includes('blocked.example.com'),
+    );
     expect(chain).toBeDefined();
     expect(chain.filter_chain_match.server_names).toContain('*.blocked-wild.com');
     expect(chain.filters[0].typed_config.cluster).toBe('blackhole');
-    expect(chain.filters[0].typed_config.access_log[0].typed_config.log_format.text_format_source.inline_string).toMatch(/^CFGM\|blocklist\|/);
+    expect(
+      chain.filters[0].typed_config.access_log[0].typed_config.log_format.text_format_source
+        .inline_string,
+    ).toMatch(/^CFGM\|blocklist\|/);
     const listener80 = config.static_resources.listeners.find((l: any) => l.name === 'listener_80');
-    const vhost = listener80.filter_chains[0].filters[0].typed_config.route_config.virtual_hosts.find((v: any) => v.domains.includes('blocked.example.com'));
+    const vhost =
+      listener80.filter_chains[0].filters[0].typed_config.route_config.virtual_hosts.find(
+        (v: any) => v.domains.includes('blocked.example.com'),
+      );
     expect(vhost.routes[0]).toMatchObject({ name: 'blocked', direct_response: { status: 403 } });
   });
 
   it('opens the default branches under skip-allow-list while preserving block-list denial', () => {
-    const config = generateEnvoyConfig({ ...allowlist, blocked: ['blocked.example.com'] }, { skipAllowList: true }) as any;
-    const listener443 = config.static_resources.listeners.find((l: any) => l.name === 'listener_443');
-    expect(listener443.default_filter_chain.filters[1].typed_config.cluster).toBe('dynamic_forward_proxy_cluster');
-    expect(listener443.default_filter_chain.filters[1].typed_config.access_log[0].typed_config.log_format.text_format_source.inline_string).toMatch(/^CFGM\|passopen\|/);
+    const config = generateEnvoyConfig(
+      { ...allowlist, blocked: ['blocked.example.com'] },
+      { skipAllowList: true },
+    ) as any;
+    const listener443 = config.static_resources.listeners.find(
+      (l: any) => l.name === 'listener_443',
+    );
+    expect(listener443.default_filter_chain.filters[1].typed_config.cluster).toBe(
+      'dynamic_forward_proxy_cluster',
+    );
+    expect(
+      listener443.default_filter_chain.filters[1].typed_config.access_log[0].typed_config.log_format
+        .text_format_source.inline_string,
+    ).toMatch(/^CFGM\|passopen\|/);
     const listener80 = config.static_resources.listeners.find((l: any) => l.name === 'listener_80');
     const hcm = listener80.filter_chains[0].filters[0].typed_config;
-    expect(hcm.route_config.virtual_hosts.find((v: any) => v.domains.includes('*')).routes[0].name).toBe('open');
-    expect(hcm.http_filters.map((f: any) => f.name)).toContain('envoy.filters.http.dynamic_forward_proxy');
+    expect(
+      hcm.route_config.virtual_hosts.find((v: any) => v.domains.includes('*')).routes[0].name,
+    ).toBe('open');
+    expect(hcm.http_filters.map((f: any) => f.name)).toContain(
+      'envoy.filters.http.dynamic_forward_proxy',
+    );
   });
 
   it('does not emit an empty 443 passthrough chain', () => {
-    const config = generateEnvoyConfig({ passthrough: [], claudeAuthenticated: [], githubAuthenticated: [], codexAuthenticated: [], authCandidate: [], blocked: [], warnings: [] }) as any;
-    const listener443 = config.static_resources.listeners.find((l: any) => l.name === 'listener_443');
-    expect(listener443.filter_chains.some((fc: any) => fc.filter_chain_match?.server_names?.length === 0)).toBe(false);
+    const config = generateEnvoyConfig({
+      passthrough: [],
+      claudeAuthenticated: [],
+      githubAuthenticated: [],
+      codexAuthenticated: [],
+      authCandidate: [],
+      blocked: [],
+      warnings: [],
+    }) as any;
+    const listener443 = config.static_resources.listeners.find(
+      (l: any) => l.name === 'listener_443',
+    );
+    expect(
+      listener443.filter_chains.some(
+        (fc: any) => fc.filter_chain_match?.server_names?.length === 0,
+      ),
+    ).toBe(false);
   });
 });

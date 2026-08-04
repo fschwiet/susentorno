@@ -19,7 +19,8 @@ export function registerImportSbxNetworkPolicy(program: Command): void {
     .action((policyFile: string, options: { allowOutput: string; authOutput: string }) => {
       const content = readFileSync(policyFile, 'utf8');
       const allowlist = parsePolicyFile(content);
-      for (const warning of allowlist.warnings) console.warn(`import-sbx-network-policy: ${warning}`);
+      for (const warning of allowlist.warnings)
+        console.warn(`import-sbx-network-policy: ${warning}`);
       writeFileSync(options.allowOutput, formatAllowListFile(allowlist.passthrough));
       writeFileSync(options.authOutput, formatAuthListFile(allowlist));
     });

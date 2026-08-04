@@ -85,18 +85,36 @@ describe('access-log line parsing', () => {
   });
 
   it('parses an 11-field http line into routeName', () => {
-    expect(parseLine('CFGM|http|2026-07-06T12:04:31|-|archive.ubuntu.com|via_upstream|200|-|12|34|matched')).toEqual({
-      pathId: 'http', time: '2026-07-06T12:04:31', serverName: '-', authority: 'archive.ubuntu.com',
-      codeDetails: 'via_upstream', responseCode: '200', responseFlags: '-', duration: '12', bytesSent: '34', routeName: 'matched',
+    expect(
+      parseLine(
+        'CFGM|http|2026-07-06T12:04:31|-|archive.ubuntu.com|via_upstream|200|-|12|34|matched',
+      ),
+    ).toEqual({
+      pathId: 'http',
+      time: '2026-07-06T12:04:31',
+      serverName: '-',
+      authority: 'archive.ubuntu.com',
+      codeDetails: 'via_upstream',
+      responseCode: '200',
+      responseFlags: '-',
+      duration: '12',
+      bytesSent: '34',
+      routeName: 'matched',
     });
   });
 
   it('parses passopen and blocklist lines', () => {
-    expect(parseLine('CFGM|passopen|2026-07-06T12:04:31|open.example.com|-|-|-|-|-|-')?.pathId).toBe('passopen');
-    expect(parseLine('CFGM|blocklist|2026-07-06T12:04:31|blocked.example.com|-|-|-|-|-|-')?.pathId).toBe('blocklist');
+    expect(
+      parseLine('CFGM|passopen|2026-07-06T12:04:31|open.example.com|-|-|-|-|-|-')?.pathId,
+    ).toBe('passopen');
+    expect(
+      parseLine('CFGM|blocklist|2026-07-06T12:04:31|blocked.example.com|-|-|-|-|-|-')?.pathId,
+    ).toBe('blocklist');
   });
 
   it('requires routeName on http lines', () => {
-    expect(parseLine('CFGM|http|2026-07-06T12:04:31|-|archive.ubuntu.com|via_upstream|200|-|12|34')).toBeNull();
+    expect(
+      parseLine('CFGM|http|2026-07-06T12:04:31|-|archive.ubuntu.com|via_upstream|200|-|12|34'),
+    ).toBeNull();
   });
 });

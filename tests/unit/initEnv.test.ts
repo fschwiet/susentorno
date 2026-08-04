@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initEnvironment } from '../../src/initEnv';
-import { templatesDir, packagedAllowList, packagedAuthList, packagedBlockList } from '../../src/templates';
+import {
+  templatesDir,
+  packagedAllowList,
+  packagedAuthList,
+  packagedBlockList,
+} from '../../src/templates';
 import { ENV_DIR_NAME } from '../../src/envPaths';
 
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));

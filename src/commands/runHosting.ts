@@ -168,7 +168,9 @@ export function registerRunHosting(program: Command): void {
         }
         const secretPath = options.secret ?? paths.sdsSecret;
         if (options.skipAllowList) {
-          console.log('run-hosting: --skip-allow-list is set — hosts not on allow-list.txt will pass through and be logged as such');
+          console.log(
+            'run-hosting: --skip-allow-list is set — hosts not on allow-list.txt will pass through and be logged as such',
+          );
         }
 
         let mcpServers;
@@ -358,7 +360,11 @@ export function registerRunHosting(program: Command): void {
           const exitCode = await runHostingLoop(
             {
               channels: [claudeChannel, codexChannel],
-              policyPaths: { allowList: paths.allowList, authList: paths.authList, blockList: paths.blockList },
+              policyPaths: {
+                allowList: paths.allowList,
+                authList: paths.authList,
+                blockList: paths.blockList,
+              },
               readyTimeoutMs: 60_000,
               drainTimeoutMs: 30_000,
               mcpServers,

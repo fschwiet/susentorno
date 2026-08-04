@@ -23,10 +23,18 @@ export interface Entry {
 }
 
 const TAG_BY_443_PATH_ID: Partial<Record<PathId, Tag>> = {
-  term: 'ALLOW CRED', pass: 'ALLOW PASS', mcp: 'ALLOW MCP', deny443: 'BLOCK TLS', passopen: 'ALLOW OPEN', blocklist: 'BLOCK LIST',
+  term: 'ALLOW CRED',
+  pass: 'ALLOW PASS',
+  mcp: 'ALLOW MCP',
+  deny443: 'BLOCK TLS',
+  passopen: 'ALLOW OPEN',
+  blocklist: 'BLOCK LIST',
 };
 const TAG_BY_HTTP_ROUTE_NAME: Record<string, Tag> = {
-  matched: 'ALLOW HTTP', blocked: 'BLOCK LIST', 'default-deny': 'BLOCK HTTP', open: 'ALLOW OPEN',
+  matched: 'ALLOW HTTP',
+  blocked: 'BLOCK LIST',
+  'default-deny': 'BLOCK HTTP',
+  open: 'ALLOW OPEN',
 };
 
 function stripPort(host: string): string {

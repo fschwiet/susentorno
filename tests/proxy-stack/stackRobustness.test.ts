@@ -199,7 +199,10 @@ describe('proxy stack robustness under failure', () => {
 
   it('starts cleanly on a passthrough+claudeAuthenticated collision (single filter chain per SNI)', async () => {
     writeFileSync(join(proxyDir, 'allow-list.txt'), 'shared.example.com:443\n');
-    writeFileSync(join(proxyDir, 'auth-list.txt'), '#pragma claude authenticated\napi.anthropic.com:443\nshared.example.com:443\n');
+    writeFileSync(
+      join(proxyDir, 'auth-list.txt'),
+      '#pragma claude authenticated\napi.anthropic.com:443\nshared.example.com:443\n',
+    );
 
     proxyProc = spawnProxyPlain();
     // The collision warning appears, and Envoy accepts the resolved config and

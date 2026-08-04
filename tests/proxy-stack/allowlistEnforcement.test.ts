@@ -217,14 +217,20 @@ describe('proxy stack policy enforcement', () => {
 describe('proxy stack block-list enforcement', () => {
   it('closes a block-listed SNI and emits a BLOCK LIST marker', async () => {
     await new Promise<void>((resolve) => {
-      const socket = tlsConnect({ host: '127.0.0.1', port: HTTPS_PORT, servername: 'blocked-by-list.example.com' }, () => socket.end());
+      const socket = tlsConnect(
+        { host: '127.0.0.1', port: HTTPS_PORT, servername: 'blocked-by-list.example.com' },
+        () => socket.end(),
+      );
       socket.on('error', () => resolve());
       socket.on('close', () => resolve());
     });
     const deadline = Date.now() + 10000;
     let logs = '';
     while (Date.now() < deadline) {
-      const result = await execa('docker', ['compose', 'logs', '--no-color', 'envoy_blue'], { cwd: stack.proxyDir, env: stack.composeEnv });
+      const result = await execa('docker', ['compose', 'logs', '--no-color', 'envoy_blue'], {
+        cwd: stack.proxyDir,
+        env: stack.composeEnv,
+      });
       logs = result.stdout;
       if (logs.includes('CFGM|blocklist|')) break;
       await new Promise((resolve) => setTimeout(resolve, 500));

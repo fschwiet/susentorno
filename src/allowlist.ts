@@ -62,10 +62,7 @@ export interface AuthListFile {
 }
 
 type AuthSection =
-  | 'claudeAuthenticated'
-  | 'githubAuthenticated'
-  | 'codexAuthenticated'
-  | 'authCandidate';
+  'claudeAuthenticated' | 'githubAuthenticated' | 'codexAuthenticated' | 'authCandidate';
 
 export function parseAuthListFile(content: string): AuthListFile {
   const claudeAuthenticated = new Set<string>();
@@ -126,7 +123,9 @@ export interface BlockListFile {
 }
 
 function isBlocked(host: string, patterns: string[]): boolean {
-  return patterns.some((pattern) => pattern === host || (pattern.startsWith('*.') && host.endsWith(pattern.slice(1))));
+  return patterns.some(
+    (pattern) => pattern === host || (pattern.startsWith('*.') && host.endsWith(pattern.slice(1))),
+  );
 }
 
 export function combinePolicy(
@@ -165,8 +164,20 @@ export function combinePolicy(
     { name: 'claudeAuthenticated', set: claudeAuthenticated },
     { name: 'passthrough', set: passthroughSet },
   ];
-  const displayOrder = ['passthrough', 'claudeAuthenticated', 'codexAuthenticated', 'githubAuthenticated', 'authCandidate'];
-  for (const entry of new Set([...passthroughSet, ...claudeAuthenticated, ...githubAuthenticated, ...codexAuthenticated, ...authCandidate])) {
+  const displayOrder = [
+    'passthrough',
+    'claudeAuthenticated',
+    'codexAuthenticated',
+    'githubAuthenticated',
+    'authCandidate',
+  ];
+  for (const entry of new Set([
+    ...passthroughSet,
+    ...claudeAuthenticated,
+    ...githubAuthenticated,
+    ...codexAuthenticated,
+    ...authCandidate,
+  ])) {
     const present = byPriority.filter((section) => section.set.has(entry));
     if (present.length < 2) continue;
     const [winner, ...losers] = present;
@@ -187,7 +198,10 @@ export function combinePolicy(
 }
 
 export function terminateTlsHosts(
-  allowlist: Pick<Allowlist, 'claudeAuthenticated' | 'githubAuthenticated' | 'codexAuthenticated' | 'authCandidate'>,
+  allowlist: Pick<
+    Allowlist,
+    'claudeAuthenticated' | 'githubAuthenticated' | 'codexAuthenticated' | 'authCandidate'
+  >,
 ): string[] {
   return [
     ...allowlist.claudeAuthenticated,
@@ -204,7 +218,10 @@ export function formatAllowListFile(entries: string[]): string {
 }
 
 export function formatAuthListFile(
-  authList: Pick<Allowlist, 'claudeAuthenticated' | 'githubAuthenticated' | 'codexAuthenticated' | 'authCandidate'>,
+  authList: Pick<
+    Allowlist,
+    'claudeAuthenticated' | 'githubAuthenticated' | 'codexAuthenticated' | 'authCandidate'
+  >,
 ): string {
   const lines: string[] = ['#pragma claude authenticated'];
   for (const entry of [...authList.claudeAuthenticated].sort()) lines.push(entry);
