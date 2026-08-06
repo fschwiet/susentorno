@@ -86,10 +86,17 @@ export function registerSetupGuestUnix(program: Command): void {
 
       const scripts = listPreScripts(join(paths.vmShared, 'pre-scripts'));
       const remoteExec = createSshRemoteExec({ address, username });
+      const onStep = (message: string) => console.log(`setup-guest-unix: ${message}...`);
 
       try {
-        await mountShare(remoteExec, { shareName, accountName, password, defaultSwitchHostIp });
-        await runPreScripts(remoteExec, { scripts, shareName, internalSwitchHostIp });
+        await mountShare(remoteExec, {
+          shareName,
+          accountName,
+          password,
+          defaultSwitchHostIp,
+          onStep,
+        });
+        await runPreScripts(remoteExec, { scripts, shareName, internalSwitchHostIp, onStep });
       } catch (error) {
         if (error instanceof MountShareError || error instanceof RunPreScriptsError) {
           console.error(`setup-guest-unix: ${error.message}`);
