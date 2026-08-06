@@ -371,6 +371,18 @@ describe('buildFstabReplaceCommand', () => {
     });
     expect(command).toContain("/mnt/share'\\''name");
   });
+
+  it('escapes sed/BRE metacharacters in the share name so the delete pattern matches literally', () => {
+    // Shell-quoting (above) only protects the guest shell from the string's
+    // metacharacters; the delete step's argument is then interpreted a
+    // second time, as a sed BRE address, where '.', '#' (our delimiter),
+    // etc. mean something different unless escaped.
+    const command = buildFstabReplaceCommand({
+      shareName: 'share.name#1',
+      defaultSwitchHostIp: '172.28.128.1',
+    });
+    expect(command).toContain('/mnt/share\\.name\\#1');
+  });
 });
 ```
 
@@ -399,13 +411,25 @@ export interface FstabReplaceOptions {
  * Default-Switch host IP changed across a host reboot — either way this
  * converges on one correct line, unlike a plain `tee -a`.
  */
+/**
+ * Escapes a value for safe use inside a GNU sed BRE address between '#'
+ * delimiters: '\', '.', '*', '[', ']', '^', '$' are BRE metacharacters, and
+ * '#' is the chosen delimiter itself — GNU sed treats a backslash-escaped
+ * delimiter inside the address as a literal character. Shell-quoting
+ * (quoteForRemoteShell) protects the guest shell from the string; this
+ * separately protects sed's own interpretation of it once delivered.
+ */
+function escapeForSedBre(value: string): string {
+  return value.replace(/[\\.*[\]^$#]/g, '\\$&');
+}
+
 export function buildFstabReplaceCommand(opts: FstabReplaceOptions): string {
   const mountPoint = `/mnt/${opts.shareName}`;
   const fstabLine =
     `//${opts.defaultSwitchHostIp}/${opts.shareName} ${mountPoint} cifs ` +
     `ro,credentials=/etc/susentorno-share.cred,uid=1000,gid=1000,_netdev,x-systemd.automount 0 0`;
   // '#' as the sed delimiter avoids escaping the '/' characters in mountPoint.
-  const deleteScript = `\\#[[:space:]]${mountPoint}[[:space:]]#d`;
+  const deleteScript = `\\#[[:space:]]${escapeForSedBre(mountPoint)}[[:space:]]#d`;
   return (
     `sudo sed -i ${quoteForRemoteShell(deleteScript)} /etc/fstab && ` +
     `echo ${quoteForRemoteShell(fstabLine)} | sudo tee -a /etc/fstab > /dev/null`
@@ -416,7 +440,7 @@ export function buildFstabReplaceCommand(opts: FstabReplaceOptions): string {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pnpm vitest run tests/unit/guestSetup/fstabLine.test.ts`
-Expected: PASS (2 tests)
+Expected: PASS (3 tests)
 
 - [ ] **Step 5: Commit**
 
@@ -692,6 +716,21 @@ describe('mountShare', () => {
     ).rejects.toThrow(MountShareError);
     expect(calls.some((c) => c.includes('sudo install -m 600'))).toBe(false);
   });
+
+  it('constructs the install step so the remote temp file is removed even if install fails', async () => {
+    const { remoteExec, calls } = fakeRemoteExec();
+    await mountShare(remoteExec, {
+      shareName: 'vm-shared-linux',
+      accountName: 'susentorno-share',
+      password: 'hunter2',
+      defaultSwitchHostIp: '172.28.128.1',
+    });
+    const installCall = calls.find((c) => c.includes('sudo install -m 600'))!;
+    expect(installCall).toContain('rm -f');
+    // Cleanup must not be gated behind install succeeding (`&&`) — a failed
+    // install must not leave the password file sitting on the guest.
+    expect(installCall).not.toMatch(/sudo install[^;]*&&[^;]*rm -f/);
+  });
 });
 ```
 
@@ -769,7 +808,9 @@ export async function mountShare(remoteExec: RemoteExec, opts: MountShareOptions
 
   const suffix = randomBytes(8).toString('hex');
   const localTempPath = join(tmpdir(), `susentorno-share-cred-${suffix}`);
-  const remoteTempPath = `/tmp/susentorno-share-cred-${suffix}`;
+  // Guest home directory, not /tmp: scp resolves a `~/...` destination against
+  // the login user's home server-side, same as ssh does for any other path.
+  const remoteTempPath = `~/.susentorno-share-cred-${suffix}`;
   writeFileSync(localTempPath, `username=${opts.accountName}\npassword=${opts.password}\n`, {
     mode: 0o600,
   });
@@ -777,11 +818,16 @@ export async function mountShare(remoteExec: RemoteExec, opts: MountShareOptions
     const { exitCode: copyExitCode } = await remoteExec.copyFile(localTempPath, remoteTempPath);
     if (copyExitCode !== 0) throw new MountShareError('copy credentials file', copyExitCode);
 
+    // `;` between install and cleanup, not `&&`: the remote temp file (which
+    // holds the plaintext share password) must be removed whether or not
+    // `install` succeeds. `install_exit` is captured immediately after
+    // `install` runs, before `rm` can overwrite `$?`, and `exit $install_exit`
+    // makes the whole invocation still report install's own outcome.
     await runStep(
       remoteExec,
       'install credentials file',
-      `sudo install -m 600 -o root -g root ${quoteForRemoteShell(remoteTempPath)} ` +
-        `/etc/susentorno-share.cred && rm -f ${quoteForRemoteShell(remoteTempPath)}`,
+      `sudo install -m 600 -o root -g root ${quoteForRemoteShell(remoteTempPath)} /etc/susentorno-share.cred; ` +
+        `install_exit=$?; rm -f ${quoteForRemoteShell(remoteTempPath)}; exit $install_exit`,
     );
   } finally {
     rmSync(localTempPath, { force: true });
@@ -805,7 +851,7 @@ export async function mountShare(remoteExec: RemoteExec, opts: MountShareOptions
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pnpm vitest run tests/unit/guestSetup/mountShare.test.ts`
-Expected: PASS (4 tests)
+Expected: PASS (5 tests)
 
 - [ ] **Step 5: Commit**
 
@@ -882,8 +928,8 @@ describe('runPreScripts', () => {
       internalSwitchHostIp: '192.168.67.1',
     });
     expect(calls).toEqual([
-      "cd '/mnt/vm-shared-linux/pre-scripts' && ./01-apt-packages.sh",
-      "cd '/mnt/vm-shared-linux/pre-scripts' && ./02-install-pnpm.sh",
+      "cd '/mnt/vm-shared-linux/pre-scripts' && './01-apt-packages.sh'",
+      "cd '/mnt/vm-shared-linux/pre-scripts' && './02-install-pnpm.sh'",
     ]);
   });
 
@@ -897,9 +943,9 @@ describe('runPreScripts', () => {
       shareName: 'vm-shared-linux',
       internalSwitchHostIp: '192.168.67.1',
     });
-    expect(calls[0]).toBe("cd '/mnt/vm-shared-linux/pre-scripts' && ./01-apt-packages.sh");
+    expect(calls[0]).toBe("cd '/mnt/vm-shared-linux/pre-scripts' && './01-apt-packages.sh'");
     expect(calls[1]).toBe(
-      "cd '/mnt/vm-shared-linux/pre-scripts' && ./05-configure-network.sh '192.168.67.1'",
+      "cd '/mnt/vm-shared-linux/pre-scripts' && './05-configure-network.sh' '192.168.67.1'",
     );
   });
 
@@ -911,8 +957,18 @@ describe('runPreScripts', () => {
       internalSwitchHostIp: '192.168.67.1',
     });
     expect(calls).toEqual([
-      "cd '/mnt/vm-shared-linux/pre-scripts' && ./03-preconfigure-network-tools.sh",
+      "cd '/mnt/vm-shared-linux/pre-scripts' && './03-preconfigure-network-tools.sh'",
     ]);
+  });
+
+  it('quotes a script filename containing shell metacharacters', async () => {
+    const { remoteExec, calls } = fakeRemoteExec();
+    await runPreScripts(remoteExec, {
+      scripts: [script('06-a b;c.sh', 'a b;c')],
+      shareName: 'vm-shared-linux',
+      internalSwitchHostIp: '192.168.67.1',
+    });
+    expect(calls).toEqual(["cd '/mnt/vm-shared-linux/pre-scripts' && './06-a b;c.sh'"]);
   });
 
   it('stops at the first non-zero exit and reports which script failed', async () => {
@@ -992,17 +1048,20 @@ export async function runPreScripts(remoteExec: RemoteExec, opts: RunPreScriptsO
   const remoteDir = `/mnt/${opts.shareName}/pre-scripts`;
   for (const s of opts.scripts) {
     const args = s.slug === CONFIGURE_NETWORK_SLUG ? ` ${quoteForRemoteShell(opts.internalSwitchHostIp)}` : '';
-    const command = `cd ${quoteForRemoteShell(remoteDir)} && ./${s.filename}${args}`;
+    const scriptPath = quoteForRemoteShell(`./${s.filename}`);
+    const command = `cd ${quoteForRemoteShell(remoteDir)} && ${scriptPath}${args}`;
     const { exitCode } = await remoteExec.run(command);
     if (exitCode !== 0) throw new RunPreScriptsError(s.filename, exitCode);
   }
 }
 ```
 
+`s.filename` is quoted here for the same reason the share name and account name are quoted elsewhere: `weaveScripts.ts`'s `renumber()` preserves an arbitrary filename remainder verbatim (a woven-in custom pre-script's original name), so a filename containing a space or shell metacharacter must not be interpolated unquoted.
+
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pnpm vitest run tests/unit/guestSetup/runPreScripts.test.ts`
-Expected: PASS (5 tests)
+Expected: PASS (6 tests)
 
 - [ ] **Step 5: Commit**
 
@@ -1226,16 +1285,46 @@ git commit -m "feat: add promptText and promptMasked CLI prompt helpers"
   - `createSshRemoteExec` from Task 5.
   - `mountShare`, `MountShareError` from Task 6.
   - `runPreScripts`, `RunPreScriptsError` from Task 7.
-- Produces: `registerSetupGuestUnix(program: Command): void`
+- Produces:
+  ```typescript
+  export interface ResolvedGuestNetwork {
+    internalSwitchHostIp: string;
+    defaultSwitchHostIp: string;
+  }
+  export interface GuestNetworkResolutionFailure {
+    adapterAlias: string;
+    hint: string;
+  }
+  export function resolveGuestNetwork(
+    adapterAlias: string,
+    natAdapterAlias: string,
+    interfaces?: NodeJS.Dict<NetworkInterfaceInfo[]>,
+  ): ResolvedGuestNetwork | GuestNetworkResolutionFailure;
+  export function registerSetupGuestUnix(program: Command): void;
+  ```
 
-- [ ] **Step 1: Write the failing test (unit-tier option surface)**
+`resolveGuestNetwork` is the two-adapter-resolution logic pulled out as its own pure, injectable-`interfaces` function — the same shape `resolveForwardListenAddress` itself already uses for testability (see `tests/unit/forwarder.test.ts`). This lets both failure branches (internal-switch adapter missing, NAT adapter missing) be tested deterministically with fake interface maps, rather than depending on which real adapters happen to exist on whatever machine runs the tests.
+
+- [ ] **Step 1: Write the failing test (unit-tier option surface and adapter resolution)**
 
 Create `tests/unit/commands/setupGuestUnix.test.ts`:
 
 ```typescript
 import { describe, it, expect } from 'vitest';
 import { Command } from 'commander';
-import { registerSetupGuestUnix } from '../../../src/commands/setupGuestUnix';
+import type { NetworkInterfaceInfo } from 'node:os';
+import { registerSetupGuestUnix, resolveGuestNetwork } from '../../../src/commands/setupGuestUnix';
+
+function ipv4(address: string): NetworkInterfaceInfo {
+  return {
+    address,
+    netmask: '255.255.255.0',
+    family: 'IPv4',
+    mac: '00:00:00:00:00:00',
+    internal: false,
+    cidr: `${address}/24`,
+  };
+}
 
 describe('setup-guest-unix command option surface', () => {
   it('registers the command with adapter-alias overrides and sensible defaults', () => {
@@ -1251,6 +1340,39 @@ describe('setup-guest-unix command option surface', () => {
     expect(natAdapterOption?.defaultValue).toBe('vEthernet (Default Switch)');
   });
 });
+
+describe('resolveGuestNetwork', () => {
+  it('resolves both IPs when both adapters are present', () => {
+    const result = resolveGuestNetwork('internal-adapter', 'nat-adapter', {
+      'internal-adapter': [ipv4('192.168.67.1')],
+      'nat-adapter': [ipv4('172.28.128.1')],
+    });
+    expect(result).toEqual({
+      internalSwitchHostIp: '192.168.67.1',
+      defaultSwitchHostIp: '172.28.128.1',
+    });
+  });
+
+  it('fails on the internal-switch adapter when it is missing, before checking the NAT one', () => {
+    const result = resolveGuestNetwork('internal-adapter', 'nat-adapter', {
+      'nat-adapter': [ipv4('172.28.128.1')],
+    });
+    expect(result).toEqual({
+      adapterAlias: 'internal-adapter',
+      hint: 'Pass --adapter-alias, or complete setup-machine.md first.',
+    });
+  });
+
+  it('fails on the NAT adapter when only it is missing', () => {
+    const result = resolveGuestNetwork('internal-adapter', 'nat-adapter', {
+      'internal-adapter': [ipv4('192.168.67.1')],
+    });
+    expect(result).toEqual({
+      adapterAlias: 'nat-adapter',
+      hint: 'Pass --nat-adapter-alias, or attach the guest to the Default Switch first.',
+    });
+  });
+});
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1264,6 +1386,7 @@ Create `src/commands/setupGuestUnix.ts`:
 
 ```typescript
 import { join } from 'node:path';
+import { networkInterfaces, type NetworkInterfaceInfo } from 'node:os';
 import type { Command } from 'commander';
 import { requireEnvPathsOrExit } from '../envPaths';
 import { resolveForwardListenAddress, DEFAULT_INTERNAL_SWITCH_ADAPTER } from '../runHosting/forwarder';
@@ -1280,6 +1403,41 @@ interface SetupGuestUnixOptions {
   natAdapterAlias: string;
 }
 
+export interface ResolvedGuestNetwork {
+  internalSwitchHostIp: string;
+  defaultSwitchHostIp: string;
+}
+
+export interface GuestNetworkResolutionFailure {
+  adapterAlias: string;
+  hint: string;
+}
+
+export function resolveGuestNetwork(
+  adapterAlias: string,
+  natAdapterAlias: string,
+  interfaces: NodeJS.Dict<NetworkInterfaceInfo[]> = networkInterfaces(),
+): ResolvedGuestNetwork | GuestNetworkResolutionFailure {
+  const internalSwitchHostIp = resolveForwardListenAddress(adapterAlias, interfaces);
+  if (!internalSwitchHostIp) {
+    return { adapterAlias, hint: 'Pass --adapter-alias, or complete setup-machine.md first.' };
+  }
+  const defaultSwitchHostIp = resolveForwardListenAddress(natAdapterAlias, interfaces);
+  if (!defaultSwitchHostIp) {
+    return {
+      adapterAlias: natAdapterAlias,
+      hint: 'Pass --nat-adapter-alias, or attach the guest to the Default Switch first.',
+    };
+  }
+  return { internalSwitchHostIp, defaultSwitchHostIp };
+}
+
+function isResolutionFailure(
+  result: ResolvedGuestNetwork | GuestNetworkResolutionFailure,
+): result is GuestNetworkResolutionFailure {
+  return 'hint' in result;
+}
+
 export function registerSetupGuestUnix(program: Command): void {
   program
     .command('setup-guest-unix')
@@ -1294,24 +1452,15 @@ export function registerSetupGuestUnix(program: Command): void {
       const paths = requireEnvPathsOrExit('setup-guest-unix');
       if (!paths) return;
 
-      const internalSwitchHostIp = resolveForwardListenAddress(options.adapterAlias);
-      if (!internalSwitchHostIp) {
+      const resolved = resolveGuestNetwork(options.adapterAlias, options.natAdapterAlias);
+      if (isResolutionFailure(resolved)) {
         console.error(
-          `setup-guest-unix: could not find an IPv4 address on adapter '${options.adapterAlias}'. ` +
-            'Pass --adapter-alias, or complete setup-machine.md first.',
+          `setup-guest-unix: could not find an IPv4 address on adapter '${resolved.adapterAlias}'. ${resolved.hint}`,
         );
         process.exitCode = 1;
         return;
       }
-      const defaultSwitchHostIp = resolveForwardListenAddress(options.natAdapterAlias);
-      if (!defaultSwitchHostIp) {
-        console.error(
-          `setup-guest-unix: could not find an IPv4 address on adapter '${options.natAdapterAlias}'. ` +
-            'Pass --nat-adapter-alias, or attach the guest to the Default Switch first.',
-        );
-        process.exitCode = 1;
-        return;
-      }
+      const { internalSwitchHostIp, defaultSwitchHostIp } = resolved;
 
       const address = await promptText('Guest address (hostname or IP)');
       const username = await promptText('Guest username');
@@ -1354,7 +1503,7 @@ registerSetupGuestUnix(program);
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pnpm vitest run tests/unit/commands/setupGuestUnix.test.ts`
-Expected: PASS (1 test)
+Expected: PASS (4 tests)
 
 - [ ] **Step 5: Write the failing test (cli-tier fail-fast behavior)**
 
@@ -1390,35 +1539,20 @@ describe('susentorno setup-guest-unix', () => {
     expect(stderr).toContain("could not find an IPv4 address on adapter 'does-not-exist-adapter'");
     expect(stdout).not.toContain('Guest address'); // never reached the prompts
   });
-
-  it('fails fast when the NAT adapter does not exist, even if the internal-switch one does', async () => {
-    const { exitCode, stderr } = await execa(
-      'node',
-      [
-        cliPath,
-        'setup-guest-unix',
-        '--adapter-alias',
-        'Loopback Pseudo-Interface 1',
-        '--nat-adapter-alias',
-        'does-not-exist-nat-adapter',
-      ],
-      { cwd: dir, reject: false, input: '' },
-    );
-    expect(exitCode).toBe(1);
-    expect(stderr).toContain("could not find an IPv4 address on adapter 'does-not-exist-nat-adapter'");
-  });
 });
 ```
+
+This is the one adapter-resolution case that's deterministic at the packaged-CLI level on any machine: `does-not-exist-adapter` is guaranteed absent everywhere. The NAT-adapter-missing branch depends on a *second* adapter being present with a known name, which varies by machine — that case is already covered deterministically at the unit tier by `resolveGuestNetwork`'s tests in Step 1 (with fake `interfaces` maps), so it doesn't need a real-machine-dependent CLI test here too.
 
 - [ ] **Step 6: Run test to verify it fails**
 
 Run: `pnpm build && pnpm vitest run --config vitest.cli.config.ts tests/cli/setupGuestUnix.test.ts`
-Expected: FAIL — the command doesn't exist yet in the built CLI (this should already be fixed by Step 3/4's implementation; if it fails here it means `pnpm build` wasn't run since adding the command — rerun `pnpm build` first, then re-run this test to confirm it now passes instead of failing for the wrong reason. If it still fails, the second test's `'Loopback Pseudo-Interface 1'` adapter name doesn't exist on this machine — replace it with an adapter name confirmed present via `Get-NetIPConfiguration` on the dev machine, or simplify that test to only assert the first (`--adapter-alias`) failure case.)
+Expected: FAIL — the command doesn't exist yet in the built CLI (this should already be fixed by Step 3/4's implementation; if it fails here it means `pnpm build` wasn't run since adding the command — rerun `pnpm build`, then re-run this test to confirm it now fails only because the command isn't in `dist/cli.js` yet, not for some other reason)
 
 - [ ] **Step 7: Run test to verify it passes**
 
 Run: `pnpm build && pnpm vitest run --config vitest.cli.config.ts tests/cli/setupGuestUnix.test.ts`
-Expected: PASS (2 tests, adjusting the second test's adapter name per Step 6's note if needed for the machine running it)
+Expected: PASS (1 test)
 
 - [ ] **Step 8: Commit**
 
@@ -1592,4 +1726,16 @@ git commit -m "docs: point setup-guest.md's Ubuntu path at susentorno setup-gues
 
 ## Peer Review Notes
 
-Reviewed by `prompt-a-peer-medium` against this plan and the spec it implements (`docs/honist-v/specs/2026-08-06-automate-ubuntu-guest-setup-design.md`). [Filled in after the peer review step below.]
+Reviewed by `prompt-a-peer-medium` against this plan and the spec it implements (`docs/honist-v/specs/2026-08-06-automate-ubuntu-guest-setup-design.md`). Six findings came back; four were fixed inline, two were deliberately not acted on:
+
+**Fixed:**
+
+1. Task 7's `runPreScripts` interpolated a pre-script's filename into the remote command unquoted, contradicting the spec's own quoting requirement — a woven-in custom script's filename can contain spaces or shell metacharacters (`weaveScripts.ts`'s `renumber()` preserves it verbatim). Fixed by quoting `./${filename}` the same way every other interpolated value already is; test expectations and a new metacharacter-filename test updated accordingly.
+2. Task 9's second CLI-tier test asserted the NAT-adapter-missing branch using a hardcoded `'Loopback Pseudo-Interface 1'` adapter name — but that address is typically `internal: true` in Node's `os.networkInterfaces()`, so it would fail the *first* (internal-switch) check instead of reaching the branch under test, and the adapter's presence/naming isn't guaranteed on an arbitrary machine anyway. Fixed by extracting the two-adapter-resolution logic into a new pure, injectable-`interfaces` function (`resolveGuestNetwork`, mirroring how `resolveForwardListenAddress` itself is already tested), covering both failure branches deterministically at the unit tier with fake interface maps, and narrowing the CLI-tier test to just the one machine-independent case (`does-not-exist-adapter`, guaranteed absent everywhere).
+3. Task 4's `fstabLine.ts` shell-quoted the share name for the guest shell but never escaped it for `sed`'s own BRE interpretation of the delete pattern — a share name containing `.`, `#`, or other BRE metacharacters could match the wrong `/etc/fstab` line or break the pattern. Fixed by adding `escapeForSedBre` and a test with a share name containing `.` and `#`.
+4. Task 6's `mountShare` chained the remote credentials-file install and cleanup with `&&`, so a failed `sudo install` would skip `rm -f`, leaving the plaintext share password sitting on the guest; it also staged the file at `/tmp` rather than the guest home directory the spec specifies. Fixed by moving the temp path to `~/.susentorno-share-cred-<suffix>` and chaining install/cleanup with `;` plus an explicit `exit $install_exit`, so cleanup always runs regardless of install's outcome; added a test asserting the constructed command isn't `&&`-gated.
+
+**Discarded (reported, not acted on):**
+
+5. *Task 10's guest-tier test only proves one script runs successfully, not ordering or stop-on-failure against a real guest.* True, and the peer's suggested fix — stage a separate lightweight fixture directory as a guest's share so ordering/failure can be asserted without the cost of the real 01–04 scripts (which install pnpm, VS Code, the .NET SDK, etc.) — is reasonable, but requires booting a dedicated third guest with its own virtfs share, a nontrivial addition to an already expensive tier. The plan's Task 10 already explains this trade-off explicitly (ordering and stop-on-failure are covered deterministically by Task 7's unit tests instead); I judged that documented scope boundary sufficient rather than expanding the guest tier further, but flagging it here since it's my own call, not one you'd already signed off on.
+6. *Task steps should each re-state running `pnpm format`/`pnpm lint` before committing.* The plan's "Global Constraints" section already states this once, and the writing-plans skill's own header format is explicit that global constraints apply to every task implicitly rather than needing repetition — so I left the per-task commit steps as they are.
