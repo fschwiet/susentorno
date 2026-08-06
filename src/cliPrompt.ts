@@ -44,6 +44,15 @@ export function promptMasked(
     const cleanup = () => {
       input.removeListener('keypress', onKeypress);
       if (isTTY) ttyInput.setRawMode(false);
+      // Unconditional, not just when isTTY: emitKeypressEvents attaches an
+      // internal `data` listener to `input` with no public removal API, which
+      // keeps the stream in flowing mode — and therefore still reading from
+      // the console — even after our own `keypress` listener is gone and raw mode
+      // is off. pause() forces it out of flowing mode regardless of what else
+      // is still attached, so a child process spawned right after this
+      // (ssh with stdio: 'inherit') can read the console instead of racing us
+      // for it. See ADR-0022.
+      input.pause();
     };
 
     function onKeypress(str: string | undefined, key: Keypress) {

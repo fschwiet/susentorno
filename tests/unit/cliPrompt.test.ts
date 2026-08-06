@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { PassThrough } from 'node:stream';
 import { promptText, promptMasked } from '../../src/cliPrompt';
 
@@ -63,5 +63,24 @@ describe('promptMasked', () => {
     s.input.write('2');
     s.input.write('\r');
     expect(await result).toBe('hunter2');
+  });
+
+  it('pauses the input stream after resolving, so a later spawned child can read the console', async () => {
+    const s = streams();
+    const pauseSpy = vi.spyOn(s.input, 'pause');
+    const result = promptMasked('SMB share password', s);
+    s.input.write('hunter2');
+    s.input.write('\r');
+    await result;
+    expect(pauseSpy).toHaveBeenCalled();
+  });
+
+  it('pauses the input stream after a cancellation (Ctrl+C)', async () => {
+    const s = streams();
+    const pauseSpy = vi.spyOn(s.input, 'pause');
+    const result = promptMasked('SMB share password', s);
+    s.input.write('\x03');
+    await expect(result).rejects.toThrow('promptMasked: cancelled');
+    expect(pauseSpy).toHaveBeenCalled();
   });
 });
