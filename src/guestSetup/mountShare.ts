@@ -11,6 +11,7 @@ export interface MountShareOptions {
   accountName: string;
   password: string;
   defaultSwitchHostIp: string;
+  onStep?: (message: string) => void;
 }
 
 export class MountShareError extends Error {
@@ -21,13 +22,21 @@ export class MountShareError extends Error {
   }
 }
 
-async function runStep(remoteExec: RemoteExec, step: string, command: string): Promise<void> {
+async function runStep(
+  remoteExec: RemoteExec,
+  step: string,
+  command: string,
+  onStep: (message: string) => void,
+): Promise<void> {
+  onStep(step);
   const { exitCode } = await remoteExec.run(command);
   if (exitCode !== 0) throw new MountShareError(step, exitCode);
 }
 
 export async function mountShare(remoteExec: RemoteExec, opts: MountShareOptions): Promise<void> {
-  await runStep(remoteExec, 'install cifs-utils', 'sudo apt-get install -y cifs-utils');
+  const onStep = opts.onStep ?? (() => {});
+
+  await runStep(remoteExec, 'install cifs-utils', 'sudo apt-get install -y cifs-utils', onStep);
 
   const suffix = randomBytes(8).toString('hex');
   const localTempPath = join(tmpdir(), `susentorno-share-cred-${suffix}`);
@@ -42,6 +51,7 @@ export async function mountShare(remoteExec: RemoteExec, opts: MountShareOptions
     mode: 0o600,
   });
   try {
+    onStep('copy credentials file');
     const { exitCode: copyExitCode } = await remoteExec.copyFile(localTempPath, remoteTempPath);
     if (copyExitCode !== 0) throw new MountShareError('copy credentials file', copyExitCode);
 
@@ -55,6 +65,7 @@ export async function mountShare(remoteExec: RemoteExec, opts: MountShareOptions
       'install credentials file',
       `sudo install -m 600 -o root -g root ${remoteHomeTempPath} /etc/susentorno-share.cred; ` +
         `install_exit=$?; rm -f ${remoteHomeTempPath}; exit $install_exit`,
+      onStep,
     );
   } finally {
     rmSync(localTempPath, { force: true });
@@ -65,6 +76,7 @@ export async function mountShare(remoteExec: RemoteExec, opts: MountShareOptions
     remoteExec,
     'create mount point',
     `sudo mkdir -p ${quoteForRemoteShell(mountPoint)}`,
+    onStep,
   );
   await runStep(
     remoteExec,
@@ -73,6 +85,7 @@ export async function mountShare(remoteExec: RemoteExec, opts: MountShareOptions
       shareName: opts.shareName,
       defaultSwitchHostIp: opts.defaultSwitchHostIp,
     }),
+    onStep,
   );
-  await runStep(remoteExec, 'mount share', 'sudo systemctl daemon-reload && sudo mount -a');
+  await runStep(remoteExec, 'mount share', 'sudo systemctl daemon-reload && sudo mount -a', onStep);
 }

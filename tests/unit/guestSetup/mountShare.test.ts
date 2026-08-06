@@ -116,4 +116,61 @@ describe('mountShare', () => {
     // install must not leave the password file sitting on the guest.
     expect(installCall).not.toMatch(/sudo install[^;]*&&[^;]*rm -f/);
   });
+
+  it('reports each step to onStep immediately before the operation it describes runs, in order', async () => {
+    // A single event log shared between onStep and the fake RemoteExec proves
+    // interleaving order, not just that both eventually get called — a test
+    // that only checked the final onStep label list would still pass an
+    // implementation that (wrongly) reported every step only after the run.
+    const events: string[] = [];
+    const remoteExec: RemoteExec = {
+      async run(command: string): Promise<RemoteExecResult> {
+        events.push(`run:${command}`);
+        return { exitCode: 0 };
+      },
+      async copyFile(): Promise<RemoteExecResult> {
+        events.push('copyFile');
+        return { exitCode: 0 };
+      },
+    };
+    await mountShare(remoteExec, {
+      shareName: 'vm-shared-linux',
+      accountName: 'susentorno-share',
+      password: 'hunter2',
+      defaultSwitchHostIp: '172.28.128.1',
+      onStep: (message) => events.push(`step:${message}`),
+    });
+    expect(events.map((e) => e.split(':')[0])).toEqual([
+      'step',
+      'run',
+      'step',
+      'copyFile',
+      'step',
+      'run',
+      'step',
+      'run',
+      'step',
+      'run',
+      'step',
+      'run',
+    ]);
+    expect(events[0]).toBe('step:install cifs-utils');
+    expect(events[2]).toBe('step:copy credentials file');
+    expect(events[4]).toBe('step:install credentials file');
+    expect(events[6]).toBe('step:create mount point');
+    expect(events[8]).toBe('step:update fstab');
+    expect(events[10]).toBe('step:mount share');
+  });
+
+  it('works with no onStep given', async () => {
+    const { remoteExec } = fakeRemoteExec();
+    await expect(
+      mountShare(remoteExec, {
+        shareName: 'vm-shared-linux',
+        accountName: 'susentorno-share',
+        password: 'hunter2',
+        defaultSwitchHostIp: '172.28.128.1',
+      }),
+    ).resolves.toBeUndefined();
+  });
 });
