@@ -63,9 +63,9 @@ No new mount logic. The existing `mountShare` create-or-update `/etc/fstab` hand
 
 New `runPostScripts`, structurally identical to `runPreScripts` minus the `configure-network` argument special case — none of `post-scripts/`'s built-ins (`01-auth-config.sh`, `02-apply-home-jq-transforms.sh`) take arguments, and nothing in `setup-guest.md` documents one that does. `listPreScripts` becomes a directory-agnostic `listScripts(dir)` that both `runPreScripts` and `runPostScripts` call, rather than duplicating the numeric-prefix-ordering logic. Same `RemoteExec` seam, same stop-at-first-non-zero-exit semantics. `.susentorno/post-scripts/` already supports the same custom-script weaving mechanism as `.susentorno/pre-scripts/` (README's "Customizing setup scripts"), so a woven-in custom post-script runs in its resolved position automatically, with the same no-argument limitation and idempotency caveat already documented for custom pre-scripts.
 
-## Console output for script execution
+## Console output for step announcements
 
-Today, the shared `onStep` callback in `setup-guest-unix.ts` prints `setup-guest-unix: ${message}...` for every step, including each pre-script's `running ${filename}` announcement — with no separation from the script's own streamed output (apt/pnpm/etc. logs), which can be long and makes the announcement easy to miss. For `runPreScripts` and `runPostScripts` specifically (not the more compact mount-step logging), the step announcement gains a leading and trailing blank line and switches to a `susentorno: ` prefix:
+Today, the shared `onStep` callback in `setup-guest-unix.ts` prints `setup-guest-unix: ${message}...` for every step, with no separation from whatever streamed output follows it on the same terminal — most visibly for `runPreScripts`' `running ${filename}` announcements (apt/pnpm/etc. logs can be long), but the same shared callback also announces each `mountShare` step immediately before that step's own SSH command runs. Every `onStep` call that precedes an SSH invocation — `mountShare`'s per-step messages, `runPreScripts`'/`runPostScripts`' per-script messages alike — gains a leading and trailing blank line and switches to a `susentorno: ` prefix, so the one shared `onStep` implementation formats consistently everywhere it's used:
 
 ```
 
@@ -73,6 +73,8 @@ susentorno: running 01-apt-packages.sh...
 
 <script's own streamed output>
 ```
+
+This does not extend to the Hyper-V/PowerShell-side operations (VM state queries, `Stop-VM`/`Connect-VMNetworkAdapter`/`Start-VM`, the `run-hosting` readiness check) — those aren't SSH calls, and keep whatever simpler status reporting the isolation-mechanics section above already describes.
 
 ## Failure handling & idempotency limits
 
