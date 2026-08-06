@@ -2,7 +2,7 @@
 
 **Goal:** Fix the bug where `setup-guest-unix` silently swallows the guest's SSH password (leaving the user staring at a blank console with no way to tell whether it's stuck), and add step-by-step progress output so a long-running `mountShare`/`runPreScripts` run is never silent.
 
-**Architecture:** Two independent fixes, done in order because the second is only useful once the first stops the run from stalling before it can produce any progress. (1) `promptMasked` (`src/cliPrompt.ts`) explicitly releases `process.stdin` (`input.pause()`) after it finishes reading the masked SMB share password, so the `ssh` child process spawned immediately afterward (`stdio: 'inherit'`) can read the console for its own login prompt instead of racing Node for it. `write-github-config`'s separate hand-rolled prompt is folded onto the same shared `promptText` helper while we're in `cliPrompt.ts`, for consistency — it isn't affected by the bug (it never uses raw mode) but currently duplicates the same job. (2) `mountShare` and `runPreScripts` (`src/guestSetup/`) gain an optional, injectable `onStep` callback, matching the existing `RemoteExec` seam pattern, so `setup-guest-unix` can print a message before every step instead of only at the very end.
+**Architecture:** Two fixes, independent in code but done in this order for delivery reasons — the second is only useful to a real user once the first stops the run from stalling before any progress can print. (1) `promptMasked` (`src/cliPrompt.ts`) explicitly releases `process.stdin` (`input.pause()`) after it finishes reading the masked SMB share password, so the `ssh` child process spawned immediately afterward (`stdio: 'inherit'`) can read the console for its own login prompt instead of racing Node for it. `write-github-config`'s separate hand-rolled prompt is folded onto the same shared `promptText` helper while we're in `cliPrompt.ts`, for consistency — it isn't affected by the bug (it never uses raw mode) but currently duplicates the same job. (2) `mountShare` and `runPreScripts` (`src/guestSetup/`) gain an optional, injectable `onStep` callback, matching the existing `RemoteExec` seam pattern, so `setup-guest-unix` can print a message before every step instead of only at the very end.
 
 **Tech Stack:** TypeScript, Vitest. No new dependencies — see [[promptmasked-releases-stdin-explicitly]] (ADR-0022) for why a third-party prompt library was rejected.
 
@@ -229,24 +229,49 @@ git commit -m "refactor(guest-setup): migrate write-github-config onto shared pr
 Add to `tests/unit/guestSetup/mountShare.test.ts`, inside `describe('mountShare', ...)`:
 
 ```typescript
-  it('reports each step to onStep before running it, in order', async () => {
-    const { remoteExec } = fakeRemoteExec();
-    const steps: string[] = [];
+  it('reports each step to onStep immediately before the operation it describes runs, in order', async () => {
+    // A single event log shared between onStep and the fake RemoteExec proves
+    // interleaving order, not just that both eventually get called — a test
+    // that only checked the final onStep label list would still pass an
+    // implementation that (wrongly) reported every step only after the run.
+    const events: string[] = [];
+    const remoteExec: RemoteExec = {
+      async run(command: string): Promise<RemoteExecResult> {
+        events.push(`run:${command}`);
+        return { exitCode: 0 };
+      },
+      async copyFile(): Promise<RemoteExecResult> {
+        events.push('copyFile');
+        return { exitCode: 0 };
+      },
+    };
     await mountShare(remoteExec, {
       shareName: 'vm-shared-linux',
       accountName: 'susentorno-share',
       password: 'hunter2',
       defaultSwitchHostIp: '172.28.128.1',
-      onStep: (message) => steps.push(message),
+      onStep: (message) => events.push(`step:${message}`),
     });
-    expect(steps).toEqual([
-      'install cifs-utils',
-      'copy credentials file',
-      'install credentials file',
-      'create mount point',
-      'update fstab',
-      'mount share',
+    expect(events.map((e) => e.split(':')[0])).toEqual([
+      'step',
+      'run',
+      'step',
+      'copyFile',
+      'step',
+      'run',
+      'step',
+      'run',
+      'step',
+      'run',
+      'step',
+      'run',
     ]);
+    expect(events[0]).toBe('step:install cifs-utils');
+    expect(events[2]).toBe('step:copy credentials file');
+    expect(events[4]).toBe('step:install credentials file');
+    expect(events[6]).toBe('step:create mount point');
+    expect(events[8]).toBe('step:update fstab');
+    expect(events[10]).toBe('step:mount share');
   });
 
   it('works with no onStep given', async () => {
@@ -265,7 +290,7 @@ Add to `tests/unit/guestSetup/mountShare.test.ts`, inside `describe('mountShare'
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pnpm vitest run tests/unit/guestSetup/mountShare.test.ts`
-Expected: FAIL — `steps` is `[]`, not the expected array (`onStep` doesn't exist on `MountShareOptions` yet, so it's silently never called).
+Expected: FAIL — `events` contains no `step:*` entries (`onStep` doesn't exist on `MountShareOptions` yet, so it's silently never called).
 
 - [ ] **Step 3: Thread `onStep` through the implementation**
 
@@ -373,23 +398,39 @@ git commit -m "feat(guest-setup): report mountShare progress via onStep"
 Add to `tests/unit/guestSetup/runPreScripts.test.ts`, inside `describe('runPreScripts', ...)`:
 
 ```typescript
-  it('reports each script to onStep before running it, in order', async () => {
-    const { remoteExec } = fakeRemoteExec();
-    const steps: string[] = [];
+  it('reports each script to onStep immediately before running it, interleaved in order', async () => {
+    // Shared event log, same reasoning as mountShare's Task 4 test: proves
+    // onStep fires before remoteExec.run for each script, not just that both
+    // eventually fire.
+    const events: string[] = [];
+    const remoteExec: RemoteExec = {
+      async run(command: string): Promise<RemoteExecResult> {
+        events.push(`run:${command}`);
+        return { exitCode: 0 };
+      },
+      async copyFile(): Promise<RemoteExecResult> {
+        throw new Error('runPreScripts should never call copyFile');
+      },
+    };
     await runPreScripts(remoteExec, {
       scripts: [script('01-apt-packages.sh', 'apt-packages'), script('02-install-pnpm.sh', 'install-pnpm')],
       shareName: 'vm-shared-linux',
       internalSwitchHostIp: '192.168.67.1',
-      onStep: (message) => steps.push(message),
+      onStep: (message) => events.push(`step:${message}`),
     });
-    expect(steps).toEqual(['running 01-apt-packages.sh', 'running 02-install-pnpm.sh']);
+    expect(events).toEqual([
+      'step:running 01-apt-packages.sh',
+      "run:cd '/mnt/vm-shared-linux/pre-scripts' && './01-apt-packages.sh'",
+      'step:running 02-install-pnpm.sh',
+      "run:cd '/mnt/vm-shared-linux/pre-scripts' && './02-install-pnpm.sh'",
+    ]);
   });
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pnpm vitest run tests/unit/guestSetup/runPreScripts.test.ts`
-Expected: FAIL — `steps` is `[]`.
+Expected: FAIL — `events` contains no `step:*` entries.
 
 - [ ] **Step 3: Thread `onStep` through the implementation**
 
@@ -498,7 +539,23 @@ git commit -m "feat(guest-setup): wire step progress logging into setup-guest-un
 
 ---
 
-## Task 7: Manually verify against the real guest
+## Task 7: Run the full verification gate
+
+The Global Constraints require `pnpm format`/`pnpm lint` to pass before every commit, but no task above runs them — each task's own test command only covers that task's slice. Run the full gate once, after all code tasks, before the manual guest run.
+
+- [ ] **Step 1: Run the gate**
+
+Run: `pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:unit && pnpm build && pnpm test:cli`
+
+Expected: all PASS. (`pnpm format:check` is used instead of `pnpm format` because `format` rewrites the whole repo rather than just verifying it. `test:proxy-stack` and `test:guest` are omitted — they need Docker/QEMU prerequisites this plan doesn't touch and aren't affected by these changes.)
+
+- [ ] **Step 2: Fix and re-run if anything fails**
+
+If `format:check` fails: run `pnpm format`, review the diff, `git add` and commit it separately (`style: format`). If anything else fails, fix it in the file/task it belongs to and re-run that task's own test command before re-running the full gate.
+
+---
+
+## Task 8: Manually verify against the real guest
 
 This is the only verification for the actual bug this plan exists to fix — no test tier in this repo can exercise a real shared Windows console racing a spawned `ssh` process (see Global Constraints).
 
@@ -508,20 +565,22 @@ Run: `pnpm build`
 
 - [ ] **Step 2: Run `susentorno setup-guest-unix` against your real Ubuntu guest**
 
-Enter the SMB share password, then the guest's SSH login password when prompted. Confirm:
+Enter the SMB share password. Then watch for, in this exact order — **do not** treat reaching the first line below as success; `onStep` fires *before* the network operation it describes, so it prints regardless of whether SSH ever works:
 
-- The SSH password prompt is actually satisfied (you reach a `setup-guest-unix: install cifs-utils...` line, not a repeated/stalled password prompt).
-- A distinct `setup-guest-unix: <step>...` line prints before each of the 6 `mountShare` steps and before each pre-script.
+1. `setup-guest-unix: install cifs-utils...` — prints before the first `ssh` call even starts. Reaching this line only means the SMB-password step finished; it proves nothing about SSH yet.
+2. The guest's own `username@host's password:` prompt (each step below spawns its own `ssh`/`scp` process — this codebase's `RemoteExec` doesn't configure SSH connection sharing, so expect to be prompted again for each one, unless your own `~/.ssh/config` sets up `ControlMaster`). Enter the guest's login password.
+3. `setup-guest-unix: copy credentials file...` — **this is the real confirmation**: it only prints once the previous `ssh` command (installing `cifs-utils`) has actually finished successfully, so reaching it proves the SSH password was received and the remote command ran.
+4. A distinct `setup-guest-unix: <step>...` line before each remaining `mountShare` step and before each pre-script, with no long silent gaps and no repeated/stalled password prompts.
 
 - [ ] **Step 3: Report the result**
 
-If it still stalls at the SSH password prompt, `input.pause()` alone did not fully resolve the Windows console race and this plan's Task 2 needs revisiting (e.g. also pausing/releasing stdin at the `setupGuestUnix.ts` call site, before `createSshRemoteExec` is even constructed, as defense in depth). If it works, this plan is complete.
+If step 2 above (the SSH password prompt) never resolves — no matter how many times you type the password, you never reach `setup-guest-unix: copy credentials file...` — then `input.pause()` alone did not fully resolve the Windows console race, and this plan's Task 2 needs revisiting (e.g. also pausing/releasing stdin at the `setupGuestUnix.ts` call site, before `createSshRemoteExec` is even constructed, as defense in depth). If it works, this plan is complete.
 
 ---
 
 ## Self-Review
 
-**Spec coverage:** the original ask was (A) fix the silent SSH-password hang and (B) add progress output, in that order, plus (per follow-up) migrate `write-github-config` onto the same prompt helper and record the reasoning as an ADR. Task 1 → ADR. Task 2 → (A). Task 3 → the `write-github-config` migration. Tasks 4–6 → (B). Task 7 → the required manual verification, since (A)'s fix is fundamentally untestable by any tier in this repo.
+**Spec coverage:** the original ask was (A) fix the silent SSH-password hang and (B) add progress output, in that order, plus (per follow-up) migrate `write-github-config` onto the same prompt helper and record the reasoning as an ADR. Task 1 → ADR. Task 2 → (A). Task 3 → the `write-github-config` migration. Tasks 4–6 → (B). Task 7 → the full lint/format/test gate the Global Constraints require but no per-task step otherwise runs. Task 8 → the required manual verification, since (A)'s fix is fundamentally untestable by any tier in this repo.
 
 **Placeholder scan:** no TBD/TODO markers; every step shows the real code being written, not a description of it.
 
