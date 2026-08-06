@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-pip install PyYAML # Used by codex to validate YAML
+# revisit this- use pipx?
+# Error was: error: externally-managed-environment
+#
+# pip install PyYAML # Used by codex to validate YAML
+
 
 curl -fsSL https://get.pnpm.io/install.sh | bash -
 
