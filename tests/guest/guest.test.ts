@@ -16,6 +16,9 @@ import {
   type ProxyStack,
 } from '../proxyStack';
 import { envRoot } from '../testEnvRoot';
+import type { RemoteExec, RemoteExecResult } from '../../src/guestSetup/remoteExec';
+import { listPreScripts } from '../../src/guestSetup/listPreScripts';
+import { runPreScripts } from '../../src/guestSetup/runPreScripts';
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const BRIDGE_IP = '10.213.87.1';
@@ -35,6 +38,24 @@ let shareDir: string;
 
 function guest(name: string, cmd: string) {
   return harness('guest.sh', 'exec', name, cmd);
+}
+
+// Adapts the harness's existing guest() SSH helper to the RemoteExec
+// interface, so the production orchestration logic (runPreScripts) can run
+// unmodified against a real guest. guest() rejects on a non-zero remote exit
+// (execa's default), so the exit code is captured in-band instead, the same
+// way guestProbe() above already does for curl's exit code.
+function harnessRemoteExec(name: string): RemoteExec {
+  return {
+    async run(command: string): Promise<RemoteExecResult> {
+      const { stdout } = await guest(name, `${command} ; echo "SUSENTORNO_EXIT=$?"`);
+      const match = /SUSENTORNO_EXIT=(\d+)/.exec(stdout);
+      return { exitCode: match ? Number(match[1]) : 1 };
+    },
+    async copyFile(): Promise<RemoteExecResult> {
+      throw new Error('harnessRemoteExec.copyFile is not exercised by this suite');
+    },
+  };
 }
 
 /**
@@ -101,6 +122,24 @@ afterAll(async () => {
 }, 600_000);
 
 describe('provisioning during the setup phase', () => {
+  it('runs configure-network through runPreScripts, passing the internal-switch host IP', async () => {
+    const scripts = listPreScripts(join(envRoot, 'vm-shared-linux', 'pre-scripts'));
+    const configureNetworkOnly = scripts.filter((s) => s.slug === 'configure-network');
+    expect(configureNetworkOnly).toHaveLength(1);
+
+    await runPreScripts(harnessRemoteExec('g1'), {
+      scripts: configureNetworkOnly,
+      shareName: 'vm-shared-linux',
+      internalSwitchHostIp: BRIDGE_IP,
+    });
+
+    const { stdout } = await guest(
+      'g1',
+      'test -f /usr/local/share/ca-certificates/susentorno-proxy-certificate-authority.crt && echo present',
+    );
+    expect(stdout.trim()).toBe('present');
+  });
+
   it('runs 05-configure-network.sh from the VM share', async () => {
     const { stdout } = await guest(
       'g1',
