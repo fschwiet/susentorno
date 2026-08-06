@@ -28,7 +28,9 @@ curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/i
 # Configure Codex directly because `codex mcp add --url` starts the server's
 # optional OAuth flow and blocks unattended provisioning.
 
-claude mcp add --transport http context7 https://mcp.context7.com/mcp
+if ! claude mcp get context7 >/dev/null 2>&1; then
+    claude mcp add --transport http context7 https://mcp.context7.com/mcp
+fi
 
 codex_config_directory="$HOME/.codex"
 codex_config_path="$codex_config_directory/config.toml"
