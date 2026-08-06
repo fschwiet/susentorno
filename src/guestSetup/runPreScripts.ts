@@ -6,6 +6,7 @@ export interface RunPreScriptsOptions {
   scripts: PreScript[];
   shareName: string;
   internalSwitchHostIp: string;
+  onStep?: (message: string) => void;
 }
 
 export class RunPreScriptsError extends Error {
@@ -30,6 +31,7 @@ export async function runPreScripts(
     );
   }
 
+  const onStep = opts.onStep ?? (() => {});
   const remoteDir = `/mnt/${opts.shareName}/pre-scripts`;
   for (const script of opts.scripts) {
     const args =
@@ -38,6 +40,7 @@ export async function runPreScripts(
         : '';
     const scriptPath = quoteForRemoteShell(`./${script.filename}`);
     const command = `cd ${quoteForRemoteShell(remoteDir)} && ${scriptPath}${args}`;
+    onStep(`running ${script.filename}`);
     const { exitCode } = await remoteExec.run(command);
     if (exitCode !== 0) throw new RunPreScriptsError(script.filename, exitCode);
   }

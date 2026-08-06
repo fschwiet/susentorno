@@ -111,4 +111,35 @@ describe('runPreScripts', () => {
     ).rejects.toThrow(/more than one pre-script resolves to 'configure-network'/);
     expect(calls).toHaveLength(0);
   });
+
+  it('reports each script to onStep immediately before running it, interleaved in order', async () => {
+    // Shared event log, same reasoning as mountShare's Task 4 test: proves
+    // onStep fires before remoteExec.run for each script, not just that both
+    // eventually fire.
+    const events: string[] = [];
+    const remoteExec: RemoteExec = {
+      async run(command: string): Promise<RemoteExecResult> {
+        events.push(`run:${command}`);
+        return { exitCode: 0 };
+      },
+      async copyFile(): Promise<RemoteExecResult> {
+        throw new Error('runPreScripts should never call copyFile');
+      },
+    };
+    await runPreScripts(remoteExec, {
+      scripts: [
+        script('01-apt-packages.sh', 'apt-packages'),
+        script('02-install-pnpm.sh', 'install-pnpm'),
+      ],
+      shareName: 'vm-shared-linux',
+      internalSwitchHostIp: '192.168.67.1',
+      onStep: (message) => events.push(`step:${message}`),
+    });
+    expect(events).toEqual([
+      'step:running 01-apt-packages.sh',
+      "run:cd '/mnt/vm-shared-linux/pre-scripts' && './01-apt-packages.sh'",
+      'step:running 02-install-pnpm.sh',
+      "run:cd '/mnt/vm-shared-linux/pre-scripts' && './02-install-pnpm.sh'",
+    ]);
+  });
 });
