@@ -33,7 +33,11 @@ export async function mountShare(remoteExec: RemoteExec, opts: MountShareOptions
   const localTempPath = join(tmpdir(), `susentorno-share-cred-${suffix}`);
   // Guest home directory, not /tmp: scp resolves a `~/...` destination against
   // the login user's home server-side, same as ssh does for any other path.
-  const remoteTempPath = `~/.susentorno-share-cred-${suffix}`;
+  const remoteTempFilename = `.susentorno-share-cred-${suffix}`;
+  const remoteTempPath = `~/${remoteTempFilename}`;
+  // The remote shell does not expand `~` inside single quotes. Use the fixed
+  // shell variable for the same home directory that scp resolved above.
+  const remoteHomeTempPath = `"$HOME/${remoteTempFilename}"`;
   writeFileSync(localTempPath, `username=${opts.accountName}\npassword=${opts.password}\n`, {
     mode: 0o600,
   });
@@ -49,8 +53,8 @@ export async function mountShare(remoteExec: RemoteExec, opts: MountShareOptions
     await runStep(
       remoteExec,
       'install credentials file',
-      `sudo install -m 600 -o root -g root ${quoteForRemoteShell(remoteTempPath)} /etc/susentorno-share.cred; ` +
-        `install_exit=$?; rm -f ${quoteForRemoteShell(remoteTempPath)}; exit $install_exit`,
+      `sudo install -m 600 -o root -g root ${remoteHomeTempPath} /etc/susentorno-share.cred; ` +
+        `install_exit=$?; rm -f ${remoteHomeTempPath}; exit $install_exit`,
     );
   } finally {
     rmSync(localTempPath, { force: true });

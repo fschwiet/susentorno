@@ -110,6 +110,8 @@ describe('mountShare', () => {
     });
     const installCall = calls.find((c) => c.includes('sudo install -m 600'))!;
     expect(installCall).toContain('rm -f');
+    expect(installCall).toMatch(/"\$HOME\/\.susentorno-share-cred-[a-f0-9]+"/);
+    expect(installCall).not.toContain("'~/.susentorno-share-cred-");
     // Cleanup must not be gated behind install succeeding (`&&`) — a failed
     // install must not leave the password file sitting on the guest.
     expect(installCall).not.toMatch(/sudo install[^;]*&&[^;]*rm -f/);
