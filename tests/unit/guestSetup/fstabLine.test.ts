@@ -5,7 +5,7 @@ describe('buildFstabReplaceCommand', () => {
   it('deletes any existing line for the mount point, then appends the correct one', () => {
     const command = buildFstabReplaceCommand({
       shareName: 'vm-shared-linux',
-      defaultSwitchHostIp: '172.28.128.1',
+      hostIp: '172.28.128.1',
     });
     expect(command).toBe(
       "sudo sed -i '\\#[[:space:]]/mnt/vm-shared-linux[[:space:]]#d' /etc/fstab && " +
@@ -18,7 +18,7 @@ describe('buildFstabReplaceCommand', () => {
   it('quotes a share name containing a single quote', () => {
     const command = buildFstabReplaceCommand({
       shareName: "share'name",
-      defaultSwitchHostIp: '172.28.128.1',
+      hostIp: '172.28.128.1',
     });
     expect(command).toContain("/mnt/share'\\''name");
   });
@@ -30,7 +30,7 @@ describe('buildFstabReplaceCommand', () => {
     // etc. mean something different unless escaped.
     const command = buildFstabReplaceCommand({
       shareName: 'share.name#1',
-      defaultSwitchHostIp: '172.28.128.1',
+      hostIp: '172.28.128.1',
     });
     expect(command).toContain('/mnt/share\\.name\\#1');
   });

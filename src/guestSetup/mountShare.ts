@@ -83,7 +83,7 @@ export async function mountShare(remoteExec: RemoteExec, opts: MountShareOptions
     'update fstab',
     buildFstabReplaceCommand({
       shareName: opts.shareName,
-      defaultSwitchHostIp: opts.defaultSwitchHostIp,
+      hostIp: opts.defaultSwitchHostIp,
     }),
     onStep,
   );

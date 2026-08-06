@@ -158,7 +158,7 @@ Run without `sudo`/outside an elevated shell only where noted; each script eleva
 **Ubuntu** — the Host-side `susentorno setup-guest-unix` command already mounted the share and ran every `pre-scripts/` script in order. Continue to Isolate the VM's network (see "Isolate" below), then reboot.
 
 1. Isolate the VM's network (see "Isolate" below), then reboot.
-2. Isolate the VM's network (see "Isolate" below), then reboot.
+2. From the Host, run `susentorno remount-guest-share`. The guest's `/etc/fstab` entry still points at the Default-Switch host IP `setup-guest-unix` used, which is unreachable now that the guest is isolated; this re-points it at the Internal-switch host IP and confirms the share is reachable again. It prompts for the guest's address and username, and the SMB share name (defaulting to `vm-shared-linux`) — it does not need the share password, since the credentials file installed earlier is left as-is.
 3. `cd` into `post-scripts/` and run every script in order: normally `01-auth-config.sh`, then `02-apply-home-jq-transforms.sh`.
 
 **Windows**, in an **elevated (Administrator) PowerShell**:
