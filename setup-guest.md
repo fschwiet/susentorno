@@ -84,14 +84,24 @@ Hyper-V tip on **managing UI focus**: when the VM is selected it will capture ke
 
 ## 2. Configure the guest network and mount the share
 
-**Ubuntu guest** — leave the interface on **DHCP**; the installer's default configuration is already correct and no netplan drop-in is needed. Then mount the share:
+**Ubuntu guest** — leave the interface on **DHCP**; the installer's default configuration is already correct. Install `openssh-server` (there is no network path into the guest before this exists — everything after it is automated):
 
 ```bash
-# install prerequisites
-sudo apt update -y && sudo apt install openssh-server cifs-utils
+sudo apt update -y && sudo apt install -y openssh-server
 ```
 
-With `openssh-server` installed you can now open an ssh shell to make copying and pasting easier for later commands:
+Then, from the Host, run the environment's setup command, which mounts the share and runs every `pre-scripts/` script in order over SSH:
+
+```powershell
+susentorno setup-guest-unix
+```
+
+It prompts for the guest's address, username, the SMB share/account names (defaulting to this environment's `vm-shared-linux` / `susentorno-share`), and the share password from setup-environment.md. It stops before network isolation — continue to "Isolate" below once it finishes.
+
+<details>
+<summary>Manual fallback (for diagnosing a failure, or to see exactly what the command does)</summary>
+
+With `openssh-server` installed you can open an ssh shell to make copying and pasting easier:
 
 ```
 ssh <username>@<vm-name>
@@ -100,6 +110,8 @@ ssh <username>@<vm-name>
 For the following commands, replace `<the password from setup-environment.md>`. Special characters don't need to be escaped — the heredoc interpreter is only watching for an `EOF`.
 
 ```bash
+sudo apt install -y cifs-utils
+
 # Credentials file, readable only by root:
 sudo tee /etc/susentorno-share.cred > /dev/null << 'EOF'
 username=susentorno-share
@@ -113,7 +125,9 @@ echo '//192.168.67.1/vm-shared-linux  /mnt/vm-shared-linux  cifs  ro,credentials
 sudo systemctl daemon-reload && sudo mount -a
 ```
 
-Use the **Default Switch** host IP in that `fstab` line during the NAT phase and the Internal-switch host IP afterwards. The share then lives at `/mnt/vm-shared-linux` — the numbered scripts run from there.
+Use the **Default Switch** host IP in that `fstab` line during the NAT phase and the Internal-switch host IP afterwards. The share then lives at `/mnt/vm-shared-linux` — the numbered scripts run from there. `cd` into `pre-scripts/` and run every script in number order; the last is `05-configure-network.sh <host-ip>` when there are no custom scripts, where `<host-ip>` is the Internal-switch host IP from setup-machine.md.
+
+</details>
 
 **Windows guest** — leave the adapter on DHCP. Default Switch uses Hyper-V ICS; `susentorno-internal` uses `run-hosting` with the host as router and DNS. Save credentials with:
 
@@ -141,9 +155,9 @@ cmdkey /add:192.168.67.1 /user:susentorno-share /pass:<the password from setup-e
 
 Run without `sudo`/outside an elevated shell only where noted; each script elevates internally where needed. The exact count may vary when custom steps are present.
 
-**Ubuntu**, from `/mnt/vm-shared-linux`:
+**Ubuntu** — the Host-side `susentorno setup-guest-unix` command already mounted the share and ran every `pre-scripts/` script in order. Continue to Isolate the VM's network (see "Isolate" below), then reboot.
 
-1. `cd` into `pre-scripts/` and run every script in number order. The last step is `05-configure-network.sh <host-ip>` when there are no custom scripts.
+1. Isolate the VM's network (see "Isolate" below), then reboot.
 2. Isolate the VM's network (see "Isolate" below), then reboot.
 3. `cd` into `post-scripts/` and run every script in order: normally `01-auth-config.sh`, then `02-apply-home-jq-transforms.sh`.
 
