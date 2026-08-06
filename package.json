@@ -27,7 +27,7 @@
     "test:cli": "vitest run --config vitest.cli.config.ts",
     "test:proxy-stack": "vitest run --config vitest.proxy-stack.config.ts",
     "test:guest": "pnpm build && vitest run --config vitest.guest.config.ts",
-    "test": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:unit && pnpm build && pnpm test:cli && pnpm test:proxy-stack",
+    "test": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:unit && pnpm build && pnpm test:cli && pnpm test:proxy-stack && pnpm test:guest",
     "lint:js": "eslint .",
     "lint:ps1": "node scripts/lint-ps1.mjs",
     "lint": "pnpm lint:js && pnpm lint:ps1",

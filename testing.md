@@ -53,9 +53,9 @@ A missing live-tier prerequisite is an environmental failure, not a product fail
 
 ## Default verification pipeline
 
-`pnpm test` runs formatting, linting, type checking, the `unit` tier, a production build, the `cli` tier, and the `proxy-stack` tier in fail-fast order. The Verification Pipeline section of [development.md](development.md) is the source of truth for the exact step order.
+`pnpm test` runs formatting, linting, type checking, the `unit` tier, a production build, the `cli` tier, the `proxy-stack` tier, and the `guest` tier, in fail-fast order. The Verification Pipeline section of [development.md](development.md) is the source of truth for the exact step order.
 
-The `guest` tier is not part of `pnpm test`. Run it separately with `pnpm test:guest` when changing `templates/vm-shared-linux/` or proxy configuration. Guest boots and reboots take minutes.
+The `guest` tier's WSL2/QEMU prerequisites (see [development.md](development.md)) are therefore required for any full `pnpm test` run, not just for working on `templates/vm-shared-linux/` directly. Guest boots and reboots take minutes — expect `pnpm test` to be slow.
 
 ## Test support and residue
 
