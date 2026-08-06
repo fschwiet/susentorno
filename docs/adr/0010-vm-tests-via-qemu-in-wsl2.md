@@ -1,6 +1,6 @@
 # The guest layer is tested against a real QEMU guest inside WSL2
 
-The guest-side networking and setup layer is tested by running the real, unmodified scripts inside a real QEMU/KVM Ubuntu cloud-image guest, orchestrated from Windows `vitest` through `wsl.exe`, with the guest booted inside WSL2 (nested virtualization). This is `pnpm test:guest`, and it is deliberately **not** part of the default `pnpm test` pipeline. A real guest is required because the regression classes involved — systemd boot ordering, netplan merge under the NetworkManager renderer, DHCP-without-a-gateway lease behavior — cannot be reproduced in a container.
+The guest-side networking and setup layer is tested by running the real, unmodified scripts inside a real QEMU/KVM Ubuntu cloud-image guest, orchestrated from Windows `vitest` through `wsl.exe`, with the guest booted inside WSL2 (nested virtualization). This is `pnpm test:guest`, which is part of the default `pnpm test` pipeline because the guest tier now covers the project's required end-to-end verification. A real guest is required because the regression classes involved — systemd boot ordering, netplan merge under the NetworkManager renderer, DHCP-without-a-gateway lease behavior — cannot be reproduced in a container.
 
 ## Considered Options
 

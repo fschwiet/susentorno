@@ -31,12 +31,14 @@ export async function runPreScripts(
   }
 
   const remoteDir = `/mnt/${opts.shareName}/pre-scripts`;
-  for (const s of opts.scripts) {
+  for (const script of opts.scripts) {
     const args =
-      s.slug === CONFIGURE_NETWORK_SLUG ? ` ${quoteForRemoteShell(opts.internalSwitchHostIp)}` : '';
-    const scriptPath = quoteForRemoteShell(`./${s.filename}`);
+      script.slug === CONFIGURE_NETWORK_SLUG
+        ? ` ${quoteForRemoteShell(opts.internalSwitchHostIp)}`
+        : '';
+    const scriptPath = quoteForRemoteShell(`./${script.filename}`);
     const command = `cd ${quoteForRemoteShell(remoteDir)} && ${scriptPath}${args}`;
     const { exitCode } = await remoteExec.run(command);
-    if (exitCode !== 0) throw new RunPreScriptsError(s.filename, exitCode);
+    if (exitCode !== 0) throw new RunPreScriptsError(script.filename, exitCode);
   }
 }

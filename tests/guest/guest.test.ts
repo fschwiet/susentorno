@@ -40,6 +40,15 @@ function guest(name: string, cmd: string) {
   return harness('guest.sh', 'exec', name, cmd);
 }
 
+async function guestWithExitCode(
+  name: string,
+  command: string,
+): Promise<{ stdout: string; exitCode: number }> {
+  const { stdout } = await guest(name, `${command} ; echo "SUSENTORNO_EXIT=$?"`);
+  const match = /SUSENTORNO_EXIT=(\d+)/.exec(stdout);
+  return { stdout, exitCode: match ? Number(match[1]) : 1 };
+}
+
 // Adapts the harness's existing guest() SSH helper to the RemoteExec
 // interface, so the production orchestration logic (runPreScripts) can run
 // unmodified against a real guest. guest() rejects on a non-zero remote exit
@@ -48,9 +57,8 @@ function guest(name: string, cmd: string) {
 function harnessRemoteExec(name: string): RemoteExec {
   return {
     async run(command: string): Promise<RemoteExecResult> {
-      const { stdout } = await guest(name, `${command} ; echo "SUSENTORNO_EXIT=$?"`);
-      const match = /SUSENTORNO_EXIT=(\d+)/.exec(stdout);
-      return { exitCode: match ? Number(match[1]) : 1 };
+      const { exitCode } = await guestWithExitCode(name, command);
+      return { exitCode };
     },
     async copyFile(): Promise<RemoteExecResult> {
       throw new Error('harnessRemoteExec.copyFile is not exercised by this suite');
@@ -60,19 +68,19 @@ function harnessRemoteExec(name: string): RemoteExec {
 
 /**
  * Single passthrough-:443 curl from the guest, capturing both the HTTP status
- * and curl's own exit code (via `; echo exit=$?`, so guest.sh exec itself
+ * and curl's own exit code (via guestWithExitCode, so guest.sh exec itself
  * always succeeds and we parse curl's result out of stdout). Deliberately
  * unretried: the passthrough-resolution probe below must observe the FIRST
  * contact to a host — a retry would warm the DNS cache and erase the signal.
  */
 async function guestProbe(name: string, host: string): Promise<{ http: string; exit: string }> {
-  const { stdout } = await guest(
+  const { stdout, exitCode } = await guestWithExitCode(
     name,
-    `curl -s -o /dev/null -w 'http=%{http_code} ' --max-time 30 https://${host}/ ; echo exit=$?`,
+    `curl -s -o /dev/null -w 'http=%{http_code} ' --max-time 30 https://${host}/`,
   );
   return {
     http: /http=(\d+)/.exec(stdout)?.[1] ?? '?',
-    exit: /exit=(\d+)/.exec(stdout)?.[1] ?? '?',
+    exit: String(exitCode),
   };
 }
 
