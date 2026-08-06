@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { createInterface } from 'node:readline/promises';
 import type { Command } from 'commander';
+import { promptText } from '../cliPrompt';
 import { validateGithubTokenFormat } from '../githubToken';
 import { formatGithubConfig } from '../githubConfig';
 import { formatGithubBasicSecret, formatGithubApiTokenSecret } from '../githubSecret';
@@ -29,14 +29,10 @@ export function registerWriteGithubConfig(program: Command): void {
       const paths = requireEnvPathsOrExit('write-github-config');
       if (!paths) return;
 
-      const rl = createInterface({ input: process.stdin, output: process.stdout });
-      const token = (
-        await rl.question(
-          "Github personal access tokens can be created at https://github.com/settings/personal-access-tokens/new. To allow changes to a repository be sure to allow access to 'Contents' with read+write permissions.\n\n" +
-            'GitHub fine-grained PAT: ',
-        )
-      ).trim();
-      rl.close();
+      const token = await promptText(
+        "Github personal access tokens can be created at https://github.com/settings/personal-access-tokens/new. To allow changes to a repository be sure to allow access to 'Contents' with read+write permissions.\n\n" +
+          'GitHub fine-grained PAT',
+      );
 
       const tokenError = validateGithubTokenFormat(token);
       if (tokenError) {
