@@ -7,6 +7,7 @@ import { registerImportSbxNetworkPolicy } from './commands/importSbxNetworkPolic
 import { registerWriteGithubConfig } from './commands/writeGithubConfig';
 import { registerRunHosting } from './commands/runHosting';
 import { registerUpdateShares } from './commands/updateShares';
+import { registerSetupGuestUnix } from './commands/setupGuestUnix';
 
 const program = new Command();
 
@@ -21,5 +22,6 @@ registerImportSbxNetworkPolicy(program);
 registerWriteGithubConfig(program);
 registerRunHosting(program);
 registerUpdateShares(program);
+registerSetupGuestUnix(program);
 
 await program.parseAsync();
