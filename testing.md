@@ -19,7 +19,7 @@ The tier names use the project's domain vocabulary (see [CONTEXT.md](CONTEXT.md)
 
 - **`proxy-stack`** tests bring up the real proxy stack, including Envoy in Docker, networking, and local mock upstreams. They observe stack behavior without booting a guest.
 
-- **`guest`** tests make their observations from inside a disposable guest. They generally cross the CLI and proxy stack too, but the guest is the highest exercised surface. The test harness boots QEMU under WSL2; Hyper-V remains the production guest platform and is not the test runtime (see [ADR-0010](docs/adr/0010-vm-tests-via-qemu-in-wsl2.md)). On failure, diagnostics (serial console, guest journal, route/NAT/resolver dumps) land in `test-results/guest/<timestamp>/`.
+- **`guest`** tests make their observations from inside a disposable guest. They generally cross the CLI and proxy stack too, but the guest is the highest exercised surface. The test harness boots QEMU under WSL2; Hyper-V remains the production guest platform and is not the test runtime (see [ADR-0010](docs/adr/0010-vm-tests-via-qemu-in-wsl2.md)). On failure, diagnostics (serial console, guest journal, route/NAT/resolver dumps) land in `test-results/guest/<timestamp>/`. Hyper-V-specific behavior this harness cannot exercise (VM stop/reassign/start, the elevation check, the `run-hosting` readiness check) is covered instead by [setup-guest-unix-isolation-checklist.md](setup-guest-unix-isolation-checklist.md), a manual checklist.
 
 ## Placing a new test
 

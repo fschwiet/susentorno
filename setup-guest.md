@@ -90,21 +90,30 @@ Hyper-V tip on **managing UI focus**: when the VM is selected it will capture ke
 sudo apt update -y && sudo apt install -y openssh-server
 ```
 
-Then, from the Host, run the environment's setup command, which mounts the share and runs every `pre-scripts/` script in order over SSH:
+Then, from the Host, in an **elevated (Administrator) PowerShell**, run the environment's setup command. It mounts the share, runs `pre-scripts/`, isolates the guest onto `susentorno-internal`, re-mounts the share there, and runs `post-scripts/` — the entire remaining Ubuntu flow in one command:
 
 ```powershell
 susentorno setup-guest-unix
 ```
 
-It prompts for the guest's address, username, the SMB share/account names (defaulting to this environment's `vm-shared-linux` / `susentorno-share`), and the share password from setup-environment.md. It stops before network isolation — continue to "Isolate" below once it finishes.
+It prompts for the Hyper-V VM name, the guest's address, username, the SMB share/account names (defaulting to this environment's `vm-shared-linux` / `susentorno-share`), and the share password from setup-environment.md. Before prompting for anything it checks that the terminal is elevated and, once the VM name is given, that the VM exists with exactly one network adapter and that both `susentorno-internal` and `Default Switch` resolve to real Hyper-V switches — a typo or a missing prerequisite fails fast with a specific message rather than partway through.
+
+A few things worth knowing before running it:
+
+- **`run-hosting` must already be running** (and stay running) before and during isolation — the command checks this both before touching the VM and again right before isolating it, but a `run-hosting` that stops mid-run between those two checks (during the potentially multi-minute `pre-scripts/` run) is caught only at the second check.
+- **Every rerun of an already-isolated guest briefly reattaches it to the Default Switch** — there's no phase-detection/resume logic, so a rerun always executes all 8 steps from the top, including a round-trip through the internet-facing Default Switch and back. This is expected, not a bug: it's what makes "just rerun the whole command" a safe recovery path after a failure.
+- **A graceful-shutdown timeout is a failure, not an auto-forced power-off.** If the guest doesn't reach `Off` within the timeout after a graceful `Stop-VM`, the command stops and asks you to investigate or force-stop it manually — it will not call `Stop-VM -Force` on your behalf, since a stuck shutdown usually means something is genuinely wrong inside the guest.
+- **A woven-in custom `pre-scripts/`/`post-scripts/` addition must be safe to rerun**, same as today — every invocation reruns the whole pipeline unconditionally.
+- **The command installs a Hyper-V KVP/Data Exchange daemon package** on the guest as part of its own setup (separate from anything `pre-scripts/` itself installs) — this is what lets the command discover the guest's address automatically after isolation, when no prompted address is valid anymore.
+- **Four distinct addresses are in play** across this command: the guest's own DHCP lease on the Default Switch, the guest's own (different) DHCP lease on `susentorno-internal`, the Windows host's address on the Default Switch, and the Windows host's address on `susentorno-internal`. If a failure message is unclear about which one it means, this is the ordering to check against.
 
 <details>
 <summary>Manual fallback (for diagnosing a failure, or to see exactly what the command does)</summary>
 
-With `openssh-server` installed you can open an ssh shell to make copying and pasting easier:
+With `openssh-server` installed you can open an ssh shell to make copying and pasting easier — use the guest's own address or hostname, **not** the Hyper-V VM name `setup-guest-unix` prompts for (the two have no necessary relationship; see "four distinct addresses" above):
 
 ```
-ssh <username>@<vm-name>
+ssh <username>@<guest-address>
 ```
 
 For the following commands, replace `<the password from setup-environment.md>`. Special characters don't need to be escaped — the heredoc interpreter is only watching for an `EOF`.
@@ -120,12 +129,23 @@ EOF
 sudo chmod 600 /etc/susentorno-share.cred
 
 sudo mkdir -p /mnt/vm-shared-linux
-# /etc/fstab — auto-mounts at boot so the credentials symlink resolves:
-echo '//192.168.67.1/vm-shared-linux  /mnt/vm-shared-linux  cifs  ro,credentials=/etc/susentorno-share.cred,uid=1000,gid=1000,_netdev,x-systemd.automount  0  0' | sudo tee -a /etc/fstab
+# /etc/fstab — auto-mounts at boot so the credentials symlink resolves. Use the
+# Default-Switch host IP during the NAT phase and the Internal-switch host IP
+# afterwards (both from setup-machine.md) — there is no single correct value
+# to hardcode here, unlike a specific environment's own doc.
+echo '//<host-ip>/vm-shared-linux  /mnt/vm-shared-linux  cifs  ro,credentials=/etc/susentorno-share.cred,uid=1000,gid=1000,_netdev,x-systemd.automount  0  0' | sudo tee -a /etc/fstab
 sudo systemctl daemon-reload && sudo mount -a
 ```
 
-Use the **Default Switch** host IP in that `fstab` line during the NAT phase and the Internal-switch host IP afterwards. The share then lives at `/mnt/vm-shared-linux` — the numbered scripts run from there. `cd` into `pre-scripts/` and run every script in number order; the last is `05-configure-network.sh <host-ip>` when there are no custom scripts, where `<host-ip>` is the Internal-switch host IP from setup-machine.md.
+If the share was already mounted against a different host IP (e.g. rerunning this after isolation), `mount -a` alone won't notice the change — unmount first: `mountpoint -q /mnt/vm-shared-linux && sudo umount /mnt/vm-shared-linux`, then rerun the `daemon-reload && mount -a` line above.
+
+The share then lives at `/mnt/vm-shared-linux`. `cd` into `pre-scripts/` and run every script in number order; the last is `05-configure-network.sh <host-ip>` when there are no custom scripts, where `<host-ip>` is the Internal-switch host IP from setup-machine.md.
+
+**Isolate** — confirm the host firewall is open and `run-hosting` is running (both from `setup-machine.md`/`setup-environment.md`), then see "Isolate" in §4 below for the `Stop-VM`/`Connect-VMNetworkAdapter`/`Start-VM` sequence. Wait for the guest to come back up, then redo the mount step above with the Internal-switch host IP.
+
+**Post-scripts** — `cd` into `post-scripts/` and run every script in order: normally `01-auth-config.sh`, then `02-apply-home-jq-transforms.sh`.
+
+Before installing anything else, the automated command also installs a Hyper-V KVP/Data Exchange daemon package (`hv-kvp-daemon-init` at the time of writing — see `src/guestSetup/kvpDaemon.ts`) so `Get-VMNetworkAdapter`'s reported IP addresses work; if reproducing this by hand for diagnosis, `sudo apt-get install -y hv-kvp-daemon-init` is that step.
 
 </details>
 
@@ -155,11 +175,7 @@ cmdkey /add:192.168.67.1 /user:susentorno-share /pass:<the password from setup-e
 
 Run without `sudo`/outside an elevated shell only where noted; each script elevates internally where needed. The exact count may vary when custom steps are present.
 
-**Ubuntu** — the Host-side `susentorno setup-guest-unix` command already mounted the share and ran every `pre-scripts/` script in order. Continue to Isolate the VM's network (see "Isolate" below), then reboot.
-
-1. Isolate the VM's network (see "Isolate" below), then reboot.
-2. Isolate the VM's network (see "Isolate" below), then reboot.
-3. `cd` into `post-scripts/` and run every script in order: normally `01-auth-config.sh`, then `02-apply-home-jq-transforms.sh`.
+**Ubuntu** — the Host-side `susentorno setup-guest-unix` command already did all of this: mounted the share, ran `pre-scripts/`, isolated the guest, re-mounted the share, and ran `post-scripts/`. Nothing further is needed here — see the manual fallback above if you need to reproduce or diagnose any individual step.
 
 **Windows**, in an **elevated (Administrator) PowerShell**:
 
