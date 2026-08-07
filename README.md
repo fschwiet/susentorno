@@ -4,7 +4,7 @@ susentorno sets up isolated environments for coding agents. A Windows and/or Lin
 
 ## Host prerequisites
 
-- Windows host
+- Windows Pro
 - **Hyper-V** for the isolated VM (see [setup-machine.md](setup-machine.md) and [setup-guest.md](setup-guest.md)).
 - Docker and Docker Compose.
 - Node.js >= 18 and pnpm.
