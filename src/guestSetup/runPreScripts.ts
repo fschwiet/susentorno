@@ -1,9 +1,9 @@
 import type { RemoteExec } from './remoteExec';
-import type { PreScript } from './listPreScripts';
+import type { GuestScript } from './listScripts';
 import { quoteForRemoteShell } from './quoteForRemoteShell';
 
 export interface RunPreScriptsOptions {
-  scripts: PreScript[];
+  scripts: GuestScript[];
   shareName: string;
   internalSwitchHostIp: string;
   onStep?: (message: string) => void;

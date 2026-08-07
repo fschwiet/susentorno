@@ -7,7 +7,7 @@ import {
   DEFAULT_INTERNAL_SWITCH_ADAPTER,
 } from '../runHosting/forwarder';
 import { promptText, promptMasked } from '../cliPrompt';
-import { listPreScripts } from '../guestSetup/listPreScripts';
+import { listScripts } from '../guestSetup/listScripts';
 import { createSshRemoteExec } from '../guestSetup/remoteExec';
 import { mountShare, MountShareError } from '../guestSetup/mountShare';
 import { runPreScripts, RunPreScriptsError } from '../guestSetup/runPreScripts';
@@ -84,7 +84,7 @@ export function registerSetupGuestUnix(program: Command): void {
       const accountName = await promptText('Share account name', 'susentorno-share');
       const password = await promptMasked('SMB share password');
 
-      const scripts = listPreScripts(join(paths.vmShared, 'pre-scripts'));
+      const scripts = listScripts(join(paths.vmShared, 'pre-scripts'));
       const remoteExec = createSshRemoteExec({ address, username });
       const onStep = (message: string) => console.log(`setup-guest-unix: ${message}...`);
 
@@ -93,7 +93,7 @@ export function registerSetupGuestUnix(program: Command): void {
           shareName,
           accountName,
           password,
-          defaultSwitchHostIp,
+          hostIp: defaultSwitchHostIp,
           onStep,
         });
         await runPreScripts(remoteExec, { scripts, shareName, internalSwitchHostIp, onStep });

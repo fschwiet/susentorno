@@ -17,7 +17,7 @@ import {
 } from '../proxyStack';
 import { envRoot } from '../testEnvRoot';
 import type { RemoteExec, RemoteExecResult } from '../../src/guestSetup/remoteExec';
-import { listPreScripts } from '../../src/guestSetup/listPreScripts';
+import { listScripts } from '../../src/guestSetup/listScripts';
 import { runPreScripts } from '../../src/guestSetup/runPreScripts';
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
@@ -131,7 +131,7 @@ afterAll(async () => {
 
 describe('provisioning during the setup phase', () => {
   it('runs configure-network through runPreScripts, passing the internal-switch host IP', async () => {
-    const scripts = listPreScripts(join(envRoot, 'vm-shared-linux', 'pre-scripts'));
+    const scripts = listScripts(join(envRoot, 'vm-shared-linux', 'pre-scripts'));
     const configureNetworkOnly = scripts.filter((s) => s.slug === 'configure-network');
     expect(configureNetworkOnly).toHaveLength(1);
 
