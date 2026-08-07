@@ -616,7 +616,7 @@ export async function getVmIpAddresses(exec: PowerShellExec, vmName: string): Pr
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pnpm vitest run tests/unit/guestSetup/hyperVQueries.test.ts`
-Expected: PASS (14 tests)
+Expected: PASS (16 tests)
 
 - [ ] **Step 5: Commit**
 
@@ -781,7 +781,7 @@ export function planVmReconciliation(
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pnpm vitest run tests/unit/guestSetup/hyperVOperations.test.ts`
-Expected: PASS (6 tests, `it.each` counts as 4)
+Expected: PASS (9 tests: 1 command-builder test, 4 table cases, 4 from `it.each`)
 
 - [ ] **Step 5: Commit**
 
@@ -826,6 +826,8 @@ git commit -m "feat(guest-setup): add Stop/Connect/Start-VM builders and the rec
 
 `reconcileVmToSwitch` returns whether it actually issued a `Start-VM` — the caller (Task 12) uses this to decide whether the reachability wait is needed at all: per the spec, a VM already `Running` on the correct switch needs no new wait, since the connection from the guest address the user typed is still assumed valid (no power/network event happened). `isolateVmToSwitch` always performs `Connect`+`Start` unconditionally (step 5 is a fixed sequence, not table-driven), but still queries state first so it never assumes `Stop-VM` is a safe no-op against an already-`Off` VM — the same discipline the reconciliation table applies.
 
+`Connect-VMNetworkAdapter` and `Start-VM`'s exit codes **are** checked and turned into a `VmReconcileError` on failure — the spec's "awaited synchronously... so a failure surfaces directly rather than being silently swallowed" applies to them same as any other step in this design. `Stop-VM`'s own exit code is deliberately **not** checked (per the spec: whether the graceful-shutdown bound is enforced by `Stop-VM` returning early or by the `execa` call being killed at its 60s deadline, the *subsequent Get-VM poll* is what decides success, not `Stop-VM`'s own exit code — `createRealPowerShellExec`'s `reject: false` means a killed-by-timeout call resolves rather than throws, so there's nothing meaningfully different to branch on there anyway).
+
 - [ ] **Step 1: Write the failing test**
 
 Create `tests/unit/guestSetup/vmReconcile.test.ts`:
@@ -839,16 +841,22 @@ import {
   VmReconcileError,
 } from '../../../src/guestSetup/vmReconcile';
 
-function queuedExec(responses: PowerShellExecResult[]): { exec: PowerShellExec; calls: string[] } {
+function queuedExec(responses: PowerShellExecResult[]): {
+  exec: PowerShellExec;
+  calls: string[];
+  timeoutsByCall: (number | undefined)[];
+} {
   const calls: string[] = [];
+  const timeoutsByCall: (number | undefined)[] = [];
   const queue = [...responses];
   const exec: PowerShellExec = {
-    async run(command: string) {
+    async run(command: string, opts?: { timeoutMs?: number }) {
       calls.push(command);
+      timeoutsByCall.push(opts?.timeoutMs);
       return queue.shift() ?? { exitCode: 0, stdout: '' };
     },
   };
-  return { exec, calls };
+  return { exec, calls, timeoutsByCall };
 }
 
 function fakeClock(start = 0) {
@@ -870,6 +878,7 @@ const adapter = (switchName: string): PowerShellExecResult => ({
   stdout: `[{"SwitchName":"${switchName}","IPAddresses":[]}]`,
 });
 const ok: PowerShellExecResult = { exitCode: 0, stdout: '' };
+const fail: PowerShellExecResult = { exitCode: 1, stdout: 'The operation failed.' };
 
 describe('reconcileVmToSwitch', () => {
   it('does nothing when already Running on the target switch', async () => {
@@ -969,6 +978,52 @@ describe('reconcileVmToSwitch', () => {
       ),
     ).rejects.toThrow(/did not reach 'Off'/);
   });
+
+  it('bounds the Stop-VM call itself with a 60-second timeout by default, distinct from the Off-confirmation poll', async () => {
+    const { exec, calls, timeoutsByCall } = queuedExec([
+      vmState('Running'),
+      adapter('Default Switch'),
+      ok, // Stop-VM
+      vmState('Off'), // off-confirm poll
+      ok, // Connect
+      ok, // Start
+    ]);
+    await reconcileVmToSwitch({ exec, vmName: 'my-vm' }, 'susentorno-internal');
+    // Call order for this scenario: 0 Get-VM, 1 Get-VMNetworkAdapter, 2 Stop-VM, 3 Get-VM (off-confirm poll), 4 Connect, 5 Start.
+    expect(calls[2]).toBe("Stop-VM -Name 'my-vm'");
+    expect(timeoutsByCall[2]).toBe(60_000);
+    // The off-confirmation poll's own Get-VM call carries no timeoutMs — only Stop-VM is process-bounded.
+    expect(timeoutsByCall[3]).toBeUndefined();
+  });
+
+  it('honors a custom stopTimeoutMs', async () => {
+    const { exec, calls, timeoutsByCall } = queuedExec([
+      vmState('Running'),
+      adapter('Default Switch'),
+      ok, // Stop-VM
+      vmState('Off'), // off-confirm poll
+      ok, // Connect
+      ok, // Start
+    ]);
+    await reconcileVmToSwitch({ exec, vmName: 'my-vm', stopTimeoutMs: 45_000 }, 'susentorno-internal');
+    const stopIndex = calls.findIndex((c) => c.startsWith('Stop-VM'));
+    expect(timeoutsByCall[stopIndex]).toBe(45_000);
+  });
+
+  it('fails when Connect-VMNetworkAdapter exits non-zero, rather than proceeding to Start-VM', async () => {
+    const { exec, calls } = queuedExec([vmState('Off'), adapter('Default Switch'), fail]);
+    await expect(reconcileVmToSwitch({ exec, vmName: 'my-vm' }, 'susentorno-internal')).rejects.toThrow(
+      VmReconcileError,
+    );
+    expect(calls.some((c) => c.startsWith('Start-VM'))).toBe(false);
+  });
+
+  it('fails when Start-VM exits non-zero', async () => {
+    const { exec } = queuedExec([vmState('Off'), adapter('susentorno-internal'), fail]);
+    await expect(reconcileVmToSwitch({ exec, vmName: 'my-vm' }, 'susentorno-internal')).rejects.toThrow(
+      VmReconcileError,
+    );
+  });
 });
 
 describe('isolateVmToSwitch', () => {
@@ -995,6 +1050,13 @@ describe('isolateVmToSwitch', () => {
 
   it('fails for an unsupported state rather than guessing', async () => {
     const { exec } = queuedExec([vmState('Paused')]);
+    await expect(isolateVmToSwitch({ exec, vmName: 'my-vm' }, 'susentorno-internal')).rejects.toThrow(
+      VmReconcileError,
+    );
+  });
+
+  it('fails when Start-VM exits non-zero after a successful Connect', async () => {
+    const { exec } = queuedExec([vmState('Off'), ok, fail]);
     await expect(isolateVmToSwitch({ exec, vmName: 'my-vm' }, 'susentorno-internal')).rejects.toThrow(
       VmReconcileError,
     );
@@ -1042,6 +1104,14 @@ export interface VmReconcileOutcome {
 }
 
 export class VmReconcileError extends Error {}
+
+/** Connect-VMNetworkAdapter/Start-VM failures must surface directly, not be silently swallowed. */
+async function runOperation(exec: PowerShellExec, command: string): Promise<void> {
+  const { exitCode, stdout } = await exec.run(command);
+  if (exitCode !== 0) {
+    throw new VmReconcileError(`vmReconcile: command failed (exit ${exitCode}): ${command}${stdout ? ` — ${stdout}` : ''}`);
+  }
+}
 
 async function queryVmStateAndSwitch(
   deps: VmReconcileDeps,
@@ -1101,10 +1171,10 @@ export async function reconcileVmToSwitch(
   if (!plan.ok) throw new VmReconcileError(`vmReconcile: ${plan.message}`);
   if (plan.stop) await gracefulStopAndConfirmOff(deps);
   if (plan.connect) {
-    await deps.exec.run(buildConnectVmNetworkAdapterCommand(deps.vmName, targetSwitchName));
+    await runOperation(deps.exec, buildConnectVmNetworkAdapterCommand(deps.vmName, targetSwitchName));
   }
   if (plan.start) {
-    await deps.exec.run(buildStartVmCommand(deps.vmName));
+    await runOperation(deps.exec, buildStartVmCommand(deps.vmName));
   }
   return { started: plan.start };
 }
@@ -1123,15 +1193,15 @@ export async function isolateVmToSwitch(deps: VmReconcileDeps, targetSwitchName:
       `vmReconcile: VM '${deps.vmName}' is in state '${vm.state}' — it must be 'Off' or 'Running' before isolating it.`,
     );
   }
-  await deps.exec.run(buildConnectVmNetworkAdapterCommand(deps.vmName, targetSwitchName));
-  await deps.exec.run(buildStartVmCommand(deps.vmName));
+  await runOperation(deps.exec, buildConnectVmNetworkAdapterCommand(deps.vmName, targetSwitchName));
+  await runOperation(deps.exec, buildStartVmCommand(deps.vmName));
 }
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pnpm vitest run tests/unit/guestSetup/vmReconcile.test.ts`
-Expected: PASS (10 tests)
+Expected: PASS (15 tests: 11 in `reconcileVmToSwitch`, 4 in `isolateVmToSwitch`)
 
 - [ ] **Step 5: Commit**
 
@@ -2352,6 +2422,7 @@ git commit -m "feat(guest-setup): add ensureKvpDaemon"
 - Delete: `tests/unit/guestSetup/listPreScripts.test.ts`
 - Modify: `src/guestSetup/runPreScripts.ts`
 - Modify: `tests/unit/guestSetup/runPreScripts.test.ts`
+- Modify: `tests/guest/guest.test.ts`
 - Create: `src/guestSetup/runPostScripts.ts`
 - Test: `tests/unit/guestSetup/runPostScripts.test.ts`
 
@@ -2645,15 +2716,44 @@ export async function runPostScripts(
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **Step 4: Update `tests/guest/guest.test.ts`'s import — it references the deleted module**
+
+`tests/guest/guest.test.ts` imports `listPreScripts` directly (not just `PreScript`), so deleting `src/guestSetup/listPreScripts.ts` without updating this file breaks `pnpm typecheck` (which includes `tests/`, per `tsconfig.json`'s `include`) and `pnpm test:guest`. In `tests/guest/guest.test.ts`, change line 20 from:
+
+```typescript
+import { listPreScripts } from '../../src/guestSetup/listPreScripts';
+```
+
+to:
+
+```typescript
+import { listScripts } from '../../src/guestSetup/listScripts';
+```
+
+and change its one call site (around line 134) from:
+
+```typescript
+const scripts = listPreScripts(join(envRoot, 'vm-shared-linux', 'pre-scripts'));
+```
+
+to:
+
+```typescript
+const scripts = listScripts(join(envRoot, 'vm-shared-linux', 'pre-scripts'));
+```
+
+- [ ] **Step 5: Run tests to verify they pass, and typecheck the whole tree**
 
 Run: `pnpm vitest run tests/unit/guestSetup/listScripts.test.ts tests/unit/guestSetup/runPreScripts.test.ts tests/unit/guestSetup/runPostScripts.test.ts`
 Expected: PASS (4 + 6 + 4 = 14 tests)
 
-- [ ] **Step 5: Commit**
+Run: `pnpm typecheck`
+Expected: PASS — confirms `tests/guest/guest.test.ts`'s updated import resolves cleanly (`pnpm test:guest` itself is not run here; it requires the WSL2/QEMU prerequisites from development.md and is exercised on its own schedule, not as part of this task's verification).
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/guestSetup/listScripts.ts src/guestSetup/runPreScripts.ts src/guestSetup/runPostScripts.ts tests/unit/guestSetup/listScripts.test.ts tests/unit/guestSetup/runPreScripts.test.ts tests/unit/guestSetup/runPostScripts.test.ts
+git add src/guestSetup/listScripts.ts src/guestSetup/runPreScripts.ts src/guestSetup/runPostScripts.ts tests/unit/guestSetup/listScripts.test.ts tests/unit/guestSetup/runPreScripts.test.ts tests/unit/guestSetup/runPostScripts.test.ts tests/guest/guest.test.ts
 git rm src/guestSetup/listPreScripts.ts tests/unit/guestSetup/listPreScripts.test.ts
 git commit -m "feat(guest-setup): generalize listPreScripts to listScripts and add runPostScripts"
 ```
@@ -2988,10 +3088,10 @@ A few things worth knowing before running it:
 <details>
 <summary>Manual fallback (for diagnosing a failure, or to see exactly what the command does)</summary>
 
-With `openssh-server` installed you can open an ssh shell to make copying and pasting easier:
+With `openssh-server` installed you can open an ssh shell to make copying and pasting easier — use the guest's own address or hostname, **not** the Hyper-V VM name `setup-guest-unix` prompts for (the two have no necessary relationship; see "four distinct addresses" above):
 
 ```
-ssh <username>@<vm-name>
+ssh <username>@<guest-address>
 ```
 
 For the following commands, replace `<the password from setup-environment.md>`. Special characters don't need to be escaped — the heredoc interpreter is only watching for an `EOF`.
@@ -3084,10 +3184,25 @@ git commit -m "docs: document the automated isolation/post-scripts flow and add 
 
 ## Self-Review Notes
 
-- **Spec coverage**: "New prerequisite: elevation" → Task 2; "New input: VM name" + its validation → Tasks 3, 8, 12; "Guest address discovery across network transitions" (including the KVP-daemon prerequisite) → Tasks 3, 7, 10, 12; "Idempotent top-level flow" (all 8 steps, the reconciliation table, the no-op-branch address handling) → Tasks 4, 5, 12; "Isolation mechanics" (PowerShell quoting, graceful `Stop-VM` + 60s timeout + confirmation poll, `run-hosting` readiness, the TCP reachability wait) → Tasks 1, 2, 5, 6, 7; "Mount step (reused, with one fix)" → Task 9; "Post-scripts execution" (`listScripts` generalization, `runPostScripts`) → Task 11; "Console output for step announcements" (blank-line `onStep` formatting) → Task 12; "Failure handling & idempotency limits" (the built-in-script idempotency audit — `01-auth-config.sh`'s `git config --global`/`ln -sfn`/`mkdir -p` and `02-apply-home-jq-transforms.sh` are all convergent, confirmed by inspection during planning) → reflected in Task 13's checklist and this plan's Global Constraints; "Testing" (unit coverage per module, the manual-verification checklist) → Tasks 1–13 collectively, checklist in Task 13; "Documentation" → Task 13. "Out of scope" items (Windows automation, cross-adapter pre-isolation mounting, a persisted guest registry) have deliberately no task.
+- **Spec coverage**: "New prerequisite: elevation" → Task 2; "New input: VM name" + its validation → Tasks 3, 8, 12; "Guest address discovery across network transitions" (including the KVP-daemon prerequisite) → Tasks 3, 7, 10, 12; "Idempotent top-level flow" (all 8 steps, the reconciliation table, the no-op-branch address handling) → Tasks 4, 5, 12; "Isolation mechanics" (PowerShell quoting, graceful `Stop-VM` + 60s timeout + confirmation poll, `run-hosting` readiness, the TCP reachability wait) → Tasks 1, 2, 5, 6, 7; "Mount step (reused, with one fix)" → Task 9; "Post-scripts execution" (`listScripts` generalization, `runPostScripts`) → Task 11; "Console output for step announcements" (blank-line `onStep` formatting) → Task 12; "Failure handling & idempotency limits" (the built-in-script idempotency audit) → tracked outside this plan, not duplicated into Task 13's checklist; "Testing" (unit coverage per module, the manual-verification checklist) → Tasks 1–13 collectively, checklist in Task 13; "Documentation" → Task 13. "Out of scope" items (Windows automation, cross-adapter pre-isolation mounting, a persisted guest registry) have deliberately no task.
 - **Placeholder scan**: no TBD/"add error handling"/"similar to Task N" phrasing anywhere; every code step shows complete code. The one open external fact (`KVP_DAEMON_PACKAGE`'s exact value) is not left as a placeholder — it's given a concrete, cited default (`hv-kvp-daemon-init`) plus an explicit verification step in the Task 13 checklist, matching the spec's own framing ("should be confirmed... during implementation, not asserted here").
 - **Type/name consistency checked**: `PowerShellExec`/`PowerShellExecResult` (Task 2) are the exact types every later Hyper-V-touching module (Tasks 3–8, 12) consumes. `GuestScript`/`listScripts` (Task 11) match what `runPreScripts.ts` (modified) and `runPostScripts.ts` (new) both import — no stray `PreScript` references remain anywhere after Task 11. `hostIp` (Task 9) is the field name both `mountShare` calls in Task 12 use — no leftover `defaultSwitchHostIp`/`internalSwitchHostIp` field name on `MountShareOptions`. `VmReconcileError`, `EnsureKvpDaemonError`, `RunPostScriptsError` (Tasks 5, 10, 11) are the exact classes Task 12's `catch` block checks. `reconcileVmToSwitch`'s `{ started: boolean }` return (Task 5) is exactly what Task 12 branches on to decide whether step 1's reachability wait runs at all.
 
 ## Peer Review Notes
 
-_(Filled in after running the prompt-a-peer-medium review against this plan and the spec.)_
+Reviewed by `prompt-a-peer-medium` (codex) against this plan and the spec it implements. Seven findings came back specific to this plan; six were fixed inline, one was deliberately not acted on.
+
+**Fixed:**
+
+1. Task 11 deleted `src/guestSetup/listPreScripts.ts` without updating `tests/guest/guest.test.ts`, which imports `listPreScripts` directly (confirmed by reading the file — line 20 and its one call site). Since `tsconfig.json`'s `include` covers `tests/`, this would have broken `pnpm typecheck`. Fixed by adding a step to Task 11 updating that file's import and call site to `listScripts`, plus a `pnpm typecheck` verification step.
+2. Tasks 2/5: `vmReconcile.ts` awaited `Connect-VMNetworkAdapter` and `Start-VM` without checking their exit codes, silently swallowing a failure (e.g. proceeding to `Start-VM` after a failed reconnect, or reporting a long reachability timeout instead of an immediate clear error after a failed `Start-VM`) — contradicting the spec's "a failure surfaces directly rather than being silently swallowed." Fixed by adding a `runOperation` helper that checks the exit code and throws `VmReconcileError`, used for both calls in both `reconcileVmToSwitch` and `isolateVmToSwitch`; added four new tests covering both failure paths. `Stop-VM`'s own exit code remains intentionally unchecked, per the spec's own reasoning (the subsequent `Get-VM` poll is the real success signal) — now stated explicitly in Task 5's interface notes so it doesn't read as an oversight.
+3. Task 5: the spec explicitly requires testing "the `Stop-VM` timeout: the `execa` call exceeding its 60-second bound." No test verified `stopTimeoutMs` was actually threaded through to the `PowerShellExec.run` call for `Stop-VM` (default `60_000`, or a custom value). Added two tests asserting the timeout option on that specific call, distinct from the untimed off-confirmation poll calls.
+4. Task 13's manual-fallback doc, copied over from today's `setup-guest.md`, told the reader to `ssh <username>@<vm-name>` — but this spec is the one that first draws the VM-name/guest-address distinction explicit, making that pre-existing line actively misleading now (the VM name is a Hyper-V identifier, not something `ssh` resolves). Fixed the sample command and added a one-line callout pointing back at the "four distinct addresses" explanation.
+5. The spec's "Failure handling & idempotency limits" section calls auditing every built-in pre-/post-script an acceptance criterion, "not an optional follow-up." My self-review notes asserted this was "confirmed by inspection during planning" without a durable record. I initially added a dedicated checklist item to Task 13 for this, but that duplicated an audit already tracked elsewhere in the project — removed per direct instruction, and the Self-Review Notes' spec-coverage line updated to point at that existing tracking instead of claiming this plan owns it.
+6. Tasks 3 and 4 stated wrong passing-test counts (14 vs. the actual 16 tests in `hyperVQueries.test.ts`; "6, `it.each` counts as 4" vs. the actual 9 in `hyperVOperations.test.ts`, since `it.each` supplements rather than replaces the 5 table-shaped `it` blocks). Both corrected; Task 5's count also updated from 10 to 15 to include the four tests added in fix #2/#3 above.
+
+**Discarded (reported, not acted on):**
+
+7. *Task 7's reachability "race" checks candidates sequentially in list order rather than concurrently, and the 10-minute timeout can overrun by up to one poll interval plus one candidate's connect timeout.* True as stated, but neither is a spec violation: the spec itself calls the 10-minute bound "a generous backstop, not the expected common case," and "racing" here means "whichever candidate answers first, checked in order each tick" — sequential per-tick checking still satisfies "poll for a candidate address and, once one appears, attempt a raw TCP connection to it." Making it genuinely concurrent (`Promise.any`-shaped) would add real complexity — cancelling in-flight sockets, reconciling results — for a difference measured in single-digit seconds against a 10-minute budget. I judged the existing design (already reasoned about explicitly in Task 7's own commentary) sufficient rather than adding that complexity, but flagging it here since it's my own call.
+
+The reviewer's first response (referencing `docs/honist-v/specs/2026-08-06-automate-ubuntu-guest-setup-design.md`, `weaveScripts.ts`, and the QEMU harness's credential-transport model) was reviewing the *original* `setup-guest-unix` design this plan extends, not this plan itself — its nine findings are out of scope here and aren't addressed by this plan (several, like the fstab idempotency and quoting concerns, were already resolved by the time this plan's spec was written, since it explicitly builds on and cites the finished original implementation).
