@@ -8,6 +8,6 @@ export function buildElevationCheckCommand(): string {
 }
 
 export async function isElevated(exec: PowerShellExec): Promise<boolean> {
-  const { stdout } = await exec.run(buildElevationCheckCommand());
-  return stdout.trim() === 'True';
+  const { exitCode, stdout } = await exec.run(buildElevationCheckCommand());
+  return exitCode === 0 && stdout.trim() === 'True';
 }

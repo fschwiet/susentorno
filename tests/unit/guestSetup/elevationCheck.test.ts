@@ -37,4 +37,13 @@ describe('isElevated', () => {
     };
     expect(await isElevated(exec)).toBe(false);
   });
+
+  it('is false when PowerShell reports True but exits non-zero', async () => {
+    const exec: PowerShellExec = {
+      async run() {
+        return { exitCode: 1, stdout: 'True\r\n' };
+      },
+    };
+    expect(await isElevated(exec)).toBe(false);
+  });
 });
