@@ -34,7 +34,7 @@ describe('mountShare', () => {
       shareName: 'vm-shared-linux',
       accountName: 'susentorno-share',
       password: 'hunter2',
-      defaultSwitchHostIp: '172.28.128.1',
+      hostIp: '172.28.128.1',
     });
 
     expect(calls[0]).toBe('sudo apt-get install -y cifs-utils');
@@ -68,7 +68,7 @@ describe('mountShare', () => {
       shareName: 'vm-shared-linux',
       accountName: 'susentorno-share',
       password: 'hunter2',
-      defaultSwitchHostIp: '172.28.128.1',
+      hostIp: '172.28.128.1',
     });
     expect(capturedContents).toBe('username=susentorno-share\npassword=hunter2\n');
     expect(existsSync(capturedLocalPath)).toBe(false); // deleted after mountShare returns
@@ -81,7 +81,7 @@ describe('mountShare', () => {
         shareName: 'vm-shared-linux',
         accountName: 'susentorno-share',
         password: 'hunter2',
-        defaultSwitchHostIp: '172.28.128.1',
+        hostIp: '172.28.128.1',
       }),
     ).rejects.toThrow(MountShareError);
     expect(calls).toEqual(['sudo apt-get install -y cifs-utils']); // nothing after the failure ran
@@ -94,7 +94,7 @@ describe('mountShare', () => {
         shareName: 'vm-shared-linux',
         accountName: 'susentorno-share',
         password: 'hunter2',
-        defaultSwitchHostIp: '172.28.128.1',
+        hostIp: '172.28.128.1',
       }),
     ).rejects.toThrow(MountShareError);
     expect(calls.some((c) => c.includes('sudo install -m 600'))).toBe(false);
@@ -106,7 +106,7 @@ describe('mountShare', () => {
       shareName: 'vm-shared-linux',
       accountName: 'susentorno-share',
       password: 'hunter2',
-      defaultSwitchHostIp: '172.28.128.1',
+      hostIp: '172.28.128.1',
     });
     const installCall = calls.find((c) => c.includes('sudo install -m 600'))!;
     expect(installCall).toContain('rm -f');
@@ -126,6 +126,7 @@ describe('mountShare', () => {
     const remoteExec: RemoteExec = {
       async run(command: string): Promise<RemoteExecResult> {
         events.push(`run:${command}`);
+        if (command.startsWith('mountpoint -q')) return { exitCode: 1 };
         return { exitCode: 0 };
       },
       async copyFile(): Promise<RemoteExecResult> {
@@ -137,7 +138,7 @@ describe('mountShare', () => {
       shareName: 'vm-shared-linux',
       accountName: 'susentorno-share',
       password: 'hunter2',
-      defaultSwitchHostIp: '172.28.128.1',
+      hostIp: '172.28.128.1',
       onStep: (message) => events.push(`step:${message}`),
     });
     expect(events.map((e) => e.split(':')[0])).toEqual([
@@ -153,13 +154,16 @@ describe('mountShare', () => {
       'run',
       'step',
       'run',
+      'step',
+      'run',
     ]);
     expect(events[0]).toBe('step:install cifs-utils');
     expect(events[2]).toBe('step:copy credentials file');
     expect(events[4]).toBe('step:install credentials file');
     expect(events[6]).toBe('step:create mount point');
     expect(events[8]).toBe('step:update fstab');
-    expect(events[10]).toBe('step:mount share');
+    expect(events[10]).toBe('step:check active mount');
+    expect(events[12]).toBe('step:mount share');
   });
 
   it('works with no onStep given', async () => {
@@ -169,8 +173,49 @@ describe('mountShare', () => {
         shareName: 'vm-shared-linux',
         accountName: 'susentorno-share',
         password: 'hunter2',
-        defaultSwitchHostIp: '172.28.128.1',
+        hostIp: '172.28.128.1',
       }),
     ).resolves.toBeUndefined();
+  });
+
+  it('skips straight to mount -a when the share is not currently mounted', async () => {
+    const { remoteExec, calls } = fakeRemoteExec({ runResults: { 'mountpoint -q': 1 } });
+    await mountShare(remoteExec, {
+      shareName: 'vm-shared-linux',
+      accountName: 'susentorno-share',
+      password: 'hunter2',
+      hostIp: '172.28.128.1',
+    });
+    expect(calls.some((c) => c.startsWith('sudo umount'))).toBe(false);
+    expect(calls[calls.length - 1]).toBe('sudo systemctl daemon-reload && sudo mount -a');
+  });
+
+  it('unmounts a currently-active mount before remounting', async () => {
+    const { remoteExec, calls } = fakeRemoteExec({ runResults: { 'mountpoint -q': 0 } });
+    await mountShare(remoteExec, {
+      shareName: 'vm-shared-linux',
+      accountName: 'susentorno-share',
+      password: 'hunter2',
+      hostIp: '172.28.128.1',
+    });
+    const umountIndex = calls.findIndex((c) => c.startsWith('sudo umount'));
+    const mountAIndex = calls.indexOf('sudo systemctl daemon-reload && sudo mount -a');
+    expect(umountIndex).toBeGreaterThan(-1);
+    expect(umountIndex).toBeLessThan(mountAIndex);
+  });
+
+  it('stops before mount -a when a failing umount cannot clear a stale active mount (regression)', async () => {
+    const { remoteExec, calls } = fakeRemoteExec({
+      runResults: { 'mountpoint -q': 0, 'sudo umount': 1 },
+    });
+    await expect(
+      mountShare(remoteExec, {
+        shareName: 'vm-shared-linux',
+        accountName: 'susentorno-share',
+        password: 'hunter2',
+        hostIp: '172.28.128.1',
+      }),
+    ).rejects.toThrow(MountShareError);
+    expect(calls).not.toContain('sudo systemctl daemon-reload && sudo mount -a');
   });
 });

@@ -10,7 +10,7 @@ export interface MountShareOptions {
   shareName: string;
   accountName: string;
   password: string;
-  defaultSwitchHostIp: string;
+  hostIp: string;
   onStep?: (message: string) => void;
 }
 
@@ -83,9 +83,28 @@ export async function mountShare(remoteExec: RemoteExec, opts: MountShareOptions
     'update fstab',
     buildFstabReplaceCommand({
       shareName: opts.shareName,
-      defaultSwitchHostIp: opts.defaultSwitchHostIp,
+      hostIp: opts.hostIp,
     }),
     onStep,
   );
+  // `mount -a` only mounts fstab entries that aren't already active — it does
+  // not notice a mount point whose *source* changed while still mounted (the
+  // exact case after isolation re-points this mount at a different host IP).
+  // Distinguish "not mounted" (skip straight to mount -a) from "mounted but
+  // failed to unmount" (stop — a `;`-joined umount;mount-a would let a real
+  // unmount failure pass silently into mount -a, which would then skip the
+  // still-active stale mount and wrongly report success).
+  onStep('check active mount');
+  const { exitCode: mountpointExitCode } = await remoteExec.run(
+    `mountpoint -q ${quoteForRemoteShell(mountPoint)}`,
+  );
+  if (mountpointExitCode === 0) {
+    await runStep(
+      remoteExec,
+      'unmount stale mount',
+      `sudo umount ${quoteForRemoteShell(mountPoint)}`,
+      onStep,
+    );
+  }
   await runStep(remoteExec, 'mount share', 'sudo systemctl daemon-reload && sudo mount -a', onStep);
 }

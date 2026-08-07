@@ -2,7 +2,7 @@ import { quoteForRemoteShell } from './quoteForRemoteShell';
 
 export interface FstabReplaceOptions {
   shareName: string;
-  defaultSwitchHostIp: string;
+  hostIp: string;
 }
 
 /**
@@ -10,8 +10,9 @@ export interface FstabReplaceOptions {
  * line for this mount point (matched by [[:space:]]-bounded field, so it
  * can't false-positive on a longer directory name), then append the correct
  * line fresh. Safe both for a same-content rerun and for a rerun after the
- * Default-Switch host IP changed across a host reboot — either way this
- * converges on one correct line, unlike a plain `tee -a`.
+ * host IP changed across a host reboot, or the switch from Default to Internal
+ * across isolation — either way this converges on one correct line, unlike a
+ * plain `tee -a`.
  */
 /**
  * Escapes a value for safe use inside a GNU sed BRE address between '#'
@@ -28,7 +29,7 @@ function escapeForSedBre(value: string): string {
 export function buildFstabReplaceCommand(opts: FstabReplaceOptions): string {
   const mountPoint = `/mnt/${opts.shareName}`;
   const fstabLine =
-    `//${opts.defaultSwitchHostIp}/${opts.shareName} ${mountPoint} cifs ` +
+    `//${opts.hostIp}/${opts.shareName} ${mountPoint} cifs ` +
     `ro,credentials=/etc/susentorno-share.cred,uid=1000,gid=1000,_netdev,x-systemd.automount 0 0`;
   // '#' as the sed delimiter avoids escaping the '/' characters in mountPoint.
   const deleteScript = `\\#[[:space:]]${escapeForSedBre(mountPoint)}[[:space:]]#d`;
