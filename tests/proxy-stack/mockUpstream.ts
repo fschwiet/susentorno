@@ -10,6 +10,8 @@ export interface MockUpstream {
   /** Full headers object for every request, in order — for asserting on headers
    * other than Authorization (e.g. that no internal marker header ever leaks). */
   receivedHeaders: IncomingHttpHeaders[];
+  /** Same as receivedHeaders, but for WebSocket upgrade requests. */
+  receivedUpgradeHeaders: IncomingHttpHeaders[];
 }
 
 function generateSelfSignedCert(): { key: string; cert: string } {
@@ -42,8 +44,10 @@ export function startMockUpstream(): Promise<MockUpstream> {
   });
 
   const receivedUpgradeAuthorizationHeaders: string[] = [];
+  const receivedUpgradeHeaders: IncomingHttpHeaders[] = [];
   server.on('upgrade', (req, socket) => {
     receivedUpgradeAuthorizationHeaders.push(req.headers.authorization ?? '');
+    receivedUpgradeHeaders.push(req.headers);
     socket.write(
       'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n',
     );
@@ -62,6 +66,7 @@ export function startMockUpstream(): Promise<MockUpstream> {
         receivedAuthorizationHeaders,
         receivedUpgradeAuthorizationHeaders,
         receivedHeaders,
+        receivedUpgradeHeaders,
       });
     });
   });
