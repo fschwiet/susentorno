@@ -824,20 +824,26 @@ git commit -m "refactor(credentials): widen CredentialChannelConfig.writeSecret 
 
 - [ ] **Step 1: Write the failing test**
 
-There is no existing unit test file for `envPaths.ts`'s path shape beyond `tests/unit/envPaths.test.ts` — check it first:
+`tests/unit/envPaths.test.ts` has a line-by-line assertion test (not a whole-object `toEqual`) plus a dedicated `describe('proxy secret locations', ...)` block with one `it` per secret path. Add the `codexSecret` line (line 26) and add a new `it` to that `describe` block (after its existing one, around line 100).
 
-Run: `npx vitest run tests/unit/envPaths.test.ts --reporter=verbose` to see its current assertions, then add a new `it` alongside whatever pattern it already uses for `codexSecret`, e.g.:
+Add this line immediately after the existing `expect(paths.codexSecret).toBe(join(root, 'proxy', 'secrets', 'codex-secret.yaml'));` (line 26) inside the `'maps a cwd to the environment layout'` test:
 
 ```ts
-  it('includes a codexAccountIdSecret path alongside codexSecret', () => {
-    const paths = envPaths('/fake/cwd');
-    expect(paths.codexAccountIdSecret).toBe(
-      join('/fake/cwd', '.susentorno', 'proxy', 'secrets', 'codex-account-id-secret.yaml'),
-    );
-  });
+      expect(paths.codexAccountIdSecret).toBe(
+        join(root, 'proxy', 'secrets', 'codex-account-id-secret.yaml'),
+      );
 ```
 
-(Match the exact style/imports already used in that file — read it first and mirror its existing `codexSecret`-style assertion precisely; if the file asserts on the whole `EnvPaths` object with `toEqual` instead of per-field `it`s, add `codexAccountIdSecret` to that expected object instead of writing a new standalone `it`.)
+Add this `it` inside `describe('proxy secret locations', ...)`, immediately after the existing `it('places the codex SDS secret under proxy/secrets', ...)`:
+
+```ts
+    it('places the codex account-id secret under proxy/secrets', () => {
+      const paths = envPaths('/work');
+      expect(paths.codexAccountIdSecret).toBe(
+        join('/work', '.susentorno', 'proxy', 'secrets', 'codex-account-id-secret.yaml'),
+      );
+    });
+```
 
 - [ ] **Step 2: Run test to verify it fails**
 
