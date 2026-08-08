@@ -557,6 +557,30 @@ describe('proxy configuration generation', () => {
       );
       expect(cluster).toBeDefined();
     });
+
+    it('the codex pre-filter couples chatgpt-account-id handling to bearer recognition', () => {
+      const codexAllowlist: Allowlist = {
+        passthrough: [],
+        claudeAuthenticated: [],
+        githubAuthenticated: [],
+        codexAuthenticated: ['chatgpt.com:443'],
+        authCandidate: [],
+        blocked: [],
+        warnings: [],
+      };
+      const config = generateEnvoyConfig(codexAllowlist) as any;
+      const listener443 = config.static_resources.listeners.find(
+        (l: any) => l.name === 'listener_443',
+      );
+      const codexChain = listener443.filter_chains.find((fc: any) =>
+        fc.filter_chain_match?.server_names?.includes('chatgpt.com'),
+      );
+      const preLua = codexChain.filters[0].typed_config.http_filters[0].typed_config
+        .default_source_code.inline_string;
+      expect(preLua).toContain('chatgpt-account-id');
+      expect(preLua).toContain(NO_ACCOUNT_ID_MARKER_HEADER);
+      expect(preLua).toContain(NO_ACCOUNT_ID_SENTINEL_VALUE);
+    });
   });
 
   describe('host-run MCP servers', () => {

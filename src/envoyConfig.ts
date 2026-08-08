@@ -540,18 +540,28 @@ function buildClaudeEntry(entry: string, overrides: UpstreamOverride[]) {
 const CODEX_GATE_LUA = `local PLACEHOLDER = "Bearer ${CODEX_PLACEHOLDER_ACCESS_TOKEN}"
 local NO_AUTH_MARKER = "${NO_AUTH_MARKER_HEADER}"
 local NO_AUTH_SENTINEL = "${NO_AUTH_SENTINEL_VALUE}"
+local NO_ACCOUNT_ID_MARKER = "${NO_ACCOUNT_ID_MARKER_HEADER}"
+local NO_ACCOUNT_ID_SENTINEL = "${NO_ACCOUNT_ID_SENTINEL_VALUE}"
 
 function envoy_on_request(request_handle)
   local headers = request_handle:headers()
   headers:remove(NO_AUTH_MARKER)
+  headers:remove(NO_ACCOUNT_ID_MARKER)
   local auth = headers:get("authorization")
+  local recognized = false
   if auth == nil then
     headers:replace("authorization", NO_AUTH_SENTINEL)
     headers:replace(NO_AUTH_MARKER, "1")
-    return
-  end
-  if auth == PLACEHOLDER then
+  elseif auth == PLACEHOLDER then
     headers:remove("authorization")
+    recognized = true
+  end
+
+  if recognized then
+    headers:remove("chatgpt-account-id")
+  elseif headers:get("chatgpt-account-id") == nil then
+    headers:replace("chatgpt-account-id", NO_ACCOUNT_ID_SENTINEL)
+    headers:replace(NO_ACCOUNT_ID_MARKER, "1")
   end
 end
 `;
