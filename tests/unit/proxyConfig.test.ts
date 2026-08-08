@@ -527,6 +527,7 @@ describe('proxy configuration generation', () => {
       expect(hcm.http_filters.map((f: any) => f.name)).toEqual([
         'susentorno.auth_pre',
         'envoy.filters.http.credential_injector',
+        'susentorno.credential_injector.account_id',
         'susentorno.auth_post',
         'envoy.filters.http.router',
       ]);
@@ -538,7 +539,7 @@ describe('proxy configuration generation', () => {
       expect(preLua).toContain(NO_AUTH_SENTINEL_VALUE);
       expect(preLua).not.toContain('403');
       // Shared, host-agnostic post-filter.
-      const postLua = hcm.http_filters[2].typed_config.default_source_code.inline_string;
+      const postLua = hcm.http_filters[3].typed_config.default_source_code.inline_string;
       expect(postLua).toBe(AUTH_POST_FILTER_LUA);
       // Codex-only websocket upgrade support.
       expect(hcm.upgrade_configs).toEqual([{ upgrade_type: 'websocket' }]);
@@ -547,10 +548,19 @@ describe('proxy configuration generation', () => {
 
       const injector = hcm.http_filters[1].typed_config;
       expect(injector.overwrite).toBe(false);
+      expect(injector.credential.typed_config.header).toBe('Authorization');
       expect(injector.credential.typed_config.credential.name).toBe('codex_bearer_token');
       expect(injector.credential.typed_config.credential.sds_config.path_config_source.path).toBe(
         '/etc/envoy/secrets/codex-secret.yaml',
       );
+
+      const accountIdInjector = hcm.http_filters[2].typed_config;
+      expect(accountIdInjector.overwrite).toBe(false);
+      expect(accountIdInjector.credential.typed_config.header).toBe('chatgpt-account-id');
+      expect(accountIdInjector.credential.typed_config.credential.name).toBe('codex_account_id');
+      expect(
+        accountIdInjector.credential.typed_config.credential.sds_config.path_config_source.path,
+      ).toBe('/etc/envoy/secrets/codex-account-id-secret.yaml');
 
       const cluster = config.static_resources.clusters.find(
         (c: any) => c.name === 'cluster_codex_chatgpt_com',

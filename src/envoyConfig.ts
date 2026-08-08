@@ -647,6 +647,32 @@ function buildCodexEntry(entry: string, overrides: UpstreamOverride[]) {
               },
             },
             {
+              name: 'susentorno.credential_injector.account_id',
+              typed_config: {
+                '@type':
+                  'type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector',
+                overwrite: false,
+                credential: {
+                  name: 'envoy.http.injected_credentials.generic',
+                  typed_config: {
+                    '@type':
+                      'type.googleapis.com/envoy.extensions.http.injected_credentials.generic.v3.Generic',
+                    header: 'chatgpt-account-id',
+                    credential: {
+                      name: 'codex_account_id',
+                      sds_config: {
+                        path_config_source: {
+                          path: '/etc/envoy/secrets/codex-account-id-secret.yaml',
+                          watched_directory: { path: '/etc/envoy/secrets' },
+                        },
+                        resource_api_version: 'V3',
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            {
               name: 'susentorno.auth_post',
               typed_config: {
                 '@type': 'type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua',
