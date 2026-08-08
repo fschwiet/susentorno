@@ -173,11 +173,8 @@ cmdkey /add:192.168.67.1 /user:susentorno-share /pass:<the password from setup-e
 
 `cmdkey` entries are **per-address**, so add one for the Default Switch host IP as well if you mount the share during the NAT phase. The share is then reachable at `\\192.168.67.1\vm-shared-windows` — the numbered scripts run from there. Two host addresses appear across this flow:
 
-- `<default-switch-host-ip>` — the temporary address used to reach the SMB share while the VM is attached to the Default Switch.
-- `<internal-switch-host-ip>` — the stable address assigned to `vEthernet (susentorno-internal)` in `setup-machine.md`. Pass this address to the network configuration script and use it after isolation.
-
 **If a guest ever comes up with no address**, `run-hosting` was not running when it booted. Start `run-hosting` and the guest will pick up a lease on its next retry — no action is needed inside the guest, but allow up to ~5 minutes before treating it as a failure. On **Windows** the guest falls back to a `169.254.x.x` self-assigned address and re-attempts on roughly a five-minute cycle (measured: 4m55s). On **Ubuntu** there is **no** APIPA fallback — `eth0` simply has no IPv4 address — and NetworkManager retries every 45s for three minutes, then goes quiet for about five minutes before trying again (measured: 2m53s from starting `run-hosting`, all of it spent inside that quiet gap). Neither wait can be shortened from the host. With `run-hosting` already running before boot, leases bind in well under a second. As a last resort, the Hyper-V console plus a static address (an IP in the Internal-switch subnet, no gateway, `nameserver = <host-ip>`) still works and is a supported fallback.
->
+
 > **Before waiting out that timer, check the host firewall.** A guest with no address looks identical whether the DHCP server is absent or its replies are being dropped. `run-hosting` binds `:53` and `:67` on the Internal-switch adapter, whose network category is `Public`, so Windows may raise an "allow `node.exe` on public networks?" dialog and write a broad `Query User{…}` rule from whatever gets clicked — **Block** silently overrides all four correctly-scoped rules, and **Allow** masks their absence. Delete any such rule for the `run-hosting` `node.exe` (it is pnpm's global shim, `C:\Users\<user>\AppData\Local\pnpm\bin\node.exe`, not the repo's `dist/`) and add a program-scoped rule so the dialog has nothing to ask:
 >
 > ```powershell
