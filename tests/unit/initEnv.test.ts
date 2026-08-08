@@ -11,6 +11,7 @@ import {
   packagedBlockList,
 } from '../../src/templates';
 import { ENV_DIR_NAME } from '../../src/envPaths';
+import { CODEX_PLACEHOLDER_ACCOUNT_ID } from '../../src/codexPlaceholder';
 
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
 const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
@@ -106,7 +107,7 @@ describe('environment initialization', () => {
       for (const folder of ['vm-shared-linux', 'vm-shared-windows']) {
         const auth = readFileSync(join(root, folder, 'auth.json'), 'utf8');
         const parsed = JSON.parse(auth);
-        expect(parsed.tokens.account_id, folder).toBe('acct-uuid-1234'); // pass-through
+        expect(parsed.tokens.account_id, folder).toBe(CODEX_PLACEHOLDER_ACCOUNT_ID);
         expect(auth, folder).not.toContain('real.access.token.value'); // secret gone
       }
     });

@@ -1,16 +1,18 @@
 import {
   CODEX_PLACEHOLDER_ACCESS_TOKEN,
+  CODEX_PLACEHOLDER_ACCOUNT_ID,
   CODEX_PLACEHOLDER_ID_TOKEN,
   CODEX_PLACEHOLDER_REFRESH_TOKEN,
 } from './codexPlaceholder';
 
 /**
- * Turn a real ~/.codex/auth.json into the VM placeholder copy: the three fields under
+ * Turn a real ~/.codex/auth.json into the VM placeholder copy: the four fields under
  * `tokens` become placeholders (access/id are far-future placeholder JWTs so the VM's
- * Codex never tries to refresh; refresh_token is a fixed dummy). Everything else —
- * tokens.account_id, auth_mode, OPENAI_API_KEY — passes through so the file matches the
- * user's real account shape and preserves Codex's account-scoped UX. Output is
- * pretty-printed JSON, LF line endings only.
+ * Codex never tries to refresh; refresh_token is a fixed dummy; account_id is a fixed
+ * placeholder string — the proxy injects the real one into the chatgpt-account-id
+ * header, so the guest never needs to hold it). Everything else — auth_mode,
+ * OPENAI_API_KEY — passes through so the file matches the user's real account shape.
+ * Output is pretty-printed JSON, LF line endings only.
  */
 export function sanitizeCodexCredentials(raw: string): string {
   let parsed: unknown;
@@ -36,6 +38,7 @@ export function sanitizeCodexCredentials(raw: string): string {
   record.access_token = CODEX_PLACEHOLDER_ACCESS_TOKEN;
   record.id_token = CODEX_PLACEHOLDER_ID_TOKEN;
   record.refresh_token = CODEX_PLACEHOLDER_REFRESH_TOKEN;
+  record.account_id = CODEX_PLACEHOLDER_ACCOUNT_ID;
 
   return JSON.stringify(parsed, null, 2) + '\n';
 }
