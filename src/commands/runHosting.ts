@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { Command } from 'commander';
 import { readCredentials } from '../runHosting/readCredentials';
 import { readCodexCredentials } from '../runHosting/readCodexCredentials';
-import { writeSecret } from '../runHosting/writeSecret';
+import { writePlainSecret, writeSecret } from '../runHosting/writeSecret';
 import { nudgeRefresh } from '../runHosting/nudgeRefresh';
 import { nudgeCodexRefresh } from '../runHosting/nudgeCodexRefresh';
 import { watchFile } from '../runHosting/watchFile';
@@ -335,7 +335,8 @@ export function registerRunHosting(program: Command): void {
           credentialsPath: options.credentials,
           secretPath,
           readCredentials,
-          writeSecret: (token, path) => writeSecret(token, path, 'susentorno_bearer_token'),
+          writeSecret: (creds, path) =>
+            writeSecret(creds.accessToken, path, 'susentorno_bearer_token'),
           nudgeRefresh,
           refreshWindowMs,
           retryIntervalMs,
@@ -348,7 +349,10 @@ export function registerRunHosting(program: Command): void {
           credentialsPath: options.codexCredentials,
           secretPath: options.codexSecret ?? paths.codexSecret,
           readCredentials: readCodexCredentials,
-          writeSecret: (token, path) => writeSecret(token, path, 'codex_bearer_token'),
+          writeSecret: (creds, path) => {
+            writeSecret(creds.accessToken, path, 'codex_bearer_token');
+            writePlainSecret(creds.accountId!, paths.codexAccountIdSecret, 'codex_account_id');
+          },
           nudgeRefresh: nudgeCodexRefresh,
           refreshWindowMs,
           retryIntervalMs,

@@ -37,6 +37,7 @@ export interface EnvPaths {
   secretsDir: string;
   sdsSecret: string;
   codexSecret: string;
+  codexAccountIdSecret: string;
   githubBasicSecret: string;
   githubApiTokenSecret: string;
   vmCert: string;
@@ -83,6 +84,7 @@ export function envPaths(cwd: string): EnvPaths {
     secretsDir: join(proxy, 'secrets'),
     sdsSecret: join(proxy, 'secrets', 'sds-secret.yaml'),
     codexSecret: join(proxy, 'secrets', 'codex-secret.yaml'),
+    codexAccountIdSecret: join(proxy, 'secrets', 'codex-account-id-secret.yaml'),
     githubBasicSecret: join(proxy, 'secrets', 'github-basic-secret.yaml'),
     githubApiTokenSecret: join(proxy, 'secrets', 'github-api-token-secret.yaml'),
     vmCert: vmSharedTargets[0].cert,

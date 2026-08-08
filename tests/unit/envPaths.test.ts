@@ -24,6 +24,9 @@ describe('environment paths & layout', () => {
       expect(paths.secretsDir).toBe(join(root, 'proxy', 'secrets'));
       expect(paths.sdsSecret).toBe(join(root, 'proxy', 'secrets', 'sds-secret.yaml'));
       expect(paths.codexSecret).toBe(join(root, 'proxy', 'secrets', 'codex-secret.yaml'));
+      expect(paths.codexAccountIdSecret).toBe(
+        join(root, 'proxy', 'secrets', 'codex-account-id-secret.yaml'),
+      );
       expect(paths.githubBasicSecret).toBe(
         join(root, 'proxy', 'secrets', 'github-basic-secret.yaml'),
       );
@@ -96,6 +99,13 @@ describe('environment paths & layout', () => {
       const paths = envPaths('/work');
       expect(paths.codexSecret).toBe(
         join('/work', '.susentorno', 'proxy', 'secrets', 'codex-secret.yaml'),
+      );
+    });
+
+    it('places the codex account-id secret under proxy/secrets', () => {
+      const paths = envPaths('/work');
+      expect(paths.codexAccountIdSecret).toBe(
+        join('/work', '.susentorno', 'proxy', 'secrets', 'codex-account-id-secret.yaml'),
       );
     });
   });
