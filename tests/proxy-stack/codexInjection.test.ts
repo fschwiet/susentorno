@@ -10,7 +10,10 @@ import { join } from 'node:path';
 import { killProcessTree } from '../../src/runHosting/killProcessTree';
 import { rmEnvRoot } from '../rmEnvRoot';
 import { buildJwt } from '../../src/jwt';
-import { CODEX_PLACEHOLDER_ACCESS_TOKEN } from '../../src/codexPlaceholder';
+import {
+  CODEX_PLACEHOLDER_ACCESS_TOKEN,
+  CODEX_PLACEHOLDER_ACCOUNT_ID,
+} from '../../src/codexPlaceholder';
 import { startMockUpstream, stopMockUpstream, type MockUpstream } from './mockUpstream';
 import { envParent, envRoot } from '../testEnvRoot';
 
@@ -83,15 +86,22 @@ function requestThrough(
 }
 
 /** Raw TLS upgrade request; resolves with the first response line (e.g. "HTTP/1.1 101 ..."). */
-function upgradeThrough(servername: string, authorization: string): Promise<string> {
+function upgradeThrough(
+  servername: string,
+  authorization: string,
+  extraHeaders: Record<string, string> = {},
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const socket = tlsConnect(
       { host: '127.0.0.1', port: HTTPS_PORT, servername, ca: caCertPem },
       () => {
+        const extra = Object.entries(extraHeaders)
+          .map(([k, v]) => `${k}: ${v}\r\n`)
+          .join('');
         socket.write(
           `GET / HTTP/1.1\r\nHost: ${servername}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n` +
             `Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n` +
-            `Authorization: ${authorization}\r\n\r\n`,
+            `Authorization: ${authorization}\r\n${extra}\r\n`,
         );
       },
     );
@@ -265,6 +275,77 @@ describe('chatgpt.com codex Bearer injection', () => {
       expect(mockUpstream.receivedUpgradeAuthorizationHeaders.slice(before)).toEqual([
         REAL_CODEX_BEARER,
       ]);
+    });
+  });
+
+  describe('chatgpt-account-id injection', () => {
+    it('injects the real account id alongside the real bearer when both placeholders are presented', async () => {
+      const before = mockUpstream.receivedHeaders.length;
+      const { statusCode } = await requestThrough(
+        'chatgpt.com',
+        `Bearer ${CODEX_PLACEHOLDER_ACCESS_TOKEN}`,
+        { 'chatgpt-account-id': CODEX_PLACEHOLDER_ACCOUNT_ID },
+      );
+      expect(statusCode).toBe(200);
+      const received = mockUpstream.receivedHeaders.slice(before);
+      expect(received[0].authorization).toBe(REAL_CODEX_BEARER);
+      expect(received[0]['chatgpt-account-id']).toBe('acct-itest');
+    });
+
+    it('does not attach the real account id to a foreign real Bearer with no chatgpt-account-id sent', async () => {
+      const before = mockUpstream.receivedHeaders.length;
+      const { statusCode } = await requestThrough('chatgpt.com', 'Bearer some-other-real-token');
+      expect(statusCode).toBe(200);
+      const received = mockUpstream.receivedHeaders.slice(before);
+      expect(received[0].authorization).toBe('Bearer some-other-real-token');
+      expect(received[0]['chatgpt-account-id']).toBeUndefined();
+    });
+
+    it('does not attach the real account id when no Authorization is sent at all', async () => {
+      const before = mockUpstream.receivedHeaders.length;
+      const { statusCode } = await requestThrough('chatgpt.com');
+      expect(statusCode).toBe(200);
+      const received = mockUpstream.receivedHeaders.slice(before);
+      expect(received[0].authorization).toBeUndefined();
+      expect(received[0]['chatgpt-account-id']).toBeUndefined();
+    });
+
+    it('overrides an arbitrary guest-supplied chatgpt-account-id when the bearer is recognized', async () => {
+      const before = mockUpstream.receivedHeaders.length;
+      const { statusCode } = await requestThrough(
+        'chatgpt.com',
+        `Bearer ${CODEX_PLACEHOLDER_ACCESS_TOKEN}`,
+        { 'chatgpt-account-id': 'attacker-chosen-account-id' },
+      );
+      expect(statusCode).toBe(200);
+      const received = mockUpstream.receivedHeaders.slice(before);
+      expect(received[0].authorization).toBe(REAL_CODEX_BEARER);
+      expect(received[0]['chatgpt-account-id']).toBe('acct-itest');
+    });
+
+    it('strips a client-forged no-account-id marker header instead of trusting it', async () => {
+      const before = mockUpstream.receivedHeaders.length;
+      const { statusCode } = await requestThrough('chatgpt.com', 'Bearer some-other-real-token', {
+        'x-susentorno-no-account-id': '1',
+      });
+      expect(statusCode).toBe(200);
+      const received = mockUpstream.receivedHeaders.slice(before);
+      expect(received[0].authorization).toBe('Bearer some-other-real-token');
+      expect(received[0]['chatgpt-account-id']).toBeUndefined();
+      expect(received[0]['x-susentorno-no-account-id']).toBeUndefined();
+    });
+
+    it('injects the real account id on the WebSocket upgrade path too', async () => {
+      const before = mockUpstream.receivedUpgradeHeaders.length;
+      const statusLine = await upgradeThrough(
+        'chatgpt.com',
+        `Bearer ${CODEX_PLACEHOLDER_ACCESS_TOKEN}`,
+        { 'chatgpt-account-id': CODEX_PLACEHOLDER_ACCOUNT_ID },
+      );
+      expect(statusLine).toContain('101');
+      const received = mockUpstream.receivedUpgradeHeaders.slice(before);
+      expect(received[0].authorization).toBe(REAL_CODEX_BEARER);
+      expect(received[0]['chatgpt-account-id']).toBe('acct-itest');
     });
   });
 });
