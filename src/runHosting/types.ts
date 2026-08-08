@@ -3,6 +3,12 @@ export interface Credentials {
   accessToken: string;
   /** Absolute expiry, epoch milliseconds. */
   expiresAt: number;
+  /**
+   * Real account id for the codex host-credential channel, injected into the
+   * `chatgpt-account-id` header at the proxy. Only `readCodexCredentials` populates
+   * this; Claude's `readCredentials` leaves it `undefined`.
+   */
+  accountId?: string;
 }
 
 export interface RefreshState {
