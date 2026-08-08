@@ -232,6 +232,18 @@ import {
 } from '../../src/codexPlaceholder';
 ```
 
+Replace the test's title (it's now stale — it was three placeholdered fields, now four, and `account_id` no longer passes through):
+
+```ts
+  it('replaces the three token fields with placeholders and passes everything else through', () => {
+```
+
+with:
+
+```ts
+  it('replaces four token fields with placeholders and passes auth_mode/OPENAI_API_KEY through', () => {
+```
+
 Replace the two lines:
 
 ```ts
@@ -603,7 +615,10 @@ export function formatPlainSecret(value: string, resourceName: string): string {
   ].join('\n');
 }
 
-/** Same as formatPlainSecret, but for a bearer token — the `Bearer ` prefix is added here so every Authorization-header caller doesn't have to remember to add it themselves. */
+/**
+ * Same as formatPlainSecret, but for a bearer token — the `Bearer ` prefix is added
+ * here so every Authorization-header caller doesn't have to remember to add it.
+ */
 export function formatSecret(token: string, resourceName: string): string {
   return formatPlainSecret(`Bearer ${token}`, resourceName);
 }
@@ -799,13 +814,18 @@ Expected: PASS
 - [ ] **Step 5: Run the full unit suite**
 
 Run: `npx vitest run tests/unit`
-Expected: PASS — this is the last place `writeSecret`'s old signature was assumed inside test doubles; `src/commands/runHosting.ts`'s real closures haven't been updated yet (Task 7), so `npx tsc --noEmit` may still show a type error there until Task 7 lands — that's expected and fixed next.
+Expected: PASS — Vitest transpiles per-file and doesn't type-check the whole project, and every test double in these two files now matches the widened signature, so this passes even though `src/commands/runHosting.ts` (Task 7) hasn't been updated yet.
+
+**Known temporary state — do not stop here:** `npx tsc --noEmit` (and therefore `pnpm build`/`pnpm test`, which type-check before running) will genuinely fail after this commit, because `src/commands/runHosting.ts`'s two `writeSecret` closures still pass a bare `token: string` where `Credentials` is now required. This is expected and fixed immediately by Task 7, which must be done in the same sitting — do not ship or leave the repo at this commit.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add src/runHosting/credentialChannel.ts tests/unit/credentialChannel.test.ts tests/unit/proxyStackSupervisor.test.ts
-git commit -m "refactor(credentials): widen CredentialChannelConfig.writeSecret to take full Credentials"
+git commit -m "refactor(credentials): widen CredentialChannelConfig.writeSecret to take full Credentials
+
+Known follow-up: src/commands/runHosting.ts's writeSecret closures still
+use the old signature and will fail tsc until Task 7 lands next."
 ```
 
 ---
@@ -915,7 +935,8 @@ Replace the two `CredentialChannelConfig` objects:
           credentialsPath: options.credentials,
           secretPath,
           readCredentials,
-          writeSecret: (creds, path) => writeSecret(creds.accessToken, path, 'susentorno_bearer_token'),
+          writeSecret: (creds, path) =>
+            writeSecret(creds.accessToken, path, 'susentorno_bearer_token'),
           nudgeRefresh,
           refreshWindowMs,
           retryIntervalMs,
@@ -932,6 +953,11 @@ Replace the two `CredentialChannelConfig` objects:
             writeSecret(creds.accessToken, path, 'codex_bearer_token');
             // readCodexCredentials guarantees accountId is populated whenever it
             // returns a non-null Credentials at all — see src/runHosting/readCodexCredentials.ts.
+            // Always written to paths.codexAccountIdSecret regardless of --codex-secret:
+            // unlike the bearer token, this secret has no CLI override today. No test
+            // suite passes --codex-secret, so the two secrets landing in different
+            // directories in that combination is a known, accepted limitation rather
+            // than something worth a new CLI flag for.
             writePlainSecret(creds.accountId!, paths.codexAccountIdSecret, 'codex_account_id');
           },
           nudgeRefresh: nudgeCodexRefresh,
@@ -975,7 +1001,7 @@ git commit -m "feat(codex): write the real account id to its own SDS secret on t
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `tests/unit/proxyConfig.test.ts`, inside the top-level `describe('proxy configuration generation', ...)` block (anywhere at the top level, e.g. right after the `import`s and before `describe('claude credential channel', ...)`):
+Add to `tests/unit/proxyConfig.test.ts` as a new top-level `describe`, a sibling of `describe('proxy configuration generation', ...)` — not nested inside it. Place it right after the `import`s, before `describe('proxy configuration generation', ...)` begins (this file already has a second top-level `describe('proxy policy block-list and skip-allow-list routing', ...)` later on, so a second sibling block here is consistent with the file's existing structure):
 
 ```ts
 describe('shared post-filter account-id cleanup', () => {
@@ -1245,7 +1271,7 @@ and:
       ).toBe('/etc/envoy/secrets/codex-account-id-secret.yaml');
 ```
 
-Also update the post-filter index reference a few lines below in the same test (it currently reads `hcm.http_filters[2]` for the post-lua check) — change to `hcm.http_filters[3]`:
+The same test also has a post-filter index reference that appears *earlier* in the file than the two blocks just replaced (right after the `preLua` checks, before the `injector` block) — it currently reads `hcm.http_filters[2]` for the post-lua check; change it to `hcm.http_filters[3]`:
 
 ```ts
       const postLua = hcm.http_filters[3].typed_config.default_source_code.inline_string;
@@ -1775,6 +1801,36 @@ Then add a new `describe` block at the end of the file, before the final closing
       expect(received[0]['chatgpt-account-id']).toBeUndefined();
     });
 
+    it('overrides an arbitrary guest-supplied chatgpt-account-id when the bearer is recognized (unconditional strip)', async () => {
+      // This is the case the coupling logic exists to prevent: a guest process
+      // presenting our real placeholder Bearer (about to get the real bearer
+      // injected) must never get to choose its own chatgpt-account-id value —
+      // it must always be overridden to the real one, not just when it happens
+      // to equal the placeholder string.
+      const before = mockUpstream.receivedHeaders.length;
+      const { statusCode } = await requestThrough(
+        'chatgpt.com',
+        `Bearer ${CODEX_PLACEHOLDER_ACCESS_TOKEN}`,
+        { 'chatgpt-account-id': 'attacker-chosen-account-id' },
+      );
+      expect(statusCode).toBe(200);
+      const received = mockUpstream.receivedHeaders.slice(before);
+      expect(received[0].authorization).toBe(REAL_CODEX_BEARER);
+      expect(received[0]['chatgpt-account-id']).toBe('acct-itest');
+    });
+
+    it('strips a client-forged no-account-id marker header instead of trusting it', async () => {
+      const before = mockUpstream.receivedHeaders.length;
+      const { statusCode } = await requestThrough('chatgpt.com', 'Bearer some-other-real-token', {
+        'x-susentorno-no-account-id': '1',
+      });
+      expect(statusCode).toBe(200);
+      const received = mockUpstream.receivedHeaders.slice(before);
+      expect(received[0].authorization).toBe('Bearer some-other-real-token');
+      expect(received[0]['chatgpt-account-id']).toBeUndefined();
+      expect(received[0]['x-susentorno-no-account-id']).toBeUndefined();
+    });
+
     it('injects the real account id on the WebSocket upgrade path too', async () => {
       const before = mockUpstream.receivedUpgradeHeaders.length;
       const statusLine = await upgradeThrough(
@@ -1793,7 +1849,10 @@ Then add a new `describe` block at the end of the file, before the final closing
 Update the import line to add `CODEX_PLACEHOLDER_ACCOUNT_ID`:
 
 ```ts
-import { CODEX_PLACEHOLDER_ACCESS_TOKEN, CODEX_PLACEHOLDER_ACCOUNT_ID } from '../../src/codexPlaceholder';
+import {
+  CODEX_PLACEHOLDER_ACCESS_TOKEN,
+  CODEX_PLACEHOLDER_ACCOUNT_ID,
+} from '../../src/codexPlaceholder';
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
