@@ -9,3 +9,4 @@ The Pi Coding Agent's `~/.pi/agent/auth.json` (`openai-codex` key) is seeded, vi
 ## Consequences
 
 - If `codexPlaceholder.ts`'s claims or `buildJwt` ever change, `templates/home-jq-transforms/pi-openai-codex-auth.jq` must be updated by hand, or Pi's `chatgpt.com` requests silently stop matching the gate and fail upstream un-injected.
+- The shared literal's claim *shape* must satisfy every consumer's requirements, not just the proxy gate's exact-match. Pi's OpenAI-Codex provider decodes the JWT on every request and requires a `chatgpt_account_id` claim under `https://api.openai.com/auth`, which the original literal didn't have — fixed 2026-08-08 by adding a fixed placeholder claim and injecting the real account id at the proxy, rather than requiring Pi's placeholder to carry real per-environment data.
