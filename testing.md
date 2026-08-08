@@ -51,6 +51,21 @@ See [development.md](development.md) for how to install and configure the guest 
 
 A missing live-tier prerequisite is an environmental failure, not a product failure. Both live tiers fail fast when Docker is unavailable or `run-hosting` would conflict with their shared proxy stack. The guest tier also checks its WSL configuration and harness dependencies before booting a guest.
 
+## Running an individual test file
+
+Use `pnpm vitest run` (or `pnpm exec vitest run`), pointing at the file and the tier's config:
+
+```sh
+pnpm vitest run tests/unit/codexPlaceholder.test.ts
+pnpm vitest run --config vitest.cli.config.ts tests/cli/someTest.test.ts
+pnpm vitest run --config vitest.proxy-stack.config.ts tests/proxy-stack/someTest.test.ts
+pnpm build && pnpm vitest run --config vitest.guest.config.ts tests/guest/someTest.test.ts
+```
+
+Omitting `--config` runs against the default `unit` config. Add `-t "test name"` to narrow to a single test case within the file.
+
+Never use `npx` or `pnpx` to invoke `vitest` or other project tooling. `npx` happens to fall back to the local install, but `pnpx` (an alias for `pnpm dlx`) fetches an isolated copy and ignores this project's pinned `node_modules`/lockfile versions entirely — either way, use the `pnpm` forms above so tests run against the exact toolchain this project locks.
+
 ## Default verification pipeline
 
 `pnpm test` runs formatting, linting, type checking, the `unit` tier, a production build, the `cli` tier, the `proxy-stack` tier, and the `guest` tier, in fail-fast order. The Verification Pipeline section of [development.md](development.md) is the source of truth for the exact step order.
