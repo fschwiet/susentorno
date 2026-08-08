@@ -433,6 +433,7 @@ describe('proxy configuration generation', () => {
       expect(lua).toContain('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/');
       expect(lua).toContain(NO_AUTH_MARKER_HEADER);
       expect(lua).toContain(NO_AUTH_SENTINEL_VALUE);
+      expect(lua).toContain(NO_ACCOUNT_ID_MARKER_HEADER);
       expect(lua).not.toContain('403');
       expect(hcm.http_filters[0].typed_config.default_source_code.filename).toBeUndefined();
       expect(hcm.http_filters[2].typed_config.default_source_code.inline_string).toBe(
@@ -466,6 +467,9 @@ describe('proxy configuration generation', () => {
       const lua = hcm.http_filters[0].typed_config.default_source_code.inline_string;
       expect(lua).toContain('token ghp-susentorno-PLACEHOLDER');
       expect(lua).toContain('Bearer ghp-susentorno-PLACEHOLDER');
+      expect(lua).toContain(NO_AUTH_MARKER_HEADER);
+      expect(lua).toContain(NO_AUTH_SENTINEL_VALUE);
+      expect(lua).toContain(NO_ACCOUNT_ID_MARKER_HEADER);
       // Still a plain exact match — no base64 decoder embedded (that's the Basic gate only).
       expect(lua).not.toContain('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz');
       const injector = hcm.http_filters[1].typed_config;

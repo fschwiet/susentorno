@@ -228,10 +228,12 @@ const GITHUB_API_TOKEN_GATE_LUA = `local TOKEN_PLACEHOLDER = "token ${GITHUB_PLA
 local BEARER_PLACEHOLDER = "Bearer ${GITHUB_PLACEHOLDER_PAT}"
 local NO_AUTH_MARKER = "${NO_AUTH_MARKER_HEADER}"
 local NO_AUTH_SENTINEL = "${NO_AUTH_SENTINEL_VALUE}"
+local NO_ACCOUNT_ID_MARKER = "${NO_ACCOUNT_ID_MARKER_HEADER}"
 
 function envoy_on_request(request_handle)
   local headers = request_handle:headers()
   headers:remove(NO_AUTH_MARKER)
+  headers:remove(NO_ACCOUNT_ID_MARKER)
   local auth = headers:get("authorization")
   if auth == nil then
     headers:replace("authorization", NO_AUTH_SENTINEL)
@@ -251,6 +253,7 @@ end
 const GITHUB_BASIC_GATE_LUA = `local PLACEHOLDER_PAT = "${GITHUB_PLACEHOLDER_PAT}"
 local NO_AUTH_MARKER = "${NO_AUTH_MARKER_HEADER}"
 local NO_AUTH_SENTINEL = "${NO_AUTH_SENTINEL_VALUE}"
+local NO_ACCOUNT_ID_MARKER = "${NO_ACCOUNT_ID_MARKER_HEADER}"
 local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
 local function b64decode(data)
@@ -281,6 +284,7 @@ end
 function envoy_on_request(request_handle)
   local headers = request_handle:headers()
   headers:remove(NO_AUTH_MARKER)
+  headers:remove(NO_ACCOUNT_ID_MARKER)
   local auth = headers:get("authorization")
   if auth == nil then
     headers:replace("authorization", NO_AUTH_SENTINEL)

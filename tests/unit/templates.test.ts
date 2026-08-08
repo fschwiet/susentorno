@@ -9,7 +9,11 @@ import {
 } from '../../src/templates';
 import { loadManifest } from '../../src/homeJqTransforms';
 import { parseAllowListFile, parseAuthListFile } from '../../src/allowlist';
-import { NO_AUTH_MARKER_HEADER, NO_AUTH_SENTINEL_VALUE } from '../../src/envoyConfig';
+import {
+  NO_AUTH_MARKER_HEADER,
+  NO_AUTH_SENTINEL_VALUE,
+  NO_ACCOUNT_ID_MARKER_HEADER,
+} from '../../src/envoyConfig';
 import { CODEX_PLACEHOLDER_ACCESS_TOKEN } from '../../src/codexPlaceholder';
 
 const expectedTemplateFiles = [
@@ -67,6 +71,7 @@ describe('generated provisioning inventory', () => {
       const gate = readFileSync(join(templatesDir(), 'proxy', 'gate.lua'), 'utf8');
       expect(gate).toContain(`"${NO_AUTH_MARKER_HEADER}"`);
       expect(gate).toContain(`"${NO_AUTH_SENTINEL_VALUE}"`);
+      expect(gate).toContain(`"${NO_ACCOUNT_ID_MARKER_HEADER}"`);
       expect(gate).not.toContain('403');
       expect(gate).not.toContain('unexpected credential');
     });
