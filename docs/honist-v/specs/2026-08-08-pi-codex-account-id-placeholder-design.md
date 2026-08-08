@@ -134,18 +134,36 @@ In `src/envoyConfig.ts`'s `buildCodexEntry` (the `chatgpt.com` filter chain, the
   with an analogous `NO_ACCOUNT_ID_MARKER_HEADER`/`NO_ACCOUNT_ID_SENTINEL_VALUE` pair:
   - In `CODEX_GATE_LUA`, first resolve whether `Authorization` is recognized as *our*
     placeholder (`auth == PLACEHOLDER`), independently of removing it.
-  - Only when the bearer is recognized: strip `chatgpt-account-id` if it equals
-    `CODEX_PLACEHOLDER_ACCOUNT_ID` (or is already absent), letting the new injector fire.
+  - When the bearer **is** recognized: remove `chatgpt-account-id`
+    **unconditionally, regardless of its current value** (not only when it equals
+    `CODEX_PLACEHOLDER_ACCOUNT_ID` or is absent). This case means the request is definitely
+    one of our own guest processes about to receive the real bearer token, so whatever it
+    put in `chatgpt-account-id` must always be overridden to match — conditionally
+    stripping only the exact placeholder string would let a guest-controlled arbitrary
+    value ride along with the real (injected) bearer, reintroducing the same
+    real-token/wrong-account mismatch this design exists to prevent.
   - When the bearer is **not** recognized (foreign real value, or genuinely absent — the
     same two cases the existing `authorization` logic distinguishes) and
     `chatgpt-account-id` is absent: force it present via the new sentinel + marker, exactly
     mirroring the existing `NO_AUTH_SENTINEL`/`NO_AUTH_MARKER` dance, so the injector skips
-    it.
-  - Extend the **shared** `AUTH_POST_FILTER_LUA` (used by every authenticated chain —
-    Claude, Codex, both GitHub gates) to also strip the new marker/sentinel pair, mirroring
-    its existing `NO_AUTH_MARKER` cleanup. This keeps the post-filter host-agnostic exactly
-    as today: the new marker is only ever set by `CODEX_GATE_LUA`, so this is a harmless
-    no-op on the Claude/GitHub chains.
+    it. If some other real value is already present in this case, leave it untouched
+    (matches the pass-through precedent for a foreign `Authorization` value). Accepted edge
+    case: if a request presents an unrecognized `Authorization` alongside a
+    `chatgpt-account-id` that happens to equal our placeholder string, that placeholder
+    string reaches upstream unmodified — harmless, since it carries no real data and this
+    combination cannot occur from Pi's or Codex's actual request paths.
+  - Every pre-filter on every authenticated chain (Claude, Codex, both GitHub gates) must
+    strip any inbound copy of the new `NO_ACCOUNT_ID_MARKER_HEADER` first, exactly as each
+    already does for `NO_AUTH_MARKER_HEADER` today (`NO_AUTH_MARKER_HEADER`'s doc comment:
+    "must never be something a client-sent request can forge"). Only `CODEX_GATE_LUA` ever
+    legitimately *sets* the new marker, but the shared `AUTH_POST_FILTER_LUA` blindly acts
+    on its presence, so every chain must still strip an inbound copy to keep the existing
+    non-forgeability invariant intact — even though a forged marker would currently be a
+    harmless no-op on the Claude/GitHub chains (no `chatgpt-account-id` header exists
+    there), consistency with the established pattern matters more than the immediate
+    exposure.
+  - Extend the **shared** `AUTH_POST_FILTER_LUA` to also strip the new marker/sentinel pair,
+    mirroring its existing `NO_AUTH_MARKER` cleanup.
   - Net effect: the real account id is only ever injected on the same requests that get the
     real bearer token injected — never on a foreign-credential or no-credential request.
 
@@ -167,30 +185,53 @@ credential read/write path:
   for trailing-newline handling in file-based generic secrets, so the exact quoting matters).
   `formatSecret` can be reimplemented in terms of `formatPlainSecret(`Bearer ${token}`,
   resourceName)` to avoid duplicating the SDS YAML shape.
-- Add an optional `accountId?: string` field to the `Credentials` interface
-  (`src/runHosting/types.ts`). Only the codex path populates it; Claude's `readCredentials`
-  leaves it `undefined`.
-- Extend `readCodexCredentials.ts` to also read `tokens.account_id` and include it as
-  `accountId` in the returned `Credentials`. Fold the "is it a non-empty string" check into
-  the function's existing fail-closed guards (alongside the current `auth_mode`/
-  `access_token`/`exp` checks) — a missing or malformed `account_id` makes the function
-  return `null`, exactly like today's other malformed-file cases. This means no new error
-  path is needed: `null` already flows through `CredentialChannel.startupRead()`/
-  `prepareRestart()`'s existing `creds === null` handling, which `runHostingLoop`'s startup
-  logic already turns into a clean `fatal()` exit with teardown. (The original draft of this
-  design proposed a separate `throw` at the `codexChannel`-wiring call site in
-  `runHosting.ts` — that would have bypassed `services.closeAll()` since the proxy's other
-  services are already running by that point. Folding the check into `readCodexCredentials`
-  avoids inventing a second, inconsistent failure path.)
+- Add an `accountId?: string` field to the shared `Credentials` interface
+  (`src/runHosting/types.ts`) — optional at the interface level because Claude's
+  `readCredentials` never sets it, but `readCodexCredentials` (below) guarantees it is
+  always populated on any non-null return it produces.
+- Extend `readCodexCredentials.ts` to also read `tokens.account_id` and include it as a
+  **required** (non-optional at this function's boundary) `accountId` in the returned
+  `Credentials`. Fold the "is it a non-empty string" check into the function's existing
+  fail-closed guards (alongside the current `auth_mode`/`access_token`/`exp` checks) — a
+  missing or malformed `account_id` makes the function return `null`, exactly like today's
+  other malformed-file cases. Treating it as required (rather than tolerating its absence)
+  is a deliberate, believed-low-risk tightening: `sanitizeCodexCredentials.ts` already
+  unconditionally reads and passes through `tokens.account_id` today with no defensive
+  handling of its absence, so the codebase already implicitly assumes every real
+  ChatGPT-plan sign-in carries this field. This makes the subsequent secret write (below)
+  unconditional too — no separate "field might be missing" branch to reason about at the
+  point envoy's static config references the SDS resource.
+  - `null` from `readCodexCredentials` flows through **existing** handling, but the two call
+    sites differ, and the spec's original claim that both reach a clean `fatal()` exit was
+    wrong — verified against `runHostingLoop.ts`: `startupRead()`'s `null` **is** fatal
+    (clean exit with teardown, matching today's behavior for e.g. a missing
+    `access_token`). `prepareRestart()`'s `null` (a later, mid-session read — e.g.
+    transient file-write torn-read) is instead treated as `readable: false`, a **transient
+    skip logged to stderr**, not fatal — matching how other malformed-mid-session reads of
+    this same file are already handled. This is actually the correct behavior for this new
+    field too: because the token and account id are read and validated together in one
+    `readCodexCredentials` call, a skip never splits them — the channel simply keeps
+    serving its last-known-good, *matched* pair until a subsequent read succeeds. No new
+    error-handling path is introduced; the field rides the function's existing return-type
+    contract. (The original draft of this design proposed a separate `throw` at the
+    `codexChannel`-wiring call site in `runHosting.ts` — that would have bypassed
+    `services.closeAll()` since the proxy's other services are already running by that
+    point. Folding the check into `readCodexCredentials` avoids that second, inconsistent
+    failure path entirely.)
 - Widen `CredentialChannelConfig.writeSecret`'s signature from `(token: string, path: string)
   => void` to `(creds: Credentials, path: string) => void` — a small, mechanical change to
   `CredentialChannel`'s two call sites (`startupRead()`, `prepareRestart()`, both of which
   already have the full `creds` object in scope, not just `creds.accessToken`). Update the
   two existing `writeSecret` closures in `runHosting.ts`:
-  - Claude's closure is unchanged in behavior, just destructures `creds.accessToken`.
-  - Codex's closure additionally writes the account-id secret when `creds.accountId` is
-    present: `writePlainSecret(creds.accountId, paths.codexAccountIdSecret,
-    'codex_account_id')`, alongside the existing bearer-token write.
+  - Claude's closure is unchanged in behavior, just destructures `creds.accessToken`
+    (`creds.accountId` is `undefined` for this channel and is ignored).
+  - Codex's closure additionally, and unconditionally, writes the account-id secret:
+    `writePlainSecret(creds.accountId, paths.codexAccountIdSecret, 'codex_account_id')`,
+    alongside the existing bearer-token write. Unconditional, not gated behind an `if
+    (creds.accountId)` check, because `readCodexCredentials` now guarantees the field is
+    populated whenever it returns a non-null `Credentials` at all — `buildCodexEntry`'s
+    Envoy config references this SDS resource unconditionally, so the file must exist by
+    the time envoy starts regardless.
   This reuses the exact same read/write cadence the bearer token already has — the account
   id secret gets rewritten every time fresh codex credentials are read, including after a
   full re-login — with no new timer, polling, or restart-triggering logic. (It also avoids a
@@ -211,6 +252,12 @@ credential read/write path:
 - `tests/unit/sanitizeCodexCredentials.test.ts` and `tests/unit/initEnv.test.ts`: update the
   existing assertions that expect real pass-through (`'acct-uuid-1234'`) to instead expect
   `CODEX_PLACEHOLDER_ACCOUNT_ID` — an explicit, deliberate behavior change from today's code.
+- `tests/unit/credentialChannel.test.ts` and `tests/unit/proxyStackSupervisor.test.ts`: both
+  currently construct `CredentialChannelConfig`/stub `writeSecret` against the old
+  `(token: string, path: string)` signature (e.g. asserting calls with bare `'A'`/`'B'`
+  token strings). These need updating for the widened `(creds: Credentials, path: string)`
+  signature — straightforward mechanical changes (wrap the expected token in a `Credentials`
+  shape), but real, since the type change otherwise fails to compile.
 - `tests/proxy-stack/codexInjection.test.ts`: its `writeCodexAuth` fixture already sets a
   *host-side, real* `account_id: 'acct-itest'` (this is the value `run-hosting` reads for
   injection, and stays as-is). Add cases covering the coupling behavior from §3, not just
