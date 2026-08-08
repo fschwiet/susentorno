@@ -22,17 +22,28 @@ export const NO_AUTH_MARKER_HEADER = 'x-susentorno-no-auth';
  * controls whether the post-filter strips it. */
 export const NO_AUTH_SENTINEL_VALUE = 'susentorno-no-credential';
 
+/** Proxy-internal marker for absent/unrecognized Codex account-id headers. */
+export const NO_ACCOUNT_ID_MARKER_HEADER = 'x-susentorno-no-account-id';
+
+/** Placeholder account-id value used only while the injector decides not to overwrite. */
+export const NO_ACCOUNT_ID_SENTINEL_VALUE = 'susentorno-no-account-id';
+
 // Shared by every authenticated chain (Claude, Codex, both GitHub gates): runs after
 // credential_injector to undo the marker/sentinel a pre-filter sets for a genuinely
 // absent Authorization header, so "no credential sent" reaches the real upstream as
 // absent rather than as the sentinel. Host-agnostic — never inspects any placeholder.
 export const AUTH_POST_FILTER_LUA = `local NO_AUTH_MARKER = "${NO_AUTH_MARKER_HEADER}"
+local NO_ACCOUNT_ID_MARKER = "${NO_ACCOUNT_ID_MARKER_HEADER}"
 
 function envoy_on_request(request_handle)
   local headers = request_handle:headers()
   if headers:get(NO_AUTH_MARKER) ~= nil then
     headers:remove(NO_AUTH_MARKER)
     headers:remove("authorization")
+  end
+  if headers:get(NO_ACCOUNT_ID_MARKER) ~= nil then
+    headers:remove(NO_ACCOUNT_ID_MARKER)
+    headers:remove("chatgpt-account-id")
   end
 end
 `;

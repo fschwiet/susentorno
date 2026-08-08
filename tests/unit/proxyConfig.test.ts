@@ -3,9 +3,18 @@ import {
   generateEnvoyConfig,
   NO_AUTH_MARKER_HEADER,
   NO_AUTH_SENTINEL_VALUE,
+  NO_ACCOUNT_ID_MARKER_HEADER,
+  NO_ACCOUNT_ID_SENTINEL_VALUE,
   AUTH_POST_FILTER_LUA,
 } from '../../src/envoyConfig';
 import type { Allowlist } from '../../src/allowlist';
+
+describe('shared post-filter account-id cleanup', () => {
+  it('AUTH_POST_FILTER_LUA also strips the account-id marker and header', () => {
+    expect(AUTH_POST_FILTER_LUA).toContain(NO_ACCOUNT_ID_MARKER_HEADER);
+    expect(AUTH_POST_FILTER_LUA).toContain('chatgpt-account-id');
+  });
+});
 
 const allowlist: Allowlist = {
   passthrough: ['*.chatgpt.com:443', 'archive.ubuntu.com:80'],
