@@ -6,7 +6,7 @@ export interface CredentialChannelConfig {
   credentialsPath: string;
   secretPath: string;
   readCredentials: (path: string) => Credentials | null;
-  writeSecret: (token: string, path: string) => void;
+  writeSecret: (creds: Credentials, path: string) => void;
   nudgeRefresh: () => Promise<NudgeResult>;
   refreshWindowMs: number;
   retryIntervalMs: number;
@@ -61,7 +61,7 @@ export class CredentialChannel {
   startupRead(): Credentials | null {
     const creds = this.config.readCredentials(this.config.credentialsPath);
     if (creds === null) return null;
-    this.config.writeSecret(creds.accessToken, this.config.secretPath);
+    this.config.writeSecret(creds, this.config.secretPath);
     this.pendingToken = creds.accessToken;
     this.lastReadCreds = creds;
     this.lastSeenExpiresAt = creds.expiresAt;
@@ -83,7 +83,7 @@ export class CredentialChannel {
 
     let restartNeeded = false;
     if (plan.propagate) {
-      this.config.writeSecret(creds.accessToken, this.config.secretPath);
+      this.config.writeSecret(creds, this.config.secretPath);
       this.pendingToken = creds.accessToken;
       restartNeeded = true;
     }

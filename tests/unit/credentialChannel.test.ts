@@ -55,7 +55,10 @@ describe('credential channel lifecycle', () => {
     it('startupRead writes the secret and stages the token; commit makes it applied', () => {
       const { channel, mocks } = makeChannel({ accessToken: 'A', expiresAt: 60 * MIN });
       expect(channel.startupRead()).toEqual({ accessToken: 'A', expiresAt: 60 * MIN });
-      expect(mocks.writeSecret).toHaveBeenCalledWith('A', '/fake/secret.yaml');
+      expect(mocks.writeSecret).toHaveBeenCalledWith(
+        { accessToken: 'A', expiresAt: 60 * MIN },
+        '/fake/secret.yaml',
+      );
       channel.commit();
 
       // Same token after commit -> no restart.
@@ -76,7 +79,10 @@ describe('credential channel lifecycle', () => {
 
       creds.value = { accessToken: 'B', expiresAt: 60 * MIN };
       expect(channel.prepareRestart()).toEqual({ restartNeeded: true, readable: true });
-      expect(mocks.writeSecret).toHaveBeenCalledWith('B', '/fake/secret.yaml');
+      expect(mocks.writeSecret).toHaveBeenCalledWith(
+        { accessToken: 'B', expiresAt: 60 * MIN },
+        '/fake/secret.yaml',
+      );
     });
 
     it('prepareRestart reports unreadable without a restart', () => {

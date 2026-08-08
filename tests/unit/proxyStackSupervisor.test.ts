@@ -25,7 +25,7 @@ const CRED_LINE =
 function claudeChannelConfig(
   creds: { value: Credentials },
   mocks: {
-    writeSecret: (token: string, path: string) => void;
+    writeSecret: (creds: Credentials, path: string) => void;
     nudgeRefresh: () => Promise<{ ok: boolean; stderr: string }>;
   },
   overrides: Partial<CredentialChannelConfig> = {},
@@ -69,7 +69,7 @@ interface Harness {
   fireSigterm: () => void;
   feedLogLine: (raw: string) => void;
   mocks: {
-    writeSecret: ReturnType<typeof vi.fn<(token: string, path: string) => void>>;
+    writeSecret: ReturnType<typeof vi.fn<(creds: Credentials, path: string) => void>>;
     allocatePorts: ReturnType<typeof vi.fn>;
     bringUpColor: ReturnType<typeof vi.fn>;
     waitColorReady: ReturnType<typeof vi.fn>;
@@ -111,7 +111,7 @@ function makeHarness(
   };
 
   const mocks = {
-    writeSecret: vi.fn<(token: string, path: string) => void>(),
+    writeSecret: vi.fn<(creds: Credentials, path: string) => void>(),
     allocatePorts: vi.fn(async () => nextPorts()),
     bringUpColor: vi.fn().mockResolvedValue(undefined),
     waitColorReady: vi.fn().mockResolvedValue({ ready: true }),
@@ -224,7 +224,10 @@ describe('proxy stack supervision', () => {
       expect(h.mocks.buildConfig.mock.calls[0][0].claudeAuthenticated).toEqual([
         'api.anthropic.com:443',
       ]);
-      expect(h.mocks.writeSecret).toHaveBeenCalledWith('A', '/fake/sds-secret.yaml');
+      expect(h.mocks.writeSecret).toHaveBeenCalledWith(
+        { accessToken: 'A', expiresAt: 60 * MIN },
+        '/fake/sds-secret.yaml',
+      );
       expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(1);
       expect(h.mocks.bringUpColor.mock.calls[0][0]).toBe('blue');
       expect(h.mocks.waitColorReady).toHaveBeenCalledTimes(1);
@@ -423,7 +426,10 @@ describe('proxy stack supervision', () => {
       h.fireCredentials();
       await flush();
 
-      expect(h.mocks.writeSecret).toHaveBeenCalledWith('B', '/fake/sds-secret.yaml');
+      expect(h.mocks.writeSecret).toHaveBeenCalledWith(
+        { accessToken: 'B', expiresAt: 60 * MIN },
+        '/fake/sds-secret.yaml',
+      );
       expect(h.mocks.bringUpColor).toHaveBeenCalledWith('green', expect.anything());
       expect(h.mocks.log).toHaveBeenCalledWith(
         'run-hosting: restarting proxy — claude credentials changed',
@@ -776,8 +782,14 @@ describe('proxy stack supervision', () => {
 
       // One coalesced follow-up swap serves both credential changes.
       expect(h.mocks.bringUpColor).toHaveBeenCalledTimes(2); // blocked swap + one follow-up
-      expect(h.mocks.writeSecret).toHaveBeenCalledWith('B', '/fake/sds-secret.yaml');
-      expect(codexWrite).toHaveBeenCalledWith('Y', '/fake/codex-secret.yaml');
+      expect(h.mocks.writeSecret).toHaveBeenCalledWith(
+        { accessToken: 'B', expiresAt: 60 * MIN },
+        '/fake/sds-secret.yaml',
+      );
+      expect(codexWrite).toHaveBeenCalledWith(
+        { accessToken: 'Y', expiresAt: 60 * MIN },
+        '/fake/codex-secret.yaml',
+      );
       expect(h.mocks.log).toHaveBeenCalledWith('run-hosting: swap complete — now serving blue');
 
       // Both are committed: presenting the same tokens again needs no further swap.
