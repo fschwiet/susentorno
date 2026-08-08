@@ -29,9 +29,10 @@ Remove-Item $codebaseMemoryInstaller
 # Configure Codex directly because `codex mcp add --url` starts the server's
 # optional OAuth flow and blocks unattended provisioning.
 
-claude mcp get context7 *> $null
-if ($LASTEXITCODE -ne 0) {
+try {
     claude mcp add --transport http context7 https://mcp.context7.com/mcp
+} catch {
+    Write-Host "Ignoring failre to add MCP server context7 to claude-- presumably it was already added"
 }
 
 $codexConfigDirectory = Join-Path $HOME '.codex'
