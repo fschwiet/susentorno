@@ -10,6 +10,7 @@ import {
 import { loadManifest } from '../../src/homeJqTransforms';
 import { parseAllowListFile, parseAuthListFile } from '../../src/allowlist';
 import { NO_AUTH_MARKER_HEADER, NO_AUTH_SENTINEL_VALUE } from '../../src/envoyConfig';
+import { CODEX_PLACEHOLDER_ACCESS_TOKEN } from '../../src/codexPlaceholder';
 
 const expectedTemplateFiles = [
   'vm-shared-linux/pre-scripts/01-apt-packages.sh',
@@ -209,6 +210,14 @@ describe('generated provisioning inventory', () => {
       // one-entry-per-.jq-file relationship without asserting any settings.
       const jqFiles = readdirSync(dir).filter((f) => f.endsWith('.jq'));
       expect([...referenced].sort()).toEqual([...jqFiles].sort());
+    });
+
+    it('pi-openai-codex-auth.jq mounts the exact same placeholder access token literal as CODEX_PLACEHOLDER_ACCESS_TOKEN', () => {
+      const jq = readFileSync(
+        join(templatesDir(), 'home-jq-transforms', 'pi-openai-codex-auth.jq'),
+        'utf8',
+      );
+      expect(jq).toContain(`"access": "${CODEX_PLACEHOLDER_ACCESS_TOKEN}"`);
     });
   });
 });
