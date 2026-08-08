@@ -1,14 +1,12 @@
 import type { RemoteExec } from './remoteExec';
 import { quoteForRemoteShell } from './quoteForRemoteShell';
 
-// Candidates seen for the Hyper-V Data Exchange (KVP) daemon on Ubuntu LTS
-// releases: 'hv-kvp-daemon-init' and 'linux-cloud-tools-virtual'. This is the
-// modern init-based package cited by Ubuntu's hv_kvp_daemon manpage and
-// Microsoft's Hyper-V IP-discovery troubleshooting doc — confirm it against
-// the specific Ubuntu LTS version setup-guest.md targets during manual
-// verification before relying on it in production; see the manual-verification
-// checklist.
-export const KVP_DAEMON_PACKAGE = 'hv-kvp-daemon-init';
+// 'hv-kvp-daemon-init' does not exist on Ubuntu 26.04 LTS (confirmed via
+// `apt-cache policy` against a real guest); 'linux-cloud-tools-virtual' does,
+// and its hv-kvp-daemon.service starts cleanly once the guest reboots (which
+// setup-guest-unix's isolation step already does before anything depends on
+// the daemon being up) — no manual `udevadm trigger` needed in that flow.
+export const KVP_DAEMON_PACKAGE = 'linux-cloud-tools-virtual';
 
 export class EnsureKvpDaemonError extends Error {
   readonly exitCode: number;

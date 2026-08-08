@@ -44,9 +44,6 @@ This doc continues as if `192.168.67.x` was chosen as the subnet and the host wa
   - Management -> Automatic Start Action
     - Consider setting to "nothing" to avoid starting the VM every time you log into the host.
 
-  - Management -> Automatic Stop Action
-    - Consider setting to "shut down" to mimic the host's behavior — that which isn't saved on shutdown was not worth saving.
-
 ### OS installation
 
 - If you left the network adapter unconnected for a Windows install, connect it to the "Default Switch" now in VM settings.
@@ -88,6 +85,27 @@ Hyper-V tip on **managing UI focus**: when the VM is selected it will capture ke
 
 ```bash
 sudo apt update -y && sudo apt install -y openssh-server
+```
+
+**Optional but recommended: set up key-based SSH auth.** Configuring a key to use ssh without a password prompt reduces the number of prompts during `setup-guest-unix`:
+
+```powershell
+ssh-keygen -t ed25519 -f "$HOME\.ssh\susentorno_guest" -C "susentorno-guest-access"
+```
+
+(an empty passphrase is fine — this key only grants what the guest's own account already allows, gated by the account password you're about to authenticate with once below)
+
+```powershell
+Get-Content "$HOME\.ssh\susentorno_guest.pub" | ssh <username>@<guest-address> "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+```
+
+This prompts for `<username>`'s password this one time. Then add an entry to `~/.ssh/config` (create the file if it doesn't exist) so every future `ssh <guest-address>` — including `setup-guest-unix`'s own calls, since it SSHes to the same address you type at its "Guest address" prompt — picks up the key automatically:
+
+```
+Host <hostname> 192.168.67.*
+    User <username>
+    IdentityFile ~/.ssh/susentorno_guest
+    IdentitiesOnly yes
 ```
 
 Then, from the Host, in an **elevated (Administrator) PowerShell**, run the environment's setup command. It mounts the share, runs `pre-scripts/`, isolates the guest onto `susentorno-internal`, re-mounts the share there, and runs `post-scripts/` — the entire remaining Ubuntu flow in one command:
@@ -145,7 +163,7 @@ The share then lives at `/mnt/vm-shared-linux`. `cd` into `pre-scripts/` and run
 
 **Post-scripts** — `cd` into `post-scripts/` and run every script in order: normally `01-auth-config.sh`, then `02-apply-home-jq-transforms.sh`.
 
-Before installing anything else, the automated command also installs a Hyper-V KVP/Data Exchange daemon package (`hv-kvp-daemon-init` at the time of writing — see `src/guestSetup/kvpDaemon.ts`) so `Get-VMNetworkAdapter`'s reported IP addresses work; if reproducing this by hand for diagnosis, `sudo apt-get install -y hv-kvp-daemon-init` is that step.
+Before installing anything else, the automated command also installs a Hyper-V KVP/Data Exchange daemon package (`linux-cloud-tools-virtual` at the time of writing — see `src/guestSetup/kvpDaemon.ts`) so `Get-VMNetworkAdapter`'s reported IP addresses work; if reproducing this by hand for diagnosis, `sudo apt-get install -y linux-cloud-tools-virtual` is that step. Its `hv-kvp-daemon.service` only comes up once the guest has rebooted since install — not an issue in the automated flow, since isolation reboots the guest before anything depends on the daemon, but if you install it by hand without a reboot the service will sit `inactive` until one happens (or until `sudo udevadm trigger && sudo udevadm settle` re-registers its vmbus device).
 
 </details>
 

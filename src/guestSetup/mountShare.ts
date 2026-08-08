@@ -72,6 +72,27 @@ export async function mountShare(remoteExec: RemoteExec, opts: MountShareOptions
   }
 
   const mountPoint = `/mnt/${opts.shareName}`;
+  // This check-and-unmount must run before 'create mount point' touches the
+  // path at all: the fstab entry uses x-systemd.automount, so after isolation
+  // re-points the source at a different host IP, the *old* autofs mount can
+  // still be live at this path pointing at the now-unreachable Default-Switch
+  // host IP — and merely stat'ing it (which `mkdir -p` does) trips ENODEV,
+  // failing 'create mount point' before this cleanup ever got a chance to run.
+  // Distinguish "not mounted" (skip straight past) from "mounted but failed to
+  // unmount" (stop — swallowing a real unmount failure here would leave the
+  // stale mount for 'mount -a' to silently skip over later).
+  onStep('check active mount');
+  const { exitCode: mountpointExitCode } = await remoteExec.run(
+    `mountpoint -q ${quoteForRemoteShell(mountPoint)}`,
+  );
+  if (mountpointExitCode === 0) {
+    await runStep(
+      remoteExec,
+      'unmount stale mount',
+      `sudo umount ${quoteForRemoteShell(mountPoint)}`,
+      onStep,
+    );
+  }
   await runStep(
     remoteExec,
     'create mount point',
@@ -87,24 +108,9 @@ export async function mountShare(remoteExec: RemoteExec, opts: MountShareOptions
     }),
     onStep,
   );
-  // `mount -a` only mounts fstab entries that aren't already active — it does
-  // not notice a mount point whose *source* changed while still mounted (the
-  // exact case after isolation re-points this mount at a different host IP).
-  // Distinguish "not mounted" (skip straight to mount -a) from "mounted but
-  // failed to unmount" (stop — a `;`-joined umount;mount-a would let a real
-  // unmount failure pass silently into mount -a, which would then skip the
-  // still-active stale mount and wrongly report success).
-  onStep('check active mount');
-  const { exitCode: mountpointExitCode } = await remoteExec.run(
-    `mountpoint -q ${quoteForRemoteShell(mountPoint)}`,
-  );
-  if (mountpointExitCode === 0) {
-    await runStep(
-      remoteExec,
-      'unmount stale mount',
-      `sudo umount ${quoteForRemoteShell(mountPoint)}`,
-      onStep,
-    );
-  }
+  // `mount -a` only mounts fstab entries that aren't already active — since
+  // the stale mount (if any) was already torn down above, this always sees a
+  // clean, unmounted entry to bring up against the (possibly just-rewritten)
+  // fstab source.
   await runStep(remoteExec, 'mount share', 'sudo systemctl daemon-reload && sudo mount -a', onStep);
 }

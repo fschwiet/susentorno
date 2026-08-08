@@ -160,9 +160,9 @@ describe('mountShare', () => {
     expect(events[0]).toBe('step:install cifs-utils');
     expect(events[2]).toBe('step:copy credentials file');
     expect(events[4]).toBe('step:install credentials file');
-    expect(events[6]).toBe('step:create mount point');
-    expect(events[8]).toBe('step:update fstab');
-    expect(events[10]).toBe('step:check active mount');
+    expect(events[6]).toBe('step:check active mount');
+    expect(events[8]).toBe('step:create mount point');
+    expect(events[10]).toBe('step:update fstab');
     expect(events[12]).toBe('step:mount share');
   });
 
