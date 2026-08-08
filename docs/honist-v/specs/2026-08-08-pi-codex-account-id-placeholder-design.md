@@ -109,7 +109,11 @@ In `src/envoyConfig.ts`'s `buildCodexEntry` (the `chatgpt.com` filter chain, the
   field is configurable — confirmed from the existing Authorization filter's
   `credential.typed_config.header: 'Authorization'`), sourced from a new SDS resource
   (e.g. `codex_account_id`) via the same `sds_config` / watched-directory pattern already
-  used for the bearer-token secret.
+  used for the bearer-token secret. Ordering in `http_filters`: `auth_pre` (Lua, now
+  stripping both placeholder headers) → existing Authorization `credential_injector` → new
+  `chatgpt-account-id` `credential_injector` → `auth_post` (Lua) → `router`. `auth_post`'s
+  existing marker cleanup only concerns the `authorization`/`NO_AUTH_MARKER` header pair, so
+  it is unaffected by the new filter running before it.
 - No `NO_AUTH_MARKER`/sentinel handling is needed for this header: that dance exists because
   many legitimate requests genuinely lack an `Authorization` header. `chatgpt-account-id` is
   a narrow, Codex/Pi-specific header where "absent" and "should be injected" coincide, so the
