@@ -589,8 +589,9 @@ describe('proxy configuration generation', () => {
       const codexChain = listener443.filter_chains.find((fc: any) =>
         fc.filter_chain_match?.server_names?.includes('chatgpt.com'),
       );
-      const preLua = codexChain.filters[0].typed_config.http_filters[0].typed_config
-        .default_source_code.inline_string;
+      const preLua =
+        codexChain.filters[0].typed_config.http_filters[0].typed_config.default_source_code
+          .inline_string;
       expect(preLua).toContain('chatgpt-account-id');
       expect(preLua).toContain(NO_ACCOUNT_ID_MARKER_HEADER);
       expect(preLua).toContain(NO_ACCOUNT_ID_SENTINEL_VALUE);

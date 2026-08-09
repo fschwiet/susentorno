@@ -42,9 +42,11 @@ export class CredentialChannel {
   private readonly deps: CredentialChannelDeps;
 
   private lastAppliedToken: string | null = null;
+  private lastAppliedAccountId: string | undefined;
   private lastSeenExpiresAt: number | null = null;
   private lastReadCreds: Credentials | null = null;
   private pendingToken: string | null = null;
+  private pendingAccountId: string | undefined;
   private awaitingOutcome = false;
   private consecutiveFailures = 0;
   private lastNudgeAt: number | null = null;
@@ -63,6 +65,7 @@ export class CredentialChannel {
     if (creds === null) return null;
     this.config.writeSecret(creds, this.config.secretPath);
     this.pendingToken = creds.accessToken;
+    this.pendingAccountId = creds.accountId;
     this.lastReadCreds = creds;
     this.lastSeenExpiresAt = creds.expiresAt;
     return creds;
@@ -82,9 +85,11 @@ export class CredentialChannel {
     });
 
     let restartNeeded = false;
-    if (plan.propagate) {
+    const accountIdChanged = creds.accountId !== this.lastAppliedAccountId;
+    if (plan.propagate || accountIdChanged) {
       this.config.writeSecret(creds, this.config.secretPath);
       this.pendingToken = creds.accessToken;
+      this.pendingAccountId = creds.accountId;
       restartNeeded = true;
     }
     if (advanced) {
@@ -101,6 +106,8 @@ export class CredentialChannel {
     if (this.pendingToken !== null) {
       this.lastAppliedToken = this.pendingToken;
       this.pendingToken = null;
+      this.lastAppliedAccountId = this.pendingAccountId;
+      this.pendingAccountId = undefined;
     }
   }
 

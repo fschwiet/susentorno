@@ -100,6 +100,24 @@ describe('credential channel lifecycle', () => {
       creds.value = { accessToken: 'A', expiresAt: 90 * MIN };
       expect(channel.prepareRestart().restartNeeded).toBe(false);
     });
+
+    it('propagates when account id changes with the same access token', () => {
+      const { channel, creds, mocks } = makeChannel({
+        accessToken: 'A',
+        expiresAt: 60 * MIN,
+        accountId: 'acct-1',
+      });
+      channel.startupRead();
+      channel.commit();
+      mocks.writeSecret.mockClear();
+
+      creds.value = { accessToken: 'A', expiresAt: 60 * MIN, accountId: 'acct-2' };
+      expect(channel.prepareRestart()).toEqual({ restartNeeded: true, readable: true });
+      expect(mocks.writeSecret).toHaveBeenCalledWith(
+        { accessToken: 'A', expiresAt: 60 * MIN, accountId: 'acct-2' },
+        '/fake/secret.yaml',
+      );
+    });
   });
 
   describe('refresh nudging', () => {

@@ -30,8 +30,7 @@ export function readCodexCredentials(path: string): Credentials | null {
   if ((parsed as { auth_mode?: unknown } | null)?.auth_mode !== 'chatgpt') return null;
 
   const tokens = (parsed as { tokens?: unknown } | null)?.tokens as
-    | { access_token?: unknown; account_id?: unknown }
-    | undefined;
+    { access_token?: unknown; account_id?: unknown } | undefined;
   if (!tokens || typeof tokens.access_token !== 'string') return null;
   if (typeof tokens.account_id !== 'string' || tokens.account_id.length === 0) return null;
 
