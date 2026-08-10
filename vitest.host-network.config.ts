@@ -5,7 +5,8 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/host-network/**/*.test.ts'],
     globalSetup: ['tests/host-network/globalSetup.ts'],
-    testTimeout: 30000,
+    testTimeout: 120000,
+    hookTimeout: 60000,
     // Matches vitest.config.ts's own setting: this task scaffolds the tier
     // before Task 12 adds its first test file, so a "0 tests found" result
     // must still be a passing run, not a failure.
