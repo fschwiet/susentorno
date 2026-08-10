@@ -21,7 +21,8 @@ export function buildPowerShellArgv(command: string): string[] {
 
 /**
  * Thin execa wrapper, no dedicated unit test (no execa-mocking precedent in
- * this codebase, same as createSshRemoteExec) — exercised only by manual
+ * this codebase, same as createSshRemoteExec) — exercised by the
+ * `host-network` tier's real Hyper-V/firewall calls and by manual
  * verification against a real Hyper-V host.
  */
 export function createRealPowerShellExec(): PowerShellExec {

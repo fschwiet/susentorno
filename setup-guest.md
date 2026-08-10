@@ -209,7 +209,7 @@ When a script asks for `<host-ip>` (`05-configure-network.sh` / `05-configure-ne
 Confirm the host firewall is open and `run-hosting` is running (both from `setup-machine.md` / `setup-environment.md`) before booting a guest into the isolated network:
 
 ```powershell
-powershell -File .susentorno\proxy\host-allow-vm-inbound.ps1
+susentorno create-host-network
 susentorno run-hosting
 ```
 
