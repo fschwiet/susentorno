@@ -93,7 +93,7 @@ New `src/hostNetwork/` folder, mirroring the existing `src/guestSetup/` split (p
 | `src/commands/createHostNetwork.ts` | Thin CLI glue: elevation gate, prompt, call `createHostNetwork`, print results. Registered in `src/cli.ts`. |
 | `src/commands/deleteHostNetwork.ts` | Thin CLI glue: elevation gate, call `deleteHostNetwork`, print results. Registered in `src/cli.ts`. |
 
-Reused as-is, no duplication: `isElevated`/`elevationCheck.ts`, `createRealPowerShellExec`/`powerShellExec.ts`, `quoteForPowerShell`, `promptText` (`cliPrompt.ts`), `buildGetVmSwitchCommand`/`parseVmSwitchExists` (`hyperVQueries.ts`), `deriveSwitchName` (`switchName.ts`), `resolveForwardListenAddress` (`runHosting/forwarder.ts`), and `getDedicatedNodePath` (`relaunchViaDedicatedNode.ts`).
+Reused as-is, no duplication: `isElevated`/`elevationCheck.ts`, `createRealPowerShellExec`/`powerShellExec.ts`, `quoteForPowerShell`, `promptText` (`cliPrompt.ts`), `buildGetVmSwitchCommand` (`hyperVQueries.ts` — its query is reused; a new `parseVmSwitchExistsExact` parses the result, since the shared `parseVmSwitchExists` only checks "some output came back," not an exact name match), `deriveSwitchName` (`switchName.ts`), `resolveForwardListenAddress` (`runHosting/forwarder.ts`), and `getDedicatedNodePath` (`relaunchViaDedicatedNode.ts`).
 
 ## Testing
 

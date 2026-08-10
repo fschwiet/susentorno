@@ -532,8 +532,9 @@ git commit -m "feat(hostNetwork): add netmask-aware subnet detection"
   export function buildGetVmNetworkAdaptersOnSwitchCommand(switchName: string): string;
   export interface AttachedVm { vmName: string }
   export function parseAttachedVms(stdout: string): AttachedVm[];
+  export function parseVmSwitchExistsExact(stdout: string, expectedName: string): boolean;
   ```
-  Task 7 (`createHostNetwork.ts`) uses `buildNewVmSwitchCommand`/`buildNewNetIpAddressCommand`. Task 8 (`deleteHostNetwork.ts`) uses `buildRemoveVmSwitchCommand`, `buildGetVmNetworkAdaptersOnSwitchCommand`, `parseAttachedVms`. The existing `buildGetVmSwitchCommand`/`parseVmSwitchExists` (`src/guestSetup/hyperVQueries.ts`) are reused as-is by both — no new switch-existence query is added here.
+  Task 7 (`createHostNetwork.ts`) uses `buildNewVmSwitchCommand`/`buildNewNetIpAddressCommand`/`parseVmSwitchExistsExact`. Task 8 (`deleteHostNetwork.ts`) uses `buildRemoveVmSwitchCommand`, `buildGetVmNetworkAdaptersOnSwitchCommand`, `parseAttachedVms`, `parseVmSwitchExistsExact`. The existing `buildGetVmSwitchCommand` (`src/guestSetup/hyperVQueries.ts`) is reused as-is for the query itself — only its *parsing* is stricter here: the design requires switch-existence checks to verify an exact name match rather than just "some output came back," since `Get-VMSwitch -Name` is wildcard-tolerant. `hyperVQueries.ts`'s own `parseVmSwitchExists` (`stdout.trim() !== ''`) stays unchanged for its existing caller (`preflightChecks.ts`) — `parseVmSwitchExistsExact` is new, added here rather than modifying that shared function, mirroring the same exact-match discipline `parseGetVmResult` already applies to `Get-VM -Name`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -547,6 +548,7 @@ import {
   buildRemoveVmSwitchCommand,
   buildGetVmNetworkAdaptersOnSwitchCommand,
   parseAttachedVms,
+  parseVmSwitchExistsExact,
 } from '../../../src/hostNetwork/hostNetworkSwitchOps';
 
 describe('buildNewVmSwitchCommand', () => {
@@ -598,6 +600,20 @@ describe('parseAttachedVms', () => {
   it('parses multiple VMs', () => {
     const stdout = '[{"VMName":"vm-a"},{"VMName":"vm-b"}]';
     expect(parseAttachedVms(stdout)).toEqual([{ vmName: 'vm-a' }, { vmName: 'vm-b' }]);
+  });
+});
+
+describe('parseVmSwitchExistsExact', () => {
+  it('is true when the returned Name matches exactly', () => {
+    expect(parseVmSwitchExistsExact('{"Name":"susentorno-internal"}', 'susentorno-internal')).toBe(true);
+  });
+
+  it('is false for empty stdout', () => {
+    expect(parseVmSwitchExistsExact('', 'susentorno-internal')).toBe(false);
+  });
+
+  it('is false when the returned Name does not match exactly, even if non-empty', () => {
+    expect(parseVmSwitchExistsExact('{"Name":"susentorno-internal-old"}', 'susentorno-internal')).toBe(false);
   });
 });
 ```
@@ -669,12 +685,26 @@ export function parseAttachedVms(stdout: string): AttachedVm[] {
     .filter((v): v is { VMName: string } => typeof v.VMName === 'string')
     .map((v) => ({ vmName: v.VMName }));
 }
+
+/**
+ * Stricter than hyperVQueries.ts's parseVmSwitchExists ("some output came
+ * back"): confirms the returned Name matches expectedName exactly, since
+ * Get-VMSwitch -Name is wildcard-tolerant. Same defense-in-depth precedent as
+ * parseGetVmResult's exact-match check for Get-VM -Name.
+ */
+export function parseVmSwitchExistsExact(stdout: string, expectedName: string): boolean {
+  const trimmed = stdout.trim();
+  if (!trimmed) return false;
+  const parsed: unknown = JSON.parse(trimmed);
+  const obj = parsed as { Name?: unknown };
+  return obj.Name === expectedName;
+}
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pnpm vitest run tests/unit/hostNetwork/hostNetworkSwitchOps.test.ts`
-Expected: PASS (9 tests)
+Expected: PASS (10 tests)
 
 - [ ] **Step 5: Typecheck, lint, format, commit**
 
@@ -705,9 +735,12 @@ git commit -m "feat(hostNetwork): add switch/IP/VM-attachment command builders"
   export function buildRemoveRulesByNameCommand(ruleNames: string[]): string;
   export function buildRemoveStaleQueryUserRulesCommand(nodePath: string): string;
   export function buildRemoveRulesByInterfaceCommand(adapterAlias: string): string;
-  export function parseCount(stdout: string): number;
+  export interface SweepResult { removed: number; failed: number }
+  export function parseSweepResult(stdout: string): SweepResult;
   ```
-  Task 7 (`createHostNetwork.ts`) uses all four `buildCreate*` functions, `buildRemoveRulesByNameCommand` (stale-cleanup before recreate), and `buildRemoveStaleQueryUserRulesCommand`. Task 8 (`deleteHostNetwork.ts`) uses `buildRemoveRulesByInterfaceCommand`, `buildRemoveStaleQueryUserRulesCommand`, `buildRemoveRulesByNameCommand` (the named SMB sweep — same function, reused), and `parseCount` to read every sweep's removed-rule count from stdout.
+  Task 7 (`createHostNetwork.ts`) uses all four `buildCreate*` functions, `buildRemoveRulesByNameCommand` (stale-cleanup before recreate), and `buildRemoveStaleQueryUserRulesCommand`. Task 8 (`deleteHostNetwork.ts`) uses `buildRemoveRulesByInterfaceCommand`, `buildRemoveStaleQueryUserRulesCommand`, `buildRemoveRulesByNameCommand` (the named SMB sweep — same function, reused), and `parseSweepResult` to read each sweep's removed/failed counts from stdout.
+
+  **Every removal sweep tracks `removed`/`failed` separately**, rather than the earlier draft's plain count with `-ErrorAction SilentlyContinue` on the removal itself. That earlier shape made a genuine removal failure indistinguishable from "nothing matched" — silently masking exactly the failures `delete-host-network`'s summary is supposed to surface, and letting `create-host-network`'s stale-cleanup silently leave an old rule in place, which `New-NetFirewallRule` would then duplicate rather than replace (Windows Firewall allows two rules with the same `DisplayName`). Each sweep below still finds candidates with `-ErrorAction SilentlyContinue` (matching nothing is fine), but removes each one individually with `-ErrorAction Stop` inside its own `try/catch`, incrementing `$removed` or `$failed` per rule — one rule's removal failure doesn't stop the sweep from attempting the rest.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -723,7 +756,7 @@ import {
   buildRemoveRulesByNameCommand,
   buildRemoveStaleQueryUserRulesCommand,
   buildRemoveRulesByInterfaceCommand,
-  parseCount,
+  parseSweepResult,
 } from '../../../src/hostNetwork/hostNetworkFirewallOps';
 
 const ADAPTER = 'vEthernet (susentorno-internal)';
@@ -775,47 +808,53 @@ describe('buildCreateSmbRuleCommand', () => {
 });
 
 describe('buildRemoveRulesByNameCommand', () => {
-  it('removes every named rule, quoted, and outputs the total removed count', () => {
+  it('removes every matching rule per name, quoted, tracking removed/failed separately', () => {
     const command = buildRemoveRulesByNameCommand(["susentorno's rule", 'another rule']);
     expect(command).toContain("'susentorno''s rule'");
     expect(command).toContain("'another rule'");
-    expect(command).toContain('Remove-NetFirewallRule -ErrorAction SilentlyContinue');
-    expect(command).toContain('Write-Output $removed');
+    expect(command).toContain('Remove-NetFirewallRule -ErrorAction Stop');
+    expect(command).toContain('catch { $failed++ }');
+    expect(command).toContain('Write-Output "$removed,$failed"');
   });
 });
 
 describe('buildRemoveStaleQueryUserRulesCommand', () => {
-  it('matches by Query User name pattern and program-path suffix, and outputs the count', () => {
+  it('matches by Query User name pattern and program-path suffix, tracking removed/failed separately', () => {
     const command = buildRemoveStaleQueryUserRulesCommand(NODE_PATH);
     expect(command).toContain('*Query User*');
     expect(command).toContain(`EndsWith('${NODE_PATH}'`);
     expect(command).toContain('OrdinalIgnoreCase');
-    expect(command).toContain('Write-Output $stale.Count');
+    expect(command).toContain('Remove-NetFirewallRule -ErrorAction Stop');
+    expect(command).toContain('Write-Output "$removed,$failed"');
   });
 });
 
 describe('buildRemoveRulesByInterfaceCommand', () => {
-  it('matches rules by interface filter regardless of name, and outputs the count', () => {
+  it('matches rules by interface filter regardless of name, tracking removed/failed separately', () => {
     const command = buildRemoveRulesByInterfaceCommand(ADAPTER);
     expect(command).toContain('Get-NetFirewallInterfaceFilter -AssociatedNetFirewallRule');
     expect(command).toContain(`-eq '${ADAPTER}'`);
-    expect(command).toContain('Remove-NetFirewallRule -ErrorAction SilentlyContinue');
-    expect(command).toContain('Write-Output $matched.Count');
+    expect(command).toContain('Remove-NetFirewallRule -ErrorAction Stop');
+    expect(command).toContain('Write-Output "$removed,$failed"');
   });
 });
 
-describe('parseCount', () => {
-  it('parses a plain integer', () => {
-    expect(parseCount('3\r\n')).toBe(3);
+describe('parseSweepResult', () => {
+  it('parses "removed,failed"', () => {
+    expect(parseSweepResult('3,0\r\n')).toEqual({ removed: 3, failed: 0 });
   });
 
-  it('parses zero', () => {
-    expect(parseCount('0')).toBe(0);
+  it('parses a nonzero failed count', () => {
+    expect(parseSweepResult('2,1')).toEqual({ removed: 2, failed: 1 });
   });
 
-  it('defaults to 0 for empty or unexpected output', () => {
-    expect(parseCount('')).toBe(0);
-    expect(parseCount('not a number')).toBe(0);
+  it('parses "0,0"', () => {
+    expect(parseSweepResult('0,0')).toEqual({ removed: 0, failed: 0 });
+  });
+
+  it('defaults both to 0 for empty or unexpected output', () => {
+    expect(parseSweepResult('')).toEqual({ removed: 0, failed: 0 });
+    expect(parseSweepResult('not a number')).toEqual({ removed: 0, failed: 0 });
   });
 });
 ```
@@ -884,57 +923,76 @@ export function buildCreateSmbRuleCommand(ruleName: string, adapterAlias: string
 
 /**
  * Removes every rule matching any of the given DisplayNames, regardless of
- * adapter. Reused two ways: createHostNetwork.ts's stale-cleanup-before-
- * recreate (all four names at once, return value ignored) and
- * deleteHostNetwork.ts's named SMB sweep (just the SMB rule name, count
- * parsed via parseCount).
+ * adapter, tracking removed/failed counts separately (each removal uses
+ * -ErrorAction Stop inside its own try/catch, so one failure doesn't stop
+ * the rest from being attempted). Reused two ways: createHostNetwork.ts's
+ * stale-cleanup-before-recreate (all four names at once — a nonzero failed
+ * count there aborts the create, since a surviving stale rule would leave a
+ * duplicate DisplayName after recreation) and deleteHostNetwork.ts's named
+ * SMB sweep (just the SMB rule name).
  */
 export function buildRemoveRulesByNameCommand(ruleNames: string[]): string {
   const namesArray = ruleNames.map((n) => quoteForPowerShell(n)).join(', ');
   return (
-    `$removed = 0; foreach ($name in @(${namesArray})) { ` +
-    `$matches = @(Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue); ` +
-    `if ($matches) { $matches | Remove-NetFirewallRule -ErrorAction SilentlyContinue; $removed += $matches.Count } ` +
-    `}; Write-Output $removed`
+    `$removed = 0; $failed = 0; foreach ($name in @(${namesArray})) { ` +
+    `$matched = @(Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue); ` +
+    `foreach ($rule in $matched) { ` +
+    `try { $rule | Remove-NetFirewallRule -ErrorAction Stop; $removed++ } ` +
+    `catch { $failed++ } ` +
+    `} }; Write-Output "$removed,$failed"`
   );
 }
 
-/** Ported from host-allow-vm-inbound.ps1's stale prompt-generated rule cleanup. Not isolation-scoped: there is exactly one dedicated node.exe path host-wide. */
+/** Ported from host-allow-vm-inbound.ps1's stale prompt-generated rule cleanup, with the same per-rule removed/failed tracking as buildRemoveRulesByNameCommand. Not isolation-scoped: there is exactly one dedicated node.exe path host-wide. */
 export function buildRemoveStaleQueryUserRulesCommand(nodePath: string): string {
   return (
+    `$removed = 0; $failed = 0; ` +
     `$stale = @(Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object { ` +
     `$_.Name -like "*Query User*" -and $_.Name.EndsWith(${quoteForPowerShell(nodePath)}, [StringComparison]::OrdinalIgnoreCase) }); ` +
-    `if ($stale) { $stale | Remove-NetFirewallRule -ErrorAction SilentlyContinue }; Write-Output $stale.Count`
+    `foreach ($rule in $stale) { try { $rule | Remove-NetFirewallRule -ErrorAction Stop; $removed++ } catch { $failed++ } }; ` +
+    `Write-Output "$removed,$failed"`
   );
 }
 
 /**
  * Removes every rule whose interface filter matches the given adapter alias,
  * regardless of DisplayName — deleteHostNetwork.ts's "clean up a corrupted
- * network" sweep. Mirrors verify-proxy.ps1's existing
- * Get-NetFirewallInterfaceFilter/-eq pattern for reading a rule's interface
- * scoping.
+ * network" sweep, with the same per-rule removed/failed tracking. Mirrors
+ * verify-proxy.ps1's existing Get-NetFirewallInterfaceFilter/-eq pattern for
+ * reading a rule's interface scoping.
  */
 export function buildRemoveRulesByInterfaceCommand(adapterAlias: string): string {
   return (
+    `$removed = 0; $failed = 0; ` +
     `$matched = @(Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object { ` +
     `(Get-NetFirewallInterfaceFilter -AssociatedNetFirewallRule $_ -ErrorAction SilentlyContinue).InterfaceAlias -eq ${quoteForPowerShell(adapterAlias)} ` +
-    `}); if ($matched) { $matched | Remove-NetFirewallRule -ErrorAction SilentlyContinue }; Write-Output $matched.Count`
+    `}); foreach ($rule in $matched) { try { $rule | Remove-NetFirewallRule -ErrorAction Stop; $removed++ } catch { $failed++ } }; ` +
+    `Write-Output "$removed,$failed"`
   );
 }
 
-/** Reads the trailing integer count every sweep command above writes via Write-Output. Defaults to 0 for unexpected output rather than throwing — this feeds a summary message, not a correctness-critical decision. */
-export function parseCount(stdout: string): number {
+export interface SweepResult {
+  removed: number;
+  failed: number;
+}
+
+/** Reads the "removed,failed" pair every sweep command above writes via Write-Output. Defaults both to 0 for unexpected output rather than throwing — callers decide what a nonzero failed count means for them. */
+export function parseSweepResult(stdout: string): SweepResult {
   const trimmed = stdout.trim();
-  const n = Number(trimmed);
-  return Number.isFinite(n) ? n : 0;
+  const [removedRaw, failedRaw] = trimmed.split(',');
+  const removed = Number(removedRaw);
+  const failed = Number(failedRaw);
+  return {
+    removed: Number.isFinite(removed) ? removed : 0,
+    failed: Number.isFinite(failed) ? failed : 0,
+  };
 }
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pnpm vitest run tests/unit/hostNetwork/hostNetworkFirewallOps.test.ts`
-Expected: PASS (16 tests)
+Expected: PASS (11 tests)
 
 - [ ] **Step 5: Typecheck, lint, format, commit**
 
@@ -955,7 +1013,7 @@ git commit -m "feat(hostNetwork): add firewall rule builders and cleanup sweeps"
 
 **Interfaces:**
 
-- Consumes: `resolveHostNetworkNames` (Task 3), `detectTakenRanges`/`validateSubnet` (Task 4), `buildNewVmSwitchCommand`/`buildNewNetIpAddressCommand` (Task 5), `buildGetVmSwitchCommand`/`parseVmSwitchExists` (`src/guestSetup/hyperVQueries.ts`), the four `buildCreate*RuleCommand` functions/`buildRemoveRulesByNameCommand`/`buildRemoveStaleQueryUserRulesCommand` (Task 6), `HostNetworkError`/`runMutation` (Task 2), `resolveForwardListenAddress` (`src/runHosting/forwarder.ts`), `getDedicatedNodePath` (`src/runHosting/relaunchViaDedicatedNode.ts`), `PowerShellExec` (`src/guestSetup/powerShellExec.ts`).
+- Consumes: `resolveHostNetworkNames` (Task 3), `detectTakenRanges`/`validateSubnet`/`findFreeSubnet` (Task 4), `buildNewVmSwitchCommand`/`buildNewNetIpAddressCommand`/`parseVmSwitchExistsExact` (Task 5), `buildGetVmSwitchCommand` (`src/guestSetup/hyperVQueries.ts`), the four `buildCreate*RuleCommand` functions/`buildRemoveRulesByNameCommand`/`buildRemoveStaleQueryUserRulesCommand`/`parseSweepResult` (Task 6), `HostNetworkError`/`runMutation` (Task 2), `resolveForwardListenAddress` (`src/runHosting/forwarder.ts`), `getDedicatedNodePath` (`src/runHosting/relaunchViaDedicatedNode.ts`), `PowerShellExec` (`src/guestSetup/powerShellExec.ts`).
 - Produces:
   ```typescript
   export interface CreateHostNetworkOptions {
@@ -1028,8 +1086,8 @@ describe('createHostNetwork', () => {
       { exitCode: 0, stdout: '' }, // Get-VMSwitch: not found
       { exitCode: 0, stdout: '' }, // New-VMSwitch
       { exitCode: 0, stdout: '' }, // New-NetIPAddress
-      { exitCode: 0, stdout: '0' }, // stale-name cleanup
-      { exitCode: 0, stdout: '0' }, // stale Query User cleanup
+      { exitCode: 0, stdout: '0,0' }, // stale-name cleanup: 0 removed, 0 failed
+      { exitCode: 0, stdout: '0,0' }, // stale Query User cleanup: 0 removed, 0 failed
       { exitCode: 0, stdout: '' }, // create Envoy rule
       { exitCode: 0, stdout: '' }, // create DNS rule
       { exitCode: 0, stdout: '' }, // create DHCP rule
@@ -1054,16 +1112,16 @@ describe('createHostNetwork', () => {
 
   it('uses --subnet directly, skipping the prompt', async () => {
     const { exec } = queuedExec([
-      { exitCode: 0, stdout: '' },
-      { exitCode: 0, stdout: '' },
-      { exitCode: 0, stdout: '' },
-      { exitCode: 0, stdout: '0' },
-      { exitCode: 0, stdout: '0' },
-      { exitCode: 0, stdout: '' },
-      { exitCode: 0, stdout: '' },
-      { exitCode: 0, stdout: '' },
-      { exitCode: 0, stdout: '' },
-      { exitCode: 0, stdout: '' },
+      { exitCode: 0, stdout: '' }, // Get-VMSwitch: not found
+      { exitCode: 0, stdout: '' }, // New-VMSwitch
+      { exitCode: 0, stdout: '' }, // New-NetIPAddress
+      { exitCode: 0, stdout: '0,0' }, // stale-name cleanup
+      { exitCode: 0, stdout: '0,0' }, // stale Query User cleanup
+      { exitCode: 0, stdout: '' }, // create Envoy rule
+      { exitCode: 0, stdout: '' }, // create DNS rule
+      { exitCode: 0, stdout: '' }, // create DHCP rule
+      { exitCode: 0, stdout: '' }, // create SMB rule (internal)
+      { exitCode: 0, stdout: '' }, // create SMB rule (NAT)
     ]);
     const promptSubnet = vi.fn();
 
@@ -1105,8 +1163,8 @@ describe('createHostNetwork', () => {
   it('refreshes firewall rules only when the switch already exists, skipping switch/IP creation and the prompt', async () => {
     const { exec, calls } = queuedExec([
       { exitCode: 0, stdout: '{"Name":"susentorno-internal"}' }, // Get-VMSwitch: found
-      { exitCode: 0, stdout: '0' }, // stale-name cleanup
-      { exitCode: 0, stdout: '0' }, // stale Query User cleanup
+      { exitCode: 0, stdout: '0,0' }, // stale-name cleanup
+      { exitCode: 0, stdout: '0,0' }, // stale Query User cleanup
       { exitCode: 0, stdout: '' }, // create Envoy rule
       { exitCode: 0, stdout: '' }, // create DNS rule
       { exitCode: 0, stdout: '' }, // create DHCP rule
@@ -1161,6 +1219,10 @@ describe('createHostNetwork', () => {
         promptSubnet: vi.fn(),
       }),
     ).rejects.toThrow(HostNetworkError);
+    // Regression guard: NAT resolution must run before the first PowerShell
+    // call (Get-VMSwitch) — this is the one thing this design promises
+    // happens "before touching Hyper-V at all." If it ever moved after
+    // Get-VMSwitch, calls would be length 1, not 0.
     expect(calls).toHaveLength(0);
   });
 
@@ -1197,6 +1259,30 @@ describe('createHostNetwork', () => {
       }),
     ).rejects.toThrow('switch already exists on the underlying vSwitch layer');
   });
+
+  it('fails if stale-name cleanup reports a rule that could not be removed, without creating new rules', async () => {
+    const { exec, calls } = queuedExec([
+      { exitCode: 0, stdout: '' }, // Get-VMSwitch: not found
+      { exitCode: 0, stdout: '' }, // New-VMSwitch
+      { exitCode: 0, stdout: '' }, // New-NetIPAddress
+      { exitCode: 0, stdout: '2,1' }, // stale-name cleanup: 1 rule could not be removed
+    ]);
+
+    await expect(
+      createHostNetwork({
+        exec,
+        subnet: 67,
+        natAdapterAlias: NAT_ALIAS,
+        homedir: HOMEDIR,
+        networkInterfaces: natInterfaces,
+        promptSubnet: vi.fn(),
+      }),
+    ).rejects.toThrow(HostNetworkError);
+    // A leftover stale rule with the same DisplayName would make the next
+    // New-NetFirewallRule call create a duplicate, not a clean replacement —
+    // so creation must stop here rather than proceeding.
+    expect(calls.some((c) => c.includes('New-NetFirewallRule'))).toBe(false);
+  });
 });
 ```
 
@@ -1212,7 +1298,7 @@ Create `src/hostNetwork/createHostNetwork.ts`:
 ```typescript
 import { networkInterfaces as osNetworkInterfaces, type NetworkInterfaceInfo } from 'node:os';
 import type { PowerShellExec } from '../guestSetup/powerShellExec';
-import { buildGetVmSwitchCommand, parseVmSwitchExists } from '../guestSetup/hyperVQueries';
+import { buildGetVmSwitchCommand } from '../guestSetup/hyperVQueries';
 import { resolveForwardListenAddress } from '../runHosting/forwarder';
 import { getDedicatedNodePath } from '../runHosting/relaunchViaDedicatedNode';
 import { HostNetworkError, runMutation } from './hostNetworkError';
@@ -1221,6 +1307,7 @@ import { detectTakenRanges, validateSubnet, findFreeSubnet, type TakenRange } fr
 import {
   buildNewVmSwitchCommand,
   buildNewNetIpAddressCommand,
+  parseVmSwitchExistsExact,
 } from './hostNetworkSwitchOps';
 import {
   buildCreateEnvoyRuleCommand,
@@ -1229,6 +1316,7 @@ import {
   buildCreateSmbRuleCommand,
   buildRemoveRulesByNameCommand,
   buildRemoveStaleQueryUserRulesCommand,
+  parseSweepResult,
 } from './hostNetworkFirewallOps';
 
 export interface CreateHostNetworkOptions {
@@ -1253,13 +1341,16 @@ export async function createHostNetwork(opts: CreateHostNetworkOptions): Promise
   const names = resolveHostNetworkNames(opts.isolationName);
   const interfaces = opts.networkInterfaces ?? osNetworkInterfaces();
 
-  const switchResult = await opts.exec.run(buildGetVmSwitchCommand(names.switchName));
-  const switchExists = parseVmSwitchExists(switchResult.stdout);
-
+  // Resolved in-process, before the first PowerShell call — a missing NAT
+  // adapter address must fail cleanly with nothing yet touched, mirroring
+  // host-allow-vm-inbound.ps1's "resolve everything up front" approach.
   const natIp = resolveForwardListenAddress(opts.natAdapterAlias, interfaces);
   if (!natIp) {
     throw new HostNetworkError(`No IPv4 address found on NAT adapter '${opts.natAdapterAlias}'.`);
   }
+
+  const switchResult = await opts.exec.run(buildGetVmSwitchCommand(names.switchName));
+  const switchExists = parseVmSwitchExistsExact(switchResult.stdout, names.switchName);
 
   const nodePath = getDedicatedNodePath(opts.homedir);
 
@@ -1296,10 +1387,38 @@ export async function createHostNetwork(opts: CreateHostNetworkOptions): Promise
     refreshedOnly = false;
   }
 
-  await opts.exec.run(
-    buildRemoveRulesByNameCommand([names.envoyRuleName, names.dnsRuleName, names.dhcpRuleName, names.smbRuleName]),
+  // Clear any same-named rule before recreating it. A removal failure here
+  // is fatal to this call (unlike delete-host-network's best-effort sweeps):
+  // a surviving stale rule would make the New-NetFirewallRule call below
+  // create a duplicate DisplayName, not a clean replacement.
+  const staleNamedSweep = parseSweepResult(
+    (
+      await opts.exec.run(
+        buildRemoveRulesByNameCommand([
+          names.envoyRuleName,
+          names.dnsRuleName,
+          names.dhcpRuleName,
+          names.smbRuleName,
+        ]),
+      )
+    ).stdout,
   );
-  await opts.exec.run(buildRemoveStaleQueryUserRulesCommand(nodePath));
+  if (staleNamedSweep.failed > 0) {
+    throw new HostNetworkError(
+      `${staleNamedSweep.failed} stale firewall rule(s) could not be removed before recreating them — ` +
+        `run 'susentorno delete-host-network' to clean up, then retry.`,
+    );
+  }
+
+  const staleQueryUserSweep = parseSweepResult(
+    (await opts.exec.run(buildRemoveStaleQueryUserRulesCommand(nodePath))).stdout,
+  );
+  if (staleQueryUserSweep.failed > 0) {
+    throw new HostNetworkError(
+      `${staleQueryUserSweep.failed} stale Query User rule(s) could not be removed — ` +
+        `run 'susentorno delete-host-network' to clean up, then retry.`,
+    );
+  }
 
   await runMutation(opts.exec, buildCreateEnvoyRuleCommand(names.envoyRuleName, names.adapterAlias, hostIp, nodePath));
   await runMutation(opts.exec, buildCreateDnsRuleCommand(names.dnsRuleName, names.adapterAlias, hostIp, nodePath));
@@ -1316,7 +1435,7 @@ export async function createHostNetwork(opts: CreateHostNetworkOptions): Promise
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pnpm vitest run tests/unit/hostNetwork/createHostNetwork.test.ts`
-Expected: PASS (8 tests)
+Expected: PASS (9 tests)
 
 - [ ] **Step 5: Typecheck, lint, format, commit**
 
@@ -1337,7 +1456,7 @@ git commit -m "feat(hostNetwork): add createHostNetwork orchestration"
 
 **Interfaces:**
 
-- Consumes: `resolveHostNetworkNames` (Task 3), `buildGetVmNetworkAdaptersOnSwitchCommand`/`parseAttachedVms`/`buildRemoveVmSwitchCommand` (Task 5), `buildGetVmSwitchCommand`/`parseVmSwitchExists` (`src/guestSetup/hyperVQueries.ts`), `buildRemoveRulesByInterfaceCommand`/`buildRemoveStaleQueryUserRulesCommand`/`buildRemoveRulesByNameCommand`/`parseCount` (Task 6), `HostNetworkError`/`runMutation` (Task 2), `getDedicatedNodePath` (`src/runHosting/relaunchViaDedicatedNode.ts`).
+- Consumes: `resolveHostNetworkNames` (Task 3), `buildGetVmNetworkAdaptersOnSwitchCommand`/`parseAttachedVms`/`buildRemoveVmSwitchCommand`/`parseVmSwitchExistsExact` (Task 5), `buildGetVmSwitchCommand` (`src/guestSetup/hyperVQueries.ts`), `buildRemoveRulesByInterfaceCommand`/`buildRemoveStaleQueryUserRulesCommand`/`buildRemoveRulesByNameCommand`/`parseSweepResult`/`SweepResult` (Task 6), `HostNetworkError`/`runMutation` (Task 2), `getDedicatedNodePath` (`src/runHosting/relaunchViaDedicatedNode.ts`).
 - Produces:
   ```typescript
   export interface DeleteHostNetworkOptions {
@@ -1346,14 +1465,14 @@ git commit -m "feat(hostNetwork): add createHostNetwork orchestration"
     homedir: string;
   }
   export interface DeleteHostNetworkResult {
-    interfaceSweepCount: number;
-    queryUserSweepCount: number;
-    namedSweepCount: number;
+    interfaceSweep: SweepResult;
+    queryUserSweep: SweepResult;
+    namedSweep: SweepResult;
     switchRemoved: boolean;
   }
   export async function deleteHostNetwork(opts: DeleteHostNetworkOptions): Promise<DeleteHostNetworkResult>;
   ```
-  Task 10 (`src/commands/deleteHostNetwork.ts`) is the only caller. It formats `DeleteHostNetworkResult` into the printed summary line.
+  Task 10 (`src/commands/deleteHostNetwork.ts`) is the only caller. It formats `DeleteHostNetworkResult` into the printed summary line. `deleteHostNetwork` only ever *returns* when every sweep and the switch removal fully succeeded — a nonzero `failed` count in any sweep, or a failed switch removal, makes it throw `HostNetworkError` instead, after every step has still been attempted (see the implementation below).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1388,9 +1507,9 @@ describe('deleteHostNetwork', () => {
   it('sweeps rules and removes the switch when everything is present', async () => {
     const { exec, calls } = queuedExec([
       { exitCode: 0, stdout: '' }, // attached-VM check: none
-      { exitCode: 0, stdout: '2' }, // interface sweep: 2 removed
-      { exitCode: 0, stdout: '1' }, // Query User sweep: 1 removed
-      { exitCode: 0, stdout: '1' }, // named SMB sweep: 1 removed
+      { exitCode: 0, stdout: '2,0' }, // interface sweep: 2 removed, 0 failed
+      { exitCode: 0, stdout: '1,0' }, // Query User sweep: 1 removed, 0 failed
+      { exitCode: 0, stdout: '1,0' }, // named SMB sweep: 1 removed, 0 failed
       { exitCode: 0, stdout: '{"Name":"susentorno-internal"}' }, // Get-VMSwitch: found
       { exitCode: 0, stdout: '' }, // Remove-VMSwitch
     ]);
@@ -1398,9 +1517,9 @@ describe('deleteHostNetwork', () => {
     const result = await deleteHostNetwork({ exec, homedir: HOMEDIR });
 
     expect(result).toEqual({
-      interfaceSweepCount: 2,
-      queryUserSweepCount: 1,
-      namedSweepCount: 1,
+      interfaceSweep: { removed: 2, failed: 0 },
+      queryUserSweep: { removed: 1, failed: 0 },
+      namedSweep: { removed: 1, failed: 0 },
       switchRemoved: true,
     });
     expect(calls[calls.length - 1]).toContain('Remove-VMSwitch');
@@ -1409,18 +1528,18 @@ describe('deleteHostNetwork', () => {
   it('is a clean no-op on an already-clean host — switch not found is not an error', async () => {
     const { exec } = queuedExec([
       { exitCode: 0, stdout: '' }, // attached-VM check: none
-      { exitCode: 0, stdout: '0' }, // interface sweep: nothing found
-      { exitCode: 0, stdout: '0' }, // Query User sweep: nothing found
-      { exitCode: 0, stdout: '0' }, // named SMB sweep: nothing found
+      { exitCode: 0, stdout: '0,0' }, // interface sweep: nothing found
+      { exitCode: 0, stdout: '0,0' }, // Query User sweep: nothing found
+      { exitCode: 0, stdout: '0,0' }, // named SMB sweep: nothing found
       { exitCode: 0, stdout: '' }, // Get-VMSwitch: not found
     ]);
 
     const result = await deleteHostNetwork({ exec, homedir: HOMEDIR });
 
     expect(result).toEqual({
-      interfaceSweepCount: 0,
-      queryUserSweepCount: 0,
-      namedSweepCount: 0,
+      interfaceSweep: { removed: 0, failed: 0 },
+      queryUserSweep: { removed: 0, failed: 0 },
+      namedSweep: { removed: 0, failed: 0 },
       switchRemoved: false,
     });
   });
@@ -1430,22 +1549,54 @@ describe('deleteHostNetwork', () => {
       { exitCode: 0, stdout: '{"VMName":"my-guest-vm"}' }, // attached-VM check: one VM
     ]);
 
-    await expect(deleteHostNetwork({ exec, homedir: HOMEDIR })).rejects.toThrow('my-guest-vm');
-    await expect(deleteHostNetwork({ exec, homedir: HOMEDIR })).rejects.toThrow(HostNetworkError);
+    // A single invocation, captured once — calling deleteHostNetwork twice
+    // against the same exec would consume the one queued response on the
+    // first call and let the second proceed past the guard on the queue's
+    // default empty response, masking exactly the behavior this test exists
+    // to check.
+    let caught: unknown;
+    try {
+      await deleteHostNetwork({ exec, homedir: HOMEDIR });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(HostNetworkError);
+    expect((caught as Error).message).toContain('my-guest-vm');
     expect(calls.some((c) => c.includes('Remove-NetFirewallRule') || c.includes('Remove-VMSwitch'))).toBe(false);
   });
 
-  it('propagates a Remove-VMSwitch failure as HostNetworkError', async () => {
-    const { exec } = queuedExec([
-      { exitCode: 0, stdout: '' },
-      { exitCode: 0, stdout: '0' },
-      { exitCode: 0, stdout: '0' },
-      { exitCode: 0, stdout: '0' },
-      { exitCode: 0, stdout: '{"Name":"susentorno-internal"}' },
-      { exitCode: 1, stdout: 'ERROR: switch is in a bad state' },
+  it('reports a Remove-VMSwitch failure after every sweep has still run', async () => {
+    const { exec, calls } = queuedExec([
+      { exitCode: 0, stdout: '' }, // attached-VM check: none
+      { exitCode: 0, stdout: '0,0' }, // interface sweep
+      { exitCode: 0, stdout: '0,0' }, // Query User sweep
+      { exitCode: 0, stdout: '0,0' }, // named SMB sweep
+      { exitCode: 0, stdout: '{"Name":"susentorno-internal"}' }, // Get-VMSwitch: found
+      { exitCode: 1, stdout: 'ERROR: switch is in a bad state' }, // Remove-VMSwitch fails
     ]);
 
     await expect(deleteHostNetwork({ exec, homedir: HOMEDIR })).rejects.toThrow('switch is in a bad state');
+    // All three sweeps and the switch-existence check ran before the
+    // failure was reported — this command never aborts partway through.
+    expect(calls).toHaveLength(6);
+  });
+
+  it('reports sweep removal failures while still attempting every later step', async () => {
+    const { exec, calls } = queuedExec([
+      { exitCode: 0, stdout: '' }, // attached-VM check: none
+      { exitCode: 0, stdout: '1,1' }, // interface sweep: 1 removed, 1 could not be removed
+      { exitCode: 0, stdout: '0,0' }, // Query User sweep
+      { exitCode: 0, stdout: '0,0' }, // named SMB sweep
+      { exitCode: 0, stdout: '{"Name":"susentorno-internal"}' }, // Get-VMSwitch: found
+      { exitCode: 0, stdout: '' }, // Remove-VMSwitch: succeeds anyway
+    ]);
+
+    await expect(deleteHostNetwork({ exec, homedir: HOMEDIR })).rejects.toThrow(
+      '1 firewall rule(s) could not be removed',
+    );
+    // The switch removal still ran (and succeeded) despite the earlier sweep failure.
+    expect(calls[calls.length - 1]).toContain('Remove-VMSwitch');
   });
 
   it('rejects an invalid isolation name before doing anything', async () => {
@@ -1460,15 +1611,15 @@ describe('deleteHostNetwork', () => {
   it('derives names for the given isolation name', async () => {
     const { exec, calls } = queuedExec([
       { exitCode: 0, stdout: '' },
-      { exitCode: 0, stdout: '0' },
-      { exitCode: 0, stdout: '0' },
-      { exitCode: 0, stdout: '0' },
+      { exitCode: 0, stdout: '0,0' },
+      { exitCode: 0, stdout: '0,0' },
+      { exitCode: 0, stdout: '0,0' },
       { exitCode: 0, stdout: '' },
     ]);
 
     await deleteHostNetwork({ exec, homedir: HOMEDIR, isolationName: 'test' });
 
-    expect(calls[0]).toContain("susentorno-test-internal");
+    expect(calls[0]).toContain('susentorno-test-internal');
     expect(calls[3]).toContain('susentorno-test share (VM inbound)');
   });
 });
@@ -1485,7 +1636,7 @@ Create `src/hostNetwork/deleteHostNetwork.ts`:
 
 ```typescript
 import type { PowerShellExec } from '../guestSetup/powerShellExec';
-import { buildGetVmSwitchCommand, parseVmSwitchExists } from '../guestSetup/hyperVQueries';
+import { buildGetVmSwitchCommand } from '../guestSetup/hyperVQueries';
 import { getDedicatedNodePath } from '../runHosting/relaunchViaDedicatedNode';
 import { HostNetworkError, runMutation } from './hostNetworkError';
 import { resolveHostNetworkNames } from './hostNetworkNames';
@@ -1493,12 +1644,14 @@ import {
   buildGetVmNetworkAdaptersOnSwitchCommand,
   parseAttachedVms,
   buildRemoveVmSwitchCommand,
+  parseVmSwitchExistsExact,
 } from './hostNetworkSwitchOps';
 import {
   buildRemoveRulesByInterfaceCommand,
   buildRemoveStaleQueryUserRulesCommand,
   buildRemoveRulesByNameCommand,
-  parseCount,
+  parseSweepResult,
+  type SweepResult,
 } from './hostNetworkFirewallOps';
 
 export interface DeleteHostNetworkOptions {
@@ -1508,9 +1661,9 @@ export interface DeleteHostNetworkOptions {
 }
 
 export interface DeleteHostNetworkResult {
-  interfaceSweepCount: number;
-  queryUserSweepCount: number;
-  namedSweepCount: number;
+  interfaceSweep: SweepResult;
+  queryUserSweep: SweepResult;
+  namedSweep: SweepResult;
   switchRemoved: boolean;
 }
 
@@ -1528,31 +1681,48 @@ export async function deleteHostNetwork(opts: DeleteHostNetworkOptions): Promise
 
   const nodePath = getDedicatedNodePath(opts.homedir);
 
-  const interfaceSweepResult = await opts.exec.run(buildRemoveRulesByInterfaceCommand(names.adapterAlias));
-  const interfaceSweepCount = parseCount(interfaceSweepResult.stdout);
-
-  const queryUserResult = await opts.exec.run(buildRemoveStaleQueryUserRulesCommand(nodePath));
-  const queryUserSweepCount = parseCount(queryUserResult.stdout);
-
-  const namedSweepResult = await opts.exec.run(buildRemoveRulesByNameCommand([names.smbRuleName]));
-  const namedSweepCount = parseCount(namedSweepResult.stdout);
+  // Each sweep, and the switch removal below, is attempted regardless of the
+  // others' outcome — a failure in one doesn't stop the rest from being
+  // tried. Failures are collected and reported together at the end.
+  const interfaceSweep = parseSweepResult(
+    (await opts.exec.run(buildRemoveRulesByInterfaceCommand(names.adapterAlias))).stdout,
+  );
+  const queryUserSweep = parseSweepResult(
+    (await opts.exec.run(buildRemoveStaleQueryUserRulesCommand(nodePath))).stdout,
+  );
+  const namedSweep = parseSweepResult(
+    (await opts.exec.run(buildRemoveRulesByNameCommand([names.smbRuleName]))).stdout,
+  );
 
   const switchResult = await opts.exec.run(buildGetVmSwitchCommand(names.switchName));
-  const switchExists = parseVmSwitchExists(switchResult.stdout);
+  const switchExists = parseVmSwitchExistsExact(switchResult.stdout, names.switchName);
   let switchRemoved = false;
+  let switchRemovalError: string | undefined;
   if (switchExists) {
-    await runMutation(opts.exec, buildRemoveVmSwitchCommand(names.switchName));
-    switchRemoved = true;
+    try {
+      await runMutation(opts.exec, buildRemoveVmSwitchCommand(names.switchName));
+      switchRemoved = true;
+    } catch (error) {
+      switchRemovalError = (error as Error).message;
+    }
   }
 
-  return { interfaceSweepCount, queryUserSweepCount, namedSweepCount, switchRemoved };
+  const totalFailed = interfaceSweep.failed + queryUserSweep.failed + namedSweep.failed;
+  if (totalFailed > 0 || switchRemovalError) {
+    const parts: string[] = [];
+    if (totalFailed > 0) parts.push(`${totalFailed} firewall rule(s) could not be removed`);
+    if (switchRemovalError) parts.push(`switch removal failed: ${switchRemovalError}`);
+    throw new HostNetworkError(parts.join('; '));
+  }
+
+  return { interfaceSweep, queryUserSweep, namedSweep, switchRemoved };
 }
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pnpm vitest run tests/unit/hostNetwork/deleteHostNetwork.test.ts`
-Expected: PASS (6 tests)
+Expected: PASS (7 tests)
 
 - [ ] **Step 5: Typecheck, lint, format, commit**
 
@@ -1873,11 +2043,15 @@ export function registerDeleteHostNetwork(program: Command): void {
           homedir: homedir(),
         });
 
-        const ruleTotal = result.interfaceSweepCount + result.queryUserSweepCount + result.namedSweepCount;
+        // deleteHostNetwork only ever returns once every sweep and the switch
+        // removal fully succeeded (0 failures each) — a nonzero failed count
+        // anywhere makes it throw instead, caught below. So the success-path
+        // summary only needs to report what was removed.
+        const ruleTotal = result.interfaceSweep.removed + result.queryUserSweep.removed + result.namedSweep.removed;
         console.log(
           `delete-host-network: removed ${ruleTotal} firewall rule(s) ` +
-            `(${result.interfaceSweepCount} interface-scoped, ${result.queryUserSweepCount} stale Query User, ` +
-            `${result.namedSweepCount} named SMB); switch ${result.switchRemoved ? 'removed' : 'not found'}.`,
+            `(${result.interfaceSweep.removed} interface-scoped, ${result.queryUserSweep.removed} stale Query User, ` +
+            `${result.namedSweep.removed} named SMB); switch ${result.switchRemoved ? 'removed' : 'not found'}.`,
         );
       } catch (error) {
         if (error instanceof HostNetworkError) {
@@ -2004,6 +2178,10 @@ export default defineConfig({
     include: ['tests/host-network/**/*.test.ts'],
     globalSetup: ['tests/host-network/globalSetup.ts'],
     testTimeout: 30000,
+    // Matches vitest.config.ts's own setting: this task scaffolds the tier
+    // before Task 12 adds its first test file, so a "0 tests found" result
+    // must still be a passing run, not a failure.
+    passWithNoTests: true,
     // Every test in this tier creates/deletes the same fixed
     // susentorno-test-internal switch and its firewall rules — shared,
     // non-namespaced host state, so files must not run concurrently.
@@ -2078,10 +2256,12 @@ git commit -m "test(host-network): scaffold the new real-Hyper-V test tier"
 
 **Interfaces:**
 
-- Consumes: `createHostNetwork` (Task 7), `deleteHostNetwork` (Task 8), `detectTakenRanges`/`findFreeSubnet` (Task 4), `buildGetVmSwitchCommand`/`parseVmSwitchExists` (`src/guestSetup/hyperVQueries.ts`), `createRealPowerShellExec` (`src/guestSetup/powerShellExec.ts`), `quoteForPowerShell` (`src/guestSetup/quoteForPowerShell.ts`).
+- Consumes: `createHostNetwork` (Task 7), `deleteHostNetwork` (Task 8), `detectTakenRanges`/`findFreeSubnet` (Task 4), `buildGetVmSwitchCommand` (`src/guestSetup/hyperVQueries.ts`), `parseVmSwitchExistsExact` (Task 5), `createRealPowerShellExec` (`src/guestSetup/powerShellExec.ts`), `quoteForPowerShell` (`src/guestSetup/quoteForPowerShell.ts`).
 - Produces: `queryRuleFilters(exec, displayNamePattern): Promise<RuleFilterSnapshot[]>` — used only by this test file; no other task depends on it.
 
-This is the one test file in this plan that exercises real Hyper-V/Windows Firewall state, per [ADR-0023](../../adr/0023-cli-owned-host-network-with-real-hyperv-tier.md). Its filter-level assertions mirror `templates/proxy/verify-proxy.ps1`'s existing `Test-RuleTuple` pattern (protocol, port, interface, address, program, enabled/direction/action) — a shallower "the rule exists" check would not actually substantiate that ADR's coverage claim.
+This is the one test file in this plan that exercises real Hyper-V/Windows Firewall state, per [ADR-0023](../../adr/0023-cli-owned-host-network-with-real-hyperv-tier.md). Its filter-level assertions mirror `templates/proxy/verify-proxy.ps1`'s existing `Test-RuleTuple` pattern (protocol, port, interface, address, program, enabled/direction/action) for **every** rule set (Envoy, DNS, DHCP, both SMB halves) — a shallower "the rule exists" check, or checking only some rule sets in full, would not actually substantiate that ADR's coverage claim.
+
+This test calls `createHostNetwork`/`deleteHostNetwork` directly (the orchestration functions from Tasks 7-8), not the packaged `create-host-network`/`delete-host-network` CLI commands — it verifies the real Hyper-V/firewall side effects those functions produce, not `commander` option parsing or `src/commands/*.ts`'s output formatting. That surface is covered instead by Task 9/10's manual verification steps (which do invoke `dist/cli.js`) and, structurally, by the `cli` tier's existing conventions for other commands.
 
 - [ ] **Step 1: Write the rule-filter query helper**
 
@@ -2167,15 +2347,18 @@ Create `tests/host-network/createDeleteHostNetwork.test.ts`:
 
 ```typescript
 import { homedir } from 'node:os';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll } from 'vitest';
 import { createRealPowerShellExec } from '../../src/guestSetup/powerShellExec';
 import { createHostNetwork } from '../../src/hostNetwork/createHostNetwork';
 import { deleteHostNetwork } from '../../src/hostNetwork/deleteHostNetwork';
 import { detectTakenRanges, findFreeSubnet } from '../../src/hostNetwork/subnetSelection';
-import { buildGetVmSwitchCommand, parseVmSwitchExists } from '../../src/guestSetup/hyperVQueries';
+import { buildGetVmSwitchCommand } from '../../src/guestSetup/hyperVQueries';
+import { parseVmSwitchExistsExact } from '../../src/hostNetwork/hostNetworkSwitchOps';
 import { queryRuleFilters } from './queryFirewallRuleFilters';
 
 const ISOLATION_NAME = 'test';
+const SWITCH_NAME = 'susentorno-test-internal';
+const ADAPTER_ALIAS = 'vEthernet (susentorno-test-internal)';
 const NAT_ADAPTER_ALIAS = 'vEthernet (Default Switch)';
 const exec = createRealPowerShellExec();
 
@@ -2187,11 +2370,16 @@ async function cleanUp(): Promise<void> {
   await deleteHostNetwork({ exec, isolationName: ISOLATION_NAME, homedir: homedir() });
 }
 
+// beforeEach guarantees a clean starting state for every test; afterEach
+// cleans up after a passing test; afterAll is the fallback if beforeEach or
+// the test body itself throws partway through, so a failure doesn't strand
+// susentorno-test-internal for the next run of this suite.
 beforeEach(cleanUp);
 afterEach(cleanUp);
+afterAll(cleanUp);
 
 describe('create-host-network / delete-host-network against real Hyper-V', () => {
-  it('creates a switch, IP, and correctly-scoped firewall rules', async () => {
+  it('creates a switch, IP, and correctly-scoped firewall rules for every rule set', async () => {
     const subnet = findFreeSubnet(detectTakenRanges());
     expect(subnet).not.toBeNull();
 
@@ -2206,15 +2394,15 @@ describe('create-host-network / delete-host-network against real Hyper-V', () =>
 
     expect(result).toEqual({ hostIp: `192.168.${subnet}.1`, refreshedOnly: false });
 
-    const switchResult = await exec.run(buildGetVmSwitchCommand('susentorno-test-internal'));
-    expect(parseVmSwitchExists(switchResult.stdout)).toBe(true);
+    const switchResult = await exec.run(buildGetVmSwitchCommand(SWITCH_NAME));
+    expect(parseVmSwitchExistsExact(switchResult.stdout, SWITCH_NAME)).toBe(true);
 
     const envoyRules = await queryRuleFilters(exec, 'susentorno-test Envoy Proxy (VM inbound)');
     expect(envoyRules).toHaveLength(1);
     expect(envoyRules[0]).toMatchObject({
       protocol: 'TCP',
       localPort: '80,443',
-      interfaceAlias: 'vEthernet (susentorno-test-internal)',
+      interfaceAlias: ADAPTER_ALIAS,
       localAddress: result.hostIp,
       enabled: true,
       direction: 'Inbound',
@@ -2222,15 +2410,54 @@ describe('create-host-network / delete-host-network against real Hyper-V', () =>
     });
     expect(envoyRules[0].program).toContain('node-copy-with-custom-firewall-rules.exe');
 
+    const dnsRules = await queryRuleFilters(exec, 'susentorno-test DNS stub (VM inbound)');
+    expect(dnsRules).toHaveLength(1);
+    expect(dnsRules[0]).toMatchObject({
+      protocol: 'UDP',
+      localPort: '53',
+      interfaceAlias: ADAPTER_ALIAS,
+      localAddress: result.hostIp,
+      enabled: true,
+      direction: 'Inbound',
+      action: 'Allow',
+    });
+    expect(dnsRules[0].program).toContain('node-copy-with-custom-firewall-rules.exe');
+
     const dhcpRules = await queryRuleFilters(exec, 'susentorno-test DHCP (VM inbound)');
     expect(dhcpRules).toHaveLength(1);
-    expect(dhcpRules[0].localAddress).toBe('Any');
+    expect(dhcpRules[0]).toMatchObject({
+      protocol: 'UDP',
+      localPort: '67',
+      interfaceAlias: ADAPTER_ALIAS,
+      localAddress: 'Any', // the one deliberate exception — DHCP has no fixed destination to scope to
+      enabled: true,
+      direction: 'Inbound',
+      action: 'Allow',
+    });
+    expect(dhcpRules[0].program).toContain('node-copy-with-custom-firewall-rules.exe');
 
     const smbRules = await queryRuleFilters(exec, 'susentorno-test share (VM inbound)');
     expect(smbRules).toHaveLength(2);
-    expect(smbRules.map((r) => r.interfaceAlias).sort()).toEqual(
-      [NAT_ADAPTER_ALIAS, 'vEthernet (susentorno-test-internal)'].sort(),
-    );
+    const smbInternal = smbRules.find((r) => r.interfaceAlias === ADAPTER_ALIAS);
+    const smbNat = smbRules.find((r) => r.interfaceAlias === NAT_ADAPTER_ALIAS);
+    expect(smbInternal).toMatchObject({
+      protocol: 'TCP',
+      localPort: '445',
+      localAddress: result.hostIp,
+      enabled: true,
+      direction: 'Inbound',
+      action: 'Allow',
+    });
+    expect(smbNat).toMatchObject({
+      protocol: 'TCP',
+      localPort: '445',
+      enabled: true,
+      direction: 'Inbound',
+      action: 'Allow',
+    });
+    // Neither SMB rule is -Program-scoped, unlike the other three.
+    expect(smbInternal?.program).toBe('Any');
+    expect(smbNat?.program).toBe('Any');
   });
 
   it('refreshes rules without recreating the switch or duplicating rules on a rerun', async () => {
@@ -2254,8 +2481,10 @@ describe('create-host-network / delete-host-network against real Hyper-V', () =>
     });
 
     expect(second).toEqual({ hostIp: first.hostIp, refreshedOnly: true });
-    const envoyRules = await queryRuleFilters(exec, 'susentorno-test Envoy Proxy (VM inbound)');
-    expect(envoyRules).toHaveLength(1);
+    expect(await queryRuleFilters(exec, 'susentorno-test Envoy Proxy (VM inbound)')).toHaveLength(1);
+    expect(await queryRuleFilters(exec, 'susentorno-test DNS stub (VM inbound)')).toHaveLength(1);
+    expect(await queryRuleFilters(exec, 'susentorno-test DHCP (VM inbound)')).toHaveLength(1);
+    expect(await queryRuleFilters(exec, 'susentorno-test share (VM inbound)')).toHaveLength(2);
   });
 
   it('delete removes the switch and every associated rule, and is idempotent on rerun', async () => {
@@ -2271,19 +2500,23 @@ describe('create-host-network / delete-host-network against real Hyper-V', () =>
 
     const result = await deleteHostNetwork({ exec, isolationName: ISOLATION_NAME, homedir: homedir() });
     expect(result.switchRemoved).toBe(true);
-    expect(result.interfaceSweepCount).toBeGreaterThan(0);
-    expect(result.namedSweepCount).toBeGreaterThan(0);
+    expect(result.interfaceSweep.removed).toBeGreaterThan(0);
+    expect(result.interfaceSweep.failed).toBe(0);
+    expect(result.namedSweep.removed).toBeGreaterThan(0);
+    expect(result.namedSweep.failed).toBe(0);
 
-    const switchResult = await exec.run(buildGetVmSwitchCommand('susentorno-test-internal'));
-    expect(parseVmSwitchExists(switchResult.stdout)).toBe(false);
+    const switchResult = await exec.run(buildGetVmSwitchCommand(SWITCH_NAME));
+    expect(parseVmSwitchExistsExact(switchResult.stdout, SWITCH_NAME)).toBe(false);
     expect(await queryRuleFilters(exec, 'susentorno-test Envoy Proxy (VM inbound)')).toHaveLength(0);
+    expect(await queryRuleFilters(exec, 'susentorno-test DNS stub (VM inbound)')).toHaveLength(0);
+    expect(await queryRuleFilters(exec, 'susentorno-test DHCP (VM inbound)')).toHaveLength(0);
     expect(await queryRuleFilters(exec, 'susentorno-test share (VM inbound)')).toHaveLength(0);
 
     const rerun = await deleteHostNetwork({ exec, isolationName: ISOLATION_NAME, homedir: homedir() });
     expect(rerun).toEqual({
-      interfaceSweepCount: 0,
-      queryUserSweepCount: 0,
-      namedSweepCount: 0,
+      interfaceSweep: { removed: 0, failed: 0 },
+      queryUserSweep: { removed: 0, failed: 0 },
+      namedSweep: { removed: 0, failed: 0 },
       switchRemoved: false,
     });
   });
@@ -2370,7 +2603,7 @@ git commit -m "chore: remove host-allow-vm-inbound.ps1, superseded by create-hos
 
 - Modify: `templates/proxy/verify-proxy.ps1`
 
-Four spots name `host-allow-vm-inbound.ps1` directly; each becomes `susentorno create-host-network`. The rule-matching logic itself (exact `DisplayName`s) is unchanged, since `create-host-network` preserves them by default.
+Six spots name `host-allow-vm-inbound.ps1` directly (confirm with `grep -n "host-allow-vm-inbound" templates/proxy/verify-proxy.ps1` before starting — two are easy to miss, since they're explanatory comments rather than user-facing messages); each becomes `susentorno create-host-network`. The rule-matching logic itself (exact `DisplayName`s) is unchanged, since `create-host-network` preserves them by default.
 
 - [ ] **Step 1: Update the header comment block (around lines 17-25)**
 
@@ -2406,7 +2639,31 @@ susentorno create-host-network - it's used only to check the second half of
 the SMB share rule.
 ```
 
-- [ ] **Step 2: Update the missing-rule-set warning (around line 127)**
+- [ ] **Step 2: Update the `Test-RuleSet` explanatory comment (around line 117)**
+
+Change:
+
+```
+# and $Expected (an array of tuples): right count, and every expected tuple
+# claimed by exactly one distinct rule. A shared DisplayName can cover more
+# than one real rule (SMB, node.exe), so "at least one matches" would let a
+# missing or wrongly-scoped sibling hide behind one correct rule. A rule set
+# that's simply absent WARNs (may just mean host-allow-vm-inbound.ps1 hasn't
+# run yet); a present-but-wrong set FAILs. Always runs the full tuple check -
+```
+
+to:
+
+```
+# and $Expected (an array of tuples): right count, and every expected tuple
+# claimed by exactly one distinct rule. A shared DisplayName can cover more
+# than one real rule (SMB, node.exe), so "at least one matches" would let a
+# missing or wrongly-scoped sibling hide behind one correct rule. A rule set
+# that's simply absent WARNs (may just mean susentorno create-host-network
+# hasn't run yet); a present-but-wrong set FAILs. Always runs the full tuple check -
+```
+
+- [ ] **Step 3: Update the missing-rule-set warning (around line 127)**
 
 Change:
 
@@ -2420,7 +2677,33 @@ to:
 Add-Warn "$Label rule(s) present" "not found -- run 'susentorno create-host-network' (as admin)"
 ```
 
-- [ ] **Step 3: Update the stale Query User rule message (around line 364)**
+- [ ] **Step 4: Update the "Stale prompt-generated rules" section comment (around lines 349-355)**
+
+Change:
+
+```
+# Scoped to the dedicated node-copy-with-custom-firewall-rules.exe copy only (the binary
+# host-allow-vm-inbound.ps1 provisions program-scoped rules for) -- NOT "any
+# node.exe". Other node.exe binaries (e.g. the one running pnpm test) can
+# legitimately pick up their own prompt-generated rules unrelated to this
+# environment's VM path; this check only cares about the one binary the VM
+# path actually depends on. Reported, not deleted, since host-allow-vm-
+# inbound.ps1 owns cleaning up this specific path (it does so on every rerun).
+```
+
+to:
+
+```
+# Scoped to the dedicated node-copy-with-custom-firewall-rules.exe copy only (the binary
+# susentorno create-host-network provisions program-scoped rules for) -- NOT
+# "any node.exe". Other node.exe binaries (e.g. the one running pnpm test)
+# can legitimately pick up their own prompt-generated rules unrelated to this
+# environment's VM path; this check only cares about the one binary the VM
+# path actually depends on. Reported, not deleted, since susentorno
+# create-host-network owns cleaning up this specific path (it does so on every rerun).
+```
+
+- [ ] **Step 5: Update the stale Query User rule message (around line 364)**
 
 Change:
 
@@ -2434,12 +2717,20 @@ to:
 else { Add-Fail 'no stale Query User rule for the dedicated node-copy-with-custom-firewall-rules.exe' "$($rule.Action) rule '$($rule.Name)' -- rerun 'susentorno create-host-network', or investigate why Windows re-prompted" }
 ```
 
-- [ ] **Step 4: Confirm the unit test covering this file still passes**
+- [ ] **Step 6: Confirm no reference was missed**
+
+```bash
+grep -n "host-allow-vm-inbound" templates/proxy/verify-proxy.ps1
+```
+
+Expected: no output.
+
+- [ ] **Step 7: Confirm the unit test covering this file still passes**
 
 Run: `pnpm vitest run tests/unit/templates.test.ts -t "verify-proxy checks"`
 Expected: PASS — this test only asserts on `Get-NetIPInterface`/`WeakHostReceive`/`Forwarding`/`EndsWith($dedicatedNodePath` substrings, none of which this task touches.
 
-- [ ] **Step 5: Lint (PowerShell) and commit**
+- [ ] **Step 8: Lint (PowerShell) and commit**
 
 ```bash
 pnpm lint:ps1
@@ -2467,7 +2758,9 @@ Replace the entire content from `## 1. Create the Internal switch and assign the
 
 The isolated network for guests is a Hyper-V **Internal virtual switch** (host + VMs, no internet). `susentorno run-hosting` supplies DHCP and DNS on it. The host IP is the one value that threads through the entire setup:
 
-> **One host IP, used everywhere:** the static IPv4 assigned to the host's `vEthernet (susentorno-internal)` adapter is simultaneously the SMB server address, the `run-hosting --forward-listen` target, and the `<host-ip>` argument to the guest's `05-*` network scripts. This stays the same during guest setup (when network access is direct to the internet) and after the guest is isolated (when traffic must go through the proxy).
+> **One host IP, used everywhere:** the static IPv4 assigned to the host's `vEthernet (susentorno-internal)` adapter is simultaneously the SMB server address, the `run-hosting --forward-listen` target, and the `<host-ip>` argument to the guest's `nn-configure-network.*` script. This stays the same during guest setup (when network access is direct to the internet) and after the guest is isolated (when traffic must go through the proxy).
+
+(This replacement fixes a naming staleness in the original text while it's already being rewritten: `setup-machine.md` said `05-*`, but the templates were already renamed to `nn-configure-network.sh`/`nn-configure-network.ps1` — confirmed via `templates/vm-shared-*/pre-scripts/`. Not otherwise in scope for this task; fixed here only because this exact sentence is being replaced anyway.)
 
 > **Two host addresses, only one stable.** The Default Switch address used during a guest's NAT phase is regenerated across host reboots. Look it up with `Get-NetIPAddress -InterfaceAlias 'vEthernet (Default Switch)' -AddressFamily IPv4` when needed.
 
