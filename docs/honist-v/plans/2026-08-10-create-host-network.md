@@ -1005,8 +1005,12 @@ function queuedExec(responses: Array<{ exitCode: number; stdout: string }>): {
   };
 }
 
+// Keyed by the exact adapter alias string, matching how
+// resolveForwardListenAddress looks interfaces up (interfaces[adapterName] —
+// an exact key lookup, not a scan), unlike detectTakenRanges which only
+// cares about the values.
 const natInterfaces = {
-  Eth0: [
+  [NAT_ALIAS]: [
     {
       address: '10.0.75.1',
       netmask: '255.255.255.0',
@@ -1079,9 +1083,9 @@ describe('createHostNetwork', () => {
   it('rejects a taken --subnet without touching Hyper-V', async () => {
     const { exec, calls } = queuedExec([{ exitCode: 0, stdout: '' }]);
     const takenInterfaces = {
-      Eth0: [
+      ...natInterfaces,
+      SomeOtherAdapter: [
         { address: '192.168.80.5', netmask: '255.255.255.0', family: 'IPv4', mac: 'x', internal: false, cidr: null },
-        ...natInterfaces.Eth0!,
       ],
     } as unknown as NodeJS.Dict<import('node:os').NetworkInterfaceInfo[]>;
 
@@ -1111,9 +1115,9 @@ describe('createHostNetwork', () => {
     ]);
     const promptSubnet = vi.fn();
     const existingInterfaces = {
-      Eth0: [
+      ...natInterfaces,
+      'vEthernet (susentorno-internal)': [
         { address: '192.168.67.1', netmask: '255.255.255.0', family: 'IPv4', mac: 'x', internal: false, cidr: null },
-        ...natInterfaces.Eth0!,
       ],
     } as unknown as NodeJS.Dict<import('node:os').NetworkInterfaceInfo[]>;
 
@@ -1805,7 +1809,7 @@ Expected: the switch exists, and four enabled rules are listed. Rerun the same c
 node dist/cli.js create-host-network --isolation-name plancheck --subnet 250
 ```
 
-Expected: prints `create-host-network: switch already existed at 192.168.250.1 — refreshed its firewall rules only.` — no error, no duplicate rules (`(Get-NetFirewallRule -DisplayName 'susentorno-plancheck*').Count` should still be 4). Leave this switch in place — Task 10's manual verification cleans it up via `delete-host-network`.
+Expected: prints two lines — `create-host-network: switch already exists — the --subnet value was ignored (it only applies when creating a new switch).` followed by `create-host-network: switch already existed at 192.168.250.1 — refreshed its firewall rules only.` (the first line appears because this rerun still passes `--subnet 250`, which the refresh path ignores) — no error, no duplicate rules (`(Get-NetFirewallRule -DisplayName 'susentorno-plancheck*').Count` should still be 4). Leave this switch in place — Task 10's manual verification cleans it up via `delete-host-network`.
 
 ---
 
