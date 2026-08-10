@@ -9,6 +9,7 @@ import { registerRunHosting } from './commands/runHosting';
 import { registerUpdateShares } from './commands/updateShares';
 import { registerSetupGuestUnix } from './commands/setupGuestUnix';
 import { registerCreateHostNetwork } from './commands/createHostNetwork';
+import { registerDeleteHostNetwork } from './commands/deleteHostNetwork';
 
 const program = new Command();
 
@@ -25,5 +26,6 @@ registerRunHosting(program);
 registerUpdateShares(program);
 registerSetupGuestUnix(program);
 registerCreateHostNetwork(program);
+registerDeleteHostNetwork(program);
 
 await program.parseAsync();
