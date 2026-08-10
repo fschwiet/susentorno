@@ -36,12 +36,13 @@ Run these commands in order to verify a change is correct (fail-fast order):
 | 4 | `pnpm test:unit` | Unit tests (Vitest) |
 | 5 | `pnpm build` | Production build (tsup → `dist/cli.js`) |
 | 6 | `pnpm test:cli` | Packaged CLI behavior and the artifacts it generates (against `dist/cli.js`) |
-| 7 | `pnpm test:proxy-stack` | Proxy stack tests against a live Envoy stack |
-| 8 | `pnpm test:guest` | Guest tests (QEMU in WSL2) |
+| 7 | `pnpm test:host-network` | Real Hyper-V/firewall state created and torn down by `create-host-network`/`delete-host-network` (requires an elevated terminal) |
+| 8 | `pnpm test:proxy-stack` | Proxy stack tests against a live Envoy stack |
+| 9 | `pnpm test:guest` | Guest tests (QEMU in WSL2) |
 
 See [testing.md](testing.md) for what each tier's test surface is, how to choose the tier for a new test, and each tier's prerequisites.
 
-Run the full pipeline (steps 1–8) in one command:
+Run the full pipeline (steps 1–9) in one command:
 
 ```
 pnpm test
