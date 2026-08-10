@@ -16,12 +16,12 @@ rejects locally with 403.
 The VM-path checks probe the Internal-switch adapter the forwarder listens on.
 -AdapterAlias defaults to the Hyper-V Internal-switch NIC "vEthernet
 (susentorno-internal)"; pass a different alias if your switch is named
-differently, matching host-allow-vm-inbound.ps1, e.g.:
+differently, matching susentorno create-host-network, e.g.:
 
     ... -File .susentorno\proxy\verify-proxy.ps1 -AdapterAlias "vEthernet (my-switch)"
 
 -NatAdapterAlias defaults to "vEthernet (Default Switch)", matching
-host-allow-vm-inbound.ps1 - it's used only to check the second half of the
+susentorno create-host-network - it's used only to check the second half of
 SMB share rule.
 #>
 [CmdletBinding()]
@@ -114,8 +114,8 @@ function Test-RuleTuple {
 # claimed by exactly one distinct rule. A shared DisplayName can cover more
 # than one real rule (SMB, node.exe), so "at least one matches" would let a
 # missing or wrongly-scoped sibling hide behind one correct rule. A rule set
-# that's simply absent WARNs (may just mean host-allow-vm-inbound.ps1 hasn't
-# run yet); a present-but-wrong set FAILs. Always runs the full tuple check -
+# that's simply absent WARNs (may just mean susentorno create-host-network
+# hasn't run yet); a present-but-wrong set FAILs. Always runs the full tuple check -
 # an unresolved address (per-tuple SkipAddress) only ever narrows what that
 # one comparison covers, never skips the rule set entirely.
 function Test-RuleSet {
@@ -124,7 +124,7 @@ function Test-RuleSet {
     $rules = @(Get-NetFirewallRule -DisplayName $DisplayName -ErrorAction SilentlyContinue)
 
     if ($rules.Count -eq 0) {
-        Add-Warn "$Label rule(s) present" "not found -- run host-allow-vm-inbound.ps1 (as admin)"
+        Add-Warn "$Label rule(s) present" "not found -- run 'susentorno create-host-network' (as admin)"
         return
     }
 
@@ -347,12 +347,12 @@ if (-not $netIf) {
 Write-Section 'Stale prompt-generated rules'
 
 # Scoped to the dedicated node-copy-with-custom-firewall-rules.exe copy only (the binary
-# host-allow-vm-inbound.ps1 provisions program-scoped rules for) -- NOT "any
-# node.exe". Other node.exe binaries (e.g. the one running pnpm test) can
-# legitimately pick up their own prompt-generated rules unrelated to this
+# susentorno create-host-network provisions program-scoped rules for) -- NOT
+# "any node.exe". Other node.exe binaries (e.g. the one running pnpm test)
+# can legitimately pick up their own prompt-generated rules unrelated to this
 # environment's VM path; this check only cares about the one binary the VM
-# path actually depends on. Reported, not deleted, since host-allow-vm-
-# inbound.ps1 owns cleaning up this specific path (it does so on every rerun).
+# path actually depends on. Reported, not deleted, since susentorno
+# create-host-network owns cleaning up this specific path (it does so on every rerun).
 $dedicatedNodePath = Get-DedicatedNodePath
 $staleNodeRules = @(Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object {
     $_.Name -like "*Query User*" -and $_.Name.EndsWith($dedicatedNodePath, [StringComparison]::OrdinalIgnoreCase)
@@ -361,7 +361,7 @@ if ($staleNodeRules.Count -eq 0) {
     Add-Pass 'no stale Query User rule for the dedicated node-copy-with-custom-firewall-rules.exe'
 } else {
     foreach ($rule in $staleNodeRules) {
-        Add-Fail 'no stale Query User rule for the dedicated node-copy-with-custom-firewall-rules.exe' "$($rule.Action) rule '$($rule.Name)' -- rerun host-allow-vm-inbound.ps1, or investigate why Windows re-prompted"
+        Add-Fail 'no stale Query User rule for the dedicated node-copy-with-custom-firewall-rules.exe' "$($rule.Action) rule '$($rule.Name)' -- rerun 'susentorno create-host-network', or investigate why Windows re-prompted"
     }
 }
 
