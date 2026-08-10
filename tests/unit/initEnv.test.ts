@@ -53,7 +53,6 @@ describe('environment initialization', () => {
         'vm-shared-linux/credentials.json',
         'proxy/docker-compose.yml',
         'proxy/gate.lua',
-        'proxy/host-allow-vm-inbound.ps1',
         'proxy/allow-list.txt',
         'proxy/auth-list.txt',
         'proxy/block-list.txt',

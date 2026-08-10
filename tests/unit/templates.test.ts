@@ -27,7 +27,6 @@ const expectedTemplateFiles = [
   'vm-shared-linux/verify-config.sh',
   'proxy/docker-compose.yml',
   'proxy/gate.lua',
-  'proxy/host-allow-vm-inbound.ps1',
   'proxy/verify-proxy.ps1',
   'vm-shared-windows/pre-scripts/01-install-packages.ps1',
   'vm-shared-windows/pre-scripts/02-install-pnpm.ps1',
@@ -94,22 +93,6 @@ describe('generated provisioning inventory', () => {
   });
 
   describe('host firewall templates', () => {
-    it('host-allow-vm-inbound scopes rules by LocalAddress, splits SMB/node.exe, and drops node discovery', () => {
-      const script = readFileSync(
-        join(templatesDir(), 'proxy', 'host-allow-vm-inbound.ps1'),
-        'utf8',
-      );
-      expect(script).not.toContain('Resolve-RunProxyNode');
-      expect(script).not.toContain('-NodePath');
-      expect(script).toContain('$hostIp = ');
-      expect(script).toContain('$natHostIp = ');
-      expect((script.match(/-LocalAddress \$hostIp/g) ?? []).length).toBeGreaterThanOrEqual(3);
-      expect(script).toContain('-LocalAddress $natHostIp');
-      expect((script.match(/-LocalPort 445/g) ?? []).length).toBe(2);
-      expect((script.match(/-Program \$nodePath/g) ?? []).length).toBe(3);
-      expect(script).toContain('.susentorno-host\\node-copy-with-custom-firewall-rules.exe');
-    });
-
     it('verify-proxy checks the host network model and a stale dedicated-node.exe Query User rule', () => {
       const script = readFileSync(join(templatesDir(), 'proxy', 'verify-proxy.ps1'), 'utf8');
       expect(script).toContain('Get-NetIPInterface');

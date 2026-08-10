@@ -45,9 +45,6 @@ export function registerInit(program: Command): void {
       console.log('  2. susentorno write-github-config');
       console.log('  3. susentorno run-hosting');
       console.log(
-        `  (Windows) admin PowerShell: powershell -File ${ENV_DIR_NAME}/proxy/host-allow-vm-inbound.ps1`,
-      );
-      console.log(
         `  Then share ${ENV_DIR_NAME}/vm-shared-linux (Ubuntu) or ` +
           `${ENV_DIR_NAME}/vm-shared-windows (Windows) into the VM, see setup-guest.md`,
       );
