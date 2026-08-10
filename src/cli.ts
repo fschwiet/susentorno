@@ -8,6 +8,7 @@ import { registerWriteGithubConfig } from './commands/writeGithubConfig';
 import { registerRunHosting } from './commands/runHosting';
 import { registerUpdateShares } from './commands/updateShares';
 import { registerSetupGuestUnix } from './commands/setupGuestUnix';
+import { registerCreateHostNetwork } from './commands/createHostNetwork';
 
 const program = new Command();
 
@@ -23,5 +24,6 @@ registerWriteGithubConfig(program);
 registerRunHosting(program);
 registerUpdateShares(program);
 registerSetupGuestUnix(program);
+registerCreateHostNetwork(program);
 
 await program.parseAsync();

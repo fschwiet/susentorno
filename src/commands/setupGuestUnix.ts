@@ -5,6 +5,7 @@ import { requireEnvPathsOrExit } from '../envPaths';
 import {
   resolveForwardListenAddress,
   DEFAULT_INTERNAL_SWITCH_ADAPTER,
+  DEFAULT_NAT_ADAPTER,
 } from '../runHosting/forwarder';
 import { promptText, promptMasked } from '../cliPrompt';
 import { listScripts } from '../guestSetup/listScripts';
@@ -26,8 +27,6 @@ import {
 import { getVmIpAddresses } from '../guestSetup/hyperVQueries';
 import { waitForReachable } from '../guestSetup/reachabilityWait';
 import { realTcpConnect } from '../guestSetup/tcpConnect';
-
-const DEFAULT_NAT_ADAPTER = 'vEthernet (Default Switch)';
 
 interface SetupGuestUnixOptions {
   adapterAlias: string;
