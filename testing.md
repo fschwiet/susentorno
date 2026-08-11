@@ -8,7 +8,7 @@ The tier names use the project's domain vocabulary (see [CONTEXT.md](CONTEXT.md)
 | --- | --- | --- | --- | --- |
 | `unit` | `pnpm test:unit` | `tests/unit/` | `vitest.config.ts` | In-process behavior through a module interface or an intentional internal seam |
 | `cli` | `pnpm test:cli` | `tests/cli/` | `vitest.cli.config.ts` | The packaged CLI (`dist/cli.js`) and the filesystem artifacts it generates |
-| `host-network` | `pnpm test:host-network` | `tests/host-network/` | `vitest.host-network.config.ts` | Real Hyper-V switch/firewall state created and torn down by `create-host-network`/`delete-host-network` |
+| `host-network` | `pnpm test:host-network` | `tests/host-network/` | `vitest.host-network.config.ts` | Real Hyper-V switch/firewall state created and torn down through the host-network orchestration |
 | `proxy-stack` | `pnpm test:proxy-stack` | `tests/proxy-stack/` | `vitest.proxy-stack.config.ts` | The live proxy stack (Docker plus local upstream adapters), without entering a guest |
 | `guest` | `pnpm test:guest` | `tests/guest/` | `vitest.guest.config.ts` | Behavior observed through a disposable guest |
 
@@ -18,7 +18,7 @@ The tier names use the project's domain vocabulary (see [CONTEXT.md](CONTEXT.md)
 
 - **`cli`** tests invoke the built, user-facing `susentorno` command and assert on its behavior or generated artifacts. Several in-process modules may participate, but the observable interface is the packaged command.
 
-- **`host-network`** tests run `create-host-network`/`delete-host-network` against real Hyper-V and real Windows Firewall state — not mocked — always scoped to `--isolation-name test` so they never touch a developer's real `susentorno-internal` switch. This is a deliberate, narrow exception to the "avoid creating new tiers" guidance below and to [ADR-0010](docs/adr/0010-vm-tests-via-qemu-in-wsl2.md)'s "Hyper-V is not the test runtime" stance — see [ADR-0023](docs/adr/0023-cli-owned-host-network-with-real-hyperv-tier.md) for why this specific surface is safe to test for real where guest-boot behavior isn't.
+- **`host-network`** tests invoke the host-network orchestration against real Hyper-V and real Windows Firewall state — not mocked — always scoped to the `test` isolation name so they never touch a developer's real `susentorno-internal` switch. The packaged CLI's parsing, registration, and output remain covered by the CLI tier/manual verification. This is a deliberate, narrow exception to the "avoid creating new tiers" guidance below and to [ADR-0010](docs/adr/0010-vm-tests-via-qemu-in-wsl2.md)'s "Hyper-V is not the test runtime" stance — see [ADR-0023](docs/adr/0023-cli-owned-host-network-with-real-hyperv-tier.md) for why this specific surface is safe to test for real where guest-boot behavior isn't.
 
 - **`proxy-stack`** tests bring up the real proxy stack, including Envoy in Docker, networking, and local mock upstreams. They observe stack behavior without booting a guest.
 

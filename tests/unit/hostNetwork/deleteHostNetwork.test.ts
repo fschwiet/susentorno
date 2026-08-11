@@ -1,26 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import type { PowerShellExec } from '../../../src/guestSetup/powerShellExec';
 import { HostNetworkError } from '../../../src/hostNetwork/hostNetworkError';
 import { deleteHostNetwork } from '../../../src/hostNetwork/deleteHostNetwork';
+import { queuedExec } from './testHelpers';
 
 const HOMEDIR = 'C:\\Users\\me';
-
-function queuedExec(responses: Array<{ exitCode: number; stdout: string }>): {
-  exec: PowerShellExec;
-  calls: string[];
-} {
-  const calls: string[] = [];
-  const queue = [...responses];
-  return {
-    exec: {
-      async run(command: string) {
-        calls.push(command);
-        return queue.shift() ?? { exitCode: 0, stdout: '' };
-      },
-    },
-    calls,
-  };
-}
 
 describe('deleteHostNetwork', () => {
   it('sweeps rules and removes the switch when everything is present', async () => {

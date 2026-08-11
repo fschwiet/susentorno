@@ -1,11 +1,10 @@
 import { quoteForPowerShell } from '../guestSetup/quoteForPowerShell';
-
-const TRY_CATCH_SUFFIX = 'catch { Write-Output "ERROR: $($_.Exception.Message)"; exit 1 }';
+import { MUTATION_TRY_CATCH_SUFFIX } from './hostNetworkError';
 
 export function buildNewVmSwitchCommand(switchName: string): string {
   return (
     `try { New-VMSwitch -Name ${quoteForPowerShell(switchName)} -SwitchType Internal -ErrorAction Stop | Out-Null } ` +
-    TRY_CATCH_SUFFIX
+    MUTATION_TRY_CATCH_SUFFIX
   );
 }
 
@@ -13,7 +12,7 @@ export function buildNewNetIpAddressCommand(adapterAlias: string, ipAddress: str
   return (
     `try { New-NetIPAddress -InterfaceAlias ${quoteForPowerShell(adapterAlias)} ` +
     `-IPAddress ${quoteForPowerShell(ipAddress)} -PrefixLength 24 -ErrorAction Stop | Out-Null } ` +
-    TRY_CATCH_SUFFIX
+    MUTATION_TRY_CATCH_SUFFIX
   );
 }
 
@@ -27,7 +26,7 @@ export function buildNewNetIpAddressCommand(adapterAlias: string, ipAddress: str
 export function buildRemoveVmSwitchCommand(switchName: string): string {
   return (
     `try { Remove-VMSwitch -Name ${quoteForPowerShell(switchName)} -Force -ErrorAction Stop } ` +
-    TRY_CATCH_SUFFIX
+    MUTATION_TRY_CATCH_SUFFIX
   );
 }
 

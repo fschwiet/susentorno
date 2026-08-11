@@ -1,27 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { PowerShellExec } from '../../../src/guestSetup/powerShellExec';
 import { HostNetworkError } from '../../../src/hostNetwork/hostNetworkError';
 import { createHostNetwork } from '../../../src/hostNetwork/createHostNetwork';
+import { queuedExec } from './testHelpers';
 
 const NAT_ALIAS = 'vEthernet (Default Switch)';
 const HOMEDIR = 'C:\\Users\\me';
-
-function queuedExec(responses: Array<{ exitCode: number; stdout: string }>): {
-  exec: PowerShellExec;
-  calls: string[];
-} {
-  const calls: string[] = [];
-  const queue = [...responses];
-  return {
-    exec: {
-      async run(command: string) {
-        calls.push(command);
-        return queue.shift() ?? { exitCode: 0, stdout: '' };
-      },
-    },
-    calls,
-  };
-}
 
 // Keyed by the exact adapter alias string, matching how
 // resolveForwardListenAddress looks interfaces up (interfaces[adapterName] —

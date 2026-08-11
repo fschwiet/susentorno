@@ -6,6 +6,7 @@ import { deleteHostNetwork } from '../../src/hostNetwork/deleteHostNetwork';
 import { detectTakenRanges, findFreeSubnet } from '../../src/hostNetwork/subnetSelection';
 import { buildGetVmSwitchCommand } from '../../src/guestSetup/hyperVQueries';
 import { parseVmSwitchExistsExact } from '../../src/hostNetwork/hostNetworkSwitchOps';
+import { resolveForwardListenAddress } from '../../src/runHosting/forwarder';
 import { queryRuleFilters } from './queryFirewallRuleFilters';
 
 const ISOLATION_NAME = 'test';
@@ -92,6 +93,8 @@ describe('create-host-network / delete-host-network against real Hyper-V', () =>
     expect(smbRules).toHaveLength(2);
     const smbInternal = smbRules.find((r) => r.interfaceAlias === ADAPTER_ALIAS);
     const smbNat = smbRules.find((r) => r.interfaceAlias === NAT_ADAPTER_ALIAS);
+    const natHostIp = resolveForwardListenAddress(NAT_ADAPTER_ALIAS);
+    expect(natHostIp).not.toBeNull();
     expect(smbInternal).toMatchObject({
       protocol: 'TCP',
       localPort: '445',
@@ -103,6 +106,7 @@ describe('create-host-network / delete-host-network against real Hyper-V', () =>
     expect(smbNat).toMatchObject({
       protocol: 'TCP',
       localPort: '445',
+      localAddress: natHostIp,
       enabled: true,
       direction: 'Inbound',
       action: 'Allow',

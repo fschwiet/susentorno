@@ -1,6 +1,5 @@
 import { quoteForPowerShell } from '../guestSetup/quoteForPowerShell';
-
-const TRY_CATCH_SUFFIX = 'catch { Write-Output "ERROR: $($_.Exception.Message)"; exit 1 }';
+import { MUTATION_TRY_CATCH_SUFFIX } from './hostNetworkError';
 
 export function buildCreateEnvoyRuleCommand(
   ruleName: string,
@@ -12,7 +11,7 @@ export function buildCreateEnvoyRuleCommand(
     `try { New-NetFirewallRule -DisplayName ${quoteForPowerShell(ruleName)} -Direction Inbound -Protocol TCP ` +
     `-LocalPort 80,443 -Program ${quoteForPowerShell(nodePath)} -InterfaceAlias ${quoteForPowerShell(adapterAlias)} ` +
     `-LocalAddress ${quoteForPowerShell(hostIp)} -Action Allow -ErrorAction Stop | Out-Null } ` +
-    TRY_CATCH_SUFFIX
+    MUTATION_TRY_CATCH_SUFFIX
   );
 }
 
@@ -26,7 +25,7 @@ export function buildCreateDnsRuleCommand(
     `try { New-NetFirewallRule -DisplayName ${quoteForPowerShell(ruleName)} -Direction Inbound -Protocol UDP ` +
     `-LocalPort 53 -Program ${quoteForPowerShell(nodePath)} -InterfaceAlias ${quoteForPowerShell(adapterAlias)} ` +
     `-LocalAddress ${quoteForPowerShell(hostIp)} -Action Allow -ErrorAction Stop | Out-Null } ` +
-    TRY_CATCH_SUFFIX
+    MUTATION_TRY_CATCH_SUFFIX
   );
 }
 
@@ -40,7 +39,7 @@ export function buildCreateDhcpRuleCommand(
     `try { New-NetFirewallRule -DisplayName ${quoteForPowerShell(ruleName)} -Direction Inbound -Protocol UDP ` +
     `-LocalPort 67 -Program ${quoteForPowerShell(nodePath)} -InterfaceAlias ${quoteForPowerShell(adapterAlias)} ` +
     `-Action Allow -ErrorAction Stop | Out-Null } ` +
-    TRY_CATCH_SUFFIX
+    MUTATION_TRY_CATCH_SUFFIX
   );
 }
 
@@ -54,7 +53,7 @@ export function buildCreateSmbRuleCommand(
     `try { New-NetFirewallRule -DisplayName ${quoteForPowerShell(ruleName)} -Direction Inbound -Protocol TCP ` +
     `-LocalPort 445 -InterfaceAlias ${quoteForPowerShell(adapterAlias)} -LocalAddress ${quoteForPowerShell(localAddress)} ` +
     `-Action Allow -ErrorAction Stop | Out-Null } ` +
-    TRY_CATCH_SUFFIX
+    MUTATION_TRY_CATCH_SUFFIX
   );
 }
 

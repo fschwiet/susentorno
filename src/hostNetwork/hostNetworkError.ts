@@ -9,6 +9,9 @@ export class HostNetworkError extends Error {}
 
 const ERROR_PREFIX = 'ERROR: ';
 
+export const MUTATION_TRY_CATCH_SUFFIX =
+  'catch { Write-Output "ERROR: $($_.Exception.Message)"; exit 1 }';
+
 /**
  * Runs a mutating PowerShell command built with the project's
  * `-ErrorAction Stop` + try/catch convention (see Global Constraints) and
