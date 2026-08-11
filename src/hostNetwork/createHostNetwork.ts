@@ -52,7 +52,8 @@ export async function createHostNetwork(
 
   // Resolved in-process, before the first PowerShell call — a missing NAT
   // adapter address must fail cleanly with nothing yet touched, mirroring
-  // host-allow-vm-inbound.ps1's "resolve everything up front" approach.
+  // Resolve everything up front so a missing NAT address cannot leave a
+  // partially changed host network.
   const natIp = resolveForwardListenAddress(opts.natAdapterAlias, interfaces);
   if (!natIp) {
     throw new HostNetworkError(`No IPv4 address found on NAT adapter '${opts.natAdapterAlias}'.`);

@@ -79,7 +79,7 @@ export function buildRemoveRulesByNameCommand(ruleNames: string[]): string {
   );
 }
 
-/** Ported from host-allow-vm-inbound.ps1's stale prompt-generated rule cleanup, with the same per-rule removed/failed tracking as buildRemoveRulesByNameCommand. Not isolation-scoped: there is exactly one dedicated node.exe path host-wide. */
+/** Removes stale prompt-generated rules for the dedicated node.exe path, with the same per-rule removed/failed tracking as buildRemoveRulesByNameCommand. Not isolation-scoped: there is exactly one dedicated node.exe path host-wide. */
 export function buildRemoveStaleQueryUserRulesCommand(nodePath: string): string {
   return (
     `$removed = 0; $failed = 0; ` +
