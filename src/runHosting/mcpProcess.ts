@@ -1,6 +1,7 @@
 import { execa } from 'execa';
 import { createInterface } from 'node:readline';
 import net from 'node:net';
+import { sleep } from './abortableSleep';
 
 export interface McpChildHandle {
   pid: number;
@@ -51,21 +52,38 @@ export function spawnMcpServer(
   };
 }
 
-/** Polls a TCP connect to 127.0.0.1:port every 250ms until it succeeds or timeoutMs elapses. */
-export function probeMcpReady(port: number, timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
+/** One TCP connect to 127.0.0.1:port; true iff it connects. */
+function connectOnce(port: number): Promise<boolean> {
   return new Promise((resolve) => {
-    const attempt = (): void => {
-      const socket = net.connect({ host: '127.0.0.1', port }, () => {
-        socket.end();
-        resolve(true);
-      });
-      socket.on('error', () => {
-        socket.destroy();
-        if (Date.now() >= deadline) resolve(false);
-        else setTimeout(attempt, 250);
-      });
-    };
-    attempt();
+    const socket = net.connect({ host: '127.0.0.1', port }, () => {
+      socket.end();
+      resolve(true);
+    });
+    socket.on('error', () => {
+      socket.destroy();
+      resolve(false);
+    });
   });
+}
+
+/**
+ * Polls a TCP connect to 127.0.0.1:port every 250ms until it succeeds, `signal`
+ * aborts, or timeoutMs elapses. Aborting resolves false right away rather than
+ * polling out the remaining timeout: this probe runs unawaited for the rest of
+ * run-hosting's life, so a retry timer that outlives a fatal keeps the whole
+ * process alive — and, because run-hosting's SIGINT handler is a no-op once it
+ * has settled, unkillable by Ctrl-C — until the full timeout expires.
+ */
+export async function probeMcpReady(
+  port: number,
+  timeoutMs: number,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (signal.aborted) return false;
+    if (await connectOnce(port)) return true;
+    if (Date.now() >= deadline) return false;
+    await sleep(250, signal);
+  }
 }

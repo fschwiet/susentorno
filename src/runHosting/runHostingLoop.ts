@@ -74,8 +74,8 @@ export interface RunHostingDeps {
     spec: McpServerSpec,
     onLine: (line: string) => void,
   ) => { pid: number; onExit: (cb: (code: number | null, signal: string | null) => void) => void };
-  /** TCP-connect readiness probe for one MCP server's port. */
-  probeMcpReady: (port: number, timeoutMs: number) => Promise<boolean>;
+  /** TCP-connect readiness probe for one MCP server's port; gives up when `signal` aborts. */
+  probeMcpReady: (port: number, timeoutMs: number, signal: AbortSignal) => Promise<boolean>;
   /** Kill an MCP server's whole process tree. */
   killProcessTree: (pid: number, signal: NodeJS.Signals) => Promise<void>;
 }
@@ -402,7 +402,11 @@ export function runHostingLoop(config: RunHostingConfig, deps: RunHostingDeps): 
         if (mcpSpecs.length > 0) {
           mcpSupervisorHandle = startMcpServers(mcpSpecs, {
             spawn: deps.spawnMcpServer,
-            probeReady: deps.probeMcpReady,
+            // Probes outlive their caller — nothing awaits them — so they get the
+            // shutdown signal: a probe still polling after a fatal would hold the
+            // process open for the rest of its readiness timeout.
+            probeReady: (port, timeoutMs) =>
+              deps.probeMcpReady(port, timeoutMs, shutdownAbort.signal),
             killProcessTree: deps.killProcessTree,
             onLine: (name, line) => deps.log(`[${name}] ${line}`),
             onReady: (name, elapsedMs) => deps.log(`[${name}] ready in ${elapsedMs}ms`),

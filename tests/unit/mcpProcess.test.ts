@@ -53,11 +53,23 @@ describe('probeMcpReady', () => {
     server = net.createServer();
     await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', () => resolve()));
     const port = (server.address() as net.AddressInfo).port;
-    expect(await probeMcpReady(port, 2000)).toBe(true);
+    expect(await probeMcpReady(port, 2000, new AbortController().signal)).toBe(true);
   });
 
   it('resolves false when nothing is listening before the timeout', async () => {
     // 39217 is not bound by this test suite; a short timeout keeps this test fast.
-    expect(await probeMcpReady(39217, 300)).toBe(false);
+    expect(await probeMcpReady(39217, 300, new AbortController().signal)).toBe(false);
+  });
+
+  it('gives up as soon as the signal aborts, instead of polling out its timeout', async () => {
+    const controller = new AbortController();
+    const startedAt = Date.now();
+    // 39218 is not bound by this test suite; the long timeout is what an un-aborted
+    // probe would sit on, holding the whole process open after run-hosting shut down.
+    const probe = probeMcpReady(39218, 60_000, controller.signal);
+    controller.abort();
+
+    expect(await probe).toBe(false);
+    expect(Date.now() - startedAt).toBeLessThan(2000);
   });
 });

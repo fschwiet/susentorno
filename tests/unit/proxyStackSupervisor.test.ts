@@ -874,6 +874,31 @@ describe('proxy stack supervision', () => {
       await flush();
     });
 
+    it('aborts a still-pending readiness probe when startup fatals, so nothing outlives the loop', async () => {
+      const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+      let probeSignal: AbortSignal | undefined;
+      // A probe that never settles on its own: only the abort can end it.
+      h.mocks.probeMcpReady.mockImplementationOnce(
+        (_port: number, _timeoutMs: number, signal: AbortSignal) => {
+          probeSignal = signal;
+          return new Promise<boolean>(() => {});
+        },
+      );
+      h.mocks.bringUpColor.mockRejectedValueOnce(new Error('docker daemon not running'));
+      const config = {
+        ...baseConfig([h.channelConfig]),
+        mcpServers: [{ name: 'fs', hostname: 'fs.internal', command: 'run-fs' }],
+      };
+      const exit = runHostingLoop(config, h.deps);
+      await flush();
+
+      await expect(exit).resolves.toBe(1);
+      expect(h.mocks.error).toHaveBeenCalledWith(
+        expect.stringContaining('docker failed to start the proxy on startup'),
+      );
+      expect(probeSignal?.aborted).toBe(true);
+    });
+
     it('a probe timeout fatals the loop, stops both colors, and stops the mcp process', async () => {
       const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
       h.mocks.probeMcpReady.mockResolvedValueOnce(false);
