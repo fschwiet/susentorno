@@ -20,6 +20,7 @@
   ],
   "scripts": {
     "build": "tsup && node scripts/copy-vm-applier.mjs",
+    "reinstall:global": "pnpm uninstall -g susentorno && pnpm build && pnpm install -g .",
     "prepack": "pnpm build",
     "cli": "pnpm build && node dist/cli.js",
     "typecheck": "tsc --noEmit",
