@@ -151,6 +151,7 @@ Only what a guest requires to function as a susentorno guest:
 | `nn-configure-network.sh` | unchanged logic | — |
 | `post-scripts/01-auth-config.sh` | unchanged | — |
 | `post-scripts/02-apply-home-jq-transforms.sh` | unchanged | — |
+| `home-jq-transforms/vscode-settings.jq` | — | **deleted**, with its `manifest.yaml` entry |
 
 Three retentions need justification because they are not obviously load-bearing:
 
@@ -161,7 +162,20 @@ Three retentions need justification because they are not obviously load-bearing:
 
 `04-configure-tools.sh` is deleted rather than emptied: every line in it is preference — four named VS Code extensions, GNOME screensaver `gsettings`, `codebase-memory-mcp`, and context7 MCP wiring for both Claude and Codex. Removing the `~/.bashrc` dotnet PATH block also removes the hardcoded `/home/username/.dotnet/tools` path at `03-install-tools.sh:19`, a latent bug for any guest whose user is not named `username`.
 
-`templates/vm-shared-windows/` is **untouched** in this changeset.
+### The VS Code home settings transform goes too
+
+`templates/home-jq-transforms/vscode-settings.jq` and its `manifest.yaml:4-6` entry are deleted. The transform sets `files.autoSave`, `editor.formatOnSave`, `chat.disableAIFeatures`, and `editor.defaultFormatter` to `esbenp.prettier-vscode` and `csharpier.csharpier-vscode`. Leaving it would ship settings configuring formatters for two extensions this changeset stops installing, in an editor it stops installing — actively incoherent on Linux the moment the trim lands, and a violation of the new ADR by a file the rest of section 3 never touches.
+
+It is preference by the same test as everything else removed here, and it goes to user customizations with them. `home-jq-transforms/` is a shared folder rather than part of `vm-shared-windows/`, but the deleted manifest entry carries a `windows:` target as well as a `linux:` one, so this does reach the Windows guest. That is deliberate and is the one place this changeset touches Windows behavior: splitting the entry to keep a Windows-only half would leave a transform naming extensions only the Windows templates install, which is a worse thing to hand to the later Windows cleanup than a clean deletion.
+
+`claude-onboarding.jq` and `pi-openai-codex-auth.jq` stay — both configure agents the templates still install, against credential channels the product owns.
+
+Test fallout, all of which uses `vscode-settings.jq` as a convenient stand-in for "some transform" rather than testing it specifically, so each needs re-pointing at a surviving transform rather than deleting:
+
+- `tests/unit/templates.test.ts:40` lists it in the expected template inventory → removed; `:185-204`'s manifest/`.jq` consistency test then covers two entries instead of three.
+- `tests/cli/updateShares.test.ts:41` asserts `update-shares` output contains `vscode-settings.jq`, and `:73` writes deliberately invalid jq into it to test the error path.
+
+`templates/vm-shared-windows/` is otherwise **untouched** in this changeset.
 
 ### Renumbering fallout
 
