@@ -6,7 +6,7 @@ Per-machine setup for a Windows host, done once before setting up any environmen
 
 The isolated network for guests is a Hyper-V **Internal virtual switch** (host + VMs, no internet). `susentorno run-hosting` supplies DHCP and DNS on it. The host IP is the one value that threads through the entire setup:
 
-> **One host IP, used everywhere:** the static IPv4 assigned to the host's `vEthernet (susentorno-internal)` adapter is simultaneously the SMB server address, the `run-hosting --forward-listen` target, and the `<host-ip>` argument to the guest's `nn-configure-network.*` script. This stays the same during guest setup (when network access is direct to the internet) and after the guest is isolated (when traffic must go through the proxy).
+> **One host IP, used everywhere:** the static IPv4 assigned to the host's `vEthernet (susentorno-internal)` adapter is simultaneously the SMB server address, the address `run-hosting` forwards from, and the `<host-ip>` argument to the guest's `nn-configure-network.*` script. This stays the same during guest setup (when network access is direct to the internet) and after the guest is isolated (when traffic must go through the proxy).
 
 (This replacement fixes a naming staleness in the original text while it's already being rewritten: `setup-machine.md` said `05-*`, but the templates were already renamed to `nn-configure-network.sh`/`nn-configure-network.ps1` — confirmed via `templates/vm-shared-*/pre-scripts/`. Not otherwise in scope for this task; fixed here only because this exact sentence is being replaced anyway.)
 

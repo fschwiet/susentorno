@@ -15,7 +15,11 @@ import { startLogStream, type LogStreamHandle } from '../runHosting/logStream';
 import { ensureLeaf } from '../leaf';
 import { requireEnvPathsOrExit } from '../envPaths';
 import type { UpstreamOverride, InjectFault } from '../envoyConfig';
-import { resolveForwardListenAddress, resolveInternalSwitchNetwork } from '../runHosting/forwarder';
+import {
+  resolveIsolationNetwork,
+  type IsolationNetworkResolution,
+} from '../runHosting/isolationNetwork';
+import { createHostNetworkHint, HostNetworkError } from '../hostNetwork/hostNetworkNames';
 import { startGateway, type GatewayHandle } from '../runHosting/gateway';
 import { startDnsResponder } from '../runHosting/dnsResponder';
 import { createServiceStack } from '../runHosting/serviceStack';
@@ -49,7 +53,7 @@ interface RunHostingOptions {
   maxAttempts: string;
   refresh: boolean;
   forward: boolean;
-  forwardListen?: string;
+  isolationName?: string;
   upstreamOverride: UpstreamOverride[];
   injectFault?: InjectFault;
   skipAllowList?: boolean;
@@ -120,8 +124,9 @@ export function registerRunHosting(program: Command): void {
     .option('--no-refresh', 'watch and propagate only; never nudge the CLI to refresh')
     .option('--no-forward', 'do not forward the Hyper-V Internal-switch interface to loopback')
     .option(
-      '--forward-listen <ip>',
-      'IP to forward from (default: the Hyper-V Internal-switch adapter IP)',
+      '--isolation-name <name>',
+      'Bind the sandboxed host network created by create-host-network --isolation-name <name> ' +
+        'instead of the default one (letters, digits, and hyphens only)',
     )
     .option(
       '--upstream-override <sniHost=host:port>',
@@ -155,6 +160,20 @@ export function registerRunHosting(program: Command): void {
       }
 
       try {
+        // --no-forward disables the gateway's non-loopback listener, the DNS
+        // responder, and the DHCP server: the only three consumers of the
+        // resolved address. Silently ignoring --isolation-name here would leave
+        // a run-hosting that looks configured for a sandbox but is serving the
+        // default network, so this fails loudly.
+        if (options.isolationName !== undefined && !options.forward) {
+          console.error(
+            'run-hosting: --isolation-name cannot be combined with --no-forward — ' +
+              '--no-forward disables the gateway listener, the DNS responder, and the DHCP ' +
+              'server, which are the only consumers of the address --isolation-name selects.',
+          );
+          process.exitCode = 1;
+          return;
+        }
         const paths = requireEnvPathsOrExit('run-hosting');
         if (!paths) return;
         // run-hosting reissues the leaf itself but never the root: the root must
@@ -191,17 +210,32 @@ export function registerRunHosting(program: Command): void {
         // enabled it also listens on the Hyper-V Internal-switch adapter. Both point
         // at the active color's backend ports.
         const listenAddresses = ['127.0.0.1'];
+        // Non-null exactly when forwarding is on AND the adapter resolved, so it
+        // doubles as the guard for the DNS/DHCP block below — one snapshot feeds
+        // the gateway's listen address, the DNS answer IP, and the DHCP netmask.
+        let internalNetwork: IsolationNetworkResolution | null = null;
         if (options.forward) {
-          const forwardIp = options.forwardListen ?? resolveForwardListenAddress();
-          if (!forwardIp) {
+          let resolution: IsolationNetworkResolution;
+          try {
+            resolution = resolveIsolationNetwork(options.isolationName);
+          } catch (err) {
+            if (err instanceof HostNetworkError) {
+              console.error(`run-hosting: ${err.message}`);
+              process.exitCode = 1;
+              return;
+            }
+            throw err;
+          }
+          if (!resolution.found) {
             console.error(
-              'run-hosting: could not find the Hyper-V Internal-switch adapter IP to forward from. ' +
-                'Pass --forward-listen <ip>, or --no-forward to disable forwarding.',
+              `run-hosting: could not find an IPv4 address on adapter '${resolution.adapterAlias}'. ` +
+                createHostNetworkHint(options.isolationName),
             );
             process.exitCode = 1;
             return;
           }
-          listenAddresses.push(forwardIp);
+          internalNetwork = resolution;
+          listenAddresses.push(resolution.address);
         }
 
         const services = createServiceStack();
@@ -219,8 +253,8 @@ export function registerRunHosting(program: Command): void {
           `run-hosting: gateway listening on ${listenAddresses.join(', ')} :${httpPort}/${httpsPort}`,
         );
 
-        if (options.forward) {
-          const dnsIp = listenAddresses[listenAddresses.length - 1];
+        if (internalNetwork?.found) {
+          const dnsIp = internalNetwork.address;
           try {
             await services.add(() =>
               startDnsResponder({
@@ -237,8 +271,7 @@ export function registerRunHosting(program: Command): void {
             return;
           }
           console.log(`run-hosting: DNS responder listening on ${dnsIp}:53 (all A -> ${dnsIp})`);
-          const network = resolveInternalSwitchNetwork();
-          const netmask = network?.address === dnsIp ? network.netmask : '255.255.255.0';
+          const netmask = internalNetwork.netmask;
           try {
             await services.add(() =>
               startDhcpServer({

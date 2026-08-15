@@ -18,7 +18,7 @@ Windows with forwarding enabled (the default), the invoked process relaunches th
 failures happen inside whichever process reaches them — the relaunch parent for relaunch-mechanism
 failures (can't copy/spawn the dedicated node.exe, child killed by signal), the child (or the sole
 process, when there's no relaunch) for everything else: missing env paths, missing CA, an
-unresolvable forward-listen IP, gateway/DNS/DHCP bind failures, and every failure inside
+Internal-switch adapter with no resolvable IPv4 address, gateway/DNS/DHCP bind failures, and every failure inside
 `runHostingLoop` (unreadable credentials/allowlist, config build failure, Docker failing to start a
 color, the proxy never becoming ready, or any other fatal error the loop's `fatal()` collapses to).
 
