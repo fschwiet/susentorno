@@ -7,6 +7,7 @@ import { detectTakenRanges, findFreeSubnet } from '../../src/hostNetwork/subnetS
 import { buildGetVmSwitchCommand } from '../../src/guestSetup/hyperVQueries';
 import { parseVmSwitchExistsExact } from '../../src/hostNetwork/hostNetworkSwitchOps';
 import { resolveForwardListenAddress } from '../../src/runHosting/forwarder';
+import { resolveIsolationNetwork } from '../../src/runHosting/isolationNetwork';
 import { queryRuleFilters } from './queryFirewallRuleFilters';
 
 const ISOLATION_NAME = 'test';
@@ -143,6 +144,28 @@ describe('create-host-network / delete-host-network against real Hyper-V', () =>
     expect(await queryRuleFilters(exec, 'susentorno-test DNS stub (VM inbound)')).toHaveLength(1);
     expect(await queryRuleFilters(exec, 'susentorno-test DHCP (VM inbound)')).toHaveLength(1);
     expect(await queryRuleFilters(exec, 'susentorno-test share (VM inbound)')).toHaveLength(2);
+  });
+
+  it('resolves the created switch to a real address and netmask through resolveIsolationNetwork', async () => {
+    const subnet = findFreeSubnet(detectTakenRanges())!;
+    await createHostNetwork({
+      exec,
+      isolationName: ISOLATION_NAME,
+      subnet,
+      natAdapterAlias: NAT_ADAPTER_ALIAS,
+      homedir: homedir(),
+      promptSubnet: async () => subnet,
+    });
+
+    // The only place the alias-to-real-adapter mapping is exercised against
+    // Windows rather than a fixture — and the only check that the netmask
+    // run-hosting hands to DHCP is the switch's real one, not a guessed /24.
+    expect(resolveIsolationNetwork(ISOLATION_NAME)).toEqual({
+      found: true,
+      adapterAlias: ADAPTER_ALIAS,
+      address: `192.168.${subnet}.1`,
+      netmask: '255.255.255.0',
+    });
   });
 
   it('delete removes the switch and every associated rule, and is idempotent on rerun', async () => {
