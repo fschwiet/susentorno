@@ -108,7 +108,7 @@ Host <hostname> 192.168.67.*
     IdentitiesOnly yes
 ```
 
-Then, from the Host, in an **elevated (Administrator) PowerShell**, run the environment's setup command. It mounts the share, runs `pre-scripts/`, isolates the guest onto `susentorno-internal`, re-mounts the share there, and runs `post-scripts/` — the entire remaining Ubuntu flow in one command:
+Then, from the Host, in an **elevated (Administrator) PowerShell**, run the environment's setup command. It mounts the share, runs `pre-scripts/`, isolates the guest onto the selected Internal switch/network, re-mounts the share there, and runs `post-scripts/` — the entire remaining Ubuntu flow in one command:
 
 ```powershell
 susentorno setup-guest-unix
