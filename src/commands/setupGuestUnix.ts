@@ -2,12 +2,18 @@ import { networkInterfaces, type NetworkInterfaceInfo } from 'node:os';
 import { join } from 'node:path';
 import type { Command } from 'commander';
 import { requireEnvPathsOrExit } from '../envPaths';
+import { resolveForwardListenAddress, DEFAULT_NAT_ADAPTER } from '../runHosting/forwarder';
 import {
-  resolveForwardListenAddress,
-  DEFAULT_INTERNAL_SWITCH_ADAPTER,
-  DEFAULT_NAT_ADAPTER,
-} from '../runHosting/forwarder';
+  createHostNetworkHint,
+  resolveHostNetworkNames,
+  HostNetworkError,
+} from '../hostNetwork/hostNetworkNames';
 import { promptText, promptMasked } from '../cliPrompt';
+import {
+  resolveVmNameAnswer,
+  resolveConnectionAnswers,
+  type SetupAnswerPrompts,
+} from '../guestSetup/setupAnswers';
 import { listScripts } from '../guestSetup/listScripts';
 import { createSshRemoteExec } from '../guestSetup/remoteExec';
 import { mountShare, MountShareError } from '../guestSetup/mountShare';
@@ -29,11 +35,18 @@ import { waitForReachable } from '../guestSetup/reachabilityWait';
 import { realTcpConnect } from '../guestSetup/tcpConnect';
 
 interface SetupGuestUnixOptions {
-  adapterAlias: string;
+  isolationName?: string;
   natAdapterAlias: string;
+  vmName?: string;
+  guestAddress?: string;
+  guestUsername?: string;
+  shareName?: string;
+  shareAccount?: string;
 }
 
 export interface ResolvedGuestNetwork {
+  internalAdapterAlias: string;
+  internalSwitchName: string;
   internalSwitchHostIp: string;
   defaultSwitchHostIp: string;
 }
@@ -44,13 +57,14 @@ export interface GuestNetworkResolutionFailure {
 }
 
 export function resolveGuestNetwork(
-  adapterAlias: string,
+  isolationName: string | undefined,
   natAdapterAlias: string,
   interfaces: NodeJS.Dict<NetworkInterfaceInfo[]> = networkInterfaces(),
 ): ResolvedGuestNetwork | GuestNetworkResolutionFailure {
-  const internalSwitchHostIp = resolveForwardListenAddress(adapterAlias, interfaces);
+  const names = resolveHostNetworkNames(isolationName);
+  const internalSwitchHostIp = resolveForwardListenAddress(names.adapterAlias, interfaces);
   if (!internalSwitchHostIp) {
-    return { adapterAlias, hint: 'Pass --adapter-alias, or complete setup-machine.md first.' };
+    return { adapterAlias: names.adapterAlias, hint: createHostNetworkHint(isolationName) };
   }
   const defaultSwitchHostIp = resolveForwardListenAddress(natAdapterAlias, interfaces);
   if (!defaultSwitchHostIp) {
@@ -59,7 +73,12 @@ export function resolveGuestNetwork(
       hint: 'Pass --nat-adapter-alias, or attach the guest to the Default Switch first.',
     };
   }
-  return { internalSwitchHostIp, defaultSwitchHostIp };
+  return {
+    internalAdapterAlias: names.adapterAlias,
+    internalSwitchName: names.switchName,
+    internalSwitchHostIp,
+    defaultSwitchHostIp,
+  };
 }
 
 function isResolutionFailure(
@@ -81,8 +100,23 @@ export function registerSetupGuestUnix(program: Command): void {
         'safe to retry — every step reruns from the top — but a woven-in custom pre-/post-script must be ' +
         'idempotent itself for that retry to be safe.',
     )
-    .option('--adapter-alias <name>', 'Internal-switch adapter', DEFAULT_INTERNAL_SWITCH_ADAPTER)
+    .option(
+      '--isolation-name <name>',
+      'Host network to attach the guest to, as passed to create-host-network ' +
+        '(letters, digits, and hyphens only); omit for the default one',
+    )
     .option('--nat-adapter-alias <name>', 'Default-Switch adapter', DEFAULT_NAT_ADAPTER)
+    .option('--vm-name <name>', 'Hyper-V VM name, skipping its prompt')
+    .option('--guest-address <host>', 'Guest hostname or IP, skipping its prompt')
+    .option('--guest-username <user>', 'Guest username, skipping its prompt')
+    .option(
+      '--share-name <name>',
+      'SMB share name, skipping its prompt (prompt default: vm-shared-linux)',
+    )
+    .option(
+      '--share-account <name>',
+      'Share account name, skipping its prompt (prompt default: susentorno-share)',
+    )
     .action(async (options: SetupGuestUnixOptions) => {
       const exec = createRealPowerShellExec();
       if (!(await isElevated(exec))) {
@@ -96,7 +130,24 @@ export function registerSetupGuestUnix(program: Command): void {
       const paths = requireEnvPathsOrExit('setup-guest-unix');
       if (!paths) return;
 
-      const resolved = resolveGuestNetwork(options.adapterAlias, options.natAdapterAlias);
+      const prompts: SetupAnswerPrompts = {
+        text: (question, defaultValue) => promptText(question, defaultValue),
+        masked: (question) => promptMasked(question),
+      };
+
+      let resolved: ResolvedGuestNetwork | GuestNetworkResolutionFailure;
+      try {
+        resolved = resolveGuestNetwork(options.isolationName, options.natAdapterAlias);
+      } catch (error) {
+        // Caught here rather than left to escape: an escaping throw would leave
+        // the action handler entirely and print a stack trace for a typo'd flag.
+        if (error instanceof HostNetworkError) {
+          console.error(`setup-guest-unix: ${error.message}`);
+          process.exitCode = 1;
+          return;
+        }
+        throw error;
+      }
       if (isResolutionFailure(resolved)) {
         console.error(
           `setup-guest-unix: could not find an IPv4 address on adapter '${resolved.adapterAlias}'. ${resolved.hint}`,
@@ -104,14 +155,22 @@ export function registerSetupGuestUnix(program: Command): void {
         process.exitCode = 1;
         return;
       }
-      const { internalSwitchHostIp, defaultSwitchHostIp } = resolved;
+      const {
+        internalAdapterAlias,
+        internalSwitchName,
+        internalSwitchHostIp,
+        defaultSwitchHostIp,
+      } = resolved;
 
-      const vmName = await promptText('Hyper-V VM name');
+      // Two stages either side of preflight, deliberately: a bad VM name or a
+      // missing switch fails before the user types five more answers.
+      const vmName = await resolveVmNameAnswer(options, prompts);
 
       const preflight = await runPreflightChecks({
         exec,
         vmName,
-        adapterAlias: options.adapterAlias,
+        internalAdapterAlias,
+        internalSwitchName,
         natAdapterAlias: options.natAdapterAlias,
         internalSwitchHostIp,
       });
@@ -120,13 +179,10 @@ export function registerSetupGuestUnix(program: Command): void {
         process.exitCode = 1;
         return;
       }
-      const { defaultSwitchName, internalSwitchName } = preflight;
+      const { defaultSwitchName } = preflight;
 
-      const address = await promptText('Guest address (hostname or IP)');
-      const username = await promptText('Guest username');
-      const shareName = await promptText('SMB share name', 'vm-shared-linux');
-      const accountName = await promptText('Share account name', 'susentorno-share');
-      const password = await promptMasked('SMB share password');
+      const { address, username, shareName, accountName, password } =
+        await resolveConnectionAnswers(options, prompts);
 
       const preScripts = listScripts(join(paths.vmShared, 'pre-scripts'));
       const postScripts = listScripts(join(paths.vmShared, 'post-scripts'));
