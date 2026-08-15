@@ -116,12 +116,32 @@ susentorno setup-guest-unix
 
 It prompts for the Hyper-V VM name, the guest's address, username, the SMB share/account names (defaulting to this environment's `vm-shared-linux` / `susentorno-share`), and the share password from setup-environment.md.
 
+Any of those answers except the password can be supplied as a flag instead, and each flag suppresses **only its own** prompt — anything you leave off still prompts, in the same order:
+
+| Flag                      | Answers                        |
+| ------------------------- | ------------------------------ |
+| `--vm-name <name>`        | Hyper-V VM name                |
+| `--guest-address <host>`  | Guest address (hostname or IP) |
+| `--guest-username <user>` | Guest username                 |
+| `--share-name <name>`     | SMB share name                 |
+| `--share-account <name>`  | Share account name             |
+
+The SMB share password is always prompted. Automation answers it by piping one line into the command's stdin.
+
+Two more flags select which networks the guest is moved between:
+
+| Flag | Selects |
+| --- | --- |
+| `--isolation-name <name>` | The host network created by `susentorno create-host-network --isolation-name <name>`. Omit it for the default `susentorno-internal` network. |
+| `--nat-adapter-alias <name>` | The Default-Switch adapter used during the setup phase. Defaults to `vEthernet (Default Switch)`. |
+
 A few things worth knowing before running it:
 
 - **`run-hosting` must already be running** (and stay running) before and during isolation —
 - The script is idempotent, assuming your configured pre-script and post-script scripts are idempotent.
 - **Every rerun of an already-isolated guest briefly reattaches it to the Default Switch** — there's no phase-detection/resume logic, so a rerun always executes all 8 steps from the top, including a round-trip through the internet-facing Default Switch and back. This is expected, not a bug: it's what makes "just rerun the whole command" a safe recovery path after a failure.
 - **Four distinct addresses are in play** across this command: the guest's own DHCP lease on the Default Switch, the guest's own (different) DHCP lease on `susentorno-internal`, the Windows host's address on the Default Switch, and the Windows host's address on `susentorno-internal`. If a failure message is unclear about which one it means, this is the ordering to check against.
+- **A flag-driven run is unattended only if the guest never prompts**, which needs two things this command does not check or configure: the **key-based SSH auth** set up above, _and_ **passwordless sudo** in the guest. A single run makes roughly twenty separate `ssh`/`scp` invocations, each of which prompts for the guest password without a key. Every remote command also gets a fresh pty (`ssh -t`), so sudo's per-tty credential timestamp never carries from one invocation to the next — nearly every remote step uses sudo, so without `NOPASSWD` you get roughly twenty sudo prompts even with the key in place. Key auth alone is not enough.
 
 <details>
 <summary>Manual fallback (for diagnosing a failure, or to see exactly what the command does)</summary>
