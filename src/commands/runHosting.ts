@@ -173,7 +173,6 @@ export function registerRunHosting(program: Command): void {
               'server, which are the only consumers of the address --isolation-name selects.',
           );
           process.exitCode = 1;
-          alertOnNonzeroExit = false;
           return;
         }
         const paths = requireEnvPathsOrExit('run-hosting');
