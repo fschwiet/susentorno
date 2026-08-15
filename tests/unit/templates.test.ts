@@ -36,7 +36,6 @@ const expectedTemplateFiles = [
   'vm-shared-windows/post-scripts/02-apply-home-jq-transforms.ps1',
   'vm-shared-windows/verify-config.ps1',
   'home-jq-transforms/manifest.yaml',
-  'home-jq-transforms/vscode-settings.jq',
   'home-jq-transforms/claude-onboarding.jq',
   'susentorno.gitignore',
 ];
@@ -213,6 +212,12 @@ describe('generated provisioning inventory', () => {
   });
 
   describe('home settings transform manifest', () => {
+    it('ships no VS Code settings transform', () => {
+      expect(existsSync(join(templatesDir(), 'home-jq-transforms', 'vscode-settings.jq'))).toBe(
+        false,
+      );
+    });
+
     it('home-jq-transforms manifest and .jq files are consistently wired', () => {
       const dir = join(templatesDir(), 'home-jq-transforms');
       // loadManifest parses manifest.yaml, throws on malformed/non-list YAML, and

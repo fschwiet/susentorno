@@ -118,7 +118,7 @@ describe('environment initialization', () => {
       const root = join(dir, ENV_DIR_NAME);
       for (const rel of [
         'home-jq-transforms/manifest.yaml',
-        'home-jq-transforms/vscode-settings.jq',
+        'home-jq-transforms/pi-openai-codex-auth.jq',
         'vm-shared-linux/home-jq-transforms/manifest.yaml',
         'vm-shared-windows/home-jq-transforms/manifest.yaml',
       ]) {

@@ -38,7 +38,7 @@ describe.skipIf(!hasJq)('susentorno update-shares', () => {
       });
       const { exitCode, stdout } = await execa('node', [cliPath, 'update-shares'], { cwd: dir });
       expect(exitCode).toBe(0);
-      expect(stdout).toContain('vscode-settings.jq');
+      expect(stdout).toContain('pi-openai-codex-auth.jq');
       expect(stdout).toContain('hasCompletedOnboarding'); // {} preview output
       expect(existsSync(winCopy)).toBe(true);
     } finally {
@@ -70,7 +70,7 @@ describe.skipIf(!hasJq)('susentorno update-shares', () => {
     const dir = mkdtempSync(join(tmpdir(), 'update-shares-'));
     try {
       await initEnv(dir);
-      const src = join(dir, '.susentorno', 'home-jq-transforms', 'vscode-settings.jq');
+      const src = join(dir, '.susentorno', 'home-jq-transforms', 'pi-openai-codex-auth.jq');
       writeFileSync(src, '.["x"] = (1 / 0 broken'); // invalid jq
       rmSync(join(dir, '.susentorno', 'vm-shared-linux', 'home-jq-transforms'), {
         recursive: true,

@@ -1,9 +1,6 @@
 # Each entry applies a jq transform to a settings file in the guest's home.
 # transform: a .jq file in this folder. linux/windows: target paths (either may
 # be omitted to skip that OS). A leading ~ is the home dir; %NAME% is an env var.
-- transform: vscode-settings.jq
-  linux: ~/.config/Code/User/settings.json
-  windows: "%APPDATA%/Code/User/settings.json"
 - transform: claude-onboarding.jq
   linux: ~/.claude.json
   windows: ~/.claude.json
