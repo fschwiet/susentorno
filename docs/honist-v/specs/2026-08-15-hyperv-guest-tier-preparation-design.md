@@ -103,11 +103,11 @@ The SMB share password (`:129`, `promptMasked`) is **always prompted** — never
 
 `--isolation-name` feeds `resolveHostNetworkNames`, which yields both `adapterAlias` and `switchName` from one authoritative source.
 
-Today those two travel separately and in the opposite direction. The command accepts an adapter alias, and `preflightChecks.ts:26` recovers the *switch* name from it by stripping `vEthernet (` and `)` via `deriveSwitchName`. The 2026-08-06 design that introduced this calls the relationship "a naming convention, not a guaranteed-durable identity," which is why `:27-31` must guard against an alias that doesn't parse and why `:66` phrases its failure as "derived switch name '<name>' (from '<alias>')". With both names produced by `resolveHostNetworkNames`, they cannot disagree, and that guard becomes unreachable on the internal-switch path.
+Today those two travel separately and in the opposite direction. The command accepts an adapter alias, and `preflightChecks.ts:26` recovers the *switch* name from it by stripping `vEthernet (` and `)` via `deriveSwitchName`. The 2026-08-06 design that introduced this calls the relationship "a naming convention, not a guaranteed-durable identity," which is why `:27-31` must guard against an alias that doesn't parse and why `:64` phrases its failure as "derived switch name '<name>' (from '<alias>')". With both names produced by `resolveHostNetworkNames` they cannot disagree, so the internal-switch half of that guard is **deleted** rather than left unreachable; the NAT half stays.
 
 `deriveSwitchName` does **not** become dead code. It is still required for the NAT side (`vEthernet (Default Switch)` → `Default Switch`), and `resolveHostNetworkNames` itself uses it to derive the base name from `DEFAULT_INTERNAL_SWITCH_ADAPTER`.
 
-`PreflightOptions` (`src/guestSetup/preflightChecks.ts:13-19`) therefore changes shape: `adapterAlias: string` becomes the pair `internalAdapterAlias: string` and `internalSwitchName: string`, both supplied by the caller. Inside `runPreflightChecks`, the `deriveSwitchName` call and its failure branch survive for `natAdapterAlias` only. The switch-existence loop (`:56-68`) still checks **both** switches against real Hyper-V and keeps its full value — it is what catches "you never ran `create-host-network`" before a VM is stopped — but the internal-switch message no longer claims the name was derived from an alias.
+`PreflightOptions` (`src/guestSetup/preflightChecks.ts:13-19`) therefore changes shape: `adapterAlias: string` becomes the pair `internalAdapterAlias: string` and `internalSwitchName: string`, both supplied by the caller. Inside `runPreflightChecks`, the `deriveSwitchName` call and its failure branch survive for `natAdapterAlias` only. The switch-existence loop (`:56-67`) still checks **both** switches against real Hyper-V and keeps its full value — it is what catches "you never ran `create-host-network`" before a VM is stopped — but the internal-switch message no longer claims the name was derived from an alias.
 
 `resolveGuestNetwork` (`src/commands/setupGuestUnix.ts:46-62`) takes the isolation name instead of an adapter alias, resolving the alias internally. Its injectable `interfaces` parameter is retained.
 
@@ -136,7 +136,7 @@ Only what a guest requires to function as a susentorno guest:
 
 | File | Kept | Removed |
 | --- | --- | --- |
-| `01-apt-packages.sh` | `curl`, `git`, `jq`, `gh` | `okular`, `build-essential` |
+| `01-apt-packages.sh` | `apt update`, `apt upgrade -y`, then `curl`, `git`, `jq`, `gh` | `okular`, `build-essential` |
 | `02-install-pnpm.sh` | the pnpm install | `dotnet-sdk-10.0` |
 | `03-install-tools.sh` | `pnpm runtime set node latest -g`; the Claude, Codex, and Pi agent installs | `snap install code`, `dotnet-outdated-tool`, `csharpier`, the `~/.bashrc` dotnet PATH block |
 | `04-configure-tools.sh` | — | **deleted outright** |
@@ -149,6 +149,7 @@ Three retentions need justification because they are not obviously load-bearing:
 - **`gh`** is required by `01-auth-config.sh`, which runs `gh auth login --with-token` and `gh auth setup-git`; **`jq`** by the home settings transforms.
 - **pnpm** survives solely as the vehicle for `pnpm runtime set node latest -g`. The guest needs node because `02-apply-home-jq-transforms.sh` runs `apply-home-jq-transforms.mjs`.
 - **The three agent installs** stay because each has a first-class host credential channel and placeholder mount in the product ([ADR-0002](../../adr/0002-credential-injection-at-proxy.md), [ADR-0018](../../adr/0018-pi-agent-reuses-codex-placeholder-literal.md)). Shipping credential injection for an agent the templates do not install would be incoherent.
+- **`apt upgrade -y`** stays. It is slow and it is the single largest cost in spec 2's end-to-end test, which makes it tempting to drop here — but it is a legitimate step in setting up a real user's guest, and removing it to speed up a test that does not yet exist would be the wrong reason. Spec 2 may revisit it with evidence; this changeset does not.
 
 `04-configure-tools.sh` is deleted rather than emptied: every line in it is preference — four named VS Code extensions, GNOME screensaver `gsettings`, `codebase-memory-mcp`, and context7 MCP wiring for both Claude and Codex. Removing the `~/.bashrc` dotnet PATH block also removes the hardcoded `/home/username/.dotnet/tools` path at `03-install-tools.sh:19`, a latent bug for any guest whose user is not named `username`.
 
@@ -156,7 +157,7 @@ Three retentions need justification because they are not obviously load-bearing:
 
 ### Renumbering fallout
 
-`renumber()` (`src/weaveScripts.ts:118-128`) assigns prefixes sequentially by index, and `compareScripts` sorts the `nn` sentinel last. With four built-in Linux pre-scripts today, `nn-configure-network.sh` weaves out as `05-configure-network.sh`. With three, it becomes **`04-configure-network.sh`**. Windows keeps four built-ins and stays `05-`, so the platforms legitimately diverge.
+`renumber()` (`src/weaveScripts.ts:117-127`) assigns prefixes sequentially by index, and `compareScripts` sorts the `nn` sentinel last. With four built-in Linux pre-scripts today, `nn-configure-network.sh` weaves out as `05-configure-network.sh`. With three, it becomes **`04-configure-network.sh`**. Windows keeps four built-ins and stays `05-`, so the platforms legitimately diverge.
 
 Production code is already immune — `runPreScripts.ts:20` matches the slug `configure-network`, never the number. Only documentation, echo strings, and tests hardcode it:
 
@@ -185,7 +186,7 @@ Both commands gate on conditions a test cannot fake — `setup-guest-unix` calls
 | --- | --- |
 | `unit` | The new isolation-name resolver in `forwarder.ts`: named and unnamed cases, an invalid name propagating `HostNetworkError`, and an adapter present with no IPv4 |
 | `unit` | `resolveGuestNetwork` taking an isolation name; existing tests adjusted |
-| `unit` | A pure "resolve the six answers from flags, falling back to prompts" function with injected prompt callbacks — this is what makes per-flag suppression testable at all, given the elevation gate |
+| `unit` | A pure answer-resolution function with injected prompt callbacks, covering all six answers — the five flag-backed ones falling back to prompts, and the always-prompted password. This is what makes per-flag suppression testable at all, given the elevation gate |
 | `unit` | `runPreflightChecks` with the new `internalAdapterAlias`/`internalSwitchName` pair |
 | `cli` | `--help` output for both commands: new flags present, `--forward-listen` and `--adapter-alias` absent. The only tier that sees the actual commander wiring |
 | `host-network` | After `create-host-network --isolation-name test`, resolving the derived alias returns that switch's real address **and netmask** — the only exercise of alias-to-real-adapter against Windows rather than a fixture |
