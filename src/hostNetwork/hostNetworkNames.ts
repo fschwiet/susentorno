@@ -2,6 +2,8 @@ import { deriveSwitchName } from '../guestSetup/switchName';
 import { DEFAULT_INTERNAL_SWITCH_ADAPTER } from '../runHosting/forwarder';
 import { HostNetworkError } from './hostNetworkError';
 
+export { HostNetworkError };
+
 const ISOLATION_NAME_RE = /^[A-Za-z0-9-]+$/;
 
 export interface HostNetworkNames {
@@ -45,4 +47,15 @@ export function resolveHostNetworkNames(isolationName?: string): HostNetworkName
     dhcpRuleName: `${prefix} DHCP (VM inbound)`,
     smbRuleName: `${prefix} share (VM inbound)`,
   };
+}
+
+/**
+ * The remedy both `run-hosting` and `setup-guest-unix` print when an isolation
+ * name resolves to an adapter that isn't on this host. Shared so the two
+ * commands fail identically for the same underlying cause: the overwhelmingly
+ * likely one is that `create-host-network` was never run for that name.
+ */
+export function createHostNetworkHint(isolationName?: string): string {
+  const flag = isolationName === undefined ? '' : ` --isolation-name ${isolationName}`;
+  return `Run 'susentorno create-host-network${flag}' first.`;
 }
