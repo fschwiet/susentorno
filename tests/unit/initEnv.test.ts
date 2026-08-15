@@ -47,7 +47,7 @@ describe('environment initialization', () => {
       const root = join(dir, ENV_DIR_NAME);
       for (const file of [
         'vm-shared-linux/pre-scripts/01-apt-packages.sh',
-        'vm-shared-linux/pre-scripts/05-configure-network.sh',
+        'vm-shared-linux/pre-scripts/04-configure-network.sh',
         'vm-shared-linux/post-scripts/01-auth-config.sh',
         'vm-shared-linux/post-scripts/02-apply-home-jq-transforms.sh',
         'vm-shared-linux/credentials.json',

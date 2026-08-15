@@ -148,12 +148,12 @@ describe('provisioning during the setup phase', () => {
     expect(stdout.trim()).toBe('present');
   });
 
-  it('runs 05-configure-network.sh from the VM share', async () => {
+  it('runs 04-configure-network.sh from the VM share', async () => {
     const { stdout } = await guest(
       'g1',
-      `bash /mnt/vm-shared-linux/pre-scripts/05-configure-network.sh ${BRIDGE_IP}`,
+      `bash /mnt/vm-shared-linux/pre-scripts/04-configure-network.sh ${BRIDGE_IP}`,
     );
-    expect(stdout).toContain('05-configure-network:');
+    expect(stdout).toContain('configure-network:');
   });
 
   it('takes its resolver from DHCP and resolves real names', async () => {
@@ -227,10 +227,10 @@ describe('guest home & authentication configuration', () => {
     expect(body.stdout).toContain('sk-ant-oat-susentorno-PLACEHOLDER');
   });
 
-  it('06 merges the CA into an existing firefox policies.json, preserving other keys', async () => {
+  it('configure-network merges the CA into an existing firefox policies.json, preserving other keys', async () => {
     await guest(
       'g1',
-      `printf '#!/bin/sh\\n' | sudo tee /usr/local/bin/firefox >/dev/null && sudo chmod +x /usr/local/bin/firefox && sudo mkdir -p /etc/firefox/policies && printf '%s' '{"policies":{"SomeOther":true,"Certificates":{"Install":["/usr/local/share/ca-certificates/susentorno-proxy-certificate-authority.crt"]}}}' | sudo tee /etc/firefox/policies/policies.json >/dev/null && bash /mnt/vm-shared-linux/pre-scripts/05-configure-network.sh ${BRIDGE_IP}`,
+      `printf '#!/bin/sh\\n' | sudo tee /usr/local/bin/firefox >/dev/null && sudo chmod +x /usr/local/bin/firefox && sudo mkdir -p /etc/firefox/policies && printf '%s' '{"policies":{"SomeOther":true,"Certificates":{"Install":["/usr/local/share/ca-certificates/susentorno-proxy-certificate-authority.crt"]}}}' | sudo tee /etc/firefox/policies/policies.json >/dev/null && bash /mnt/vm-shared-linux/pre-scripts/04-configure-network.sh ${BRIDGE_IP}`,
     );
     const { stdout } = await guest(
       'g1',
@@ -456,9 +456,9 @@ describe('a fresh guest starting in the isolated phase', () => {
 
     const run = await guest(
       'g2',
-      `bash /mnt/vm-shared-linux/pre-scripts/05-configure-network.sh ${BRIDGE_IP}`,
+      `bash /mnt/vm-shared-linux/pre-scripts/04-configure-network.sh ${BRIDGE_IP}`,
     );
-    expect(run.stdout).toContain('05-configure-network:');
+    expect(run.stdout).toContain('configure-network:');
 
     // ...and 05 must not have changed any of it. Same DHCP route, no DNAT layer
     // reintroduced, host still the resolver.

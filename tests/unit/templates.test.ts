@@ -20,7 +20,6 @@ const expectedTemplateFiles = [
   'vm-shared-linux/pre-scripts/01-apt-packages.sh',
   'vm-shared-linux/pre-scripts/02-install-pnpm.sh',
   'vm-shared-linux/pre-scripts/03-install-tools.sh',
-  'vm-shared-linux/pre-scripts/04-configure-tools.sh',
   'vm-shared-linux/pre-scripts/nn-configure-network.sh',
   'vm-shared-linux/post-scripts/01-auth-config.sh',
   'vm-shared-linux/post-scripts/02-apply-home-jq-transforms.sh',
@@ -48,6 +47,16 @@ describe('generated provisioning inventory', () => {
       for (const file of expectedTemplateFiles) {
         expect(existsSync(join(templatesDir(), file)), file).toBe(true);
       }
+    });
+
+    it('ships exactly the four ubuntu pre-scripts a guest requires', () => {
+      const dir = join(templatesDir(), 'vm-shared-linux', 'pre-scripts');
+      expect(readdirSync(dir).sort()).toEqual([
+        '01-apt-packages.sh',
+        '02-install-pnpm.sh',
+        '03-install-tools.sh',
+        'nn-configure-network.sh',
+      ]);
     });
 
     it('ships the packaged allow list, auth list, and block list', () => {
@@ -193,7 +202,7 @@ describe('generated provisioning inventory', () => {
       expect(tools).not.toContain('dotnet');
     });
 
-    it('ubuntu 05-configure-network leaves addressing and DNS to DHCP', () => {
+    it('ubuntu configure-network leaves addressing and DNS to DHCP', () => {
       const s = readFileSync(
         join(templatesDir(), 'vm-shared-linux', 'pre-scripts', 'nn-configure-network.sh'),
         'utf8',

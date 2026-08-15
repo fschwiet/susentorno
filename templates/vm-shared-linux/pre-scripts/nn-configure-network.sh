@@ -6,7 +6,8 @@ set -euo pipefail
 # documented invocation and every existing caller stay correct, and a caller that
 # has NOT been updated for the host-side design fails loudly here rather than
 # silently configuring nothing.
-host_ip="${1:?usage: 05-configure-network.sh <host-ip> [cert-path]}"
+usage="usage: $(basename "$0") <host-ip> [cert-path]"
+host_ip="${1:?$usage}"
 readonly host_ip
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 share_root="$(dirname "$script_dir")"
@@ -23,7 +24,7 @@ sudo update-ca-certificates
 echo 'export NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/susentorno-proxy-certificate-authority.crt' | sudo tee /etc/profile.d/node-extra-ca-certs.sh > /dev/null
 sudo chmod 644 /etc/profile.d/node-extra-ca-certs.sh
 
-echo "05-configure-network: installed and trusted $cert_path; NODE_EXTRA_CA_CERTS configured for new shells"
+echo "configure-network: installed and trusted $cert_path; NODE_EXTRA_CA_CERTS configured for new shells"
 
 # Firefox keeps its own trust store (an NSS cert9.db per profile) and ignores
 # both the system CA bundle and NODE_EXTRA_CA_CERTS, so the CA must be registered
@@ -55,9 +56,9 @@ if command -v firefox > /dev/null 2>&1 || snap list firefox > /dev/null 2>&1; th
   sudo cp "$tmp" "$policy_file"
   rm -f "$tmp"
   sudo chmod 644 "$policy_file"
-  echo "05-configure-network: registered CA with Firefox via $policy_file"
+  echo "configure-network: registered CA with Firefox via $policy_file"
 else
-  echo "05-configure-network: Firefox not found; skipped browser CA registration"
+  echo "configure-network: Firefox not found; skipped browser CA registration"
 fi
 
 ## --- Networking ---
@@ -72,4 +73,4 @@ fi
 # route arrives via DHCP), and the netplan DNS override with its DHCP-DNS
 # suppression (only one resolver is ever present now).
 
-echo "05-configure-network: CA trusted; addressing and DNS come from the host via DHCP"
+echo "configure-network: CA trusted; addressing and DNS come from the host via DHCP"

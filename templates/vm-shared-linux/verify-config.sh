@@ -90,7 +90,7 @@ if command -v firefox > /dev/null 2>&1 || snap list firefox > /dev/null 2>&1; th
   if [ -f "$ff_ca" ] && cmp -s "$ff_ca" "$ca_src"; then
     ok 'firefox policy cert matches installed proxy CA'
   else
-    bad 'firefox policy cert matches installed proxy CA' "missing or stale $ff_ca -- re-run 05-configure-network.sh"
+    bad 'firefox policy cert matches installed proxy CA' "missing or stale $ff_ca -- re-run 04-configure-network.sh"
   fi
 
   if snap list firefox > /dev/null 2>&1 && [ -f "$ff_policy" ]; then

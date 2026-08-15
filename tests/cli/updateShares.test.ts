@@ -98,12 +98,12 @@ describe.skipIf(!hasJq)('susentorno update-shares', () => {
       writeFileSync(join(preSrc, '01-docker.sh'), 'echo docker\n');
       await execa('node', [cliPath, 'update-shares'], { cwd: dir });
       const wovenPre = join(dir, '.susentorno', 'vm-shared-linux', 'pre-scripts');
-      expect(existsSync(join(wovenPre, '05-docker.sh'))).toBe(true);
-      expect(existsSync(join(wovenPre, '06-configure-network.sh'))).toBe(true);
+      expect(existsSync(join(wovenPre, '04-docker.sh'))).toBe(true);
+      expect(existsSync(join(wovenPre, '05-configure-network.sh'))).toBe(true);
       rmSync(join(preSrc, '01-docker.sh'));
       await execa('node', [cliPath, 'update-shares'], { cwd: dir });
-      expect(existsSync(join(wovenPre, '05-docker.sh'))).toBe(false);
-      expect(existsSync(join(wovenPre, '05-configure-network.sh'))).toBe(true);
+      expect(existsSync(join(wovenPre, '04-docker.sh'))).toBe(false);
+      expect(existsSync(join(wovenPre, '04-configure-network.sh'))).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

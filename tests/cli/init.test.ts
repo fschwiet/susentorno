@@ -30,7 +30,7 @@ describe('susentorno init', () => {
       );
       expect(
         existsSync(
-          join(dir, '.susentorno', 'vm-shared-linux', 'pre-scripts', '05-configure-network.sh'),
+          join(dir, '.susentorno', 'vm-shared-linux', 'pre-scripts', '04-configure-network.sh'),
         ),
       ).toBe(true);
       expect(existsSync(join(dir, '.susentorno', 'pre-scripts', 'README.md'))).toBe(true);

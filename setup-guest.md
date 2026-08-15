@@ -175,7 +175,7 @@ sudo systemctl daemon-reload && sudo mount -a
 
 If the share was already mounted against a different host IP (e.g. rerunning this after isolation), `mount -a` alone won't notice the change — unmount first: `mountpoint -q /mnt/vm-shared-linux && sudo umount /mnt/vm-shared-linux`, then rerun the `daemon-reload && mount -a` line above.
 
-The share then lives at `/mnt/vm-shared-linux`. `cd` into `pre-scripts/` and run every script in number order; the last is `05-configure-network.sh <host-ip>` when there are no custom scripts, where `<host-ip>` is the Internal-switch host IP from setup-machine.md.
+The share then lives at `/mnt/vm-shared-linux`. `cd` into `pre-scripts/` and run every script in number order; the last is `04-configure-network.sh <host-ip>` when there are no custom scripts, where `<host-ip>` is the Internal-switch host IP from setup-machine.md.
 
 **Isolate** — confirm the host firewall is open and `run-hosting` is running (both from `setup-machine.md`/`setup-environment.md`), then see "Isolate" in §4 below for the `Stop-VM`/`Connect-VMNetworkAdapter`/`Start-VM` sequence. Wait for the guest to come back up, then redo the mount step above with the Internal-switch host IP.
 
@@ -222,7 +222,7 @@ Set-ExecutionPolicy Bypass
 3. Use the `cmdkey` entry for `<internal-switch-host-ip>`, then run every post-script in order from `\\<internal-switch-host-ip>\vm-shared-windows\post-scripts`: normally `.\01-auth-config.ps1`, then `.\02-apply-home-jq-transforms.ps1`.
 4. Restore the normal execution policy with `Set-ExecutionPolicy RemoteSigned`.
 
-When a script asks for `<host-ip>` (`05-configure-network.sh` / `05-configure-network.ps1`), it is the Internal-switch host IP from `setup-machine.md` (`192.168.67.1` here).
+When a script asks for `<host-ip>` (`04-configure-network.sh` / `05-configure-network.ps1`), it is the Internal-switch host IP from `setup-machine.md` (`192.168.67.1` here).
 
 ## 4. Isolate
 
