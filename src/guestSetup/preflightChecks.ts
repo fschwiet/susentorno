@@ -13,23 +13,21 @@ import { checkRunHostingReady } from './runHostingReadiness';
 export interface PreflightOptions {
   exec: PowerShellExec;
   vmName: string;
-  adapterAlias: string;
+  /**
+   * Both internal names come from the caller's single resolveHostNetworkNames
+   * call, so they cannot disagree — which is why preflight no longer recovers
+   * the switch name from the alias with deriveSwitchName on this side.
+   */
+  internalAdapterAlias: string;
+  internalSwitchName: string;
   natAdapterAlias: string;
   internalSwitchHostIp: string;
 }
 
 export type PreflightResult =
-  | { ok: true; defaultSwitchName: string; internalSwitchName: string }
-  | { ok: false; message: string };
+  { ok: true; defaultSwitchName: string } | { ok: false; message: string };
 
 export async function runPreflightChecks(opts: PreflightOptions): Promise<PreflightResult> {
-  const internalSwitchName = deriveSwitchName(opts.adapterAlias);
-  if (!internalSwitchName) {
-    return {
-      ok: false,
-      message: `preflight: '${opts.adapterAlias}' does not look like a Hyper-V vEthernet adapter alias`,
-    };
-  }
   const defaultSwitchName = deriveSwitchName(opts.natAdapterAlias);
   if (!defaultSwitchName) {
     return {
@@ -53,16 +51,19 @@ export async function runPreflightChecks(opts: PreflightOptions): Promise<Prefli
     };
   }
 
-  for (const [alias, switchName] of [
-    [opts.adapterAlias, internalSwitchName],
-    [opts.natAdapterAlias, defaultSwitchName],
-  ] as const) {
+  for (const { switchName, message } of [
+    {
+      switchName: opts.internalSwitchName,
+      message: `preflight: Internal switch '${opts.internalSwitchName}' (adapter '${opts.internalAdapterAlias}') does not resolve to a real Hyper-V switch`,
+    },
+    {
+      switchName: defaultSwitchName,
+      message: `preflight: derived switch name '${defaultSwitchName}' (from '${opts.natAdapterAlias}') does not resolve to a real Hyper-V switch`,
+    },
+  ]) {
     const switchResult = await opts.exec.run(buildGetVmSwitchCommand(switchName));
     if (!parseVmSwitchExists(switchResult.stdout)) {
-      return {
-        ok: false,
-        message: `preflight: derived switch name '${switchName}' (from '${alias}') does not resolve to a real Hyper-V switch`,
-      };
+      return { ok: false, message };
     }
   }
 
@@ -79,5 +80,5 @@ export async function runPreflightChecks(opts: PreflightOptions): Promise<Prefli
     };
   }
 
-  return { ok: true, defaultSwitchName, internalSwitchName };
+  return { ok: true, defaultSwitchName };
 }
