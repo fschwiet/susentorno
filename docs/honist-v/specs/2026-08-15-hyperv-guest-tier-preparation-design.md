@@ -41,7 +41,7 @@ Passing `--isolation-name` together with `--no-forward` is an error that sets `p
 
 ### Resolution
 
-A new pure function in `src/runHosting/forwarder.ts` turns the optional isolation name into a resolved network:
+A new pure function turns the optional isolation name into a resolved network. It lives in a **new module** (`src/runHosting/isolationNetwork.ts`), not in `forwarder.ts`: `hostNetworkNames.ts:2` already imports `DEFAULT_INTERNAL_SWITCH_ADAPTER` from `forwarder.ts`, so a resolver in `forwarder.ts` importing `resolveHostNetworkNames` back would create an import cycle. A new module importing both, imported by neither, has no cycle.
 
 ```
 isolationName given   ──►  resolveHostNetworkNames(name).adapterAlias
@@ -58,7 +58,7 @@ isolationName absent  ──►  DEFAULT_INTERNAL_SWITCH_ADAPTER
 
 It takes an injectable `networkInterfaces()` exactly as `resolveForwardListenAddress` and `resolveInternalSwitchNetwork` already do, which is what makes it unit-testable — the command action around it is not.
 
-Name validation is inherited, not re-implemented: `resolveHostNetworkNames` (`src/hostNetwork/hostNetworkNames.ts`) already enforces `ISOLATION_NAME_RE` and throws `HostNetworkError`. `run-hosting` does not interpolate the name into wildcard-tolerant PowerShell queries the way `create-host-network` does, so the regex is stricter than `run-hosting` alone requires — that is deliberate. Two commands disagreeing about what a valid isolation name is would be a worse defect than an unnecessarily narrow character set.
+Name validation is inherited, not re-implemented: `resolveHostNetworkNames` (`src/hostNetwork/hostNetworkNames.ts`) already enforces `ISOLATION_NAME_RE` and throws `HostNetworkError`. Both commands **catch `HostNetworkError` at the command boundary**, print its message, set `process.exitCode = 1`, and return — matching `createHostNetwork.ts:77-97` and `deleteHostNetwork.ts:35-66`. This is required, not stylistic: in `run-hosting` an escaping throw would enter the abnormal-exit machinery ([ADR-0019](../../adr/0019-run-hosting-speaks-on-abnormal-exit.md)) and report a typo'd flag as a crash; in `setup-guest-unix` it would escape the action handler entirely. `run-hosting` does not interpolate the name into wildcard-tolerant PowerShell queries the way `create-host-network` does, so the regex is stricter than `run-hosting` alone requires — that is deliberate. Two commands disagreeing about what a valid isolation name is would be a worse defect than an unnecessarily narrow character set.
 
 ### What this deletes
 
@@ -69,7 +69,9 @@ const network = resolveInternalSwitchNetwork();
 const netmask = network?.address === dnsIp ? network.netmask : '255.255.255.0';
 ```
 
-That guard exists only because `--forward-listen` can name an address belonging to no resolvable adapter, in which case DHCP hands every guest a **guessed** `/24`. With one `resolveInternalSwitchNetwork(alias)` call feeding both the gateway listen address and the DHCP netmask, the guess disappears and both values provably originate from the same real adapter. This is a correctness improvement, not tidying: removing `--forward-listen` is what makes the fallback unreachable, so the fallback goes with it.
+That guard is reachable for two reasons: `--forward-listen` can name an address belonging to no resolvable adapter, and — even without the flag — the two calls are independent `networkInterfaces()` snapshots, so the second can return `null` or a different first IPv4 after the first succeeded. Either way DHCP hands every guest a **guessed** `/24`.
+
+Removing the flag alone is therefore *not* what closes this. **Consolidating to a single `resolveInternalSwitchNetwork(alias)` call** whose address and netmask both feed the downstream code is what makes the fallback unreachable, and removing the flag is what makes that consolidation possible. Both must happen; the spec treats them as one change. This is a correctness improvement, not tidying.
 
 ### Error handling
 
@@ -79,7 +81,11 @@ The DNS and DHCP bind-failure messages (`:234`, `:253`) are unchanged. They alre
 
 ### Blast radius
 
-`src/commands/runHosting.ts` only: the options interface (`:51-52`), flag registration (`:121-125`), and the two `if (options.forward)` blocks (`:194`, `:222`). Outside the source, `--forward-listen` appears in exactly two prose sentences — `setup-environment.md:12` and `setup-machine.md:9` — and in no test or script.
+Source: `src/commands/runHosting.ts` — the options interface (`:51-52`), flag registration (`:121-125`), and the two `if (options.forward)` blocks (`:194`, `:222`) — plus the new `src/runHosting/isolationNetwork.ts`.
+
+Tests: `tests/unit/commands/runHosting.test.ts` inspects the registered Commander options directly (it already asserts the absence of the removed `--forward-ports`), so it gains the equivalent assertions for `--forward-listen` and `--isolation-name`.
+
+Docs: `--forward-listen` appears in three live places — `setup-environment.md:12`, `setup-machine.md:9`, and [ADR-0019](../../adr/0019-run-hosting-speaks-on-abnormal-exit.md)`:21`, whose accepted consequence lists "unresolvable forward-listen IP" among the failures `run-hosting` reports on abnormal exit. That failure mode survives the change (an isolation name can still resolve to no adapter), so the ADR needs its wording updated, not its decision revisited. No test or script references the flag.
 
 ## 2. `setup-guest-unix` answer flags and `--isolation-name`
 
@@ -96,6 +102,8 @@ The DNS and DHCP bind-failure messages (`:234`, `:253`) are unchanged. They alre
 | `--nat-adapter-alias <name>` | — (unchanged) | `vEthernet (Default Switch)` |
 
 Each flag suppresses **only its own** prompt; anything absent still prompts, in today's order. There is no all-or-nothing mode.
+
+**Prompt staging is preserved exactly.** Today the answers are gathered in two stages either side of preflight: the VM name is prompted at `:109`, `runPreflightChecks` runs at `:111`, and the remaining five are prompted at `:125-129` only after it succeeds. That ordering is deliberate — a bad VM name or a missing switch fails before the user types five more answers — so flag resolution must not collapse into a single up-front gather. The answer-resolution function is therefore **called twice**, once per stage, rather than once for all six.
 
 The SMB share password (`:129`, `promptMasked`) is **always prompted** — never a flag, never a file, never an environment variable. Automation answers it by piping one line into the process's stdin. [ADR-0022](../../adr/0022-promptmasked-releases-stdin-explicitly.md) establishes that this works against this repo's own `promptMasked` — its unit tests inject non-TTY `PassThrough` streams and the CLI tests pipe answers into a spawned child via `execa(..., { input: '...\n' })` — and that this exact property is what disqualified `@clack/prompts`.
 
@@ -165,14 +173,18 @@ Production code is already immune — `runPreScripts.ts:20` matches the slug `co
 - `templates/vm-shared-linux/verify-config.sh:93` → `04-`.
 - `tests/cli/init.test.ts:33` asserts the woven `05-configure-network.sh` exists.
 - `tests/cli/updateShares.test.ts:101-106` weaves a custom script and asserts `05-docker.sh` and `05-configure-network.sh`; both shift by one built-in.
-- `tests/guest/guest.test.ts:154,233,459` invoke the literal path; `:156` asserts `toContain('05-configure-network:')`.
-- `tests/unit/templates.test.ts` and `tests/unit/initEnv.test.ts` must be checked for template-file-list assertions.
+- `tests/guest/guest.test.ts:154,233,459` invoke the literal path; `:156` **and `:461`** each assert `toContain('05-configure-network:')`.
+- `tests/unit/initEnv.test.ts:49-50` lists `05-configure-network.sh` in the expected woven inventory → `04-`.
+- `tests/unit/templates.test.ts:20-24` lists `04-configure-tools.sh` in `expectedTemplateFiles`, which must drop with the file; `:174`'s test title ("ubuntu 05-configure-network leaves addressing and DNS to DHCP") is coupled to the old number, though the body reads the `nn-` source path and is otherwise unaffected.
 
 `tests/unit/guestSetup/listScripts.test.ts` and `tests/unit/guestSetup/runPreScripts.test.ts` reference these names too, but as **synthetic fixtures** in their own temp directories — they are unaffected and must not be "fixed."
 
 ### Removing the number from the script's own output
 
-`nn-configure-network.sh` prints `05-configure-network:` on five of its own lines (`:9`, `:26`, `:58`, `:60`, `:75`), hardcoding a prefix that *weaving* assigns and that the source file cannot know. Those become plain `configure-network:`, and `tests/guest/guest.test.ts:156` follows.
+`nn-configure-network.sh` hardcodes the woven number in two different kinds of string, which need different treatments:
+
+- **Log prefixes** at `:26`, `:58`, `:60`, `:75` — `echo "05-configure-network: ..."` becomes `echo "configure-network: ..."`. `tests/guest/guest.test.ts:156` and `:461` follow.
+- **The usage string** at `:9` — `host_ip="${1:?usage: 05-configure-network.sh <host-ip> [cert-path]}"`. A bare `configure-network:` prefix would be wrong here, since this line names a *file* the user is meant to invoke. It becomes `usage: $(basename "$0") <host-ip> [cert-path]`, which prints whatever number weaving actually assigned and so stays correct permanently.
 
 This is in scope rather than gratuitous: the same lines are already being edited for the renumber, and it removes the coupling permanently. Spec 2's rewritten tests then never depend on how many built-in scripts ship. The Windows `nn-configure-network.ps1` has the same defect at `:9`, `:29`, `:35`, but is left alone with the rest of `vm-shared-windows/`.
 
@@ -188,7 +200,8 @@ Both commands gate on conditions a test cannot fake — `setup-guest-unix` calls
 | `unit` | `resolveGuestNetwork` taking an isolation name; existing tests adjusted |
 | `unit` | A pure answer-resolution function with injected prompt callbacks, covering all six answers — the five flag-backed ones falling back to prompts, and the always-prompted password. This is what makes per-flag suppression testable at all, given the elevation gate |
 | `unit` | `runPreflightChecks` with the new `internalAdapterAlias`/`internalSwitchName` pair |
-| `cli` | `--help` output for both commands: new flags present, `--forward-listen` and `--adapter-alias` absent. The only tier that sees the actual commander wiring |
+| `unit` | The Commander option surface, in the two existing suites that already inspect it directly: `tests/unit/commands/runHosting.test.ts` (add `--forward-listen` absent, `--isolation-name` present) and `tests/unit/commands/setupGuestUnix.test.ts:17-28` (currently asserts `--adapter-alias` and its default — rewritten for the new flag set) |
+| `cli` | `tests/cli/setupGuestUnix.test.ts:20-31` currently passes `--adapter-alias does-not-exist-adapter` and asserts the old adapter-resolution message. Commander would reject the removed option before the asserted behavior, so this test is rewritten around `--isolation-name` and the new `create-host-network` hint |
 | `host-network` | After `create-host-network --isolation-name test`, resolving the derived alias returns that switch's real address **and netmask** — the only exercise of alias-to-real-adapter against Windows rather than a fixture |
 
 What remains uncovered: `run-hosting` actually binding `:53`/`:67` on the sandbox adapter. That is spec 2's work, and this spec does not imply otherwise.
@@ -204,12 +217,16 @@ Beyond the renumbering fallout listed above, `pnpm test` must be green end to en
 | `setup-environment.md:12` | Drop the `--forward-listen` reference |
 | `setup-machine.md:9` | Drop the `--forward-listen` reference |
 | `setup-guest.md:158`, `:205` | `05-` → `04-` (Linux); `:200` unchanged (Windows) |
+| `setup-guest.md:111-118` | Currently shows the bare `susentorno setup-guest-unix` and states it prompts for every answer. Document the new flags here — the unattended note below is not actionable without them |
 | `setup-guest.md` | Note that key-based SSH auth **and** passwordless sudo are what make a flag-driven run unattended |
 | `CONTEXT.md` | Add the **Isolation name** domain term |
+| ADR-0019`:21` | Reword "unresolvable forward-listen IP" — the failure mode survives, the flag does not |
 | ADR-0023 | Add a consequence: the concept now spans `run-hosting` and `setup-guest-unix` |
 | New ADR | Shipped guest templates contain only what a susentorno guest requires |
 
-**Isolation name** (`CONTEXT.md`, under "Network policy"): *The single name that scopes every host artifact susentorno creates for one parallel installation — the Internal switch, its firewall rules, and (from the Hyper-V guest tier onward) the SMB share account and guest VM names — so one value makes the whole set discoverable and sweepable. Omitting it selects the unnamed default installation.* _Avoid_: sandbox name, test name.
+**Isolation name** (`CONTEXT.md`, under "Network policy"): *The name that selects which parallel host network susentorno's commands act on — the Internal switch and its firewall rules — so a sandboxed installation can coexist with the default one on the same machine. Omitting it selects the unnamed default.* _Avoid_: sandbox name, test name.
+
+The definition is deliberately confined to the host network, which is all the term scopes once this changeset lands. Spec 2 may extend it to the SMB share account and guest VM names; if it does, it amends this definition then. Writing the broader meaning now would record an intention as domain truth, the same error this design avoids with ADR-0010.
 
 The new ADR must state the rule *and* name `templates/vm-shared-windows/` as a known, deliberate exception with the same treatment intended later. Without that, it is a rule the repository violates on the day it is written. It complements [ADR-0013](../../adr/0013-user-customizable-committable-environment.md), which established that environments are user-customizable and committable, by stating what belongs on which side of that line.
 
@@ -226,3 +243,5 @@ The new ADR must state the rule *and* name `templates/vm-shared-windows/` as a k
 **Trimming `templates/vm-shared-windows/` in this changeset.** Deferred at the user's request. The Windows guest path is covered by no test tier and will not be by spec 2, so the trim would be unverifiable beyond review — and a Windows guest may enter the test mix later, which would change what "required" means there.
 
 **Amending ADR-0010 now.** It accurately describes the tier that exists today. Amending it before spec 2 is implemented would record an intention as a decision.
+
+**Splitting the template trim into its own spec.** Considered — the three changes have no implementation dependency on each other beyond all being spec 2 prerequisites, and together they touch command behavior, orchestration types, templates, four test tiers, documentation, and ADRs. Declined: the trim is mostly deletion, and a separate brainstorm-plan-implement cycle for it would cost more than it saves. The implementation plan should still sequence the three as independent phases, each landing green on its own, so the grouping is a spec-level convenience and not a single large commit.
