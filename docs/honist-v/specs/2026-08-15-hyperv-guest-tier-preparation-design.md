@@ -31,6 +31,8 @@ Three product changes, their tests, and the documentation and ADR updates they f
 
 Explicitly **not** in scope, each considered and declined during design (see "Considered and rejected"): a `--non-interactive` mode, an SSH key-auth preflight probe, any persistent SMB-password channel (file or environment variable), and any change to `templates/vm-shared-windows/`.
 
+One clarification on that last exclusion: the changeset deletes `templates/home-jq-transforms/vscode-settings.jq`, whose `manifest.yaml` entry targets both guest OSes, so Windows guests do lose that transform. `home-jq-transforms/` is a shared folder, not part of `vm-shared-windows/`, and the reasoning is in section 3 — but "no Windows impact" would be the wrong thing to carry into planning.
+
 ## 1. `run-hosting --isolation-name <name>`
 
 ### Flag surface
@@ -153,7 +155,7 @@ Only what a guest requires to function as a susentorno guest:
 | `post-scripts/02-apply-home-jq-transforms.sh` | unchanged | — |
 | `home-jq-transforms/vscode-settings.jq` | — | **deleted**, with its `manifest.yaml` entry |
 
-Three retentions need justification because they are not obviously load-bearing:
+Four retentions need justification because they are not obviously load-bearing:
 
 - **`gh`** is required by `01-auth-config.sh`, which runs `gh auth login --with-token` and `gh auth setup-git`; **`jq`** by the home settings transforms.
 - **pnpm** survives solely as the vehicle for `pnpm runtime set node latest -g`. The guest needs node because `02-apply-home-jq-transforms.sh` runs `apply-home-jq-transforms.mjs`.
