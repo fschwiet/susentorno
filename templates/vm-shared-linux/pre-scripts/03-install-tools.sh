@@ -10,23 +10,4 @@ curl -fsSL https://claude.ai/install.sh | bash
 
 pnpm add -g --ignore-scripts @earendil-works/pi-coding-agent
 
-if ! snap list code > /dev/null 2>&1; then
-  sudo snap install code --classic
-fi
-
-## dotnet tools
-
-if ! grep -qxF 'export PATH="$PATH:/home/username/.dotnet/tools"' ~/.bashrc 2>/dev/null; then
-  cat << \EOF >> ~/.bashrc
-# Add .NET Core SDK tools
-export PATH="$PATH:/home/username/.dotnet/tools"
-EOF
-fi
-
-# dotnet tools
-## dotnet tool install --global was confirmed to be idempotent
-  
-dotnet tool install --global dotnet-outdated-tool
-dotnet tool install --global csharpier
-
-echo "03-install-tools: node runtime, codex, claude, and VS Code installed. Open a new terminal before running vm/04-claude-mcp.sh, so claude is on PATH."
+echo "03-install-tools: node runtime, codex, claude, and the Pi coding agent installed."

@@ -171,6 +171,28 @@ describe('generated provisioning inventory', () => {
       expect(s).toMatch(/apt install -y .*\bgh\b/);
     });
 
+    it('ubuntu pre-scripts install only what a susentorno guest requires', () => {
+      const read = (name: string) =>
+        readFileSync(join(templatesDir(), 'vm-shared-linux', 'pre-scripts', name), 'utf8');
+
+      const apt = read('01-apt-packages.sh');
+      expect(apt).toContain('apt upgrade -y'); // a real setup step, kept deliberately
+      expect(apt).not.toContain('okular');
+      expect(apt).not.toContain('build-essential');
+
+      const pnpm = read('02-install-pnpm.sh');
+      expect(pnpm).toContain('get.pnpm.io/install.sh');
+      expect(pnpm).not.toContain('dotnet-sdk');
+
+      const tools = read('03-install-tools.sh');
+      expect(tools).toContain('claude.ai/install.sh');
+      expect(tools).toContain('chatgpt.com/codex/install.sh');
+      expect(tools).toContain('pi-coding-agent');
+      expect(tools).toContain('pnpm runtime set node latest -g');
+      expect(tools).not.toContain('snap install code');
+      expect(tools).not.toContain('dotnet');
+    });
+
     it('ubuntu 05-configure-network leaves addressing and DNS to DHCP', () => {
       const s = readFileSync(
         join(templatesDir(), 'vm-shared-linux', 'pre-scripts', 'nn-configure-network.sh'),
