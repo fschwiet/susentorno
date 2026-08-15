@@ -142,6 +142,7 @@ export function registerRunHosting(program: Command): void {
     .action(async (options: RunHostingOptions) => {
       const alert = createRealAbnormalExitAlert();
       installAbnormalExitHandlers(alert);
+      let alertOnNonzeroExit = true;
 
       try {
         const relaunch = await relaunchIfNeeded(createRelaunchDeps(options.forward));
@@ -172,6 +173,7 @@ export function registerRunHosting(program: Command): void {
               'server, which are the only consumers of the address --isolation-name selects.',
           );
           process.exitCode = 1;
+          alertOnNonzeroExit = false;
           return;
         }
         const paths = requireEnvPathsOrExit('run-hosting');
@@ -222,6 +224,7 @@ export function registerRunHosting(program: Command): void {
             if (err instanceof HostNetworkError) {
               console.error(`run-hosting: ${err.message}`);
               process.exitCode = 1;
+              alertOnNonzeroExit = false;
               return;
             }
             throw err;
@@ -414,7 +417,7 @@ export function registerRunHosting(program: Command): void {
           await services.closeAll();
         }
       } finally {
-        if ((process.exitCode ?? 0) !== 0) alert.trigger();
+        if (alertOnNonzeroExit && (process.exitCode ?? 0) !== 0) alert.trigger();
       }
     });
 }

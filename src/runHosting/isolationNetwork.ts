@@ -1,6 +1,6 @@
 import { networkInterfaces, type NetworkInterfaceInfo } from 'node:os';
 import { resolveHostNetworkNames } from '../hostNetwork/hostNetworkNames';
-import { DEFAULT_INTERNAL_SWITCH_ADAPTER, resolveInternalSwitchNetwork } from './forwarder';
+import { resolveInternalSwitchNetwork } from './forwarder';
 
 export type IsolationNetworkResolution =
   | { found: true; adapterAlias: string; address: string; netmask: string }
@@ -25,10 +25,7 @@ export function resolveIsolationNetwork(
   isolationName: string | undefined,
   interfaces: NodeJS.Dict<NetworkInterfaceInfo[]> = networkInterfaces(),
 ): IsolationNetworkResolution {
-  const adapterAlias =
-    isolationName === undefined
-      ? DEFAULT_INTERNAL_SWITCH_ADAPTER
-      : resolveHostNetworkNames(isolationName).adapterAlias;
+  const adapterAlias = resolveHostNetworkNames(isolationName).adapterAlias;
   const network = resolveInternalSwitchNetwork(adapterAlias, interfaces);
   if (!network) return { found: false, adapterAlias };
   return { found: true, adapterAlias, address: network.address, netmask: network.netmask };
