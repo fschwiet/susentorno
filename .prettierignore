@@ -1,4 +1,5 @@
 dist/
+.image-cache/
 pnpm-lock.yaml
 .claude/
 docs/

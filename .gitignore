@@ -6,6 +6,13 @@ dist/
 test-results/
 .susentorno/
 
+# The guest tier's golden VHDX, its ISO, and its harness keypairs. Repo-local
+# rather than under %LOCALAPPDATA% because this project avoids git worktrees
+# (its live tiers share one host network adapter, so parallel checkouts could
+# not run tests concurrently anyway) — so the usual "every worktree rebuilds
+# its own multi-GB image" objection cannot arise.
+.image-cache/
+
 # .NET project builds
 bin/
 obj/
