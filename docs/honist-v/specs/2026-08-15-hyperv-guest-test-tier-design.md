@@ -43,6 +43,10 @@ This consumes `run-hosting --isolation-name` and `setup-guest-unix`'s answer fla
 - `.image-cache/`, with its `.gitignore` and `.prettierignore` entries.
 - Unit tests for the harness's pure functions (stamp hashing, `grub.cfg` generation, `known_hosts` filtering, PowerShell command builders).
 
+**Changed in `src/` — one thing**
+
+`DEFAULT_SHARE_ACCOUNT` (`src/guestSetup/setupAnswers.ts:24`) becomes `susentorno`, replacing `susentorno-share`. See "The share account is renamed" for why the tier forces the question and why there is no migration path.
+
 **Deleted**
 
 - `tests/guest/harness/*.sh` (~430 lines plus the cloud-init seed) and `tests/guest/wsl.ts`.
@@ -51,7 +55,8 @@ This consumes `run-hosting --isolation-name` and `setup-guest-unix`'s answer fla
 
 **Explicitly not in scope**
 
-- **Any change to `src/`.** Spec 1 landed everything the product needed. This spec is tests and documentation only, and that constraint is worth holding: a design that needs a product change to make a test work should be re-examined first.
+- **Any further change to `src/`.** Spec 1 landed everything the product needed to make the tier possible; the one product change above is a naming decision the tier surfaced, not a capability it required. That distinction is worth holding: a design that needs a *capability* added to make a test work should be re-examined first.
+- **A length bound on `ISOLATION_NAME_RE`.** Real (see "The share account is renamed") but unrelated to the guest tier, and it belongs in its own changeset.
 - **Windows guests and `templates/vm-shared-windows/`.** Spec 1 deferred the Windows template trim partly because a Windows guest *might* later enter the test mix; building one now would invert a decision made eight commits ago. A Windows golden image also means a 90-day evaluation ISO driven by `autounattend.xml` — a second image pipeline, not an increment on this one. The Windows `nn-configure-network.ps1`'s hardcoded script numbers (`:9`, `:29`, `:35`) stay as spec 1 left them.
 
 ## Two properties the design is organised around
@@ -120,7 +125,7 @@ The **EFI System Partition GPT type is not optional**. `New-Partition` creates a
 
 | Baked in | Why it is load-bearing |
 | --- | --- |
-| `identity`: username `susentorno-test`, hostname `susentorno-test-guest`, a locked/random encrypted password | autoinstall's `identity` section requires all three. The username follows the guest-account rule below rather than the old harness's `vmtest` (`harness/seed/user-data:4`), and is what the e2e test's `--guest-username` passes. The password is never used — `allow-pw: false` plus `NOPASSWD` sudo means nothing prompts for it |
+| `identity`: username `vmtest`, hostname `susentorno-test-guest`, a locked/random encrypted password | autoinstall's `identity` section requires all three. `vmtest` carries over from `harness/seed/user-data:4` and is what the e2e test's `--guest-username` passes; it is deliberately distinct from the Windows share account (see "The share account is renamed"). The password is never used — `allow-pw: false` plus `NOPASSWD` sudo means nothing prompts for it |
 | harness SSH public key, `allow-pw: false` | spec 1's documented precondition — a run makes ~20 ssh/scp calls, each of which would otherwise prompt |
 | a **host** keypair generated on the Windows side and installed into `/target/etc/ssh/` | the harness then knows the guest's host key by construction, so it can write an exact `known_hosts` entry rather than trusting whatever answers first. See "Reaching the guests" |
 | `jq` | `nn-configure-network.sh:49,51` uses it for the Firefox `policies.json` merge, and `phases` runs `configure-network` without `01-apt-packages.sh`. Firefox is absent in `phases`, so that branch does not fire there — but the dependency is one script edit away from mattering, and the package is trivial |
@@ -156,21 +161,25 @@ Brief decision 5 holds: one isolation name derives everything the tier touches o
 | VMs | `susentorno-test-phases` / `-e2e` / `-fresh` | new harness |
 | Differencing VHDXs | `.image-cache/susentorno-test-<role>.vhdx` | new harness |
 | Golden VHDX | `.image-cache/susentorno-test-golden.vhdx` | new harness (cached, survives sweeps) |
-| Windows local account | `susentorno-test-smb` (19 chars — see below) | new harness |
+| Share account (Windows local user) | `susentorno-test` | new harness |
 | SMB share | `susentorno-test-vm-shared-linux` | new harness |
-| Guest Linux user | `susentorno-test` | golden image |
 
-The Windows account is **not** named `susentorno-test-share` as the brief proposed: that is 21 characters and `New-LocalUser -Name` caps at 20. `susentorno-test-smb` is 19. Worth recording, because the natural derivation `susentorno-<isolation>-share` silently exceeds the limit for any isolation name longer than three characters, so the derivation itself has a ceiling.
+### The share account is renamed, default included
 
-### The guest account naming rule
+The share account becomes **`susentorno`** by default and **`susentorno-<isolation-name>`** when an isolation name is in play, so this tier uses `susentorno-test`. The account name then says which susentorno installation it belongs to, which matters exactly because a sandboxed installation and a real one can share a machine — the same reason the isolation name exists at all.
 
-A guest's Linux user is named for the installation it belongs to: **`susentorno`** for the default one, **`susentorno-<isolation-name>`** where an isolation name is in play — so this tier's guests use `susentorno-test`. Seeing the account name in `whoami`, `/home/`, or an SSH prompt then tells you which installation a guest serves, which matters precisely because a sandboxed guest and a real one can coexist on one machine.
+This replaces today's `DEFAULT_SHARE_ACCOUNT = 'susentorno-share'` (`src/guestSetup/setupAnswers.ts:24`). It is a **breaking change to shipped behaviour**, accepted deliberately: only one environment is currently deployed, and it will be recreated in full rather than migrated. There is no compatibility shim — consistent with how this project already treats `allowlist.txt` in [ADR-0021](../../adr/0021-split-allow-auth-block-lists-and-skip-allow-list.md), which was abandoned outright rather than auto-migrated.
 
-`susentorno-test` is a valid Ubuntu username: `adduser`'s default `NAME_REGEX` is `^[a-z][-a-z0-9_]*$`, so the hyphen is permitted — worth stating because it is the kind of assumption that fails at install time, deep inside an unattended build.
+The brief's `susentorno-test-share` is not available: at 21 characters it exceeds `New-LocalUser -Name`'s 20-character cap. That cap is what drives the shape of the whole scheme, and the two limits differ:
 
-Nothing in the product is coupled to the name. Spec 1 removed the last hardcoded one (`/home/username/.dotnet/tools` at `03-install-tools.sh:19`), and `fstabLine.ts:33`'s `uid=1000,gid=1000` holds because the installer-created account is the only one and lands on 1000 regardless of what it is called.
+| | Limit | Longest usable isolation name |
+| --- | --- | --- |
+| Windows local account (`New-LocalUser -Name`) | 20 chars | `susentorno-<name>` → **9**; `susentorno-<name>-share` → **3** |
+| Linux user (`useradd`) | 32 chars | not a constraint here |
 
-For **real** guests this is advisory only and lives in `setup-guest.md`: susentorno never creates the guest user — the person installing the OS does — so the rule is a recommendation the documentation makes, not something any command enforces.
+So `susentorno-<isolation>-share` is effectively unusable, while `susentorno-<isolation>` leaves comfortable headroom. Note that `ISOLATION_NAME_RE` (`src/hostNetwork/hostNetworkNames.ts:7`) is `/^[A-Za-z0-9-]+$/` with **no length bound**, so a 10-plus-character isolation name would today produce a confusing `New-LocalUser` failure far from its cause. Adding a length cap there is a small, well-placed product fix, but it is **not** in this changeset — it is unrelated to the guest tier and deserves its own.
+
+The guest's own Linux account stays **`vmtest`**, carried over from `harness/seed/user-data:4`. It is deliberately *not* renamed to match: it lives in a different namespace on a different machine, and giving it the same string as the Windows share account would make `mountShare`'s credential handling and the fstab entry harder to read, not easier.
 
 The share name is the one that changes guest-visible behaviour: `mountShare` mounts at `/mnt/<shareName>` and `runPreScripts` runs `/mnt/<shareName>/pre-scripts`, so the guest mounts `/mnt/susentorno-test-vm-shared-linux` rather than production's `/mnt/vm-shared-linux`. Every script resolves its own directory relatively (`script_dir` / `dirname`), so nothing breaks. It is forced rather than chosen: an SMB share name is machine-global and would otherwise collide with a developer's real `vm-shared-linux`.
 
@@ -214,7 +223,7 @@ That reordering is a mitigation, not a guarantee. `globalSetup` must also **expo
 
 Steps 6 use the **modules**, not the CLI, exactly as `tests/host-network/createDeleteHostNetwork.test.ts:38-48` already does — the CLI would prompt for a subnet, while the module takes an injectable `promptSubnet`. The tier owning its host network rather than requiring one keeps the bootstrappable-from-clean property; requiring it would be the "documented one-time manual prerequisite" already rejected for the SMB share, and rejecting it there while accepting it here would be incoherent.
 
-`sweepIsolationResidue('test')` is name-driven and origin-blind: `Get-VM -Name 'susentorno-test-*'` → `Stop-VM -TurnOff` → `Remove-VM -Force`; delete `.image-cache/susentorno-test-*.vhdx` **except** `-golden.vhdx` and the key pair; `Remove-SmbShare susentorno-test-*`; `Remove-LocalUser susentorno-test-smb`.
+`sweepIsolationResidue('test')` is name-driven and origin-blind: `Get-VM -Name 'susentorno-test-*'` → `Stop-VM -TurnOff` → `Remove-VM -Force`; delete `.image-cache/susentorno-test-*.vhdx` **except** `-golden.vhdx` and the key pair; `Remove-SmbShare susentorno-test-*`; `Remove-LocalUser susentorno-test`.
 
 It runs at startup **and** teardown: startup makes a Ctrl-C'd run recoverable, teardown keeps a passing run from leaving a local account and three VMs on the machine.
 
@@ -250,7 +259,7 @@ It also usefully bounds the isolation name: it sandboxes the *host network* and 
 ```
 beforeAll:  startProxyStack({ forward: { isolationName: 'test' } })
             reconcileShareAccount() remove-if-exists, then New-LocalUser
-                                  susentorno-test-smb with a random password
+                                  susentorno-test with a random password
             createShare()         remove-if-exists, then New-SmbShare
                                   susentorno-test-vm-shared-linux
                                   → <envRoot>/vm-shared-linux, ReadAccess that account
@@ -291,7 +300,7 @@ Each file creates and removes the same account and share names, and teardown is 
 
 ### Share access needs an NTFS ACE, not just `-ReadAccess`
 
-`New-SmbShare -ReadAccess` sets *share* permissions; effective access is the intersection of share and NTFS permissions. The share path is `<envRoot>/vm-shared-linux` — inside the repository checkout (`tests/testEnvRoot.ts`), whose inherited ACLs the suite does not control and which grant `susentorno-test-smb` nothing. Without an explicit NTFS read/execute ACE for that account the guest authenticates successfully and *then* gets access denied — a failure that presents as a credential problem and is not one. The ACE is granted with the share and removed with it.
+`New-SmbShare -ReadAccess` sets *share* permissions; effective access is the intersection of share and NTFS permissions. The share path is `<envRoot>/vm-shared-linux` — inside the repository checkout (`tests/testEnvRoot.ts`), whose inherited ACLs the suite does not control and which grant `susentorno-test` nothing. Without an explicit NTFS read/execute ACE for that account the guest authenticates successfully and *then* gets access denied — a failure that presents as a credential problem and is not one. The ACE is granted with the share and removed with it.
 
 Three files, each self-contained, each starting its own `run-hosting`. `tests/proxy-stack/` already sets this precedent — eight files each start their own stack, and `githubInjection.test.ts:23` notes it picks ports "distinct from the other proxy-stack suites'." Here all three need 80/443, which sequential execution makes fine.
 
@@ -338,13 +347,13 @@ Stages `github-config.txt` with `GITHUB_PLACEHOLDER_PAT`, shadows `gh` at `/usr/
 ```ts
 execa('node', [cliPath, 'setup-guest-unix',
   '--isolation-name', 'test', '--vm-name', 'susentorno-test-e2e',
-  '--guest-address', ip, '--guest-username', 'susentorno-test',
+  '--guest-address', ip, '--guest-username', 'vmtest',
   '--share-name', 'susentorno-test-vm-shared-linux',
-  '--share-account', 'susentorno-test-smb'],
+  '--share-account', 'susentorno-test'],
   { cwd: envParent, input: `${sharePassword}\n` });
 ```
 
-Every spec-1 flag in one call, with `susentorno-test` the username the autoinstall `identity` created. It runs the **real, untrimmed** script set: real `apt upgrade`, real pnpm, real Codex/Claude/Pi installers, real `runPostScripts`. Assertions land on the outcome — the placeholder credential symlinks, git identity, `hasCompletedOnboarding` — plus one re-run of the transform applier against a pre-seeded `~/.claude.json` to cover the merge-without-clobbering case.
+Every spec-1 flag in one call, with `vmtest` the guest username the autoinstall `identity` created and `susentorno-test` the Windows share account. It runs the **real, untrimmed** script set: real `apt upgrade`, real pnpm, real Codex/Claude/Pi installers, real `runPostScripts`. Assertions land on the outcome — the placeholder credential symlinks, git identity, `hasCompletedOnboarding` — plus one re-run of the transform applier against a pre-seeded `~/.claude.json` to cover the merge-without-clobbering case.
 
 **The Firefox `policies.json` merge lands here, not in `phases`.** `nn-configure-network.sh:49,51` shells out to `jq`, which `01-apt-packages.sh:6` installs — so the assertion belongs with the other tests that depend on a pre-script's output (git for `01-auth-config.sh`, node for the home transforms). The stub Firefox and a pre-seeded `/etc/firefox/policies/policies.json` are staged over SSH before the command runs, and the merge is asserted afterwards. `jq` is nonetheless baked into the golden image as well, so a future edit that makes `configure-network` need it unconditionally does not fail obscurely in `phases`.
 
@@ -430,6 +439,8 @@ Every PowerShell-facing module goes through the existing `powerShellExec.ts` sea
 | `guest` | The three files above, against real Hyper-V |
 | `proxy-stack` | The three relocated lifecycle tests |
 
+**One trap in the share-account rename.** `tests/unit/guestSetup/setupAnswers.test.ts:59` asserts the prompt default and **must** change. The eleven occurrences in `tests/unit/guestSetup/mountShare.test.ts` must **not**: every one passes `accountName` explicitly as an arbitrary fixture value, so they are testing `mountShare`, not the default, and rewriting them would be churn that obscures the real change. Spec 1 hit the same distinction with `listScripts.test.ts` and `runPreScripts.test.ts` during the renumbering and called it out for the same reason — synthetic fixtures that merely resemble a production name must not be "fixed".
+
 The harness's own executors — `New-VHD`, `Mount-DiskImage`, `New-VM` — are verified by the tier running at all. That is the same bargain `tests/host-network/` already accepts.
 
 ### Failure and diagnostics
@@ -468,15 +479,17 @@ Splitting the tier — `phases` + `fresh` in the default pipeline, `e2e` opt-in 
 | **ADR-0025** (new) | The guest layer is tested against real Hyper-V VMs: fidelity over portability, the autoinstall → golden VHDX → differencing-disk mechanism, and one substitution (`gh`) in place of three |
 | [ADR-0011](../../adr/0011-loopback-publish-with-node-forwarder.md) | Consequence: the forwarder now has real automated coverage |
 | [ADR-0014](../../adr/0014-host-side-dns-and-dhcp.md) | Consequence: "covered only by manual Hyper-V checkpoints" becomes automated for host-side DNS/DHCP |
-| [ADR-0023](../../adr/0023-cli-owned-host-network-with-real-hyperv-tier.md) | Consequence: the isolation name now also scopes VM names, the share account, the SMB share name, and the guest's own Linux user account. Its `:15` mention of `setup-guest-unix-isolation-checklist.md` stays — it is an accurate record of a rejected option's reasoning at the time. |
+| [ADR-0023](../../adr/0023-cli-owned-host-network-with-real-hyperv-tier.md) | Consequence: the isolation name now also scopes the share account (for every installation, not just tests), plus the test tier's VM names and SMB share name. Its `:15` mention of `setup-guest-unix-isolation-checklist.md` stays — it is an accurate record of a rejected option's reasoning at the time. |
 | `CONTEXT.md:43` | **Isolation name** amended past "the Internal switch and its firewall rules" to cover the guest VMs, share account, and share names it now derives |
 | `testing.md` | Guest-tier rows rewritten (`:13`, `:25`, `:52`); the dangling `setup-guest-unix-isolation-checklist.md` link removed, since the behaviour it stood in for — VM stop/reassign/start, the elevation check, the `run-hosting` readiness check — is now automated |
 | `development.md` | WSL2/KVM/mirrored-networking/`ignoredPorts=67`/`setup-wsl.sh` prerequisites deleted; elevated shell, Hyper-V, and a running `ssh-agent` documented |
-| `setup-guest.md` | Recommend naming the guest's Linux account `susentorno`, or `susentorno-<isolation-name>` for a guest attached to a named host network. Advisory — susentorno does not create the account |
+| `setup-environment.md` | The share-account rename reaches `:5`, `:25-26`, `:29`, `:31`, `:41-42`, `:51`, `:53` — the `New-LocalUser`/`New-SmbShare` snippets users copy verbatim, the `secpol.msc` deny-logon step, and the two paragraphs of security rationale that name the account |
+| `setup-guest.md` | `:117` (the prompt-defaults sentence), `:162` (the `.cred` file's `username=` line), `:191` (`cmdkey /add … /user:`) |
+| `src/commands/setupGuestUnix.ts:118` | The `--share-account` help text names the old default in prose |
 
-**Isolation name** (`CONTEXT.md`, replacing the current definition): *The name that selects which parallel set of susentorno objects a command acts on — the Internal switch and its firewall rules, and, for the test tiers, the guest VMs, SMB share, share account, and guest user account derived from the same name — so a sandboxed installation can coexist with the default one on the same machine. Omitting it selects the unnamed default.* _Avoid_: sandbox name, test name.
+**Isolation name** (`CONTEXT.md`, replacing the current definition): *The name that selects which parallel set of susentorno host objects a command acts on — the Internal switch and its firewall rules, the share account, and, for the test tiers, the guest VMs and SMB share derived from the same name — so a sandboxed installation can coexist with the default one on the same machine. Omitting it selects the unnamed default.* _Avoid_: sandbox name, test name.
 
-Spec 1 wrote the narrower definition and said it would be amended here if spec 2 extended the term. It does, so it is. Note that "host objects" also widens to plain "objects": the guest's own Linux account is derived from the isolation name too, and it is the first derived name that does not live on the host.
+Spec 1 wrote the narrower definition and said it would be amended here if spec 2 extended the term. It does, so it is. The share account is called out separately from the test-tier objects because it is derived for *any* installation, not only a test one — it is the first place the isolation name reaches something a real user creates by hand.
 
 ## 7. Risks
 
