@@ -31,7 +31,9 @@ describe('test share', () => {
       "Remove-LocalUser -Name 'susentorno-test' -ErrorAction SilentlyContinue",
     );
     expect(buildNewLocalUserCommand(SHARE_ACCOUNT, "pa'ss1!")).toContain("'pa''ss1!'");
-    expect(buildNewLocalUserCommand(SHARE_ACCOUNT, 'password')).toContain('ConvertTo-SecureString');
+    expect(buildNewLocalUserCommand(SHARE_ACCOUNT, 'password')).toContain(
+      'System.Security.SecureString',
+    );
   });
   it('creates a single-account read-only share and removes it idempotently', () => {
     expect(buildRemoveSmbShareCommand(SHARE_NAME)).toContain(

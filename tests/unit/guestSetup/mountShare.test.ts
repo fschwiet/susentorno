@@ -48,7 +48,10 @@ describe('mountShare', () => {
       calls.some((c) => c.includes('sudo mkdir -p') && c.includes('/mnt/vm-shared-linux')),
     ).toBe(true);
     expect(calls.some((c) => c.includes('/etc/fstab'))).toBe(true);
-    expect(calls[calls.length - 1]).toBe('sudo systemctl daemon-reload && sudo mount -a');
+    expect(calls[calls.length - 1]).toContain(
+      'sudo systemctl daemon-reload && sudo systemctl start',
+    );
+    expect(calls[calls.length - 1]).toContain('systemd-escape -p --suffix=automount');
   });
 
   it('writes the credentials file locally with the account name and password before copying it, then deletes it', async () => {
@@ -178,7 +181,7 @@ describe('mountShare', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('skips straight to mount -a when the share is not currently mounted', async () => {
+  it('starts the automount unit when the share is not currently mounted', async () => {
     const { remoteExec, calls } = fakeRemoteExec({ runResults: { 'mountpoint -q': 1 } });
     await mountShare(remoteExec, {
       shareName: 'vm-shared-linux',
@@ -187,7 +190,9 @@ describe('mountShare', () => {
       hostIp: '172.28.128.1',
     });
     expect(calls.some((c) => c.startsWith('sudo umount'))).toBe(false);
-    expect(calls[calls.length - 1]).toBe('sudo systemctl daemon-reload && sudo mount -a');
+    expect(calls[calls.length - 1]).toContain(
+      'sudo systemctl daemon-reload && sudo systemctl start',
+    );
   });
 
   it('unmounts a currently-active mount before remounting', async () => {
@@ -199,12 +204,12 @@ describe('mountShare', () => {
       hostIp: '172.28.128.1',
     });
     const umountIndex = calls.findIndex((c) => c.startsWith('sudo umount'));
-    const mountAIndex = calls.indexOf('sudo systemctl daemon-reload && sudo mount -a');
+    const mountAIndex = calls.findIndex((call) => call.includes('sudo systemctl start'));
     expect(umountIndex).toBeGreaterThan(-1);
     expect(umountIndex).toBeLessThan(mountAIndex);
   });
 
-  it('stops before mount -a when a failing umount cannot clear a stale active mount (regression)', async () => {
+  it('stops before starting the automount when a failing umount cannot clear a stale active mount (regression)', async () => {
     const { remoteExec, calls } = fakeRemoteExec({
       runResults: { 'mountpoint -q': 0, 'sudo umount': 1 },
     });
@@ -216,6 +221,6 @@ describe('mountShare', () => {
         hostIp: '172.28.128.1',
       }),
     ).rejects.toThrow(MountShareError);
-    expect(calls).not.toContain('sudo systemctl daemon-reload && sudo mount -a');
+    expect(calls.some((call) => call.includes('sudo systemctl start'))).toBe(false);
   });
 });

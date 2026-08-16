@@ -1,32 +1,56 @@
+import { homedir } from 'node:os';
+import { createRealPowerShellExec } from '../../src/guestSetup/powerShellExec';
+import { createHostNetwork } from '../../src/hostNetwork/createHostNetwork';
+import { deleteHostNetwork } from '../../src/hostNetwork/deleteHostNetwork';
+import { detectTakenRanges, findFreeSubnet } from '../../src/hostNetwork/subnetSelection';
+import { DEFAULT_NAT_ADAPTER } from '../../src/runHosting/forwarder';
 import { checkDockerRunning } from '../checkDockerRunning';
-import { checkNoRunningProxy } from '../checkNoRunningProxy';
-import {
-  checkWslDhcpPortIgnored,
-  checkWslDistro,
-  checkWslMirroredNetworking,
-  harness,
-} from './wsl';
+import { checkElevated } from '../checkElevated';
+import { checkGatewayPortsFree } from '../checkGatewayPortsFree';
+import { ensureSshAgentIdentity, removeSshAgentIdentity } from '../sshAgentIdentity';
+import { ensureHarnessKeys } from './harnessKeys';
+import { ensureGoldenImage } from './hyperv/goldenImage';
+import { harnessKeyPath, ISOLATION_NAME } from './hyperv/imageCache';
+import { sweepIsolationResidue } from './hyperv/sweep';
 
-export default async function setup() {
-  // First: instant, needs nothing installed, and they are the most common
-  // self-inflicted failures — Docker Desktop not running, or a live run-hosting
-  // fighting this suite for the Envoy containers. Everything below is slower
-  // and some of it is destructive.
+const exec = createRealPowerShellExec();
+
+export async function setup(): Promise<void> {
+  await checkElevated();
   await checkDockerRunning();
-  await checkNoRunningProxy();
-  await checkWslDistro();
-  try {
-    await harness('preflight.sh');
-  } catch (error) {
-    const all = (error as { all?: string }).all ?? String(error);
-    throw new Error(`guest preflight failed:\n${all}`, { cause: error });
+  await checkGatewayPortsFree();
+
+  const keys = await ensureHarnessKeys();
+  await ensureSshAgentIdentity(harnessKeyPath);
+  await sweepIsolationResidue(exec);
+  await ensureGoldenImage(exec, keys);
+
+  await deleteHostNetwork({ exec, isolationName: ISOLATION_NAME, homedir: homedir() });
+  const subnet = findFreeSubnet(detectTakenRanges());
+  if (subnet === null) {
+    throw new Error(
+      'guest: no free 192.168.x.0/24 subnet is available for the test host network. ' +
+        'Free one up, or delete a stale susentorno Internal switch, and re-run.',
+    );
   }
-  // These two need socat, which preflight.sh just confirmed is installed —
-  // and they're cheap, so check them before the slow build-image step below.
-  await checkWslMirroredNetworking();
-  await checkWslDhcpPortIgnored();
-  // No-op when the golden image already exists; first run downloads the cloud
-  // image and boots it once for cloud-init (~10-20 min).
-  console.log('guest: ensuring golden image (first run takes 10-20 minutes)...');
-  await harness('build-image.sh');
+  const { hostIp } = await createHostNetwork({
+    exec,
+    isolationName: ISOLATION_NAME,
+    subnet,
+    natAdapterAlias: DEFAULT_NAT_ADAPTER,
+    homedir: homedir(),
+    promptSubnet: async () => subnet,
+  });
+  console.log(`guest: host network ready — susentorno-test-internal at ${hostIp}`);
+}
+
+/** Named so Vitest can tear down resources even when setup itself rejects. */
+export async function teardown(): Promise<void> {
+  await sweepIsolationResidue(exec).catch((error) =>
+    console.error(`guest teardown: sweep failed: ${String(error)}`),
+  );
+  await deleteHostNetwork({ exec, isolationName: ISOLATION_NAME, homedir: homedir() }).catch(
+    (error) => console.error(`guest teardown: delete-host-network failed: ${String(error)}`),
+  );
+  await removeSshAgentIdentity(harnessKeyPath).catch(() => {});
 }

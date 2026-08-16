@@ -31,8 +31,9 @@ export function createRealPowerShellExec(): PowerShellExec {
       const result = await execa('powershell.exe', buildPowerShellArgv(command), {
         reject: false,
         timeout: opts?.timeoutMs,
+        all: true,
       });
-      return { exitCode: result.exitCode ?? 1, stdout: result.stdout ?? '' };
+      return { exitCode: result.exitCode ?? 1, stdout: result.all ?? '' };
     },
   };
 }

@@ -108,9 +108,15 @@ export async function mountShare(remoteExec: RemoteExec, opts: MountShareOptions
     }),
     onStep,
   );
-  // `mount -a` only mounts fstab entries that aren't already active — since
-  // the stale mount (if any) was already torn down above, this always sees a
-  // clean, unmounted entry to bring up against the (possibly just-rewritten)
-  // fstab source.
-  await runStep(remoteExec, 'mount share', 'sudo systemctl daemon-reload && sudo mount -a', onStep);
+  // Starting the generated automount unit, rather than `mount -a`, preserves
+  // fstab's x-systemd.automount behaviour. `mount -a` eagerly performs a CIFS
+  // mount and leaves the generated .automount unit inactive, which defeats the
+  // reconnect behaviour needed when the VM changes switches.
+  const automountUnit = `$(systemd-escape -p --suffix=automount ${quoteForRemoteShell(mountPoint)})`;
+  await runStep(
+    remoteExec,
+    'mount share',
+    `sudo systemctl daemon-reload && sudo systemctl start ${automountUnit}`,
+    onStep,
+  );
 }

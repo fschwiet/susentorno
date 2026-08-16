@@ -16,8 +16,9 @@ export function buildRemoveLocalUserCommand(name: string): string {
 }
 export function buildNewLocalUserCommand(name: string, password: string): string {
   return (
-    `New-LocalUser -Name ${quoteForPowerShell(name)} ` +
-    `-Password (ConvertTo-SecureString ${quoteForPowerShell(password)} -AsPlainText -Force) ` +
+    `$password = New-Object System.Security.SecureString; ${quoteForPowerShell(password)}.ToCharArray() | ` +
+    'ForEach-Object { $password.AppendChar($_) }; $password.MakeReadOnly(); ' +
+    `New-LocalUser -Name ${quoteForPowerShell(name)} -Password $password ` +
     `-PasswordNeverExpires -UserMayNotChangePassword | Out-Null`
   );
 }
