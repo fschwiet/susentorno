@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto';
-import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import {
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  renameSync,
+  rmSync,
+} from 'node:fs';
 import { basename } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -15,9 +21,9 @@ export function parseSha256Sums(text: string, filename: string): string {
   throw new Error(`isoCache: ${sha256SumsUrl} does not list '${filename}'`);
 }
 async function fileHash(path: string): Promise<string> {
-  return createHash('sha256')
-    .update(await readFile(path))
-    .digest('hex');
+  const hash = createHash('sha256');
+  await pipeline(createReadStream(path), hash);
+  return hash.digest('hex');
 }
 async function download(url: string, destination: string): Promise<void> {
   const response = await fetch(url);

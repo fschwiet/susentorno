@@ -39,6 +39,10 @@ describe('autoinstall seed generators', () => {
       'allow-pw': false,
       'authorized-keys': [inputs.harnessPublicKey],
     });
+    // This is processed by cloud-init on the target's first boot. Without it,
+    // cloud-init removes the key written by the late-command and makes a new
+    // one, which defeats the harness's deterministic known_hosts trust.
+    expect(ai['user-data']).toMatchObject({ ssh_deletekeys: false });
     expect(ai.storage.layout).toEqual({ name: 'direct', match: { size: 'largest' } });
     expect(ai.packages).toEqual(
       expect.arrayContaining(['network-manager', 'jq', 'linux-cloud-tools-virtual']),
@@ -48,6 +52,8 @@ describe('autoinstall seed generators', () => {
     );
     const commands = ai['late-commands'].join('\n');
     expect(commands).toContain('apt-get upgrade -y');
+    expect(commands).toContain('/var/lib/dpkg/lock-frontend');
+    expect(commands).toContain('fuser "$lock"');
     expect(commands).toContain('systemd-networkd.service');
     expect(commands).toContain('apt-daily.timer');
     expect(commands).toContain('renderer: NetworkManager');
