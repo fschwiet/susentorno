@@ -40,7 +40,7 @@ susentorno creates development environments in which coding agents run inside is
 
 **Host network**: The Internal switch plus its host IP assignment and inbound firewall rules, provisioned and torn down together as one unit by `create-host-network`/`delete-host-network`. Distinct from **Internal switch**, which names only the Hyper-V object itself. _Avoid_: Internal switch (when the firewall/IP bundle, not just the switch, is meant)
 
-**Isolation name**: The name that selects which parallel host network susentorno's commands act on — the Internal switch and its firewall rules — so a sandboxed installation can coexist with the default one on the same machine. Omitting it selects the unnamed default. _Avoid_: Sandbox name, test name
+**Isolation name**: The name that selects which parallel set of susentorno host objects a command acts on — the Internal switch and its firewall rules, the share account, and, for the test tiers, the guest VMs and SMB share derived from the same name — so a sandboxed installation can coexist with the default one on the same machine. Omitting it selects the unnamed default. _Avoid_: Sandbox name, test name
 
 **Host-run MCP server**: A Model Context Protocol server process that susentorno launches and owns on the host, reachable from an isolated guest at a dedicated hostname through the proxy stack, giving the guest's coding agents host-credentialed tool access without exposing host credentials to the guest itself. _Avoid_: MCP server, tool server
 

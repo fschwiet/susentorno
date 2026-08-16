@@ -2,6 +2,12 @@
 
 The guest-side networking and setup layer is tested by running the real, unmodified scripts inside a real QEMU/KVM Ubuntu cloud-image guest, orchestrated from Windows `vitest` through `wsl.exe`, with the guest booted inside WSL2 (nested virtualization). This is `pnpm test:guest`, which is part of the default `pnpm test` pipeline because the guest tier now covers the project's required end-to-end verification. A real guest is required because the regression classes involved — systemd boot ordering, netplan merge under the NetworkManager renderer, DHCP-without-a-gateway lease behavior — cannot be reproduced in a container.
 
+## Status
+
+superseded (2026-08-15) by [[guest-layer-tested-against-real-hyperv]].
+
+The decision above is reversed outright, not qualified: Hyper-V is the guest tier's test runtime now. This ADR remains as the record of why QEMU-in-WSL2 was right at the time and of the residual fidelity gaps its successor closes.
+
 ## Considered Options
 
 - **Firecracker microVMs.** Rejected: their value is a minimal rootfs with no full device model, but the scripts under test need full systemd + netplan + a DHCP-configured NIC.

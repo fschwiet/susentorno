@@ -22,7 +22,7 @@ The tier names use the project's domain vocabulary (see [CONTEXT.md](CONTEXT.md)
 
 - **`proxy-stack`** tests bring up the real proxy stack, including Envoy in Docker, networking, and local mock upstreams. They observe stack behavior without booting a guest.
 
-- **`guest`** tests make their observations from inside a disposable guest. They generally cross the CLI and proxy stack too, but the guest is the highest exercised surface. The test harness boots QEMU under WSL2; Hyper-V remains the production guest platform and is not the test runtime (see [ADR-0010](docs/adr/0010-vm-tests-via-qemu-in-wsl2.md)). On failure, diagnostics (serial console, guest journal, route/NAT/resolver dumps) land in `test-results/guest/<timestamp>/`. Hyper-V-specific behavior this harness cannot exercise (VM stop/reassign/start, the elevation check, the `run-hosting` readiness check) is covered instead by [setup-guest-unix-isolation-checklist.md](setup-guest-unix-isolation-checklist.md), a manual checklist.
+- **`guest`** tests make their observations from inside a disposable guest. They generally cross the CLI and proxy stack too, but the guest is the highest exercised surface. The harness boots real Hyper-V VMs from differencing disks off a golden image it builds itself, on a real Internal switch served by the real `run-hosting` (see [ADR-0025](docs/adr/0025-guest-layer-tested-against-real-hyperv.md)); the only substitution left is a stub `gh`. On failure, diagnostics (serial console, guest journal, route/NAT/resolver dumps) land in `test-results/guest/<timestamp>/<role>/`.
 
 ## Placing a new test
 
@@ -49,11 +49,11 @@ Install the project's Node dependencies before running any tier.
 | `cli` | A production build (`pnpm build`). The default pipeline builds before this tier. Tests that need the external `jq` command self-skip when it is unavailable. |
 | `host-network` | An elevated (Administrator) PowerShell/terminal. No Docker/WSL2 required. |
 | `proxy-stack` | A production build (`pnpm build`), plus Docker and Docker Compose running. Stop any live `susentorno run-hosting` process first. No guest or real credential is required. |
-| `guest` | WSL2/Docker/KVM set up per [development.md](development.md). Stop any live `susentorno run-hosting` process first — it manages the same docker-compose Envoy stack, so leaving it running gets its Envoy torn down mid-suite (the reachability guard then reports `000`, which looks like a Docker/WSL problem) while `run-hosting` itself is left serving with no backend. |
+| `guest` | An elevated (Administrator) PowerShell/terminal, Hyper-V, Docker running, and a running `ssh-agent`. Stop any live `susentorno run-hosting` process first — this tier binds the real `:80`/`:443` and manages the same Envoy containers. The first run builds a golden VM image (~20–30 minutes); later runs reuse it from `.image-cache/`. |
 
-See [development.md](development.md) for how to install and configure the guest harness's WSL prerequisites. The harness creates or refreshes its cached golden image automatically at `/root/.cache/susentorno-vmtest`; the first run takes longer.
+See [development.md](development.md) for the guest-tier prerequisites. The guest tier creates and refreshes its cached golden image automatically at `.image-cache/`; the first run takes longer. It is gitignored and repo-local because live tiers act on one shared host network adapter and cannot safely run from parallel worktrees.
 
-A missing live-tier prerequisite is an environmental failure, not a product failure. Both live tiers fail fast when Docker is unavailable or `run-hosting` would conflict with their shared proxy stack. The guest tier also checks its WSL configuration and harness dependencies before booting a guest.
+A missing live-tier prerequisite is an environmental failure, not a product failure. Both live tiers fail fast when Docker is unavailable or `run-hosting` would conflict with their shared proxy stack. The guest tier also checks for an elevated shell, free gateway ports, and an `ssh-agent` that the SSH it will actually invoke can see before building an image or booting anything.
 
 ## Running an individual test file
 
@@ -74,10 +74,10 @@ Never use `npx` or `pnpx` to invoke `vitest` or other project tooling. `npx` hap
 
 `pnpm test` runs formatting, linting, type checking, the `unit` tier, a production build, the `cli` tier, the `proxy-stack` tier, and the `guest` tier, in fail-fast order. The Verification Pipeline section of [development.md](development.md) is the source of truth for the exact step order.
 
-The `guest` tier's WSL2/QEMU prerequisites (see [development.md](development.md)) are therefore required for any full `pnpm test` run, not just for working on `templates/vm-shared-linux/` directly. Guest boots and reboots take minutes — expect `pnpm test` to be slow.
+The `guest` tier's prerequisites (an elevated shell, Hyper-V, Docker, and `ssh-agent` — see [development.md](development.md)) are therefore required for any full `pnpm test` run, not just for working on `templates/vm-shared-linux/` directly. Guest boots, a reboot through isolation, and the e2e file's real package installs take minutes each — expect `pnpm test` to be slow.
 
 ## Test support and residue
 
-Support code used by more than one tier lives at the root of `tests/`, including `proxyStack.ts`, `testEnvRoot.ts`, `rmEnvRoot.ts`, `checkDockerRunning.ts`, `checkNoRunningProxy.ts`, and `tests/fixtures/`. Tier-specific setup and harness code stays in its tier directory, such as `tests/proxy-stack/globalSetup.ts` and `tests/guest/harness/`.
+Support code used by more than one tier lives at the root of `tests/`, including `proxyStack.ts`, `testEnvRoot.ts`, `rmEnvRoot.ts`, `checkDockerRunning.ts`, `checkNoRunningProxy.ts`, `checkElevated.ts`, `checkGatewayPortsFree.ts`, `sshAgentIdentity.ts`, and `tests/fixtures/`. Tier-specific setup and harness code stays in its tier directory, such as `tests/proxy-stack/globalSetup.ts` and `tests/guest/hyperv/`.
 
 The proxy-stack and guest suites create their throwaway environment under `test-results/.susentorno`. They do not use a repository-root `.susentorno`. A root `.susentorno` may be a manually created, long-running environment and must not be treated as disposable test residue.
