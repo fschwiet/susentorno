@@ -12,7 +12,7 @@ import {
 let stack: ProxyStack;
 
 beforeAll(async () => {
-  stack = await startProxyStack(['--skip-allow-list']);
+  stack = await startProxyStack({ extraArgs: ['--skip-allow-list'] });
 }, 90000);
 afterAll(async () => {
   await stopProxyStack(stack);

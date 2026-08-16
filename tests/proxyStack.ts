@@ -37,6 +37,34 @@ export interface ProxyStack {
   credentialsPath: string;
 }
 
+export interface ProxyStackOptions {
+  /** Omit for --no-forward on 18080/18443 — today's default, and every proxy-stack caller. */
+  forward?: { isolationName: string };
+  extraArgs?: string[];
+}
+
+/**
+ * --no-forward disables the gateway's non-loopback listener, the DNS responder,
+ * and the DHCP server together, and run-hosting rejects it alongside
+ * --isolation-name. So the two are alternatives, never both.
+ */
+export function buildForwardArgs(options: ProxyStackOptions): string[] {
+  return options.forward ? ['--isolation-name', options.forward.isolationName] : ['--no-forward'];
+}
+
+/**
+ * ENVOY_HTTP_PORT/ENVOY_HTTPS_PORT are misleadingly named: they are the
+ * *gateway's* listen ports, and startGateway opens one port pair across every
+ * address in listenAddresses. A forwarding stack therefore cannot give the
+ * adapter :443 and loopback :18443 — it takes the 80/443 defaults on both, and
+ * leaving these unset is how it gets them.
+ */
+export function buildGatewayPortEnv(options: ProxyStackOptions): NodeJS.ProcessEnv {
+  return options.forward
+    ? {}
+    : { ENVOY_HTTP_PORT: String(HTTP_PORT), ENVOY_HTTPS_PORT: String(HTTPS_PORT) };
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function writeCredentialsFile(path: string, token: string): void {
@@ -113,14 +141,10 @@ async function waitForStartupLine(
   );
 }
 
-export async function startProxyStack(extraArgs: string[] = []): Promise<ProxyStack> {
+export async function startProxyStack(options: ProxyStackOptions = {}): Promise<ProxyStack> {
   const mockUpstream = await startMockUpstream();
   const proxyDir = join(envRoot, 'proxy');
-  const composeEnv = {
-    ...process.env,
-    ENVOY_HTTPS_PORT: String(HTTPS_PORT),
-    ENVOY_HTTP_PORT: String(HTTP_PORT),
-  };
+  const composeEnv = { ...process.env, ...buildGatewayPortEnv(options) };
 
   // Fresh environment per run: environments are rebuilt from scratch, never migrated.
   mkdirSync(envParent, { recursive: true });
@@ -158,7 +182,7 @@ export async function startProxyStack(extraArgs: string[] = []): Promise<ProxySt
       cliPath,
       'run-hosting',
       '--no-refresh',
-      '--no-forward',
+      ...buildForwardArgs(options),
       '--credentials',
       credentialsPath,
       '--codex-credentials',
@@ -167,7 +191,7 @@ export async function startProxyStack(extraArgs: string[] = []): Promise<ProxySt
       `api.anthropic.com=host.docker.internal:${mockUpstream.port}`,
       '--upstream-override',
       `auth-candidate.test=host.docker.internal:${mockUpstream.port}`,
-      ...extraArgs,
+      ...(options.extraArgs ?? []),
     ],
     { cwd: envParent, env: composeEnv, buffer: false, reject: false },
   );
