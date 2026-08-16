@@ -56,7 +56,7 @@ describe('resolveConnectionAnswers', () => {
       address: '192.168.67.42',
       username: 'dev',
       shareName: 'vm-shared-linux',
-      accountName: 'susentorno-share',
+      accountName: 'susentorno',
       password: 'hunter2',
     });
     expect(asked).toEqual([

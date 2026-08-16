@@ -115,7 +115,7 @@ export function registerSetupGuestUnix(program: Command): void {
     )
     .option(
       '--share-account <name>',
-      'Share account name, skipping its prompt (prompt default: susentorno-share)',
+      'Share account name, skipping its prompt (prompt default: susentorno)',
     )
     .action(async (options: SetupGuestUnixOptions) => {
       const exec = createRealPowerShellExec();

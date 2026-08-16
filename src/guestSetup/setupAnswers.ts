@@ -21,7 +21,7 @@ export interface ConnectionAnswers {
 }
 
 export const DEFAULT_SHARE_NAME = 'vm-shared-linux';
-export const DEFAULT_SHARE_ACCOUNT = 'susentorno-share';
+export const DEFAULT_SHARE_ACCOUNT = 'susentorno';
 
 /**
  * Stage one, before runPreflightChecks. Split from the rest deliberately: a bad

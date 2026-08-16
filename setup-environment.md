@@ -2,7 +2,7 @@
 
 Per-environment setup, done from the environment directory (e.g. `e:\repo`) after completing [setup-machine.md](setup-machine.md). An environment is the complete configuration and generated state for one isolated agent workspace, owned by that working directory (see [CONTEXT.md](CONTEXT.md)).
 
-If you run more than one environment on this machine, give each one distinct share and share-account names in the steps below — the defaults used here (`vm-shared-linux`, `vm-shared-windows`, `susentorno-share`) collide if reused across environments. You don't need to redo this setup each time you switch which environment you're actively using, but you do need to keep track of which share name belongs to which environment.
+If you run more than one environment on this machine, give each one distinct share and share-account names in the steps below — the defaults used here (`vm-shared-linux`, `vm-shared-windows`, `susentorno`) collide if reused across environments. You don't need to redo this setup each time you switch which environment you're actively using, but you do need to keep track of which share name belongs to which environment.
 
 ## Initialize the environment's directory
 
@@ -22,13 +22,15 @@ Once the directory is ready, the appropriate sub-directories are turned into sha
 Storing a host credential inside the VM is a real exposure: the isolation boundary is **code running in the VM vs. the host**, and the SMB credential has to sit in a file the guest reads at boot — so VM-resident code can read it too. Make the account powerless so a leak grants nothing beyond the folder read the VM already has. Remember this password for when you set up guests against this environment.
 
 ```powershell
-$pw = Read-Host -AsSecureString "Password for susentorno-share"
-New-LocalUser -Name "susentorno-share" -Password $pw -PasswordNeverExpires -UserMayNotChangePassword
+$pw = Read-Host -AsSecureString "Password for susentorno"
+New-LocalUser -Name "susentorno" -Password $pw -PasswordNeverExpires -UserMayNotChangePassword
 ```
 
-Then, in **Local Security Policy** (`secpol.msc`) → Local Policies → User Rights Assignment, add `susentorno-share` to **Deny log on locally** and **Deny log on through Remote Desktop Services**.
+If you run this installation under an isolation name — `susentorno create-host-network --isolation-name <name>` — name the account `susentorno-<name>` instead, and pass it to `setup-guest-unix --share-account`. Windows caps a local account name at 20 characters, so an isolation name has about nine to work with.
 
-Then in **Computer Management** -> "Local Users and Groups" -> "susentorno-share" -> "MemberOf" add the Users group and ensure no other group is added (which only grants "Access this computer from the network").
+Then, in **Local Security Policy** (`secpol.msc`) → Local Policies → User Rights Assignment, add `susentorno` to **Deny log on locally** and **Deny log on through Remote Desktop Services**.
+
+Then in **Computer Management** -> "Local Users and Groups" -> "susentorno" -> "MemberOf" add the Users group and ensure no other group is added (which only grants "Access this computer from the network").
 
 Do not enable guest/anonymous SMB access as an alternative — modern Windows blocks insecure guest auth by default and enabling it weakens the whole host.
 
@@ -38,8 +40,8 @@ Create SMB shares for **both** `vm-shared-linux` and `vm-shared-windows`, each g
 
 ```powershell
 $env_dir = "E:\repo\.susentorno"   # this environment's .susentorno folder
-New-SmbShare -Name "vm-shared-linux"         -Path "$env_dir\vm-shared-linux"         -ReadAccess "susentorno-share"
-New-SmbShare -Name "vm-shared-windows" -Path "$env_dir\vm-shared-windows" -ReadAccess "susentorno-share"
+New-SmbShare -Name "vm-shared-linux"         -Path "$env_dir\vm-shared-linux"         -ReadAccess "susentorno"
+New-SmbShare -Name "vm-shared-windows" -Path "$env_dir\vm-shared-windows" -ReadAccess "susentorno"
 ```
 
 `susentorno create-host-network` (see [setup-machine.md](setup-machine.md)) already scoped SMB (TCP 445) to the Internal-switch and Default Switch adapters when you ran it — no separate firewall rule is needed here. It is never exposed on the external NIC.
@@ -48,9 +50,9 @@ Why the shared folder must be **live** rather than copied in: the guest's `~/.cl
 
 ### Security note: the share account
 
-The isolation boundary susentorno enforces is **code running in the VM vs. the host**, not merely a human operator. Because the SMB credential must be stored where the guest can read it at boot, code inside the VM can read it too. That is why `susentorno-share` is scoped to read-only access on the two shared folders and denied interactive logon: even if VM-resident code exfiltrates the credential, all it grants is the folder read the VM already had.
+The isolation boundary susentorno enforces is **code running in the VM vs. the host**, not merely a human operator. Because the SMB credential must be stored where the guest can read it at boot, code inside the VM can read it too. That is why `susentorno` is scoped to read-only access on the two shared folders and denied interactive logon: even if VM-resident code exfiltrates the credential, all it grants is the folder read the VM already had.
 
-The shared `credentials.json` and GitHub `github-config.txt` are both **placeholders** — the real Claude token and the real GitHub PAT are injected on the wire by the proxy, never stored in the VM. `susentorno-share` is the only credential anywhere in the VM — one more reason to keep it as inert as possible.
+The shared `credentials.json` and GitHub `github-config.txt` are both **placeholders** — the real Claude token and the real GitHub PAT are injected on the wire by the proxy, never stored in the VM. `susentorno` is the only credential anywhere in the VM — one more reason to keep it as inert as possible.
 
 ## Next step
 

@@ -114,7 +114,7 @@ Then, from the Host, in an **elevated (Administrator) PowerShell**, run the envi
 susentorno setup-guest-unix
 ```
 
-It prompts for the Hyper-V VM name, the guest's address, username, the SMB share/account names (defaulting to this environment's `vm-shared-linux` / `susentorno-share`), and the share password from setup-environment.md.
+It prompts for the Hyper-V VM name, the guest's address, username, the SMB share/account names (defaulting to this environment's `vm-shared-linux` / `susentorno`), and the share password from setup-environment.md.
 
 Any of those answers except the password can be supplied as a flag instead, and each flag suppresses **only its own** prompt — anything you leave off still prompts, in the same order:
 
@@ -159,7 +159,7 @@ sudo apt install -y cifs-utils
 
 # Credentials file, readable only by root:
 sudo tee /etc/susentorno-share.cred > /dev/null << 'EOF'
-username=susentorno-share
+username=susentorno
 password=<the password from setup-environment.md>
 EOF
 sudo chmod 600 /etc/susentorno-share.cred
@@ -188,7 +188,7 @@ Before installing anything else, the automated command also installs a Hyper-V K
 **Windows guest** — leave the adapter on DHCP. Default Switch uses Hyper-V ICS; `susentorno-internal` uses `run-hosting` with the host as router and DNS. Save credentials with:
 
 ```powershell
-cmdkey /add:192.168.67.1 /user:susentorno-share /pass:<the password from setup-environment.md>
+cmdkey /add:192.168.67.1 /user:susentorno /pass:<the password from setup-environment.md>
 ```
 
 `cmdkey` entries are **per-address**, so add one for the Default Switch host IP as well if you mount the share during the NAT phase. The share is then reachable at `\\192.168.67.1\vm-shared-windows` — the numbered scripts run from there. Two host addresses appear across this flow:
