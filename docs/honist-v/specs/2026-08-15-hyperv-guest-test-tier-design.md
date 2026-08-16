@@ -177,14 +177,19 @@ Matching the ordering rationale already written at `tests/guest/globalSetup.ts:1
 2. checkDockerRunning()       instant
 3. checkSshAgentRunning()     instant   new
 4. checkGatewayPortsFree()    ~1s       new, strict: EITHER :80 or :443 held is fatal
-5. sweepIsolationResidue()    seconds   VMs, child VHDXs, shares, account, known_hosts
+5. sweepIsolationResidue()    seconds   VMs, child VHDXs, SMB shares, local account
 6. deleteHostNetwork() → createHostNetwork()   isolationName 'test', called as modules
-7. ensureGoldenImage()        up to 30 min on a cold cache
+7. sweepKnownHosts()          instant   needs the subnets step 6 just established
+8. ensureGoldenImage()        up to 30 min on a cold cache
 ```
 
 Steps 6 use the **modules**, not the CLI, exactly as `tests/host-network/createDeleteHostNetwork.test.ts:38-48` already does — the CLI would prompt for a subnet, while the module takes an injectable `promptSubnet`. The tier owning its host network rather than requiring one keeps the bootstrappable-from-clean property; requiring it would be the "documented one-time manual prerequisite" already rejected for the SMB share, and rejecting it there while accepting it here would be incoherent.
 
-`sweepIsolationResidue('test')` is name-driven and origin-blind: `Get-VM -Name 'susentorno-test-*'` → `Stop-VM -TurnOff` → `Remove-VM -Force`; delete `.image-cache/susentorno-test-*.vhdx` **except** `-golden.vhdx` and the key pair; `Remove-SmbShare susentorno-test-*`; `Remove-LocalUser susentorno-test-share`; then rewrite `~/.ssh/known_hosts` dropping lines whose host matches the internal subnet or the Default Switch subnet (the first derivable from the switch's host IP, the second from `resolveForwardListenAddress('vEthernet (Default Switch)')`). It runs at startup **and** teardown: startup makes a Ctrl-C'd run recoverable, teardown keeps a passing run from leaving a local account and three VMs on the machine.
+`sweepIsolationResidue('test')` is name-driven and origin-blind: `Get-VM -Name 'susentorno-test-*'` → `Stop-VM -TurnOff` → `Remove-VM -Force`; delete `.image-cache/susentorno-test-*.vhdx` **except** `-golden.vhdx` and the key pair; `Remove-SmbShare susentorno-test-*`; `Remove-LocalUser susentorno-test-share`.
+
+`sweepKnownHosts()` is separate, and ordered after step 6 deliberately: it rewrites `~/.ssh/known_hosts` dropping lines whose host matches the internal subnet or the Default Switch subnet, and the internal subnet is only knowable once the switch exists (`create-host-network` picks a free one via `findFreeSubnet`, so it can differ between runs). The Default Switch subnet comes from `resolveForwardListenAddress('vEthernet (Default Switch)')`. At teardown the same ordering constraint runs the other way — `sweepKnownHosts()` must precede `deleteHostNetwork()`, or the subnet is already gone.
+
+Both sweeps run at startup **and** teardown: startup makes a Ctrl-C'd run recoverable, teardown keeps a passing run from leaving a local account and three VMs on the machine.
 
 ### Why the gateway must bind real `:80`/`:443`
 
@@ -297,7 +302,7 @@ Boots and asserts, *before anything runs*, that DHCP alone configured it; then r
 | `:439` fresh guest configured by DHCP alone | **fresh**, unchanged |
 | — | **new in phases**: cred-file mode and ownership, the fstab automount entry, the stale-autofs unwind |
 
-Net: 23 assertions become about 19 in the guest tier, 3 relocated, 4 deleted, 3 added — and what remains asserts the product rather than the harness.
+Net: of 23 assertions, 17 carry over, 3 relocate to `proxy-stack`, and 3 are deleted; 3 new ones are added, leaving 20 in the guest tier — and what remains asserts the product rather than the harness.
 
 **The three relocated tests are rewritten, not merely deleted.** `tests/proxy-stack/stackLifecycle.test.ts` covers the blue/green swap and token rotation, but **not** the allowlist-edit restart, the log-follow re-attachment, or unique-tracking reset/preserve. They move to `proxy-stack` driving traffic at `127.0.0.1:HTTPS_PORT` instead of from a guest. The cost is real if small: that traffic currently originates in a guest, so "the follow re-attached" is today proven end-to-end through the forwarder. The benefit is three fewer tests — including two with 300-second timeouts — on the expensive tier, and it corrects a tier placement `testing.md:29-36` already forbids.
 
