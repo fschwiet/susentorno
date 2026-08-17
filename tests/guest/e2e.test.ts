@@ -16,7 +16,6 @@ import { startProxyStack, stopProxyStack, type ProxyStack } from '../proxyStack'
 import { envParent, envRoot, repoRoot } from '../testEnvRoot';
 import { artifactsDir, collectDiagnostics } from './diagnostics';
 import { GUEST_USERNAME } from './autoinstall';
-import { installExtraCas } from './extraCas';
 import { guestCapture } from './guestExec';
 import { ensureHarnessKeys } from './harnessKeys';
 import { ISOLATION_NAME, roleVmName } from './hyperv/imageCache';
@@ -98,12 +97,6 @@ beforeAll(async () => {
   ].join(' && ');
   const staged = await guestCapture(target, stage);
   expect(staged.exitCode, staged.stdout).toBe(0);
-
-  // Only meaningful when this machine is behind a TLS-intercepting proxy, in
-  // which case the guest inherits the interception but not the trust and the
-  // pre-scripts' agent installers fail certificate verification. A no-op
-  // otherwise. See tests/guest/extraCas.ts.
-  await installExtraCas(target, 'e2e');
 
   // Both DHCP addresses must be trusted before production's StrictHostKeyChecking=ask
   // command reaches either one, since its only stdin is reserved for the SMB password.

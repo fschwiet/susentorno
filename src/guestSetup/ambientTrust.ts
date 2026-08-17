@@ -54,8 +54,7 @@ export function ambientCaFileName(sha256: string): string {
 }
 
 /**
- * base64 over the wire, same reasoning as tests/guest/extraCas.ts's
- * buildInstallExtraCaCommand: the PEM crosses bash -ic as one shell-quoted
+ * base64 over the wire: the PEM crosses bash -ic as one shell-quoted
  * argument, and its own newlines cannot survive that quoting reliably.
  */
 export function buildInstallAmbientCaCommand(fileName: string, pem: string): string {
