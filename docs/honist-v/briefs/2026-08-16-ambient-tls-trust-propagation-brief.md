@@ -96,6 +96,31 @@ Once `setup-guest-unix` grows the flag, `tests/guest/e2e.test.ts` should pass it
 through instead of staging beforehand — that is what turns the flag into covered
 behaviour rather than merely present behaviour.
 
+#### The manual export step should not survive
+
+As shipped, running the tier on an intercepted machine requires a developer to
+export the interceptor's CA by hand and point `SUSENTORNO_TEST_EXTRA_CA` at it:
+
+```powershell
+$ca = Get-ChildItem Cert:\LocalMachine\Root |
+  Where-Object { $_.Subject -like '*proxy-certificate-authority*' } | Select-Object -First 1
+$pem = "-----BEGIN CERTIFICATE-----`n" +
+  [Convert]::ToBase64String($ca.RawData, 'InsertLineBreaks') + "`n-----END CERTIFICATE-----`n"
+Set-Content -Path .image-cache\outer-proxy-ca.pem -Value $pem -Encoding ascii -NoNewline
+```
+
+That is a per-machine setup step nobody will remember, and it breaks the
+bootstrappable-from-clean property the rest of this tier is careful about — the
+same objection that ruled out a hand-built golden VM. It should be **detected,
+not configured**: enumerate the host's trusted roots, keep the ones that are not
+part of the public root program, and stage those automatically, with the
+environment variable surviving only as an override for the cases detection
+cannot reach.
+
+Deferred rather than done because auto-detection on Windows needs care to avoid
+sweeping in unrelated enterprise roots, and the explicit path was enough to
+unblock the tier.
+
 ## Test coverage — read this before relying on the tier
 
 The guest tier will exercise this path **only on a machine that is actually
@@ -112,37 +137,61 @@ So the mechanism needs deterministic coverage of its own:
 
 The end-to-end run is then integration proof on top of that, not the only proof.
 
-## Open question: does Envoy validate upstream certificates?
+## Split this out: Envoy does not validate upstream certificates
 
-Related but a different layer, and arguably a separate piece of work.
+Found while investigating the above. It is a different layer and a different
+severity, and it should become its own piece of work rather than riding along
+with the CA propagation.
 
-Post-scripts run **after** isolation, and
-`templates/vm-shared-linux/post-scripts/01-auth-config.sh:25` runs
-`gh auth login --with-token`. That traffic goes guest → susentorno's Envoy → host
-→ outer interceptor. So Envoy's own upstream connection meets the interception,
-and the container does not inherit the host's trust store.
+`buildTlsUpstreamCluster` (`src/envoyConfig.ts:95`) sets `common_tls_context: {}`
+for every non-override upstream — no `validation_context` at all. Envoy's
+architecture documentation (`intro/arch_overview/security/ssl.rst`) is explicit:
 
-Whether anything needs doing is unresolved:
+> Certificate verification for both upstream and downstream connections is
+> disabled by default. It must be explicitly enabled by specifying one or more
+> trusted authority certificates within the validation context.
 
-- `buildTlsUpstreamCluster` (`src/envoyConfig.ts:95`) sets `common_tls_context: {}`
-  for every normal upstream — no `validation_context` at all. Envoy does not
-  verify upstream server certificates unless one is configured, which would mean
-  this already works and nothing is needed.
-- But the `--upstream-override` branch explicitly sets
-  `validation_context: { trust_chain_verification: 'ACCEPT_UNTRUSTED' }`, which is
-  redundant if there were no default validation. Either it is defensive, or the
-  reading above is wrong.
+That builder is what the github, claude, codex, and auth-candidate clusters all
+use (`src/envoyConfig.ts:218`, `:428`, `:536`). So it applies to precisely the
+TLS-terminated paths — the ones that carry credentials.
 
-**Verify empirically before assuming either way.** Drive the proxy with SNI for a
-host the outer environment terminates and observe whether the upstream connection
-succeeds.
+### Consequence
 
-If it does need fixing, it is small: `templates/proxy/docker-compose.yml:11`
-already mounts `./ca:/etc/envoy/ca:ro`, so the file has a delivery channel; the
-change would be a `validation_context.trusted_ca` pointing into it.
+For an auth-terminated host, the proxy will accept **any** certificate the
+upstream presents: self-signed, expired, wrong hostname, attacker-controlled. It
+then re-wraps the response in its own CA, which every guest is configured to
+trust. So:
 
-Note this is not covered by the guest tier's tests either way — `e2e.test.ts`
-stubs `gh`, since no clean-machine test can supply a valid GitHub token.
+- the guest sees a valid certificate and has no way to detect the substitution,
+  because the proxy's signature is exactly what it was told to expect; and
+- the proxy injects the **real** credential into that upstream connection.
+
+The second is the serious one. Anyone able to intercept or redirect the
+proxy-to-origin connection for `api.github.com` receives the real GitHub PAT —
+and similarly the Claude and Codex tokens. Credential substitution is the reason
+these hosts are terminated at all, so the unvalidated hop is carrying exactly
+what an attacker would want.
+
+The passthrough path is unaffected: it is `tcp_proxy`, so the client performs its
+own end-to-end validation against the origin. Only the terminated set is exposed.
+
+### Interaction with the CA propagation work — they pull opposite ways
+
+Enabling validation would **break** the nested case this brief exists for. Today
+Envoy accepts the outer interceptor's certificate precisely because it validates
+nothing; turn validation on and the proxy can no longer reach any host the outer
+environment terminates.
+
+So the two are one lever: whatever `trusted_ca` bundle gets configured must
+include the public root program *and* any ambient interception CA the host is
+behind. `templates/proxy/docker-compose.yml:11` already mounts
+`./ca:/etc/envoy/ca:ro`, so there is a delivery channel; the missing pieces are
+assembling the bundle and pointing `validation_context.trusted_ca` at it.
+
+Note the guest tier does not cover this either way — `e2e.test.ts` stubs `gh`,
+since no clean-machine test can supply a valid GitHub token. It needs its own
+test: point an auth-terminated host at a server with a bad certificate and assert
+the proxy refuses rather than re-wraps.
 
 ## Generalisation
 
