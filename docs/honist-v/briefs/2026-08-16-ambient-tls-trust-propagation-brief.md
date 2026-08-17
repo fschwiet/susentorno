@@ -121,6 +121,16 @@ Deferred rather than done because auto-detection on Windows needs care to avoid
 sweeping in unrelated enterprise roots, and the explicit path was enough to
 unblock the tier.
 
+Neither `SUSENTORNO_TEST_EXTRA_CA` nor the exported `.image-cache/outer-proxy-ca.pem`
+is mentioned in `development.md` or `testing.md`, and that is deliberate: the
+guest tier is in the default `pnpm test` pipeline, so anything written there
+reads as a standing prerequisite alongside elevation, Hyper-V, Docker, and
+`ssh-agent`. Documenting a step we intend to delete would be worse than leaving
+it here. **If detection is not built and the environment variable becomes the
+permanent answer, it must be documented in both files at that point** — an
+undocumented per-machine setup step that the default pipeline silently depends
+on is the failure mode to avoid.
+
 ## Test coverage — read this before relying on the tier
 
 The guest tier will exercise this path **only on a machine that is actually
