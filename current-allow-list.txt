@@ -1,3 +1,6 @@
+# pnpm
+get.pnpm.io:443
+
 ## ubunto unblocked specifically for connectivity-check.ubuntu.com
 *.ubuntu.com:443
 *.ubuntu.com:80
