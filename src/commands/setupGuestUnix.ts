@@ -17,6 +17,8 @@ import {
 import { listScripts } from '../guestSetup/listScripts';
 import { createSshRemoteExec } from '../guestSetup/remoteExec';
 import { mountShare, MountShareError } from '../guestSetup/mountShare';
+import { propagateAmbientTrust, AmbientTrustError } from '../guestSetup/ambientTrust';
+import { HostTrustStoreError } from '../guestSetup/hostTrustStore';
 import { runPreScripts, RunPreScriptsError } from '../guestSetup/runPreScripts';
 import { runPostScripts, RunPostScriptsError } from '../guestSetup/runPostScripts';
 import { ensureKvpDaemon, EnsureKvpDaemonError } from '../guestSetup/kvpDaemon';
@@ -221,6 +223,8 @@ export function registerSetupGuestUnix(program: Command): void {
 
         const remoteExec = createSshRemoteExec({ address: setupAddress, username });
 
+        await propagateAmbientTrust(exec, remoteExec, onStep);
+
         await ensureKvpDaemon(remoteExec, onStep);
 
         await mountShare(remoteExec, {
@@ -282,7 +286,9 @@ export function registerSetupGuestUnix(program: Command): void {
           error instanceof RunPreScriptsError ||
           error instanceof RunPostScriptsError ||
           error instanceof EnsureKvpDaemonError ||
-          error instanceof VmReconcileError
+          error instanceof VmReconcileError ||
+          error instanceof HostTrustStoreError ||
+          error instanceof AmbientTrustError
         ) {
           console.error(`setup-guest-unix: ${error.message}`);
           process.exitCode = 1;
