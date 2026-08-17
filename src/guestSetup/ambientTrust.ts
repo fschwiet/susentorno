@@ -109,7 +109,7 @@ export async function propagateAmbientTrust(
     installed.push(fileName);
   }
 
-  onStep(`trust ${installed.length} ambient CA(s)`);
+  onStep(`trust ${installed.length} ambient CA(s): ${installed.join(', ')}`);
   const updateResult = await remoteExec.run('sudo update-ca-certificates');
   if (updateResult.exitCode !== 0) {
     throw new AmbientTrustError(
