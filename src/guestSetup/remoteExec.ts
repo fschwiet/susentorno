@@ -5,6 +5,10 @@ export interface RemoteExecResult {
   exitCode: number;
 }
 
+export interface RemoteExecCaptureResult extends RemoteExecResult {
+  stdout: string;
+}
+
 /**
  * Injectable seam for "run this command on the guest and get its exit code
  * back." Production wires this to real ssh/scp (createSshRemoteExec, below);
@@ -15,6 +19,19 @@ export interface RemoteExecResult {
 export interface RemoteExec {
   run(remoteCommand: string): Promise<RemoteExecResult>;
   copyFile(localPath: string, remoteDestPath: string): Promise<RemoteExecResult>;
+}
+
+/**
+ * Widens RemoteExec with a read-only, stdout-capturing variant of run() — for
+ * queries with no interactive output expected (sudo prompts, package-manager
+ * progress), not a replacement for it. Kept as a separate interface rather
+ * than added to RemoteExec directly, so every existing fake RemoteExec in the
+ * test suite (which only ever implements run/copyFile) keeps compiling
+ * unchanged; only code that actually needs captured stdout asks for this
+ * wider type.
+ */
+export interface RemoteExecWithCapture extends RemoteExec {
+  capture(remoteCommand: string): Promise<RemoteExecCaptureResult>;
 }
 
 export interface SshTarget {
@@ -48,7 +65,7 @@ export function buildScpArgv(
   return [localPath, `${target.username}@${target.address}:${remoteDestPath}`];
 }
 
-export function createSshRemoteExec(target: SshTarget): RemoteExec {
+export function createSshRemoteExec(target: SshTarget): RemoteExecWithCapture {
   return {
     async run(remoteCommand: string): Promise<RemoteExecResult> {
       const result = await execa('ssh', buildSshRunArgv(target, remoteCommand), {
@@ -63,6 +80,13 @@ export function createSshRemoteExec(target: SshTarget): RemoteExec {
         reject: false,
       });
       return { exitCode: result.exitCode ?? 1 };
+    },
+    async capture(remoteCommand: string): Promise<RemoteExecCaptureResult> {
+      const result = await execa('ssh', buildSshRunArgv(target, remoteCommand), {
+        reject: false,
+        all: true,
+      });
+      return { exitCode: result.exitCode ?? 1, stdout: result.all ?? '' };
     },
   };
 }

@@ -3,8 +3,8 @@ import { join } from 'node:path';
 import {
   buildScpArgv,
   buildSshRunArgv,
-  type RemoteExec,
   type RemoteExecResult,
+  type RemoteExecWithCapture,
   type SshTarget,
 } from '../../src/guestSetup/remoteExec';
 import { harnessKeyPath, imageCacheDir } from './hyperv/imageCache';
@@ -23,7 +23,7 @@ export function buildHarnessSshOptions(): string[] {
     harnessKeyPath,
   ];
 }
-export function createHarnessRemoteExec(target: SshTarget): RemoteExec {
+export function createHarnessRemoteExec(target: SshTarget): RemoteExecWithCapture {
   const options = buildHarnessSshOptions();
   const run = async (command: 'ssh' | 'scp', args: string[]): Promise<RemoteExecResult> => {
     const result = await execa(command, [...options, ...args], { reject: false, all: true });
@@ -33,6 +33,7 @@ export function createHarnessRemoteExec(target: SshTarget): RemoteExec {
     run: (remoteCommand) => run('ssh', buildSshRunArgv(target, remoteCommand)),
     copyFile: (localPath, remoteDestPath) =>
       run('scp', buildScpArgv(target, localPath, remoteDestPath)),
+    capture: (remoteCommand) => guestCapture(target, remoteCommand),
   };
 }
 export async function guestCapture(
