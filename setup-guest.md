@@ -1,23 +1,23 @@
 # Guest setup
 
-Create and configure a guest VM under Hyper-V, isolated behind the host proxy. May be repeated for any number of guests; each guest pairs with one environment via its shared folder. Complete [setup-machine.md](setup-machine.md) and [setup-environment.md](setup-environment.md) first, so the environment's `vm-shared-linux/` and `vm-shared-windows/` folders contain `cert.pem`, `github-config.txt`, and `credentials.json`.
+Create and configure a guest VM under Hyper-V, isolated behind the host proxy. May be repeated for any number of guests; each guest pairs with one environment via its shared folder. Complete [setup-machine.md](setup-machine.md) and [setup-environment.md](setup-environment.md) first.
 
-Both guest OSes stay on **DHCP** throughout: on the Default Switch they lease from Hyper-V's ICS (real gateway and DNS, so packages install) during setup, and on `susentorno-internal` they lease from `run-hosting` once isolated, which supplies the host as both router and DNS. Nothing inside the guest changes between the two, which is what makes switching networks a purely host-side operation.
+Guest setup is differentiated for Windows and Linux guests, both covered in this document.
 
 This doc continues as if `192.168.67.x` was chosen as the subnet and the host was assigned `192.168.67.1` in `setup-machine.md`.
 
 ## 1. Prepare the VM
 
-### Image options
+### VM Operating System Image Selection
 
-- Hyper-V Manager includes some images but the version seems to fall behind what is available if you download your own image.
+- Hyper-V Manager includes some images, but the version seems to fall behind what is available if you download your own image.
 - To use an included image: "Hyper-V Manager -> Action -> Quick Create"
   - An Ubuntu option is available, pick the latest LTS.
-  - A time-limited Windows 11 Dev environment based on Windows Enterprise can be chosen with some pre-installed software. The time limit is not known but I'd guess 90 days.
+  - A time-limited Windows 11 Dev environment based on Windows Enterprise can be chosen with some pre-installed software. The time limit is not known, but I'd guess 90 days.
 - To start with your own image: "Hyper-V Manager -> Action -> New -> Virtual Machine"
   - Ubuntu can be downloaded from: https://ubuntu.com/download
   - A 90-day evaluation ISO for Windows Enterprise can be downloaded from https://info.microsoft.com/ww-landing-windows-11-enterprise.html
-- It was observed that the included Windows image took 54.6GB of disk space after running all Windows updates while the evaluation ISO for Windows Enterprise took 26.7 GB for Windows with updates
+- It was observed that the Windows image included with Hyper-V manager took 54.6GB of disk space after running all Windows updates while the evaluation ISO for Windows Enterprise took 26.7 GB for Windows with updates.
 
 ### VM creation
 
