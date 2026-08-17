@@ -83,6 +83,14 @@ anything already in the guest, so it's exactly what surfaces. This is also
 immune to bundle staleness in either direction — it's a live comparison against
 the guest's actual current state, not a snapshot of "what's in some store."
 
+Fingerprints are computed over each certificate's **DER encoding** (SHA-256),
+not its PEM text, on both sides of the diff. This matters for the no-op
+guarantee specifically: Windows' PEM export and Ubuntu's own PEM formatting can
+differ in line-wrapping and whitespace for byte-identical certificates, and a
+text-based comparison would report those as "new," installing redundant copies
+of already-trusted public roots on every run — a clean machine would no longer
+be a true no-op.
+
 ### Why over-inclusion from the host side is an acceptable risk
 
 The detector does not try to identify "the one CA that's the interceptor" — it
@@ -244,10 +252,21 @@ before writing builders against them.
   proxy CA), import only `caCertPem` into `Cert:\CurrentUser\Root` — never
   `caKeyPem`, which is discarded immediately and never written to disk or passed
   to PowerShell, so a failed cleanup can leave at worst an inert trusted root,
-  never a signing key — run `propagateAmbientTrust` against a real test guest,
-  assert the throwaway CA lands in the guest's system store and that
-  `NODE_EXTRA_CA_CERTS` resolves it via the bundle path, then remove the
-  throwaway cert from `Cert:\CurrentUser\Root` in a `finally` block.
+  never a signing key — run `propagateAmbientTrust` (not the full
+  `setup-guest-unix` flow) against a real test guest, assert the throwaway CA
+  was written under `/usr/local/share/ca-certificates/` and that
+  `update-ca-certificates` picked it up (e.g. `openssl verify` against the
+  guest's system bundle accepts it), then remove the throwaway cert from
+  `Cert:\CurrentUser\Root` in a `finally` block. This test does not touch
+  `NODE_EXTRA_CA_CERTS` — `propagateAmbientTrust` runs before
+  `nn-configure-network.sh` and doesn't set it; that reconciliation is covered
+  by the existing-test update below.
+- **`tests/guest/phases.test.ts:173`** ("configures NODE_EXTRA_CA_CERTS for
+  login shells") currently asserts the env var contains
+  `susentorno-proxy-certificate-authority.crt`, the old single-file target. It
+  must be updated to assert it resolves to `/etc/ssl/certs/ca-certificates.crt`
+  instead, matching the `nn-configure-network.sh` change — otherwise this test
+  starts failing the moment that one line changes.
 - **`tests/guest/e2e.test.ts`**: drops its manual staging entirely. The real
   `setup-guest-unix` path now covers this automatically — on a clean CI/dev
   machine it exercises the no-op branch; only a machine that's actually
