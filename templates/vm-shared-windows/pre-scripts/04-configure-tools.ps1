@@ -6,6 +6,15 @@ powercfg /change standby-timeout-dc 0
 powercfg /change monitor-timeout-ac 0
 powercfg /change monitor-timeout-dc 0
 
+# OpenSSH Authentication Agent. Windows ships the service Disabled, so a bare
+# `ssh` in a fresh guest can only find a key through ~/.ssh/config or a default
+# key name. Enabling it is how you hand a key to tooling that shells out to
+# `ssh` without editing either -- which is exactly what susentorno's own guest
+# test tier does (see development.md). Both calls are idempotent; Start-Service
+# on an already-running service is a no-op.
+Set-Service ssh-agent -StartupType Automatic
+Start-Service ssh-agent
+
 # VS Code extensions
 
 code --install-extension esbenp.prettier-vscode
@@ -43,4 +52,4 @@ if (-not (Test-Path $codexConfigPath) -or -not (Select-String -LiteralPath $code
     Add-Content -LiteralPath $codexConfigPath -Value "`n$context7Section`nurl = `"https://mcp.context7.com/mcp`""
 }
 
-Write-Host "04-configure-tools: power timeouts disabled; context7 MCP registered for claude and codex; VS Code Prettier extension installed."
+Write-Host "04-configure-tools: power timeouts disabled; ssh-agent enabled and started; context7 MCP registered for claude and codex; VS Code Prettier extension installed."

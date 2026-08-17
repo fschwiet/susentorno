@@ -8,11 +8,12 @@ Requirements and setup for running susentorno's own test suite. See [testing.md]
 - An **elevated (Administrator)** terminal. The `host-network` and `guest` tiers create and delete real Hyper-V switches, firewall rules, VMs, VHDs, SMB shares, and a Windows local account.
 - **Hyper-V** enabled, with a working **Default Switch** (the guest tier's golden-image build needs ICS internet through it).
 - **Docker Desktop** running, for the `proxy-stack` and `guest` tiers.
-- A running **`ssh-agent`**. The guest tier's end-to-end test runs the real `setup-guest-unix`, whose bare `ssh` finds the harness key through the agent.
+- A running **`ssh-agent`**. The guest tier's end-to-end test runs the real `setup-guest-unix`, whose bare `ssh` finds the harness key through the agent. Windows ships the service **Disabled**, so a fresh machine always needs this:
   ```powershell
   Set-Service ssh-agent -StartupType Automatic
   Start-Service ssh-agent
   ```
+  Run `pnpm test` from **PowerShell**, not Git Bash: Git Bash resolves `ssh-add`/`ssh` to Git for Windows' OpenSSH, which wants `SSH_AUTH_SOCK` and cannot see the service's agent at all.
 - **~10 GB free disk**. The guest tier caches an Ubuntu ISO and a golden VM image in `.image-cache/`, and builds it on the first run (~20–30 minutes). Both are gitignored; delete the directory to force a rebuild.
 - No WSL2, KVM, or nested virtualization is required. Test startup gates verify each prerequisite and name the fix for whatever is missing.
 
