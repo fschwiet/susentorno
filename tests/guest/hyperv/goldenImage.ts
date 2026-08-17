@@ -45,8 +45,8 @@ import {
   buildTurnOffVmCommand,
 } from './vm';
 
-const VM = `${NAME_PREFIX}-golden-build`,
-  PIPE = VM,
+const goldenBuildVmName = `${NAME_PREFIX}-golden-build`,
+  goldenBuildPipeName = goldenBuildVmName,
   installer = join(imageCacheDir, `${NAME_PREFIX}-golden-installer.vhdx`),
   seed = join(imageCacheDir, `${NAME_PREFIX}-golden-seed.vhdx`);
 const targetSize = 40 * 1024 ** 3,
@@ -97,21 +97,21 @@ async function makeSeed(exec: PowerShellExec, user: string, meta: string): Promi
   await run(exec, buildDismountVhdCommand(seed), 'dismount seed disk');
 }
 async function removeBuildVm(exec: PowerShellExec): Promise<void> {
-  await exec.run(buildTurnOffVmCommand(VM));
+  await exec.run(buildTurnOffVmCommand(goldenBuildVmName));
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
-    const result = await exec.run(buildGetVmCommand(VM));
-    const vm = parseGetVmResult(result.stdout, VM);
+    const result = await exec.run(buildGetVmCommand(goldenBuildVmName));
+    const vm = parseGetVmResult(result.stdout, goldenBuildVmName);
     if (!vm || vm.state === 'Off') break;
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
-  await exec.run(buildRemoveVmCommand(VM));
+  await exec.run(buildRemoveVmCommand(goldenBuildVmName));
 }
 async function waitForOff(exec: PowerShellExec): Promise<void> {
   const deadline = Date.now() + 45 * 60_000;
   while (Date.now() < deadline) {
-    const result = await exec.run(buildGetVmCommand(VM));
-    if (parseGetVmResult(result.stdout, VM)?.state === 'Off') return;
+    const result = await exec.run(buildGetVmCommand(goldenBuildVmName));
+    if (parseGetVmResult(result.stdout, goldenBuildVmName)?.state === 'Off') return;
     await new Promise((resolve) => setTimeout(resolve, 15_000));
   }
   throw new Error(`goldenImage: build VM did not power off; see ${goldenBuildSerialLogPath}`);
@@ -148,7 +148,10 @@ export async function ensureGoldenImage(
   await run(exec, buildNewVhdCommand(goldenVhdPath, targetSize), 'create golden disk');
   await run(
     exec,
-    buildNewVmCommand(VM, { memoryStartupBytes: 4 * 1024 ** 3, switchName: 'Default Switch' }),
+    buildNewVmCommand(goldenBuildVmName, {
+      memoryStartupBytes: 4 * 1024 ** 3,
+      switchName: 'Default Switch',
+    }),
     'create build VM',
   );
   // A build VM has no recovery point: automatic checkpoints place the writes
@@ -156,27 +159,27 @@ export async function ensureGoldenImage(
   // (and the installer logs) along with those overlays.
   await run(
     exec,
-    `Set-VM -Name ${quoteForPowerShell(VM)} -AutomaticCheckpointsEnabled $false`,
+    `Set-VM -Name ${quoteForPowerShell(goldenBuildVmName)} -AutomaticCheckpointsEnabled $false`,
     'disable automatic checkpoints',
   );
   let serial: ReturnType<typeof startSerialLog> | undefined;
   try {
     for (const [command, what] of [
-      [buildAddVmHardDiskCommand(VM, goldenVhdPath), 'attach target'],
-      [buildAddVmHardDiskCommand(VM, installer), 'attach installer'],
-      [buildAddVmHardDiskCommand(VM, seed), 'attach seed'],
-      [buildSetVmProcessorCommand(VM, 2), 'set processors'],
-      [buildDisableSecureBootCommand(VM), 'disable Secure Boot'],
-      [buildSetFirstBootDeviceCommand(VM, installer), 'set boot device'],
-      [buildSetVmComPortCommand(VM, PIPE), 'attach serial port'],
-      [buildStartVmCommand(VM), 'start build VM'],
+      [buildAddVmHardDiskCommand(goldenBuildVmName, goldenVhdPath), 'attach target'],
+      [buildAddVmHardDiskCommand(goldenBuildVmName, installer), 'attach installer'],
+      [buildAddVmHardDiskCommand(goldenBuildVmName, seed), 'attach seed'],
+      [buildSetVmProcessorCommand(goldenBuildVmName, 2), 'set processors'],
+      [buildDisableSecureBootCommand(goldenBuildVmName), 'disable Secure Boot'],
+      [buildSetFirstBootDeviceCommand(goldenBuildVmName, installer), 'set boot device'],
+      [buildSetVmComPortCommand(goldenBuildVmName, goldenBuildPipeName), 'attach serial port'],
+      [buildStartVmCommand(goldenBuildVmName), 'start build VM'],
     ] as const)
       await run(exec, command, what);
     // The hand-assembled live image hands ttyS0 from early boot to systemd a
     // few seconds after Start-VM. Connecting during that hand-off consistently
     // loses the pipe before Subiquity starts; attach to the stable console.
     await new Promise((resolve) => setTimeout(resolve, 20_000));
-    serial = startSerialLog(PIPE, goldenBuildSerialLogPath);
+    serial = startSerialLog(goldenBuildPipeName, goldenBuildSerialLogPath);
     await waitForOff(exec);
   } finally {
     await serial?.stop();

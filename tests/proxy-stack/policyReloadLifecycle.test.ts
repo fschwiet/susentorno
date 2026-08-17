@@ -79,7 +79,7 @@ describe('proxy stack policy reload & log follow', () => {
     await waitForProxyLine(stack, 'ALLOW CRED  api.anthropic.com', 60_000);
   }, 120_000);
 
-  it('an allowlist edit restarts the proxy, re-attaches the follow, and resets unique tracking', async () => {
+  it('an allow list edit restarts the proxy, re-attaches the follow, and resets unique tracking', async () => {
     const pypiBefore = countProxyLines(stack, 'ALLOW PASS  pypi.org');
     expect(pypiBefore).toBeGreaterThan(0);
     const mark = stack.stdoutLines.length;
@@ -109,10 +109,10 @@ describe('proxy stack policy reload & log follow', () => {
     await waitForProxyLine(stack, 'swap complete', 120_000, mark);
     const pypiBefore = countProxyLines(stack, 'ALLOW PASS  pypi.org');
 
-    // pypi.org was re-logged after the allowlist restart above, so it is in the
+    // pypi.org was re-logged after the allow list restart above, so it is in the
     // preserved unique map: this request must NOT produce a new line.
     await passthroughProbe();
-    // api.anthropic.com has NOT been logged since that allowlist reset, so it
+    // api.anthropic.com has NOT been logged since that allow list reset, so it
     // does print — proving the follow re-attached after this restart too.
     await claudeProbe();
 
