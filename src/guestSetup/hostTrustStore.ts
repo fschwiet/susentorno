@@ -18,16 +18,31 @@ const ANY_EKU_OID = '2.5.29.37.0';
  * (Disallowed, EKU) are about which certs the host itself would actually
  * accept, which is a fact about the store, not about the diff this module's
  * caller goes on to compute.
+ *
+ * Uses [X509Store] directly rather than the Cert:\ PSDrive: verified against
+ * a real host that the Cert:\ provider drive is only registered by
+ * PowerShell's own console-host startup, not when powershell.exe is spawned
+ * as a child process with redirected stdio (execa's case here, regardless of
+ * -NoProfile/-NonInteractive or stdio mode) — every Cert:\ reference fails
+ * there with "Cannot find drive". [X509Store] has no such dependency, and its
+ * certificates still carry the same PowerShell-added .EnhancedKeyUsageList
+ * property (confirmed on the same host) and native .Thumbprint/.RawData.
  */
 export function buildEnumerateTrustedRootsCommand(): string {
   return [
     "$ErrorActionPreference = 'Stop'",
-    '$disallowed = @(Get-ChildItem Cert:\\LocalMachine\\Disallowed, Cert:\\CurrentUser\\Disallowed ' +
-      '-ErrorAction SilentlyContinue | Select-Object -ExpandProperty Thumbprint)',
+    '$disallowed = New-Object System.Collections.Generic.List[string]',
+    "foreach ($loc in 'LocalMachine','CurrentUser') { try { " +
+      "$s = [System.Security.Cryptography.X509Certificates.X509Store]::new('Disallowed', $loc); " +
+      "$s.Open('ReadOnly'); foreach ($c in $s.Certificates) { $disallowed.Add($c.Thumbprint) }; " +
+      '$s.Close() } catch {} }',
     `$serverAuthOid = '${SERVER_AUTH_OID}'`,
     `$anyEkuOid = '${ANY_EKU_OID}'`,
-    'Get-ChildItem Cert:\\LocalMachine\\Root, Cert:\\CurrentUser\\Root | ' +
-      'Where-Object { $disallowed -notcontains $_.Thumbprint -and ' +
+    '$roots = New-Object System.Collections.Generic.List[object]',
+    "foreach ($loc in 'LocalMachine','CurrentUser') { " +
+      "$s = [System.Security.Cryptography.X509Certificates.X509Store]::new('Root', $loc); " +
+      "$s.Open('ReadOnly'); foreach ($c in $s.Certificates) { $roots.Add($c) }; $s.Close() }",
+    '$roots | Where-Object { $disallowed -notcontains $_.Thumbprint -and ' +
       '($_.EnhancedKeyUsageList.Count -eq 0 -or ' +
       '($_.EnhancedKeyUsageList | Where-Object { $_.ObjectId -eq $serverAuthOid -or $_.ObjectId -eq $anyEkuOid })) } | ' +
       'ForEach-Object { [PSCustomObject]@{ Thumbprint = $_.Thumbprint; ' +

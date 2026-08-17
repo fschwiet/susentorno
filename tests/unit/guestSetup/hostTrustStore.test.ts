@@ -18,14 +18,15 @@ describe('buildEnumerateTrustedRootsCommand', () => {
     expect(command).toContain("$ErrorActionPreference = 'Stop'");
   });
 
-  it('enumerates both LocalMachine and CurrentUser Root', () => {
-    expect(command).toContain('Cert:\\LocalMachine\\Root');
-    expect(command).toContain('Cert:\\CurrentUser\\Root');
+  it('enumerates both LocalMachine and CurrentUser Root via X509Store, not the Cert:\\ PSDrive', () => {
+    expect(command).toContain('X509Store');
+    expect(command).toContain("'Root'");
+    expect(command).toContain("'LocalMachine','CurrentUser'");
+    expect(command).not.toContain('Cert:\\');
   });
 
   it('excludes thumbprints from both Disallowed stores', () => {
-    expect(command).toContain('Cert:\\LocalMachine\\Disallowed');
-    expect(command).toContain('Cert:\\CurrentUser\\Disallowed');
+    expect(command).toContain("'Disallowed'");
     expect(command).toContain('-notcontains $_.Thumbprint');
   });
 
