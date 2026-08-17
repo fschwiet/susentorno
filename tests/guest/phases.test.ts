@@ -170,9 +170,9 @@ describe('provisioning during the setup phase', () => {
     expect(stdout).toContain('proto dhcp');
   });
 
-  it('configures NODE_EXTRA_CA_CERTS for login shells', async () => {
+  it('configures NODE_EXTRA_CA_CERTS for login shells, pointing at the full system bundle', async () => {
     const { stdout } = await guestCapture(target, "bash -lc 'echo $NODE_EXTRA_CA_CERTS'");
-    expect(stdout).toContain('susentorno-proxy-certificate-authority.crt');
+    expect(stdout).toContain('/etc/ssl/certs/ca-certificates.crt');
   });
 });
 
