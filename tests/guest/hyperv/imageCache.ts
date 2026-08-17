@@ -1,8 +1,8 @@
 import { join } from 'node:path';
 import { repoRoot } from '../../testEnvRoot';
 
-/** The three per-test guests. One differencing disk and one VM each. */
-export type GuestRole = 'phases' | 'e2e' | 'fresh';
+/** The four per-test guests. One differencing disk and one VM each. */
+export type GuestRole = 'phases' | 'e2e' | 'fresh' | 'ambientTrust';
 
 /**
  * One isolation name derives everything this tier touches on the host — the
