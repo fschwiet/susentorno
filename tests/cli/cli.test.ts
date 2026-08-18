@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { execa } from 'execa';
 import { fileURLToPath } from 'node:url';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -43,4 +43,67 @@ describe('CLI interface', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('lists --verify-upstream-overrides in run-hosting help', async () => {
+    const { stdout } = await execa('node', [cliPath, 'run-hosting', '--help']);
+    expect(stdout).toContain('--verify-upstream-overrides');
+  });
+
+  it('run-hosting refuses a --verify-upstream-overrides file that does not exist', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'susentorno-'));
+    try {
+      await execa(
+        'node',
+        [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
+        { cwd: dir },
+      );
+      await execa('node', [cliPath, 'generate-ca'], { cwd: dir });
+      const { exitCode, stderr, stdout } = await execa(
+        'node',
+        [
+          cliPath,
+          'run-hosting',
+          '--no-refresh',
+          '--no-forward',
+          '--verify-upstream-overrides',
+          join(dir, 'nope.pem'),
+        ],
+        { cwd: dir, reject: false },
+      );
+      expect(exitCode).not.toBe(0);
+      expect(`${stdout}${stderr}`).toContain('--verify-upstream-overrides');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it('run-hosting refuses a --verify-upstream-overrides file that is not a certificate', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'susentorno-'));
+    try {
+      await execa(
+        'node',
+        [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
+        { cwd: dir },
+      );
+      await execa('node', [cliPath, 'generate-ca'], { cwd: dir });
+      const junk = join(dir, 'junk.pem');
+      writeFileSync(junk, 'this is not a certificate\n');
+      const { exitCode, stderr, stdout } = await execa(
+        'node',
+        [
+          cliPath,
+          'run-hosting',
+          '--no-refresh',
+          '--no-forward',
+          '--verify-upstream-overrides',
+          junk,
+        ],
+        { cwd: dir, reject: false },
+      );
+      expect(exitCode).not.toBe(0);
+      expect(`${stdout}${stderr}`).toContain('not a parseable PEM certificate');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60000);
 });

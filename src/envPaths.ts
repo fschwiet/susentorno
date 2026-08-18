@@ -34,6 +34,7 @@ export interface EnvPaths {
   caKey: string;
   caLeafCert: string;
   caLeafKey: string;
+  upstreamTrustBundle: string;
   secretsDir: string;
   sdsSecret: string;
   codexSecret: string;
@@ -81,6 +82,7 @@ export function envPaths(cwd: string): EnvPaths {
     caKey: join(proxy, 'ca', 'key.pem'),
     caLeafCert: join(proxy, 'ca', 'leaf-cert.pem'),
     caLeafKey: join(proxy, 'ca', 'leaf-key.pem'),
+    upstreamTrustBundle: join(proxy, 'ca', 'upstream-trust.pem'),
     secretsDir: join(proxy, 'secrets'),
     sdsSecret: join(proxy, 'secrets', 'sds-secret.yaml'),
     codexSecret: join(proxy, 'secrets', 'codex-secret.yaml'),

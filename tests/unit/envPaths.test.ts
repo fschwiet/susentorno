@@ -108,6 +108,13 @@ describe('environment paths & layout', () => {
         join('/work', '.susentorno', 'proxy', 'secrets', 'codex-account-id-secret.yaml'),
       );
     });
+
+    it('places the upstream trust bundle alongside the proxy CA material', () => {
+      const paths = envPaths('C:\\work');
+      expect(paths.upstreamTrustBundle).toBe(
+        join('C:\\work', '.susentorno', 'proxy', 'ca', 'upstream-trust.pem'),
+      );
+    });
   });
 
   describe('home settings transform sources', () => {
