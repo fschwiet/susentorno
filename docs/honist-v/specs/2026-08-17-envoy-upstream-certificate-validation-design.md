@@ -132,6 +132,34 @@ This does not reintroduce the nested-case breakage. Under ambient interception
 the interceptor mints its leaf *for the requested hostname*, so it satisfies the
 SAN match as well as chaining to a bundled ambient root.
 
+### What the guarantee actually is
+
+Stated precisely, so it is not read as more than it is. The property changes
+from:
+
+> the proxy accepts **any** certificate on a credential-injected upstream
+
+to:
+
+> the proxy accepts a certificate **for the configured DNS name**, issued by
+> **any CA in Node's bundled root program or the host's trust store**.
+
+That closes the attack the problem statement describes — self-signed,
+attacker-minted, expired, and wrong-name certificates are all rejected, so an
+attacker who can redirect the proxy-to-origin connection no longer receives the
+real credential. It does **not** make the host's trust store irrelevant: any
+enterprise, interception, or otherwise ambient CA the host trusts can still mint
+a certificate this proxy will accept for `api.github.com`.
+
+That residual is not an oversight, it is the design constraint. Including
+ambient trust is exactly what keeps susentorno working behind a corporate
+middlebox and in the nested case, and it inherits an exposure the host already
+has: the host's own direct use of these same credentials against these same
+destinations already depends on that same trust store. The boundary this
+change relies on is therefore **the integrity of the host's trust store**, which
+should be stated as an explicit assumption in the ADR rather than left implicit
+behind the word "validated."
+
 ### Applying the host's distrust list to both sources
 
 `tls.rootCertificates` is the NSS root store compiled into the Node binary;
@@ -183,6 +211,13 @@ elevation along with it.
 - **Expired roots are not filtered.** A chain cannot build through an expired
   root, so including one is inert rather than dangerous. A filter would be code
   that never changes an outcome.
+- **The distrust filter is best-effort and cannot be made otherwise.** Measured
+  on a real host, `X509Store.Open('ReadOnly')` returns `count=0` for a
+  deliberately bogus store name rather than throwing. So "the Disallowed store is
+  empty" and "we did not actually read the Disallowed store" are indistinguishable
+  from the result. Failing closed on a *thrown* error (above) is still worth
+  doing, but it does not make the filter a guarantee, and this spec does not
+  claim it is one.
 
 ## Components
 
@@ -228,10 +263,19 @@ elevation along with it.
   contributes once and `ambientRootCount` means what it says.
 
   Order: public roots, then host roots not already present, then `extraCaPem`.
-  An individual PEM that will not parse is skipped and counted, mirroring
-  `parseTrustedRootsResult`'s existing rule that malformed entries do not fail
-  the batch. An empty final bundle throws `UpstreamTrustBundleError`, since that
-  can only mean something is badly wrong.
+  An individual **enumerated** PEM that will not parse is skipped and counted,
+  mirroring `parseTrustedRootsResult`'s existing rule that malformed entries do
+  not fail the batch. An empty final bundle throws `UpstreamTrustBundleError`,
+  since that can only mean something is badly wrong.
+
+  `extraCaPem` is deliberately **not** covered by the skip rule. It is a
+  caller-supplied value that exists precisely to make a specific anchor trusted,
+  so silently dropping it would leave the bundle valid — public roots still make
+  it non-empty — while the test relying on that anchor fails for a reason
+  nowhere near the cause. It is parsed strictly when the flag is read, before
+  assembly, and an unparseable value is a startup refusal. Without this
+  carve-out the skip rule and the error-handling contract below contradict each
+  other.
 
 - **`src/guestSetup/hostTrustStore.ts`** (modified). The enumeration command
   additionally emits `RawDataBase64` for `Disallowed` entries, and the module
@@ -247,10 +291,23 @@ elevation along with it.
   ): Promise<HostTrustSnapshot>;
   ```
 
-  The existing internal filtering is unchanged; only the return type widens and
-  the previously-discarded set is carried out. `src/commands/setupGuestUnix.ts`
-  and `src/guestSetup/ambientTrust.ts` are updated for the new return shape and
+  The root filtering is unchanged; the return type widens, the
+  previously-discarded set is carried out, and the Disallowed enumeration stops
+  failing open (below). `src/commands/setupGuestUnix.ts` and
+  `src/guestSetup/ambientTrust.ts` are updated for the new return shape and
   ignore `disallowedSha256` — their behaviour does not change.
+
+  **The `catch {}` at `hostTrustStore.ts:35-38` must go.** Today, opening either
+  Disallowed store is wrapped in `try { ... } catch {}`, so any failure yields an
+  empty distrust set and every candidate passes the filter — silently fail-open,
+  which contradicts both this spec's distrust rule and its no-fallback error
+  posture. Removing the catch lets the command's `$ErrorActionPreference = 'Stop'`
+  surface the failure as `HostTrustStoreError`, and `run-hosting` refuses to
+  start. Measured against a real host, this costs nothing on the normal path:
+  `X509Store.Open('ReadOnly')` succeeds with `count=0` for both Disallowed stores
+  *and* for a deliberately bogus store name, so the catch was never protecting
+  against an absent store. Note this is shared code — `setup-guest-unix` gets the
+  same fail-closed behaviour, which is the intended posture there too.
 
   The command's emitted JSON changes shape from a bare array of roots to a
   wrapper object, `[PSCustomObject]@{ Roots = ...; Disallowed = ... }`, and
@@ -290,7 +347,14 @@ elevation along with it.
   ```
 
   `trust_chain_verification` is omitted on the validating branch because
-  `VERIFY_TRUST_CHAIN` is already its default. `BuildEnvoyConfigOptions` gains
+  `VERIFY_TRUST_CHAIN` is already its default. The field names, nesting, and the
+  `DNS` enum spelling above were checked against the image actually in use,
+  Envoy 1.31.10. Worth noting that `templates/proxy/docker-compose.yml:4` pins
+  `envoyproxy/envoy:v1.31-latest`, a *mutable* minor-series tag rather than an
+  exact version — these APIs are long-stable so that is not a risk this change
+  needs to address, but it does mean "verified against 1.31.10" is a statement
+  about today's pull, not a guarantee about tomorrow's.
+  `BuildEnvoyConfigOptions` gains
   `verifyUpstreamOverrides?: boolean`, threaded through `writeEnvoyConfig` the
   same way `skipAllowList` is today. All four call sites pass it through;
   `buildMcpEntry` and the HTTP/80 clusters are untouched.
@@ -309,7 +373,16 @@ elevation along with it.
   `--upstream-override` cluster into the production validation context. This is
   deliberate — a per-destination variant would mean two nearly identical flags
   and a second parser, and no test needs a mix. Passing it without any
-  `--upstream-override` is a harmless no-op.
+  `--upstream-override` is a harmless no-op. The supplied PEM is parsed strictly
+  at flag-read time; an unparseable or missing file is a startup refusal.
+
+  Because `--upstream-override` without this flag leaves a cluster on the
+  `ACCEPT_UNTRUSTED` branch, and it is exposed on the packaged CLI
+  (`src/commands/runHosting.ts:131`) rather than hidden behind a build flag,
+  `run-hosting` also logs a warning at startup naming every destination whose
+  upstream is unverified. "(test use only)" in the help text is a convention;
+  a startup line that says which destinations are currently unprotected is an
+  observable fact.
 
 ## Data flow
 
@@ -389,7 +462,10 @@ into a happy path:
 
 The enumeration command emits `RawDataBase64` for Disallowed entries, and the
 parser returns `disallowedSha256` keyed by DER SHA-256 rather than Windows'
-SHA-1 thumbprint. Existing assertions about root filtering are unchanged.
+SHA-1 thumbprint. Existing assertions about root filtering are unchanged. One
+new assertion covers the fail-closed change: the built command contains no
+`catch {}` swallowing the Disallowed enumeration, so a future edit cannot quietly
+restore fail-open behaviour without a test noticing.
 
 ### Unit — `tests/unit/proxyConfig.test.ts` (extended)
 
@@ -416,29 +492,68 @@ destination:
 
 | destination | server certificate | expected |
 |---|---|---|
-| `claude-good.test` | leaf from the throwaway CA, SAN matches | 200, mock received the real credential |
+| `claude-good.test` | leaf from the throwaway CA, SAN matches exactly | 200, mock received the real credential |
+| `sub.claude-wild.test` | leaf from the throwaway CA, SAN `*.claude-wild.test` | 200, mock received the real credential |
 | `claude-badname.test` | leaf from the throwaway CA, SAN `somewhere-else.test` | 503, mock received **nothing** |
 | `claude-untrusted.test` | self-signed, SAN matches | 503, mock received **nothing** |
+| `claude-expired.test` | leaf from the throwaway CA, SAN matches, `notAfter` in the past | 503, mock received **nothing** |
 
 The throwaway CA and its leaves come from `src/ca.ts`'s existing
 `generateRootCa()` and `generateLeaf`, so no Windows trust store is involved and
-the tier stays unelevated.
+the tier stays unelevated. The **expired** row is the exception: `src/ca.ts:17`'s
+`validityDates()` is private and takes no override, so that one certificate is
+minted with `node-forge` directly in the test harness — which
+`mockUpstream.ts:17` already does for its self-signed cert. No `src/ca.ts`
+change is needed for this.
 
-The "mock received nothing" assertion is what actually encodes the problem
-statement's concern: it proves the handshake failed *before* the credential
-crossed, not merely that the client saw an error. The middle row is what proves
-SAN matching is live rather than chain-building alone — without it, a
-chain-only configuration would pass the suite.
+Two rows exist because of specific claims this design rests on rather than for
+symmetry. The **wildcard** row exercises the non-obvious behaviour the whole
+SAN-matching decision depends on — that an `exact` matcher performs DNS
+wildcard matching — which real origins like `*.github.com` rely on; without it,
+a regression there would only surface against production traffic. The
+**expired** row is named in the problem statement as one of the certificate
+classes currently accepted, so leaving it unasserted would leave part of the
+stated defect uncovered.
 
-The `claude-untrusted.test` case additionally asserts that a `CFGM|` access-log
-line for that destination reports a 503, tying the diagnostics documentation to
-observed behaviour. It does not pin Envoy's exact TLS error string, which is
+**Proving the failures were caused by validation, not by a broken test.** The
+"mock received nothing" assertion is sound as far as it goes — credentials
+cannot cross before the TLS handshake completes, and the mock only records
+completed HTTP requests (`tests/proxy-stack/mockUpstream.ts:39-50`). But on its
+own it would pass just as well if the override port were wrong, the mock were
+unreachable, or Envoy never dialled it at all. So each negative row additionally
+asserts that the mock **observed a connection attempt**: `mockUpstream.ts` gains
+a `connectionCount` incremented on the server's `connection` event, which fires
+before the TLS handshake. Non-disclosure plus a real connection attempt together
+mean the handshake was reached and rejected, which is the actual claim. The
+`claude-untrusted.test` row further asserts a `CFGM|` access-log line reporting a
+503 for its destination, tying the diagnostics documentation to observed
+behaviour, without pinning Envoy's exact TLS error string, which is
 version-dependent.
 
 `tests/proxy-stack/mockUpstream.ts` gains an optional "serve this key and
 certificate" mode. Its current hardcoded certificate has CN `mock-upstream` and
 **no SANs at all**, so it would fail SAN matching even if it were trusted; that
 change is required regardless of which row it serves.
+
+Two ordering constraints the suite must respect, both inherited from how the
+harness already works rather than new to this design. The `auth-list.txt` must
+be written **before** `generate-ca` runs, so the downstream leaf's SANs cover all
+five destinations (`githubInjection.test.ts:121-127` is the existing precedent).
+And the test client connects to `127.0.0.1` with the fake hostname set as SNI
+(`githubInjection.test.ts:82-99`), while the override routes the proxy's
+outbound leg through `host.docker.internal` — so no DNS entry is needed for any
+of these names on either side. This is why the suite is bespoke rather than
+built on `tests/proxyStack.ts`, which stages one mock upstream and a fixed
+policy (`tests/proxyStack.ts:144-166`).
+
+### CLI — `tests/cli/cli.test.ts` (extended)
+
+`--verify-upstream-overrides` appears in the help output, and the two refusal
+paths are asserted at the packaged-CLI level rather than only reasoned about:
+a missing file and a file whose contents are not a parseable certificate each
+produce a clean message and a non-zero exit. These belong here rather than in
+the unit tier because the strict-parse decision lives in the flag-reading code,
+not in the assembler.
 
 ### Unchanged tiers
 
@@ -456,10 +571,15 @@ dependency. `githubInjection`, `codexInjection`, `stackLifecycle`, and
   rejected options carry the weight — the container's own bundle (breaks the
   nested case), the Windows store alone (58 roots measured against Node's 118, so
   incomplete on a fresh machine), and chain verification without SAN matching
-  (leaves the credential-theft path open). Links to
-  `[[root-ca-plus-derived-leaf]]` (the downstream half of the same TLS story),
-  `[[credential-injection-at-proxy]]` (what is at stake on the unvalidated hop),
-  and `[[transparent-interception-and-network-isolation-boundary]]`.
+  (leaves the credential-theft path open). It must also record, as an explicit
+  assumption rather than a footnote, that this makes **the integrity of the
+  host's trust store** a security boundary: any CA the host trusts can mint a
+  certificate the proxy will accept for a credential-injected destination, which
+  is the deliberate price of working behind a corporate middlebox and in the
+  nested case. Links to `[[root-ca-plus-derived-leaf]]` (the downstream half of
+  the same TLS story), `[[credential-injection-at-proxy]]` (what is at stake on
+  the unvalidated hop), and
+  `[[transparent-interception-and-network-isolation-boundary]]`.
 
 - **`CONTEXT.md`** (modified). New term under Network policy:
 
