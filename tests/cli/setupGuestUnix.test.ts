@@ -1,11 +1,15 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { execa } from 'execa';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { checkElevated } from '../checkElevated';
 
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
+
+// setup-guest-unix itself requires elevated permissions
+beforeAll(checkElevated);
 
 let dir: string;
 beforeEach(async () => {
