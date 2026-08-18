@@ -57,53 +57,74 @@ export function buildCreateSmbRuleCommand(
   );
 }
 
+/** Appended after `$matched` (a PowerShell array of rule objects) is populated, to remove them in a single pipeline call and split the result into removed/failed counts. -ErrorVariable collects one non-terminating error per failed item without aborting the rest, so removed = matched.Count - errs.Count. */
+const REMOVE_MATCHED_SUFFIX =
+  `if ($matched.Count -gt 0) { ` +
+  `$errs = $null; $matched | Remove-NetFirewallRule -ErrorAction SilentlyContinue -ErrorVariable errs | Out-Null; ` +
+  `$failed = $errs.Count; $removed = $matched.Count - $failed ` +
+  `}; Write-Output "$removed,$failed"`;
+
 /**
  * Removes every rule matching any of the given DisplayNames, regardless of
- * adapter, tracking removed/failed counts separately (each removal uses
- * -ErrorAction Stop inside its own try/catch, so one failure doesn't stop
- * the rest from being attempted). Reused two ways: createHostNetwork.ts's
- * stale-cleanup-before-recreate (all four names at once — a nonzero failed
- * count there aborts the create, since a surviving stale rule would leave a
- * duplicate DisplayName after recreation) and deleteHostNetwork.ts's named
- * SMB sweep (just the SMB rule name).
+ * adapter. Reused two ways: createHostNetwork.ts's stale-cleanup-before-recreate
+ * (all four names at once — a nonzero failed count there aborts the create,
+ * since a surviving stale rule would leave a duplicate DisplayName after
+ * recreation) and deleteHostNetwork.ts's named SMB sweep (just the SMB rule
+ * name). -DisplayName takes a string array directly, so all names are matched
+ * in one Get-NetFirewallRule call rather than one call per name.
  */
 export function buildRemoveRulesByNameCommand(ruleNames: string[]): string {
   const namesArray = ruleNames.map((n) => quoteForPowerShell(n)).join(', ');
   return (
-    `$removed = 0; $failed = 0; foreach ($name in @(${namesArray})) { ` +
-    `$matched = @(Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue); ` +
-    `foreach ($rule in $matched) { ` +
-    `try { $rule | Remove-NetFirewallRule -ErrorAction Stop; $removed++ } ` +
-    `catch { $failed++ } ` +
-    `} }; Write-Output "$removed,$failed"`
+    `$removed = 0; $failed = 0; ` +
+    `$matched = @(Get-NetFirewallRule -DisplayName @(${namesArray}) -ErrorAction SilentlyContinue); ` +
+    REMOVE_MATCHED_SUFFIX
   );
 }
 
-/** Removes stale prompt-generated rules for the dedicated node.exe path, with the same per-rule removed/failed tracking as buildRemoveRulesByNameCommand. Not isolation-scoped: there is exactly one dedicated node.exe path host-wide. */
+/** Removes stale prompt-generated rules for the dedicated node.exe path. Not isolation-scoped: there is exactly one dedicated node.exe path host-wide. */
 export function buildRemoveStaleQueryUserRulesCommand(nodePath: string): string {
   return (
     `$removed = 0; $failed = 0; ` +
-    `$stale = @(Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object { ` +
+    `$matched = @(Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object { ` +
     `$_.Name -like "*Query User*" -and $_.Name.EndsWith(${quoteForPowerShell(nodePath)}, [StringComparison]::OrdinalIgnoreCase) }); ` +
-    `foreach ($rule in $stale) { try { $rule | Remove-NetFirewallRule -ErrorAction Stop; $removed++ } catch { $failed++ } }; ` +
-    `Write-Output "$removed,$failed"`
+    REMOVE_MATCHED_SUFFIX
   );
 }
 
 /**
  * Removes every rule whose interface filter matches the given adapter alias,
  * regardless of DisplayName — deleteHostNetwork.ts's "clean up a corrupted
- * network" sweep, with the same per-rule removed/failed tracking. Mirrors
- * verify-proxy.ps1's existing Get-NetFirewallInterfaceFilter/-eq pattern for
- * reading a rule's interface scoping.
+ * network" sweep.
+ *
+ * Resolves the adapter alias to its InterfaceGuid via Get-NetAdapter, then
+ * matches rules by reading the "IF={guid}|" token straight out of each
+ * rule's registry-stored definition (HKLM:\...\FirewallPolicy\FirewallRules)
+ * instead of asking Get-NetFirewallInterfaceFilter to resolve every rule's
+ * interface one at a time — that per-rule resolution (not cmdlet/session
+ * overhead — batching the pipeline call barely helped) measured ~21s for
+ * ~530 rules on a real dev host; this registry scan measured ~0.5s for the
+ * same result, verified to find the identical rule set. The "IF=" token and
+ * its pipe-delimited rule-string grammar are a published, versioned Windows
+ * protocol (MS-GPFAS's Firewall Rule Grammar Rule, sourced from MS-FASP
+ * §2.2.37's FW_RULE serialization) that has only ever added tokens across
+ * Windows versions, never renamed or removed one — IF= has no version-suffixed
+ * variant (unlike LPort2_10=, TTK2_22=, etc.), meaning it's been stable since
+ * the grammar's earliest version. If the adapter alias can't be resolved,
+ * $matched stays empty rather than falling back to the slow path above.
  */
 export function buildRemoveRulesByInterfaceCommand(adapterAlias: string): string {
   return (
-    `$removed = 0; $failed = 0; ` +
-    `$matched = @(Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object { ` +
-    `(Get-NetFirewallInterfaceFilter -AssociatedNetFirewallRule $_ -ErrorAction SilentlyContinue).InterfaceAlias -eq ${quoteForPowerShell(adapterAlias)} ` +
-    `}); foreach ($rule in $matched) { try { $rule | Remove-NetFirewallRule -ErrorAction Stop; $removed++ } catch { $failed++ } }; ` +
-    `Write-Output "$removed,$failed"`
+    `$removed = 0; $failed = 0; $matched = @(); ` +
+    `$adapter = Get-NetAdapter -InterfaceAlias ${quoteForPowerShell(adapterAlias)} -ErrorAction SilentlyContinue; ` +
+    `if ($adapter) { ` +
+    `$fwRules = Get-Item -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\FirewallRules' -ErrorAction SilentlyContinue; ` +
+    `$needle = "IF=$($adapter.InterfaceGuid)|"; ` +
+    `$names = @(); ` +
+    `if ($fwRules) { foreach ($n in $fwRules.GetValueNames()) { if ($fwRules.GetValue($n) -like "*$needle*") { $names += $n } } }; ` +
+    `if ($names.Count -gt 0) { $matched = @(Get-NetFirewallRule -Name $names -ErrorAction SilentlyContinue) } ` +
+    `}; ` +
+    REMOVE_MATCHED_SUFFIX
   );
 }
 
