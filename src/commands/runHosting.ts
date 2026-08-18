@@ -217,7 +217,12 @@ export function registerRunHosting(program: Command): void {
             publicRoots: readPublicRootProgram(),
             hostRoots: snapshot.roots,
             disallowedSha256: snapshot.disallowedSha256,
-            extraCaPem,
+            // Only actually trusted when there's an override to use it for —
+            // otherwise --verify-upstream-overrides without --upstream-override
+            // would expand the trust bundle for every real destination too,
+            // rather than being the harmless no-op it's documented as. The file
+            // is still parsed eagerly above, so a bad path fails startup either way.
+            extraCaPem: options.upstreamOverride.length > 0 ? extraCaPem : undefined,
           });
           writeUpstreamTrustBundle(paths.upstreamTrustBundle, bundle);
         } catch (err) {
