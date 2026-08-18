@@ -75,8 +75,12 @@ describe('buildCreateSmbRuleCommand', () => {
 describe('buildRemoveRulesByNameCommand', () => {
   it('matches every name in a single -DisplayName array, quoted, tracking removed/failed separately', () => {
     const command = buildRemoveRulesByNameCommand(["susentorno's rule", 'another rule']);
-    expect(command).toContain("Get-NetFirewallRule -DisplayName @('susentorno''s rule', 'another rule')");
-    expect(command).toContain('$matched | Remove-NetFirewallRule -ErrorAction SilentlyContinue -ErrorVariable errs');
+    expect(command).toContain(
+      "Get-NetFirewallRule -DisplayName @('susentorno''s rule', 'another rule')",
+    );
+    expect(command).toContain(
+      '$matched | Remove-NetFirewallRule -ErrorAction SilentlyContinue -ErrorVariable errs',
+    );
     expect(command).toContain('$failed = $errs.Count; $removed = $matched.Count - $failed');
     expect(command).toContain('Write-Output "$removed,$failed"');
   });
@@ -88,7 +92,9 @@ describe('buildRemoveStaleQueryUserRulesCommand', () => {
     expect(command).toContain('*Query User*');
     expect(command).toContain(`EndsWith('${NODE_PATH}'`);
     expect(command).toContain('OrdinalIgnoreCase');
-    expect(command).toContain('$matched | Remove-NetFirewallRule -ErrorAction SilentlyContinue -ErrorVariable errs');
+    expect(command).toContain(
+      '$matched | Remove-NetFirewallRule -ErrorAction SilentlyContinue -ErrorVariable errs',
+    );
     expect(command).toContain('Write-Output "$removed,$failed"');
   });
 });
@@ -102,7 +108,9 @@ describe('buildRemoveRulesByInterfaceCommand', () => {
     );
     expect(command).toContain('$needle = "IF=$($adapter.InterfaceGuid)|"');
     expect(command).toContain('Get-NetFirewallRule -Name $names -ErrorAction SilentlyContinue');
-    expect(command).toContain('$matched | Remove-NetFirewallRule -ErrorAction SilentlyContinue -ErrorVariable errs');
+    expect(command).toContain(
+      '$matched | Remove-NetFirewallRule -ErrorAction SilentlyContinue -ErrorVariable errs',
+    );
     expect(command).toContain('Write-Output "$removed,$failed"');
   });
 });
