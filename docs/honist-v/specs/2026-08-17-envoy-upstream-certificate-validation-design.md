@@ -252,6 +252,25 @@ elevation along with it.
   and `src/guestSetup/ambientTrust.ts` are updated for the new return shape and
   ignore `disallowedSha256` — their behaviour does not change.
 
+  The command's emitted JSON changes shape from a bare array of roots to a
+  wrapper object, `[PSCustomObject]@{ Roots = ...; Disallowed = ... }`, and
+  `parseTrustedRootsResult` changes with it. Measured against the real
+  production shell — `powershell.exe`, which is Windows PowerShell 5.1
+  (`5.1.26100.9168`), not `pwsh` 7 — the wrapper shape is safe on both counts an
+  implementer would reasonably worry about:
+
+  - **No explicit `-Depth` is needed.** The default depth of 2 serializes
+    `{"Roots":[{"Thumbprint":...,"RawDataBase64":...}],...}` in full; the
+    per-certificate objects do not get stringified as `System.Object[]`.
+  - **Per-field arrays stay arrays**, including single-element and empty ones
+    (`{"Roots":[{"Thumbprint":"AA"}],"Disallowed":[]}`). The single-element
+    unwrapping the current parser guards against with
+    `Array.isArray(parsed) ? parsed : [parsed]` is a *pipeline* artifact of
+    today's `$roots | ... | ConvertTo-Json`, not a JSON one. Wrapping the
+    results in an object removes that hazard rather than duplicating it per
+    field, so the new parser does not need the guard on `Roots` or
+    `Disallowed`.
+
 - **`src/envPaths.ts`** (modified). One new entry,
   `upstreamTrustBundle: join(proxy, 'ca', 'upstream-trust.pem')`, mounting into
   the container at `/etc/envoy/ca/upstream-trust.pem`.
@@ -285,6 +304,12 @@ elevation along with it.
   both jobs: it sets `verifyUpstreamOverrides` and supplies `extraCaPem`, so a
   test that opts an override cluster into real validation necessarily also says
   what that cluster should trust.
+
+  The flag is **global to the process**, not per destination: it opts *every*
+  `--upstream-override` cluster into the production validation context. This is
+  deliberate — a per-destination variant would mean two nearly identical flags
+  and a second parser, and no test needs a mix. Passing it without any
+  `--upstream-override` is a harmless no-op.
 
 ## Data flow
 
@@ -383,10 +408,11 @@ Rendered-YAML assertions:
 
 `githubInjection.test.ts` writes its own `auth-list.txt` inline rather than using
 the shared fixture, so this suite does the same and no other suite is disturbed.
-Three destinations in the claude section — all credential-injected, which is what
-makes the leak assertion meaningful — against three mock upstreams, under **one**
-`run-hosting` process started with `--verify-upstream-overrides <throwawayCaPath>`
-and an `--upstream-override` per destination:
+Three destinations under `#pragma claude authenticated` — all
+credential-injected, which is what makes the leak assertion meaningful — against
+three mock upstreams, under **one** `run-hosting` process started with
+`--verify-upstream-overrides <throwawayCaPath>` and an `--upstream-override` per
+destination:
 
 | destination | server certificate | expected |
 |---|---|---|
@@ -404,9 +430,10 @@ crossed, not merely that the client saw an error. The middle row is what proves
 SAN matching is live rather than chain-building alone — without it, a
 chain-only configuration would pass the suite.
 
-One case also asserts a `CFGM|` line with a 503 for its destination, tying the
-diagnostics documentation to observed behaviour, without pinning Envoy's exact
-TLS error string, which is version-dependent.
+The `claude-untrusted.test` case additionally asserts that a `CFGM|` access-log
+line for that destination reports a 503, tying the diagnostics documentation to
+observed behaviour. It does not pin Envoy's exact TLS error string, which is
+version-dependent.
 
 `tests/proxy-stack/mockUpstream.ts` gains an optional "serve this key and
 certificate" mode. Its current hardcoded certificate has CN `mock-upstream` and
