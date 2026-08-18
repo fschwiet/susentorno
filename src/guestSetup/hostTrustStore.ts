@@ -27,27 +27,38 @@ const ANY_EKU_OID = '2.5.29.37.0';
  * there with "Cannot find drive". [X509Store] has no such dependency, and its
  * certificates still carry the same PowerShell-added .EnhancedKeyUsageList
  * property (confirmed on the same host) and native .Thumbprint/.RawData.
+ *
+ * The Disallowed enumeration deliberately has no try/catch. It used to, which
+ * meant any failure produced an empty distrust set and every candidate passed
+ * the filter — fail-open on a trust decision. Measured on a real host,
+ * X509Store.Open('ReadOnly') returns count=0 even for a bogus store name
+ * rather than throwing, so the catch was never protecting against an absent
+ * store; removing it costs nothing on the normal path and lets
+ * $ErrorActionPreference = 'Stop' surface a genuine access failure.
  */
 export function buildEnumerateTrustedRootsCommand(): string {
   return [
     "$ErrorActionPreference = 'Stop'",
-    '$disallowed = New-Object System.Collections.Generic.List[string]',
-    "foreach ($loc in 'LocalMachine','CurrentUser') { try { " +
+    '$disallowed = New-Object System.Collections.Generic.List[object]',
+    "foreach ($loc in 'LocalMachine','CurrentUser') { " +
       "$s = [System.Security.Cryptography.X509Certificates.X509Store]::new('Disallowed', $loc); " +
-      "$s.Open('ReadOnly'); foreach ($c in $s.Certificates) { $disallowed.Add($c.Thumbprint) }; " +
-      '$s.Close() } catch {} }',
+      "$s.Open('ReadOnly'); foreach ($c in $s.Certificates) { $disallowed.Add($c) }; " +
+      '$s.Close() }',
+    '$disallowedThumbprints = @($disallowed | ForEach-Object { $_.Thumbprint })',
     `$serverAuthOid = '${SERVER_AUTH_OID}'`,
     `$anyEkuOid = '${ANY_EKU_OID}'`,
     '$roots = New-Object System.Collections.Generic.List[object]',
     "foreach ($loc in 'LocalMachine','CurrentUser') { " +
       "$s = [System.Security.Cryptography.X509Certificates.X509Store]::new('Root', $loc); " +
       "$s.Open('ReadOnly'); foreach ($c in $s.Certificates) { $roots.Add($c) }; $s.Close() }",
-    '$roots | Where-Object { $disallowed -notcontains $_.Thumbprint -and ' +
+    '$keptRoots = @($roots | Where-Object { $disallowedThumbprints -notcontains $_.Thumbprint -and ' +
       '($_.EnhancedKeyUsageList.Count -eq 0 -or ' +
       '($_.EnhancedKeyUsageList | Where-Object { $_.ObjectId -eq $serverAuthOid -or $_.ObjectId -eq $anyEkuOid })) } | ' +
       'ForEach-Object { [PSCustomObject]@{ Thumbprint = $_.Thumbprint; ' +
-      'RawDataBase64 = [Convert]::ToBase64String($_.RawData) } } | ' +
-      'ConvertTo-Json -Compress',
+      'RawDataBase64 = [Convert]::ToBase64String($_.RawData) } })',
+    '$disallowedOut = @($disallowed | ForEach-Object { [PSCustomObject]@{ Thumbprint = $_.Thumbprint; ' +
+      'RawDataBase64 = [Convert]::ToBase64String($_.RawData) } })',
+    '[PSCustomObject]@{ Roots = $keptRoots; Disallowed = $disallowedOut } | ConvertTo-Json -Compress',
   ].join('; ');
 }
 
@@ -62,12 +73,15 @@ function pemFromDer(der: Buffer): string {
   return `-----BEGIN CERTIFICATE-----\n${lines.join('\n')}\n-----END CERTIFICATE-----\n`;
 }
 
-/** Individually malformed entries are dropped rather than failing the whole batch; unparseable JSON throws. */
-export function parseTrustedRootsResult(stdout: string): HostTrustedRoot[] {
-  const trimmed = stdout.trim();
-  if (!trimmed) return [];
-  const parsed: unknown = JSON.parse(trimmed);
-  const list = (Array.isArray(parsed) ? parsed : [parsed]) as RawTrustedRoot[];
+export interface HostTrustSnapshot {
+  roots: HostTrustedRoot[];
+  /** DER SHA-256 of every certificate in the host's Disallowed stores. */
+  disallowedSha256: string[];
+}
+
+function parseRootEntries(value: unknown): HostTrustedRoot[] {
+  if (value === undefined || value === null) return [];
+  const list = (Array.isArray(value) ? value : [value]) as RawTrustedRoot[];
   const roots: HostTrustedRoot[] = [];
   for (const entry of list) {
     if (typeof entry?.Thumbprint !== 'string' || typeof entry?.RawDataBase64 !== 'string') continue;
@@ -81,6 +95,17 @@ export function parseTrustedRootsResult(stdout: string): HostTrustedRoot[] {
   return roots;
 }
 
+/** Individually malformed entries are dropped rather than failing the whole batch; unparseable JSON throws. */
+export function parseTrustedRootsResult(stdout: string): HostTrustSnapshot {
+  const trimmed = stdout.trim();
+  if (!trimmed) return { roots: [], disallowedSha256: [] };
+  const parsed = JSON.parse(trimmed) as { Roots?: unknown; Disallowed?: unknown };
+  return {
+    roots: parseRootEntries(parsed?.Roots),
+    disallowedSha256: parseRootEntries(parsed?.Disallowed).map((entry) => entry.sha256),
+  };
+}
+
 export function dedupeBySha256(roots: HostTrustedRoot[]): HostTrustedRoot[] {
   const seen = new Map<string, HostTrustedRoot>();
   for (const root of roots) {
@@ -91,18 +116,18 @@ export function dedupeBySha256(roots: HostTrustedRoot[]): HostTrustedRoot[] {
 
 export class HostTrustStoreError extends Error {}
 
-export async function enumerateHostTrustedRoots(exec: PowerShellExec): Promise<HostTrustedRoot[]> {
+export async function enumerateHostTrustedRoots(exec: PowerShellExec): Promise<HostTrustSnapshot> {
   const { exitCode, stdout } = await exec.run(buildEnumerateTrustedRootsCommand());
   if (exitCode !== 0) {
     throw new HostTrustStoreError(
       `hostTrustStore: enumeration exited with code ${exitCode}: ${stdout}`,
     );
   }
-  let roots: HostTrustedRoot[];
+  let snapshot: HostTrustSnapshot;
   try {
-    roots = parseTrustedRootsResult(stdout);
+    snapshot = parseTrustedRootsResult(stdout);
   } catch {
     throw new HostTrustStoreError(`hostTrustStore: could not parse enumeration output: ${stdout}`);
   }
-  return dedupeBySha256(roots);
+  return { roots: dedupeBySha256(snapshot.roots), disallowedSha256: snapshot.disallowedSha256 };
 }

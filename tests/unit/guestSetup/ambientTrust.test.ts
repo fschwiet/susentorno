@@ -115,8 +115,8 @@ function fakeRemoteExec(
 
 describe('propagateAmbientTrust', () => {
   const hostRootJson = JSON.stringify({
-    Thumbprint: 'T1',
-    RawDataBase64: Buffer.from('fake-der-bytes').toString('base64'),
+    Roots: [{ Thumbprint: 'T1', RawDataBase64: Buffer.from('fake-der-bytes').toString('base64') }],
+    Disallowed: [],
   });
 
   it('installs nothing and returns [] when the diff is empty', async () => {
