@@ -147,61 +147,12 @@ So the mechanism needs deterministic coverage of its own:
 
 The end-to-end run is then integration proof on top of that, not the only proof.
 
-## Split this out: Envoy does not validate upstream certificates
+## Split out: Envoy does not validate upstream certificates
 
-Found while investigating the above. It is a different layer and a different
-severity, and it should become its own piece of work rather than riding along
-with the CA propagation.
-
-`buildTlsUpstreamCluster` (`src/envoyConfig.ts:95`) sets `common_tls_context: {}`
-for every non-override upstream — no `validation_context` at all. Envoy's
-architecture documentation (`intro/arch_overview/security/ssl.rst`) is explicit:
-
-> Certificate verification for both upstream and downstream connections is
-> disabled by default. It must be explicitly enabled by specifying one or more
-> trusted authority certificates within the validation context.
-
-That builder is what the github, claude, codex, and auth-candidate clusters all
-use (`src/envoyConfig.ts:218`, `:428`, `:536`). So it applies to precisely the
-TLS-terminated paths — the ones that carry credentials.
-
-### Consequence
-
-For an auth-terminated host, the proxy will accept **any** certificate the
-upstream presents: self-signed, expired, wrong hostname, attacker-controlled. It
-then re-wraps the response in its own CA, which every guest is configured to
-trust. So:
-
-- the guest sees a valid certificate and has no way to detect the substitution,
-  because the proxy's signature is exactly what it was told to expect; and
-- the proxy injects the **real** credential into that upstream connection.
-
-The second is the serious one. Anyone able to intercept or redirect the
-proxy-to-origin connection for `api.github.com` receives the real GitHub PAT —
-and similarly the Claude and Codex tokens. Credential substitution is the reason
-these hosts are terminated at all, so the unvalidated hop is carrying exactly
-what an attacker would want.
-
-The passthrough path is unaffected: it is `tcp_proxy`, so the client performs its
-own end-to-end validation against the origin. Only the terminated set is exposed.
-
-### Interaction with the CA propagation work — they pull opposite ways
-
-Enabling validation would **break** the nested case this brief exists for. Today
-Envoy accepts the outer interceptor's certificate precisely because it validates
-nothing; turn validation on and the proxy can no longer reach any host the outer
-environment terminates.
-
-So the two are one lever: whatever `trusted_ca` bundle gets configured must
-include the public root program *and* any ambient interception CA the host is
-behind. `templates/proxy/docker-compose.yml:11` already mounts
-`./ca:/etc/envoy/ca:ro`, so there is a delivery channel; the missing pieces are
-assembling the bundle and pointing `validation_context.trusted_ca` at it.
-
-Note the guest tier does not cover this either way — `e2e.test.ts` stubs `gh`,
-since no clean-machine test can supply a valid GitHub token. It needs its own
-test: point an auth-terminated host at a server with a bad certificate and assert
-the proxy refuses rather than re-wraps.
+Done. Designed in
+`docs/honist-v/specs/2026-08-17-envoy-upstream-certificate-validation-design.md`
+and recorded as
+[ADR-0026](../../adr/0026-validate-upstream-certificates-against-ambient-trust.md).
 
 ## Generalisation
 

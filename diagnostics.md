@@ -23,6 +23,15 @@ Read-only diagnostic scripts report whether the proxy stack and a guest are set 
 - `BLOCK HTTP` — :80, not allow-listed (403)
 - `BLOCK LIST` — denied specifically because the host matched an entry in `block-list.txt` (`--skip-allow-list` does not override this)
 
+## A terminated destination returns 503
+
+The proxy verifies every TLS-terminated upstream's certificate — both that it chains to the **upstream trust bundle** and that it carries a DNS SAN matching the destination hostname. A failure surfaces to the guest as a 503, and the reason is on the `CFGM|` access-log line: `%RESPONSE_CODE_DETAILS%` carries Envoy's TLS error text and `%RESPONSE_FLAGS%` shows the upstream failure.
+
+Two causes are far more likely than the rest:
+
+- **The origin's certificate does not cover the name being dialled.** Check the SANs the origin actually serves against the hostname in `auth-list.txt`.
+- **An ambient interception CA never reached the bundle.** On a machine behind a TLS-intercepting proxy, the interceptor's CA must be in the host's trust store for the proxy to accept it. Compare the ambient count on `run-hosting`'s startup line — `upstream trust bundle: N public roots (node vX) + M ambient = ...` — against expectation. `M` of 0 on a machine you know is intercepted means the CA is not in `LocalMachine\Root` or `CurrentUser\Root` where the enumeration looks.
+
 ## Maintaining the allow list, auth list, and block list
 
 `current-allow-list.txt`, `current-auth-list.txt`, and `current-block-list.txt` (repo root, source controlled) are the default allow list, auth list, and block list that `susentorno init` copies into every new environment. To refresh the allow list and auth list from an upstream network policy file:

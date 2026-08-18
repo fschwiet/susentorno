@@ -18,6 +18,8 @@ susentorno creates development environments in which coding agents run inside is
 
 **Proxy stack**: The host-controlled network boundary through which an isolated guest's permitted external traffic flows. _Avoid_: Envoy, proxy container, forwarder
 
+**Upstream trust bundle**: The assembled set of certificate authorities the proxy stack validates terminated upstream connections against, combining the public root program with the host's ambient trust. _Avoid_: CA bundle, trusted_ca, root bundle
+
 **Network policy**: An environment's combined destination handling, resolved from its allow list, auth list, and block list into the proxy stack's actual configuration. _Avoid_: Allowlist, policy file
 
 **Allow list**: The file naming plain passthrough destinations a guest may reach, with no credential handling. _Avoid_: Allowlist, passthrough list

@@ -443,12 +443,6 @@ predates this problem.
 
 ## Follow-up work (explicitly deferred)
 
-- **Envoy upstream certificate validation.** `buildTlsUpstreamCluster` sets no
-  `validation_context` for any non-override upstream, so the proxy accepts any
-  certificate on auth-terminated hosts — the ones carrying real GitHub/Claude/
-  Codex credentials. `enumerateHostTrustedRoots`'s output is designed to be
-  handed directly to a future `trusted_ca` bundle assembly, alongside the public
-  root program, but that wiring, its interaction with
-  `templates/proxy/docker-compose.yml`'s `./ca:/etc/envoy/ca:ro` mount, and its
-  own test (auth-terminated host + bad certificate → proxy refuses rather than
-  re-wraps) are a separate piece of work.
+- **Envoy upstream certificate validation.** No longer deferred — designed in
+  `docs/honist-v/specs/2026-08-17-envoy-upstream-certificate-validation-design.md`,
+  which consumes `enumerateHostTrustedRoots`'s output as this spec anticipated.
