@@ -2,6 +2,12 @@ import { createServer, type Server } from 'node:https';
 import type { IncomingHttpHeaders } from 'node:http';
 import forge from 'node-forge';
 
+export interface MockUpstreamOptions {
+  /** PEM key/cert to serve instead of the built-in self-signed pair. Both or neither. */
+  key?: string;
+  cert?: string;
+}
+
 export interface MockUpstream {
   port: number;
   server: Server;
@@ -12,6 +18,13 @@ export interface MockUpstream {
   receivedHeaders: IncomingHttpHeaders[];
   /** Same as receivedHeaders, but for WebSocket upgrade requests. */
   receivedUpgradeHeaders: IncomingHttpHeaders[];
+  /**
+   * TCP connections accepted, counted on the `connection` event — which fires
+   * before the TLS handshake. Lets a test distinguish "Envoy dialled us and the
+   * handshake was rejected" from "Envoy never reached us at all", which the
+   * request counters alone cannot do.
+   */
+  readonly connectionCount: number;
 }
 
 function generateSelfSignedCert(): { key: string; cert: string } {
@@ -31,16 +44,24 @@ function generateSelfSignedCert(): { key: string; cert: string } {
   };
 }
 
-export function startMockUpstream(): Promise<MockUpstream> {
-  const pems = generateSelfSignedCert();
+export function startMockUpstream(options: MockUpstreamOptions = {}): Promise<MockUpstream> {
+  const pems =
+    options.key !== undefined && options.cert !== undefined
+      ? { key: options.key, cert: options.cert }
+      : generateSelfSignedCert();
   const receivedAuthorizationHeaders: string[] = [];
   const receivedHeaders: IncomingHttpHeaders[] = [];
+  const state = { connections: 0 };
 
   const server = createServer({ key: pems.key, cert: pems.cert }, (req, res) => {
     receivedAuthorizationHeaders.push(req.headers.authorization ?? '');
     receivedHeaders.push(req.headers);
     res.writeHead(200, { 'content-type': 'text/plain' });
     res.end('mock upstream ok');
+  });
+
+  server.on('connection', () => {
+    state.connections++;
   });
 
   const receivedUpgradeAuthorizationHeaders: string[] = [];
@@ -67,6 +88,9 @@ export function startMockUpstream(): Promise<MockUpstream> {
         receivedUpgradeAuthorizationHeaders,
         receivedHeaders,
         receivedUpgradeHeaders,
+        get connectionCount() {
+          return state.connections;
+        },
       });
     });
   });
