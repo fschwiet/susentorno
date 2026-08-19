@@ -1,18 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildAddVmDvdDriveCommand,
   buildAddVmHardDiskCommand,
   buildDisableSecureBootCommand,
   buildEnableSecureBootCommand,
+  buildEnableSecureBootWindowsCommand,
   buildGetVmNamesCommand,
   buildNewVmCommand,
   buildRemoveVmCommand,
   buildSetFirstBootDeviceCommand,
+  buildSetFirstBootDvdCommand,
   buildSetVmComPortCommand,
   buildSetVmDynamicMemoryCommand,
   buildSetVmProcessorCommand,
   buildTurnOffVmCommand,
   parseVmNames,
   SECURE_BOOT_UEFI_CA_TEMPLATE,
+  SECURE_BOOT_WINDOWS_TEMPLATE,
 } from '../../guest/hyperv/vm';
 describe('Hyper-V VM command builders', () => {
   it('creates a Gen2 VM without a disk and attaches an existing VHD', () => {
@@ -48,5 +52,28 @@ describe('Hyper-V VM command builders', () => {
     expect(parseVmNames('[{"Name":"a"},{"Name":null},{}]')).toEqual(['a']);
     expect(parseVmNames('{"Name":"a"}')).toEqual(['a']);
     expect(parseVmNames('')).toEqual([]);
+  });
+});
+
+describe('windows VM builders', () => {
+  it('uses the Microsoft Windows Secure Boot template, not the UEFI CA one', () => {
+    expect(SECURE_BOOT_WINDOWS_TEMPLATE).toBe('MicrosoftWindows');
+    expect(buildEnableSecureBootWindowsCommand('vm')).toBe(
+      "Set-VMFirmware -VMName 'vm' -EnableSecureBoot On -SecureBootTemplate 'MicrosoftWindows'",
+    );
+  });
+
+  it('attaches a DVD drive with a quoted path', () => {
+    expect(buildAddVmDvdDriveCommand('vm', "C:\\it's\\a.iso")).toBe(
+      "Add-VMDvdDrive -VMName 'vm' -Path 'C:\\it''s\\a.iso' | Out-Null",
+    );
+  });
+
+  it('selects a DVD drive as first boot device, not a hard disk', () => {
+    const command = buildSetFirstBootDvdCommand('vm', 'C:\\win.iso');
+    expect(command).toContain('Get-VMDvdDrive');
+    expect(command).not.toContain('Get-VMHardDiskDrive');
+    expect(command).toContain("'C:\\win.iso'");
+    expect(command).toContain('Set-VMFirmware');
   });
 });
