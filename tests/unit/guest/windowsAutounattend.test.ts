@@ -71,6 +71,22 @@ describe('buildProvisioningScript', () => {
     expect(script).not.toContain('PSWindowsUpdate');
   });
 
+  it('inspects per-update result codes explicitly rather than only the aggregate', () => {
+    expect(script).toContain('GetUpdateResult');
+  });
+
+  it('advances by searching again in place when no reboot is required, rather than rebooting unconditionally', () => {
+    expect(script).toContain('while ($true)');
+    // Finding no further updates must exit the loop without rebooting.
+    const noUpdatesBranch = script.match(/if \(\$result\.Updates\.Count -eq 0\) \{[^}]*\}/);
+    expect(noUpdatesBranch, 'no-updates-found branch').not.toBeNull();
+    expect(noUpdatesBranch![0]).not.toContain('Restart-Computer');
+    // Reboot is gated specifically on RebootRequired, not unconditional.
+    const rebootBlock = script.match(/if \(\$installResult\.RebootRequired\) \{[^}]*\}/);
+    expect(rebootBlock, 'RebootRequired branch').not.toBeNull();
+    expect(rebootBlock![0]).toContain('Restart-Computer');
+  });
+
   it('installs git after servicing', () => {
     expect(script).toContain('winget install');
     expect(script).toContain('Git.Git');
