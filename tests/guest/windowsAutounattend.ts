@@ -74,7 +74,21 @@ export function buildProvisioningScript(): string {
     '}',
     '',
     'if ($stage -eq "git") {',
-    '  winget install --id Git.Git --exact --silent --accept-source-agreements --accept-package-agreements --source winget',
+    '  $gitInstalled = $false',
+    '  for ($attempt = 1; $attempt -le 5; $attempt++) {',
+    '    winget install --id Git.Git --exact --silent --accept-source-agreements --accept-package-agreements --source winget',
+    '    if ($LASTEXITCODE -eq 0) { $gitInstalled = $true; break }',
+    '    Write-Host "provision: winget install Git.Git attempt $attempt failed with exit code $LASTEXITCODE"',
+    '    Start-Sleep -Seconds 30',
+    '  }',
+    '  if (-not $gitInstalled) {',
+    // Deliberately does not Set-Stage or clean up: the Run key stays
+    // registered and autologon retries the whole "git" stage from scratch on
+    // the next logon (LogonCount=10 gives real headroom), rather than
+    // silently proceeding to finalize with no git installed -- confirmed
+    // live: that is exactly what happened before this check existed.
+    '    throw "provision: winget install Git.Git failed after 5 attempts"',
+    '  }',
     '  Set-Stage "finalize"; $stage = "finalize"',
     '}',
     '',

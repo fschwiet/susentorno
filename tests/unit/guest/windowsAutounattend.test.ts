@@ -125,6 +125,20 @@ describe('buildProvisioningScript', () => {
     expect(script).toContain('Git.Git');
   });
 
+  it('retries and checks the git install rather than silently proceeding on failure', () => {
+    // Confirmed live: winget install Git.Git can fail on a freshly-specialized
+    // image with OOBE skipped (winget's own app registration is not always
+    // ready yet), and the script previously never checked $LASTEXITCODE at
+    // all -- it just moved on to "finalize" regardless. The golden image
+    // built, Setup completed, and the failure surfaced only much later, as a
+    // "'git' is not recognized" error from inside the actual windowsFresh
+    // role test.
+    expect(script).toContain('LASTEXITCODE');
+    // The git block must contain a retry loop, not a single bare attempt.
+    const gitBlock = script.slice(script.indexOf('"git"'), script.indexOf('"finalize"'));
+    expect(gitBlock).toMatch(/for\s*\(|while\s*\(/);
+  });
+
   it('finalises in the right order: disable updates, clear autologon, deregister, shut down', () => {
     const order = ['NoAutoUpdate', 'AutoAdminLogon', 'Remove-ItemProperty', 'Stop-Computer'];
     let cursor = -1;
