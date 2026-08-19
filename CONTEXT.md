@@ -56,6 +56,8 @@ susentorno creates development environments in which coding agents run inside is
 
 **Placeholder mount**: A location in the guest environment where a host credential channel's placeholder credential is deposited so a specific tool discovers it. One channel can have more than one placeholder mount (e.g., the codex channel's placeholder can be mounted at both the Codex CLI's `~/.codex/auth.json` and the Pi Coding Agent's `~/.pi/agent/auth.json`); a mount may also occupy only part of a shared, multi-provider file rather than the entire file. _Avoid_: Guest destination, auth file
 
+**Ambient trust**: The host's non-public trusted roots — those a terminating proxy in front of the host introduces — propagated into a guest so it can validate the same upstreams the host can. Distinct from **Upstream trust bundle**, which is what the proxy stack validates _its_ upstreams against. _Avoid_: extra CAs, corporate roots
+
 ## Provisioning
 
 **VM share**: An environment's generated, read-only provisioning bundle exposed to a guest. _Avoid_: Template folder, shared folder
@@ -67,3 +69,5 @@ susentorno creates development environments in which coding agents run inside is
 **Post-isolation step**: A provisioning step that runs after general network access has been removed from the guest. _Avoid_: Post-script, offline script
 
 **Home settings transform**: An ordered, declarative customization that merges environment-specific values into a guest user's JSON settings. _Avoid_: jq file, settings patch
+
+**Guest role**: One disposable guest identity within the guest test tier, from which its VM name, differencing disk, diagnostic channel, and artifacts directory all derive. Follows **Isolation name** in reaching from domain vocabulary into the test tiers. _Avoid_: test guest, VM name

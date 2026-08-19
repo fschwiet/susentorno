@@ -49,7 +49,7 @@ Install the project's Node dependencies before running any tier.
 | `cli` | A production build (`pnpm build`). The default pipeline builds before this tier. Tests that need the external `jq` command self-skip when it is unavailable. |
 | `host-network` | An elevated (Administrator) PowerShell/terminal. No Docker/WSL2 required. |
 | `proxy-stack` | A production build (`pnpm build`), plus Docker and Docker Compose running. Stop any live `susentorno run-hosting` process first. No guest or real credential is required. |
-| `guest` | An elevated (Administrator) PowerShell/terminal, Hyper-V, Docker running, and a running `ssh-agent`. Stop any live `susentorno run-hosting` process first — this tier binds the real `:80`/`:443` and manages the same Envoy containers. The first run builds a golden VM image (~20–30 minutes); later runs reuse it from `.image-cache/`. |
+| `guest` | An elevated (Administrator) PowerShell/terminal, Hyper-V, Docker running, and a running `ssh-agent`. Stop any live `susentorno run-hosting` process first — this tier binds the real `:80`/`:443` and manages the same Envoy containers. The first run builds a golden VM image (~20–30 minutes); later runs reuse it from `.image-cache/`. The `windowsFresh` role additionally needs `SUSENTORNO_WINDOWS_ISO` pointing at an **x64, `en-us`** Windows 11 Enterprise evaluation ISO; without it that one role self-skips and the rest of the tier is unaffected. Its first build takes 60–120 minutes and `.image-cache/` grows by roughly 50–60 GB. |
 
 See [development.md](development.md) for the guest-tier prerequisites. The guest tier creates and refreshes its cached golden image automatically at `.image-cache/`; the first run takes longer. It is gitignored and repo-local because live tiers act on one shared host network adapter and cannot safely run from parallel worktrees.
 
@@ -75,6 +75,8 @@ Never use `npx` or `pnpx` to invoke `vitest` or other project tooling. `npx` hap
 `pnpm test` runs formatting, linting, type checking, the `unit` tier, a production build, the `cli` tier, the `proxy-stack` tier, and the `guest` tier, in fail-fast order. The Verification Pipeline section of [development.md](development.md) is the source of truth for the exact step order.
 
 The `guest` tier's prerequisites (an elevated shell, Hyper-V, Docker, and `ssh-agent` — see [development.md](development.md)) are therefore required for any full `pnpm test` run, not just for working on `templates/vm-shared-linux/` directly. Guest boots, a reboot through isolation, and the e2e file's real package installs take minutes each — expect `pnpm test` to be slow.
+
+The `windowsFresh` role is the one part of the tier that is opt-in. The Windows evaluation ISO cannot be downloaded unattended, so `SUSENTORNO_WINDOWS_ISO` doubles as the switch that enables it. A stale Windows image is **not** rebuilt silently the way the Ubuntu one is — the tier stops and names which build input changed, because a rebuild costs 60–120 minutes. Re-run with `SUSENTORNO_WINDOWS_IMAGE_REBUILD=1` to rebuild deliberately.
 
 ## Test support and residue
 
