@@ -33,6 +33,14 @@ export function buildProvisioningScript(): string {
     '$ProgressPreference = "SilentlyContinue"',
     `$stagePath = "${STAGE_MARKER_PATH}"`,
     'New-Item -ItemType Directory -Force -Path (Split-Path -Parent $stagePath) | Out-Null',
+    // Every prior live build failure was diagnosed by mounting the built
+    // disk offline afterward and inferring what must have happened from
+    // which files existed -- Windows writes nothing to serial (see
+    // windowsGuestExec.ts), so this was otherwise a total black box.
+    // -Append survives the reboots servicing requires; Stop-Transcript
+    // before every exit point below flushes it, since a forced restart
+    // does not reliably let a pending transcript buffer finish writing.
+    `Start-Transcript -Path "${STAGE_MARKER_PATH.replace(/\.txt$/, '.log')}" -Append -ErrorAction SilentlyContinue`,
     '$stage = if (Test-Path $stagePath) { (Get-Content $stagePath -Raw).Trim() } else { "update" }',
     'function Set-Stage($value) { Set-Content -LiteralPath $stagePath -Value $value -Encoding ascii }',
     '',
@@ -63,12 +71,12 @@ export function buildProvisioningScript(): string {
     '      if ($updateResult.ResultCode -ne 2 -and $updateResult.ResultCode -ne 3) { $anyFailed = $true }',
     '    }',
     '    Write-Host "provision: install resultCode=$($installResult.ResultCode) reboot=$($installResult.RebootRequired)"',
-    '    if ($installResult.RebootRequired) { Set-Stage "update"; Restart-Computer -Force; exit 0 }',
+    '    if ($installResult.RebootRequired) { Set-Stage "update"; Stop-Transcript | Out-Null; Restart-Computer -Force; exit 0 }',
     '    if ($anyFailed) {',
     '      # A failure with no reboot pending would otherwise busy-loop on the',
     '      # same update; reboot to give the Windows Update service a fresh',
     '      # session and retry, rather than treating failure as success.',
-    '      Set-Stage "update"; Restart-Computer -Force; exit 0',
+    '      Set-Stage "update"; Stop-Transcript | Out-Null; Restart-Computer -Force; exit 0',
     '    }',
     '  }',
     '}',
@@ -82,17 +90,22 @@ export function buildProvisioningScript(): string {
     // stub: invoking it exits 0 and does nothing (no DiagOutputDir was ever
     // created, Program Files\\Git never existed) -- so $LASTEXITCODE alone
     // cannot distinguish success from a no-op. Force registration first.
-    '  try {',
-    '    Get-AppxPackage -AllUsers -Name Microsoft.DesktopAppInstaller | ForEach-Object {',
-    '      Add-AppxPackage -DisableDevelopmentMode -Register "$($_.InstallLocation)\\AppXManifest.xml"',
-    '    }',
-    '  } catch {',
-    '    Write-Host "provision: Add-AppxPackage DesktopAppInstaller threw: $_"',
-    '  }',
     '  $gitPath = "$env:ProgramFiles\\Git\\cmd\\git.exe"',
     '  $gitInstalled = $false',
     '  for ($attempt = 1; $attempt -le 10; $attempt++) {',
     '    try {',
+    // Registering once before the loop was tried and, per a fourth live
+    // rebuild (still no Program Files\Git afterward), did not close the
+    // gap either -- registration moves inside the loop so a
+    // slow-to-propagate registration gets another chance on the next
+    // attempt rather than being tried exactly once.
+    '      try {',
+    '        Get-AppxPackage -AllUsers -Name Microsoft.DesktopAppInstaller | ForEach-Object {',
+    '          Add-AppxPackage -DisableDevelopmentMode -Register "$($_.InstallLocation)\\AppXManifest.xml"',
+    '        }',
+    '      } catch {',
+    '        Write-Host "provision: attempt $attempt Add-AppxPackage DesktopAppInstaller threw: $_"',
+    '      }',
     // winget can still be unrecognized as a command this early (confirmed
     // live: its own DiagOutputDir log directory did not exist), which is a
     // terminating PowerShell error under $ErrorActionPreference = 'Stop' --
@@ -117,6 +130,7 @@ export function buildProvisioningScript(): string {
     // the next logon (LogonCount=10 gives real headroom), rather than
     // silently proceeding to finalize with no git installed -- confirmed
     // live: that is exactly what happened before this check existed.
+    '    Stop-Transcript | Out-Null',
     '    throw "provision: winget install Git.Git failed after 10 attempts"',
     '  }',
     '  Set-Stage "finalize"; $stage = "finalize"',
@@ -131,6 +145,7 @@ export function buildProvisioningScript(): string {
     '  Remove-ItemProperty -Path $winlogon -Name DefaultPassword -ErrorAction SilentlyContinue',
     `  Remove-ItemProperty -Path "${RUN_KEY}" -Name "${RUN_VALUE_NAME}" -ErrorAction SilentlyContinue`,
     '  Remove-Item -LiteralPath $stagePath -Force -ErrorAction SilentlyContinue',
+    '  Stop-Transcript | Out-Null',
     '  Stop-Computer -Force',
     '}',
     '',

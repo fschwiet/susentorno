@@ -144,7 +144,7 @@ describe('buildProvisioningScript', () => {
     expect(gitBlock).toContain('catch');
   });
 
-  it('registers the DesktopAppInstaller package before trusting winget', () => {
+  it('registers the DesktopAppInstaller package on every attempt before trusting winget', () => {
     // Confirmed live, a third time, by mounting the built (but git-less)
     // golden disk offline: Microsoft.DesktopAppInstaller was staged in
     // WindowsApps and its winget.exe execution alias existed in the
@@ -153,11 +153,16 @@ describe('buildProvisioningScript', () => {
     // unregistered alias is a phantom stub -- invoking it exits 0 without
     // doing anything, so $LASTEXITCODE alone cannot tell success from a
     // no-op (no DiagOutputDir was ever created, and Program Files\Git never
-    // existed, despite the stage marker advancing to "finalize"). The git
-    // stage must force-register the package before attempting install.
+    // existed, despite the stage marker advancing to "finalize"). Registering
+    // once before the loop was tried and, per a fourth live rebuild, still
+    // did not close the gap -- registration moves inside the retry loop so a
+    // slow-to-propagate registration gets another chance on the next
+    // attempt rather than being tried exactly once.
     const gitBlock = script.slice(script.indexOf('"git"'), script.indexOf('"finalize"'));
     expect(gitBlock).toContain('Add-AppxPackage');
     expect(gitBlock).toContain('DesktopAppInstaller');
+    const loopStart = gitBlock.search(/for\s*\(/);
+    expect(gitBlock.indexOf('Add-AppxPackage')).toBeGreaterThan(loopStart);
   });
 
   it('verifies git.exe actually exists rather than trusting winget exit code alone', () => {
@@ -167,6 +172,19 @@ describe('buildProvisioningScript', () => {
     const gitBlock = script.slice(script.indexOf('"git"'), script.indexOf('"finalize"'));
     expect(gitBlock).toContain('git.exe');
     expect(gitBlock).toMatch(/Test-Path \$gitPath/);
+  });
+
+  it('logs the whole provisioning run to a persistent file', () => {
+    // Every prior live failure of this stage was diagnosed by mounting the
+    // built disk offline and inferring what must have happened from which
+    // files existed -- there was never a direct record of what the git
+    // stage actually saw or did. Windows writes nothing to serial (see
+    // windowsGuestExec.ts), so this script must keep its own record on
+    // disk, appended across the reboots servicing requires, so the next
+    // build failure (if any) can be root-caused directly instead of by
+    // inference from which files happen to exist afterward.
+    expect(script).toContain('Start-Transcript');
+    expect(script).toContain('-Append');
   });
 
   it('finalises in the right order: disable updates, clear autologon, deregister, shut down', () => {
