@@ -186,7 +186,14 @@ export async function ensureWindowsGoldenImage(
   await run(
     exec,
     buildNewVmCommand(buildVmName, {
-      memoryStartupBytes: 4 * 1024 ** 3,
+      // 4 GiB (Windows 11's bare documented minimum) was not enough: Setup's
+      // WinPE apply-image/specialize phase crashed with "the computer
+      // restarted unexpectedly" at a consistent point, confirmed live and
+      // reproduced with no console ever connected — ruling out an Enhanced
+      // Session interaction and pointing at memory pressure during that
+      // pre-OOBE phase, before Hyper-V's dynamic-memory balloon driver is
+      // even available to help.
+      memoryStartupBytes: 6 * 1024 ** 3,
       switchName: 'Default Switch',
     }),
     'create build VM',
