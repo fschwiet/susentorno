@@ -203,14 +203,15 @@ export async function ensureWindowsGoldenImage(
   await run(
     exec,
     buildNewVmCommand(buildVmName, {
-      // 4 GiB (Windows 11's bare documented minimum) was not enough: Setup's
-      // WinPE apply-image/specialize phase crashed with "the computer
-      // restarted unexpectedly" at a consistent point, confirmed live and
-      // reproduced with no console ever connected — ruling out an Enhanced
-      // Session interaction and pointing at memory pressure during that
-      // pre-OOBE phase, before Hyper-V's dynamic-memory balloon driver is
-      // even available to help.
-      memoryStartupBytes: 8 * 1024 ** 3,
+      // Not the guest's memory pressure: the "computer restarted
+      // unexpectedly" crashes this build once went through at 4-8 GiB alike
+      // turned out to be two unrelated bugs (WINDOWS_GUEST_HOSTNAME exceeding
+      // the 15-character NetBIOS limit, and a FirstLogonCommands CommandLine
+      // exceeding unattend.xml's ~4096-character field limit — both fixed).
+      // 4 GiB is Windows 11's bare documented minimum and is kept modest here
+      // for the *host's* sake: this build VM runs alongside Docker/WSL2 and
+      // everything else on the machine actually driving it.
+      memoryStartupBytes: 4 * 1024 ** 3,
       switchName: 'Default Switch',
     }),
     'create build VM',
