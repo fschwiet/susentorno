@@ -1,8 +1,6 @@
 #Requires -RunAsAdministrator
 $ErrorActionPreference = 'Stop'
 
-wsl --update
-
 try {
   winget settings --enable BypassCertificatePinningForMicrosoftStore
   winget upgrade Microsoft.AppInstaller --accept-source-agreements --accept-package-agreements
@@ -15,20 +13,14 @@ winget upgrade --all --include-unknown --accept-source-agreements --accept-packa
 # winget ships with Windows 11. Install non-interactively. Native non-zero exit
 # codes (e.g. "package already installed") do not throw in PowerShell, so a
 # re-run is safe. Runs while the VM is still on NAT (pre-isolation).
+#
+# Only what a susentorno guest requires (see ADR-0024): jq for the home settings
+# transforms, git for configure-network and 01-auth-config, gh for 01-auth-config.
+# Developer tooling belongs in the user's own pre-scripts/.
 $packages = @(
-  'jqlang.jq',                 # jq - command line json parser, used to update config files
+  'jqlang.jq',
   'Git.Git',
-  'Microsoft.PowerShell',      # PowerShell 7 (pwsh)
-  'Microsoft.DotNet.SDK.10',   # .NET SDK
-  'GitHub.cli',                # gh
-  'Microsoft.WindowsTerminal',
-  'Microsoft.VisualStudioCode',
-  'Docker.DockerDesktop',
-  'Python.Python.3.14',        # codex comes bundles with some python helper scripts
-  'WinMerge.WinMerge',
-
-  # "pnpm exec playwright install" complained about missing msvcp140_1.dll
-  'Microsoft.VCRedist.2015+.x64'
+  'GitHub.cli'
 )
 
 foreach ($id in $packages) {
@@ -36,4 +28,4 @@ foreach ($id in $packages) {
   winget install --id $id --exact --silent --accept-source-agreements --accept-package-agreements --source winget
 }
 
-Write-Host "01-install-packages: core packages installed. Open a new terminal so PATH updates apply."
+Write-Host "01-install-packages: required packages installed. Open a new terminal so PATH updates apply."

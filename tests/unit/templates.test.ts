@@ -167,6 +167,49 @@ describe('generated provisioning inventory', () => {
       expect(v).toContain('api.anthropic.com'); // credential-gate check
       expect(v).toContain('curl.exe'); // live egress via bundled curl
     });
+
+    it('windows 01-install-packages ships only the packages a susentorno guest requires', () => {
+      const script = readFileSync(
+        join(templatesDir(), 'vm-shared-windows', 'pre-scripts', '01-install-packages.ps1'),
+        'utf8',
+      );
+      for (const id of ['jqlang.jq', 'Git.Git', 'GitHub.cli']) expect(script).toContain(id);
+      for (const id of [
+        'Microsoft.PowerShell',
+        'Microsoft.DotNet.SDK',
+        'Microsoft.VisualStudioCode',
+        'Microsoft.WindowsTerminal',
+        'WinMerge.WinMerge',
+        'Docker.DockerDesktop',
+        'Python.Python',
+        'Microsoft.VCRedist',
+      ])
+        expect(script, id).not.toContain(id);
+      expect(script).not.toContain('wsl --update');
+    });
+
+    it('windows 02-install-pnpm installs pnpm and nothing python-related', () => {
+      const script = readFileSync(
+        join(templatesDir(), 'vm-shared-windows', 'pre-scripts', '02-install-pnpm.ps1'),
+        'utf8',
+      );
+      expect(script).toContain('get.pnpm.io/install.ps1');
+      expect(script).not.toContain('pip install');
+      expect(script).not.toContain('PyYAML');
+    });
+
+    it('windows 03-install-tools ships the three agents and no dotnet global tools', () => {
+      const script = readFileSync(
+        join(templatesDir(), 'vm-shared-windows', 'pre-scripts', '03-install-tools.ps1'),
+        'utf8',
+      );
+      expect(script).toContain('pnpm runtime set node latest -g');
+      expect(script).toContain('@earendil-works/pi-coding-agent');
+      expect(script).toContain('Anthropic.ClaudeCode');
+      expect(script).toContain('@openai/codex');
+      expect(script).not.toContain('dotnet tool install');
+      expect(script).not.toContain('VS Code');
+    });
   });
 
   describe('ubuntu pre-/post-isolation step scripts', () => {
