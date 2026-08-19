@@ -7,6 +7,7 @@ import type { PowerShellExec } from '../../../src/guestSetup/powerShellExec';
 import { quoteForPowerShell } from '../../../src/guestSetup/quoteForPowerShell';
 import { buildAutounattendXml, buildProvisioningScript } from '../windowsAutounattend';
 import { writeAnswerFileIso } from './answerFileIso';
+import { buildDefeatCdBootPromptCommand } from './windowsBootPrompt';
 import {
   imageCacheDir,
   NAME_PREFIX,
@@ -212,6 +213,16 @@ export async function ensureWindowsGoldenImage(
     ] as const) {
       await run(exec, command, what);
     }
+    // Windows Setup media's own boot loader prompts "Press any key to boot
+    // from CD or DVD..." with a short timeout before falling through to the
+    // next boot device; an unattended start never presses one. Confirmed on
+    // a real host: without this, the build VM sits at the firmware's boot
+    // summary ("the boot loader failed") until BUILD_TIMEOUT_MS.
+    await run(
+      exec,
+      buildDefeatCdBootPromptCommand(buildVmName, 20),
+      'clear the DVD "press any key" prompt',
+    );
     screenshots = startScreenshotCapture(exec, buildVmName, windowsBuildScreenshotDir);
     await waitForOff(exec);
   } finally {

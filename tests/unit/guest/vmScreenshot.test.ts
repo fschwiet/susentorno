@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { PowerShellExec } from '../../../src/guestSetup/powerShellExec';
 import {
   buildThumbnailCommand,
   rgb565ToBmp,
   SCREENSHOT_HEIGHT,
   SCREENSHOT_RETAIN,
   SCREENSHOT_WIDTH,
+  startScreenshotCapture,
 } from '../../guest/hyperv/vmScreenshot';
 
 describe('rgb565ToBmp', () => {
@@ -61,5 +66,24 @@ describe('capture constants', () => {
     expect(SCREENSHOT_WIDTH).toBe(320);
     expect(SCREENSHOT_HEIGHT).toBe(240);
     expect(SCREENSHOT_RETAIN).toBe(10);
+  });
+});
+
+describe('startScreenshotCapture', () => {
+  it('tolerates the extra 4 bytes GetVirtualSystemThumbnailImage returns beyond width*height*2', async () => {
+    const expectedBytes = SCREENSHOT_WIDTH * SCREENSHOT_HEIGHT * 2;
+    const raw = Buffer.alloc(expectedBytes + 4);
+    const exec: PowerShellExec = {
+      run: async () => ({ exitCode: 0, stdout: raw.toString('base64') }),
+    };
+    const dir = mkdtempSync(join(tmpdir(), 'vm-screenshot-'));
+    try {
+      const handle = startScreenshotCapture(exec, 'vm', dir, { intervalMs: 60_000 });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await handle.stop();
+      expect(readdirSync(dir).filter((name) => name.endsWith('.bmp'))).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

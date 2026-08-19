@@ -101,7 +101,12 @@ export function startScreenshotCapture(
         buildThumbnailCommand(vmName, SCREENSHOT_WIDTH, SCREENSHOT_HEIGHT),
       );
       if (exitCode !== 0) return;
-      const pixels = Buffer.from(stdout.trim(), 'base64');
+      const raw = Buffer.from(stdout.trim(), 'base64');
+      // GetVirtualSystemThumbnailImage returns 4 bytes more than
+      // width*height*2 on every call, regardless of resolution (confirmed on
+      // a real host at 80x60, 160x120, and 320x240 alike) — trim to the
+      // trailing pixel payload rgb565ToBmp actually expects.
+      const pixels = raw.subarray(raw.length - SCREENSHOT_WIDTH * SCREENSHOT_HEIGHT * 2);
       const bmp = rgb565ToBmp(pixels, SCREENSHOT_WIDTH, SCREENSHOT_HEIGHT);
       const stamp = new Date().toISOString().replace(/[:.]/g, '-');
       writeFileSync(join(dir, `${stamp}.bmp`), bmp);
