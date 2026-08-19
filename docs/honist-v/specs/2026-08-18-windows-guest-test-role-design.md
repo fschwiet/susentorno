@@ -61,11 +61,23 @@ Ubuntu's pipeline is bootstrappable from clean because `releases.ubuntu.com` pub
 
 When the variable is unset, the entire role self-skips with a prescriptive message naming the variable and the acquisition documentation. There is precedent on both counts: `testing.md` already records that cli-tier tests *"self-skip when [`jq`] is unavailable"*, and commit `147f30a` established that a missing external prerequisite should produce a prescriptive message rather than a bare failure. Unlike Hyper-V or Docker, this prerequisite genuinely cannot be satisfied by a script, so a skip is truthful rather than merely convenient.
 
-### 1.2 Seeding the answer file — no seed disk
+### 1.2 Installation media — the ISO is attached unmodified
 
-Ubuntu needs a separate `CIDATA`-labelled volume because that is what cloud-init looks for. Windows Setup instead searches the root of the installation media, and `makeInstaller()` already builds exactly that: it mounts the ISO, copies the tree into a FAT32 VHDX, and retypes the partition as an ESP.
+**The Ubuntu build's media handling must not be copied here.** `makeInstaller()` mounts the ISO and copies the tree into a FAT32 VHDX only because the Ubuntu build has to *modify* `boot/grub/grub.cfg` to inject `autoinstall` onto the kernel command line — the copy exists to make one file writable. Windows needs no media modification at all, because Setup finds its answer file on separate media.
 
-So `autounattend.xml` is written straight into the installer VHDX root using the existing `writeFile()` helper, and `makeSeed()` has no Windows counterpart. One fewer disk, one fewer failure mode, and `buildCopyTreeCommand`/`buildCreateFat32VolumeCommand`/`buildSetEspTypeCommand` carry over unchanged.
+That distinction matters concretely: this ISO's `sources/install.wim` is **5.80 GB**, and FAT32 caps a single file at 4 GiB. A tree copy into a FAT32 volume fails outright on that file, so the ISO-copy approach is not merely unnecessary here, it is unworkable.
+
+So the build VM gets:
+
+1. **The evaluation ISO attached unmodified as a DVD drive** (`Add-VMDvdDrive -Path <iso>`), set as the first boot device. No copy, no `install.wim` handling, no ESP retyping, no read-only-attribute dance.
+2. **A second DVD drive holding a one-file ISO containing `autounattend.xml`.** A DVD root is unambiguously within Setup's answer-file search, which is the reason for the second drive rather than a disk. The tiny ISO is assembled with `IMAPI2FS.MsftFileSystemImage` — a COM component built into Windows, so this adds no dependency and does not reintroduce the Node ISO-writing library ADR-0025 rejected.
+
+`makeInstaller()` therefore has **no Windows counterpart at all**, and neither do `buildCopyTreeCommand`, `buildSetEspTypeCommand`, or the FAT32 volume builder. The Windows pipeline is materially simpler than the Ubuntu one, not more complex.
+
+Two fallbacks, in order, if Setup does not pick up the answer file:
+
+- Write `autounattend.xml` to a FAT32 seed VHDX instead, reusing `makeSeed()` verbatim. Cheap to try; the uncertainty is only whether Setup searches a non-removable SCSI-attached volume.
+- Split the WIM — `Dism /Split-Image /SWMFile:install.swm /FileSize:3800` yields sub-4-GiB `.swm` files Setup consumes natively — and build the FAT32 installer volume the original draft described. Most work, and it hand-assembles media where the primary path uses the vendor's unmodified image.
 
 Secure Boot is **off on the build VM**, exactly as the Ubuntu build does via `buildDisableSecureBootCommand`. It is not a property the installed image persists, and leaving it off removes one variable from the least-debuggable phase. The role VM enables it.
 
@@ -127,7 +139,8 @@ Ubuntu's silent-rebuild behaviour is unchanged. The divergence tracks a real cos
 
 | Thing | Value |
 |---|---|
-| Installer VHDX | 8 GB, FAT32, ESP-typed |
+| Installation media | The evaluation ISO, unmodified, on DVD drive 1 |
+| Answer-file media | A one-file ISO (a few KB) on DVD drive 2 |
 | Golden VHDX | Dynamic, 127 GB maximum (matching `setup-guest.md`; realistically ~40 GB consumed) |
 | Build VM | 4 GB startup memory, 2 vCPU, automatic checkpoints disabled, attached to **`Default Switch`** |
 | Role VM | 4 GB dynamic memory (2–6 GB), 2 vCPU, Secure Boot on, no vTPM, attached to **`susentorno-test-internal`** |
@@ -322,7 +335,8 @@ Checked and deliberately **not** touched: `templates/home-jq-transforms/manifest
 | File | Responsibility |
 |---|---|
 | `tests/guest/windowsAutounattend.ts` | Pure. `buildAutounattendXml()`, `buildProvisioningScript()` — the counterpart of `autoinstall.ts` |
-| `tests/guest/hyperv/windowsGoldenImage.ts` | `ensureWindowsGoldenImage()` — installer media, build VM, wait for off, stamp |
+| `tests/guest/hyperv/windowsGoldenImage.ts` | `ensureWindowsGoldenImage()` — media attachment, build VM, wait for off, stamp |
+| `tests/guest/hyperv/answerFileIso.ts` | Assemble the one-file answer-file ISO via `IMAPI2FS.MsftFileSystemImage` |
 | `tests/guest/hyperv/windowsCredential.ts` | Generate and persist the `Administrator` password in `.image-cache/` |
 | `tests/guest/hyperv/vmScreenshot.ts` | WMI framebuffer capture and BMP assembly; `start`/`stop` mirroring `serialLog.ts` |
 | `tests/guest/windowsGuestExec.ts` | PowerShell Direct `run`/`capture`/`copyFile` |
@@ -384,6 +398,16 @@ Following the precedent that the harness's pure functions get unit tests:
 - **Ambient trust** — the host's non-public trusted roots, propagated into a guest so it can validate the same terminated upstreams the host can. `CONTEXT.md` currently defines only the host-side **Upstream trust bundle**, and section 3 turned entirely on the guest-side concept having no name. *Avoid:* extra CAs, corporate roots.
 - **Guest role** — one disposable guest identity within the guest test tier, from which its VM name, differencing disk, serial or screenshot channel, and diagnostics directory all derive. Follows the precedent that **Isolation name** already reaches into test vocabulary. *Avoid:* test guest, VM name.
 
+## 8.1 Implementation staging
+
+The spec is one coherent scope, but it should **not** land as one indivisible commit: it combines several unproven Windows platform mechanisms with a broad template deletion that shares none of their risk. The plan should stage it in dependency order, each stage independently reviewable and revertible:
+
+1. **The template trim and its fallout** (section 4). Pure product change, no Windows-platform unknowns, and it establishes the `04-configure-network.ps1` name everything downstream references. First precisely because it is the one stage that cannot fail for environmental reasons.
+2. **The golden image pipeline** (section 1) — media attachment, answer file, resumable provisioning, stamp, screenshots. The stage with the multi-hour feedback loop and the Windows-version-sensitive unknowns; it should be green on its own before anything depends on it.
+3. **The `windowsFresh` role** (sections 2 and 3) — VM lifecycle, PowerShell Direct, share, ambient trust, assertions.
+
+Stage 1 is worth landing on its own merits even if stages 2 and 3 stall: it discharges ADR-0024's deferred exception regardless. Note that it does **not** get meaningful verification from stage 3 — `windowsFresh` runs only `04-configure-network.ps1` and preinstalls Git, so the `01`–`03` trim is reviewed rather than tested. Testing it is the follow-on scope-B spec's job.
+
 ## 9. Risks and contingencies
 
 | Risk | Contingency |
@@ -391,7 +415,8 @@ Following the precedent that the harness's pure functions get unit tests:
 | The COM update loop hangs, and it is the least predictable part of the build | Primary consumer of the screenshot diagnostics; the timeout message names both the screenshots and the VHDX for offline log salvage |
 | `winget` is temperamental under an autologon context | Fall back to downloading the Git for Windows silent installer directly |
 | PowerShell Direct lands in a filtered, non-elevated token | Built-in `Administrator` plus `LocalAccountTokenFilterPolicy`; both are in the answer file from the start rather than added after the symptom |
-| Windows Setup does not find `autounattend.xml` at the installer VHDX root | Fall back to a separate FAT32 volume, reusing `makeSeed()`'s existing shape |
+| Windows Setup does not find `autounattend.xml` on the second DVD | Two ordered fallbacks in section 1.2: a FAT32 seed VHDX reusing `makeSeed()`, then a DISM WIM split with a hand-built FAT32 installer volume |
+| The build VM boots the wrong DVD, or the answer-file ISO shadows the installation media | Set the installation ISO explicitly as first boot device; the answer-file drive is never bootable, carrying one file and no boot sector |
 | **Nested virtualisation cost** — susentorno is developed inside a guest, so this build runs under nested Hyper-V | The 60–120 minute estimate may be substantially optimistic; the build timeout is set generously and the failure message distinguishes "still progressing" from "stuck" via the screenshots |
 | **Disk** — `.image-cache/` grows by roughly 50–60 GB | Documented as a guest-tier prerequisite alongside the ISO |
 
@@ -409,6 +434,8 @@ Two divergences surfaced while comparing the Linux and Windows templates. Both a
 - **A hand-built golden VHDX.** Rejected: it discards the one property ADR-0025's stamp depends on — that the image is defined by the repo — and keeps only unattended acquisition, which is the property that matters least.
 - **OpenSSH Server in the guest.** Rejected: it would reach the guest across the network under test, with no serial console to fall back on, and it would imitate a production transport that does not exist on Windows.
 - **A vTPM matching `setup-guest.md`.** Rejected: automatic device encryption would seal the golden volume to the build VM's vTPM and brick every differencing child, and nothing under test is TPM-dependent.
+- **Copying the ISO tree onto a FAT32 installer VHDX, as the Ubuntu build does.** Rejected on a hard fact: this ISO's `sources/install.wim` is 5.80 GB against FAT32's 4 GiB per-file limit, so the copy cannot complete. The Ubuntu build only copies because it must edit `grub.cfg`; Windows requires no media edit, so the copy has no purpose here even setting the size aside.
+- **Splitting the WIM with DISM to make that copy viable.** Retained as a second fallback, not chosen: it is the most work of the three options and hand-assembles installer media where attaching the vendor ISO unmodified is both simpler and higher fidelity.
 - **Running the trimmed `01-install-packages.ps1` during the golden build.** Rejected: it couples the cached image to shipped template content, so any template edit triggers a multi-hour rebuild, and it inverts the boundary that makes the tier legible — golden image is the bare OS, provisioning is what the test does.
 - **Having the role winget-install through the proxy.** Rejected: pre-scripts run pre-isolation in production, so this would invent a requirement rather than test one.
 - **Stubbing `git`**, mirroring ADR-0025's `gh`. Rejected: it buys tidiness by deleting the assertion with the most to say about the network boundary.
