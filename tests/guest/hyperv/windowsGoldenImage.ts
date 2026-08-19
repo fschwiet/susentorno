@@ -5,7 +5,11 @@ import { buildStartVmCommand } from '../../../src/guestSetup/hyperVOperations';
 import { buildGetVmCommand, parseGetVmResult } from '../../../src/guestSetup/hyperVQueries';
 import type { PowerShellExec } from '../../../src/guestSetup/powerShellExec';
 import { quoteForPowerShell } from '../../../src/guestSetup/quoteForPowerShell';
-import { buildAutounattendXml, buildProvisioningScript } from '../windowsAutounattend';
+import {
+  buildAutounattendXml,
+  buildProvisioningScript,
+  PROVISIONING_SCRIPT_ISO_FILENAME,
+} from '../windowsAutounattend';
 import { writeAnswerFileIso } from './answerFileIso';
 import { buildDefeatCdBootPromptCommand } from './windowsBootPrompt';
 import {
@@ -166,7 +170,7 @@ export async function ensureWindowsGoldenImage(
   }
 
   const provisioningScript = buildProvisioningScript();
-  const answerXml = buildAutounattendXml({ password: credential.password, provisioningScript });
+  const answerXml = buildAutounattendXml({ password: credential.password });
   const isoSha256 = await fileSha256(isoPath);
   const inputs = buildWindowsStampInputs({
     answerXml,
@@ -192,7 +196,9 @@ export async function ensureWindowsGoldenImage(
   rmSync(windowsGoldenVhdPath, { force: true });
   rmSync(windowsBuildScreenshotDir, { recursive: true, force: true });
 
-  await writeAnswerFileIso(exec, windowsAnswerIsoPath, answerXml);
+  await writeAnswerFileIso(exec, windowsAnswerIsoPath, answerXml, {
+    [PROVISIONING_SCRIPT_ISO_FILENAME]: provisioningScript,
+  });
   await run(exec, buildNewVhdCommand(windowsGoldenVhdPath, targetSize), 'create golden disk');
   await run(
     exec,

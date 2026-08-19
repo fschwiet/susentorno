@@ -3,6 +3,8 @@ export const WINDOWS_GUEST_HOSTNAME = 'susentorno-win';
 /** Must match an image in the supplied ISO; see SUSENTORNO_WINDOWS_ISO's x64/en-us contract. */
 export const WINDOWS_IMAGE_NAME = 'Windows 11 Enterprise Evaluation';
 export const PROVISIONING_SCRIPT_PATH = 'C:\\Windows\\Setup\\Scripts\\susentorno-provision.ps1';
+/** Name on the answer-file ISO (SUSENTORNO volume label), alongside Autounattend.xml. */
+export const PROVISIONING_SCRIPT_ISO_FILENAME = 'susentorno-provision.ps1';
 const STAGE_MARKER_PATH = 'C:\\Windows\\Setup\\Scripts\\susentorno-stage.txt';
 const RUN_KEY = 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run';
 const RUN_VALUE_NAME = 'SusentornoProvision';
@@ -93,15 +95,23 @@ export function buildProvisioningScript(): string {
 
 export interface AutounattendInputs {
   password: string;
-  provisioningScript: string;
 }
 
 /**
- * Setup finds this on the second DVD drive. Note what is deliberately absent:
- * no Windows Update policy (it would stop the COM search returning anything —
- * the provisioning script applies it after servicing), and no
- * LocalAccountTokenFilterPolicy (it governs network remote administration and
- * would be cargo-culted here; elevation is asserted at runtime instead).
+ * Setup finds this on the second DVD drive. The provisioning script itself is
+ * not embedded here — FirstLogonCommands' CommandLine has a ~4096-character
+ * limit, and inlining the whole base64-encoded script blew past it, silently
+ * invalidating the entire answer file (confirmed live: Setup rejected it with
+ * "Value is invalid" for FirstLogonCommands/SynchronousCommand[Order=1] and
+ * failed many minutes later with the generic "Windows could not complete the
+ * installation"). It instead ships as a separate file on the same ISO
+ * (PROVISIONING_SCRIPT_ISO_FILENAME), fetched by a short Copy-Item.
+ *
+ * Also deliberately absent: no Windows Update policy (it would stop the COM
+ * search returning anything — the provisioning script applies it after
+ * servicing), and no LocalAccountTokenFilterPolicy (it governs network remote
+ * administration and would be cargo-culted here; elevation is asserted at
+ * runtime instead).
  */
 export function buildAutounattendXml(inputs: AutounattendInputs): string {
   const password = escapeXml(inputs.password);
@@ -250,8 +260,8 @@ export function buildAutounattendXml(inputs: AutounattendInputs): string {
       <FirstLogonCommands>
         <SynchronousCommand wcm:action="add">
           <Order>1</Order>
-          <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "New-Item -ItemType Directory -Force -Path 'C:\\Windows\\Setup\\Scripts' | Out-Null; [IO.File]::WriteAllText('${PROVISIONING_SCRIPT_PATH}', [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${Buffer.from(inputs.provisioningScript, 'utf8').toString('base64')}')))"</CommandLine>
-          <Description>Write the provisioning script</Description>
+          <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "New-Item -ItemType Directory -Force -Path 'C:\\Windows\\Setup\\Scripts' | Out-Null; $v = Get-Volume -FileSystemLabel 'SUSENTORNO'; Copy-Item -Path ($v.DriveLetter + ':\\${PROVISIONING_SCRIPT_ISO_FILENAME}') -Destination '${PROVISIONING_SCRIPT_PATH}' -Force"</CommandLine>
+          <Description>Copy the provisioning script from the answer-file ISO</Description>
         </SynchronousCommand>
         <SynchronousCommand wcm:action="add">
           <Order>2</Order>

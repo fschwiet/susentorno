@@ -2,15 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   buildAutounattendXml,
   buildProvisioningScript,
+  PROVISIONING_SCRIPT_ISO_FILENAME,
   PROVISIONING_SCRIPT_PATH,
   WINDOWS_GUEST_HOSTNAME,
   WINDOWS_IMAGE_NAME,
 } from '../../guest/windowsAutounattend';
 
-const xml = buildAutounattendXml({
-  password: 'p@ssw0rd-Example',
-  provisioningScript: buildProvisioningScript(),
-});
+const xml = buildAutounattendXml({ password: 'p@ssw0rd-Example' });
 
 describe('WINDOWS_GUEST_HOSTNAME', () => {
   it('fits the NetBIOS computer-name limit of 15 characters', () => {
@@ -69,11 +67,24 @@ describe('buildAutounattendXml', () => {
     expect(xml).toContain(PROVISIONING_SCRIPT_PATH);
   });
 
+  it('fetches the provisioning script from the answer-file ISO rather than inlining it', () => {
+    // Confirmed live: a CommandLine embedding the whole base64-encoded script
+    // hit unattend.xml's ~4096-character field limit and Setup rejected the
+    // entire answer file with "Value is invalid" for
+    // FirstLogonCommands/SynchronousCommand[Order=1]/CommandLine. Every
+    // CommandLine here must stay well under that.
+    for (const commandLine of xml.matchAll(/<CommandLine>([^<]*)<\/CommandLine>/g)) {
+      expect(commandLine[1].length, commandLine[1]).toBeLessThan(2000);
+    }
+    expect(xml).toContain(PROVISIONING_SCRIPT_ISO_FILENAME);
+    expect(xml).toContain('SUSENTORNO');
+    expect(xml).not.toContain(
+      Buffer.from(buildProvisioningScript(), 'utf8').toString('base64').slice(0, 100),
+    );
+  });
+
   it('escapes XML metacharacters in the password', () => {
-    const escaped = buildAutounattendXml({
-      password: 'a<b>&c"d',
-      provisioningScript: 'x',
-    });
+    const escaped = buildAutounattendXml({ password: 'a<b>&c"d' });
     expect(escaped).toContain('a&lt;b&gt;&amp;c&quot;d');
     expect(escaped).not.toContain('a<b>&c"d');
   });

@@ -33,6 +33,20 @@ describe('buildAnswerIsoCommand', () => {
   it('single-quotes the destination path PowerShell-style', () => {
     expect(buildAnswerIsoCommand("C:\\it's\\a.iso", 'x')).toContain("'C:\\it''s\\a.iso'");
   });
+
+  it('adds extra files to the same image root alongside Autounattend.xml', () => {
+    // The FirstLogonCommands base64-inline approach hit unattend.xml's
+    // ~4096-character CommandLine limit (confirmed live: Setup rejected the
+    // whole answer file with "Value is invalid" once the provisioning script
+    // grew past it). Shipping the script as a file on this same ISO, fetched
+    // by a short Copy-Item, sidesteps the limit entirely.
+    const withExtra = buildAnswerIsoCommand('C:\\cache\\answer.iso', '<unattend/>', {
+      'susentorno-provision.ps1': 'Write-Host hi',
+    });
+    expect(withExtra).toContain('susentorno-provision.ps1');
+    expect(withExtra).toContain(Buffer.from('Write-Host hi', 'utf8').toString('base64'));
+    expect(withExtra).toContain('AddFile');
+  });
 });
 
 describe('writeAnswerFileIso', () => {

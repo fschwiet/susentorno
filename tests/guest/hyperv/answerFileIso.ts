@@ -14,8 +14,11 @@ export class AnswerFileIsoError extends Error {}
  * same reason ambientTrust.ts base64s PEMs: its own newlines and quotes cannot
  * survive shell quoting reliably.
  */
-export function buildAnswerIsoCommand(isoPath: string, answerXml: string): string {
-  const base64 = Buffer.from(answerXml, 'utf8').toString('base64');
+export function buildAnswerIsoCommand(
+  isoPath: string,
+  answerXml: string,
+  extraFiles: Record<string, string> = {},
+): string {
   // CreateResultImage() hands back a COM IStream, which PowerShell cannot
   // write to a file on its own. A tiny compiled helper copies it block by
   // block; IMAPI pads every block to BlockSize, so passing IntPtr.Zero for
@@ -36,21 +39,37 @@ export function buildAnswerIsoCommand(isoPath: string, answerXml: string): strin
     '  }',
     '}',
   ].join('\n');
+
+  // IMAPI2FS's AddFile registers a stream reference for CreateResultImage()
+  // to read later — it does not copy the content at AddFile time — so every
+  // payload stream must stay open (a distinct variable per file) until after
+  // CreateResultImage() returns, then all get closed together.
+  const files = { 'Autounattend.xml': answerXml, ...extraFiles };
+  const fileEntries = Object.entries(files);
+  const payloadLines = fileEntries.flatMap(([name, content], index) => {
+    const base64 = Buffer.from(content, 'utf8').toString('base64');
+    const payloadVar = `$payload${index}`;
+    return [
+      `$source${index} = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(${quoteForPowerShell(base64)}))`,
+      `${payloadVar} = New-Object -ComObject ADODB.Stream`,
+      `${payloadVar}.Open(); ${payloadVar}.Type = 1`,
+      `${payloadVar}.Write([Text.Encoding]::UTF8.GetBytes($source${index})); ${payloadVar}.Position = 0`,
+      `$image.Root.AddFile(${quoteForPowerShell(name)}, ${payloadVar})`,
+    ];
+  });
+  const closeLines = fileEntries.map((_, index) => `$payload${index}.Close()`);
+
   return [
     "$ErrorActionPreference = 'Stop'",
-    `$source = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(${quoteForPowerShell(base64)}))`,
-    '$payload = New-Object -ComObject ADODB.Stream',
-    '$payload.Open(); $payload.Type = 1',
-    '$payload.Write([Text.Encoding]::UTF8.GetBytes($source)); $payload.Position = 0',
     '$image = New-Object -ComObject IMAPI2FS.MsftFileSystemImage',
     // 3 == ISO9660 + Joliet. Setup reads either; UDF buys nothing for one file.
     '$image.FileSystemsToCreate = 3',
     "$image.VolumeName = 'SUSENTORNO'",
-    "$image.Root.AddFile('Autounattend.xml', $payload)",
+    ...payloadLines,
     '$result = $image.CreateResultImage()',
     `if (-not ('SusentornoIsoWriter' -as [type])) { Add-Type -TypeDefinition ${quoteForPowerShell(isoWriter)} }`,
     `[SusentornoIsoWriter]::Create(${quoteForPowerShell(isoPath)}, $result.ImageStream, $result.BlockSize, $result.TotalBlocks)`,
-    '$payload.Close()',
+    ...closeLines,
   ].join('; ');
 }
 
@@ -58,9 +77,12 @@ export async function writeAnswerFileIso(
   exec: PowerShellExec,
   isoPath: string,
   answerXml: string,
+  extraFiles: Record<string, string> = {},
 ): Promise<void> {
   rmSync(isoPath, { force: true });
-  const { exitCode, stdout } = await exec.run(buildAnswerIsoCommand(isoPath, answerXml));
+  const { exitCode, stdout } = await exec.run(
+    buildAnswerIsoCommand(isoPath, answerXml, extraFiles),
+  );
   if (exitCode !== 0) {
     throw new AnswerFileIsoError(
       `answerFileIso: could not build '${isoPath}' (exit ${exitCode}): ${stdout}`,
