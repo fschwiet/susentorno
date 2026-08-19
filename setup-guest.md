@@ -217,12 +217,12 @@ cd "\\<default-switch-host-ip>\vm-shared-windows\"
 Set-ExecutionPolicy Bypass
 ```
 
-1. `cd .\pre-scripts` and run every script in order. With no custom steps, the last is `.\05-configure-network.ps1 -HostIp <internal-switch-host-ip>`.
+1. `cd .\pre-scripts` and run every script in order. With no custom steps, the last is `.\04-configure-network.ps1 -HostIp <internal-switch-host-ip>`.
 2. Isolate the VM — reassign its single adapter to `susentorno-internal` (see "Isolate" below), with `run-hosting` already running.
 3. Use the `cmdkey` entry for `<internal-switch-host-ip>`, then run every post-script in order from `\\<internal-switch-host-ip>\vm-shared-windows\post-scripts`: normally `.\01-auth-config.ps1`, then `.\02-apply-home-jq-transforms.ps1`.
 4. Restore the normal execution policy with `Set-ExecutionPolicy RemoteSigned`.
 
-When a script asks for `<host-ip>` (`04-configure-network.sh` / `05-configure-network.ps1`), it is the Internal-switch host IP from `setup-machine.md` (`192.168.67.1` here).
+When a script asks for `<host-ip>` (`04-configure-network.sh` / `04-configure-network.ps1`), it is the Internal-switch host IP from `setup-machine.md` (`192.168.67.1` here).
 
 ## 4. Isolate
 

@@ -104,6 +104,9 @@ describe.skipIf(!hasJq)('susentorno update-shares', () => {
       await execa('node', [cliPath, 'update-shares'], { cwd: dir });
       expect(existsSync(join(wovenPre, '04-docker.sh'))).toBe(false);
       expect(existsSync(join(wovenPre, '04-configure-network.sh'))).toBe(true);
+      const wovenPreWin = join(dir, '.susentorno', 'vm-shared-windows', 'pre-scripts');
+      expect(existsSync(join(wovenPreWin, '04-configure-network.ps1'))).toBe(true);
+      expect(existsSync(join(wovenPreWin, '05-configure-network.ps1'))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

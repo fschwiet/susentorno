@@ -30,7 +30,6 @@ const expectedTemplateFiles = [
   'vm-shared-windows/pre-scripts/01-install-packages.ps1',
   'vm-shared-windows/pre-scripts/02-install-pnpm.ps1',
   'vm-shared-windows/pre-scripts/03-install-tools.ps1',
-  'vm-shared-windows/pre-scripts/04-configure-tools.ps1',
   'vm-shared-windows/pre-scripts/nn-configure-network.ps1',
   'vm-shared-windows/post-scripts/01-auth-config.ps1',
   'vm-shared-windows/post-scripts/02-apply-home-jq-transforms.ps1',
@@ -56,6 +55,25 @@ describe('generated provisioning inventory', () => {
         '03-install-tools.sh',
         'nn-configure-network.sh',
       ]);
+    });
+
+    it('ships exactly the four windows pre-scripts a guest requires', () => {
+      const dir = join(templatesDir(), 'vm-shared-windows', 'pre-scripts');
+      expect(readdirSync(dir).sort()).toEqual([
+        '01-install-packages.ps1',
+        '02-install-pnpm.ps1',
+        '03-install-tools.ps1',
+        'nn-configure-network.ps1',
+      ]);
+    });
+
+    it('windows configure-network no longer prints its own woven number', () => {
+      const net = readFileSync(
+        join(templatesDir(), 'vm-shared-windows', 'pre-scripts', 'nn-configure-network.ps1'),
+        'utf8',
+      );
+      expect(net).not.toContain('05-configure-network');
+      expect(net).toContain('configure-network:');
     });
 
     it('ships the packaged allow list, auth list, and block list', () => {

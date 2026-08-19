@@ -38,7 +38,7 @@ if ($HostIp) {
   Bad 'host IP determinable' "pass -HostIp explicitly -- found $($dnsServers.Count) DHCP-assigned DNS server(s) ('$($dnsServers -join ', ')'), need exactly 1 to discover unambiguously"
 }
 
-Section 'CA trust (05)'
+Section 'CA trust (configure-network)'
 $root = Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like '*susentorno-proxy-certificate-authority*' }
 if ($root) { Ok 'proxy CA present in LocalMachine\Root' } else { Bad 'proxy CA present in LocalMachine\Root' 'certutil import missing?' }
 $nodeCa = [Environment]::GetEnvironmentVariable('NODE_EXTRA_CA_CERTS', 'Machine')
@@ -46,7 +46,7 @@ if ($nodeCa -and (Test-Path $nodeCa)) { Ok "NODE_EXTRA_CA_CERTS set ($nodeCa)" }
 $sslBackend = (git config --global http.sslBackend) 2>$null
 if ($sslBackend -eq 'schannel') { Ok 'git http.sslBackend=schannel' } else { Bad 'git http.sslBackend=schannel' "got '$sslBackend'" }
 
-Section 'Host DHCP/DNS (05)'
+Section 'Host DHCP/DNS (configure-network)'
 if ($HostIp -and $dnsServers -contains $HostIp) { Ok "resolver points at the host ($HostIp)" } else { Bad "resolver points at the host ($HostIp)" "got '$($dnsServers -join ', ')'" }
 if ($HostIp) {
   $ans = (Resolve-DnsName -Name example.com -Type A -DnsOnly -ErrorAction SilentlyContinue | Where-Object Type -eq 'A' | Select-Object -First 1).IPAddress
@@ -54,7 +54,7 @@ if ($HostIp) {
 }
 if (-not (Get-ScheduledTask -TaskName 'SusentornoDnsResponder' -ErrorAction SilentlyContinue)) { Ok 'no in-guest DNS responder task' } else { Bad 'no in-guest DNS responder task' 'remove SusentornoDnsResponder' }
 
-Section 'Placeholder credential (06)'
+Section 'Placeholder credential (01-auth-config)'
 $cred = Join-Path $env:USERPROFILE '.claude\.credentials.json'
 if (-not (Test-Path $cred)) { Bad 'placeholder credential in place' "missing $cred -- run 01-auth-config.ps1" }
 elseif ((Get-Content $cred -Raw).Contains($PLACEHOLDER)) { Ok 'credentials.json is the placeholder' }

@@ -57,7 +57,7 @@ describe('environment initialization', () => {
         'proxy/auth-list.txt',
         'proxy/block-list.txt',
         'vm-shared-windows/pre-scripts/01-install-packages.ps1',
-        'vm-shared-windows/pre-scripts/05-configure-network.ps1',
+        'vm-shared-windows/pre-scripts/04-configure-network.ps1',
         'vm-shared-windows/post-scripts/01-auth-config.ps1',
         'vm-shared-windows/post-scripts/02-apply-home-jq-transforms.ps1',
         'vm-shared-windows/verify-config.ps1',

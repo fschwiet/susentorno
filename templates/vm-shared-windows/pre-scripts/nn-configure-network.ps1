@@ -6,7 +6,7 @@ $shareRoot = Split-Path -Parent $scriptDir
 if (-not $CertPath) { $CertPath = Join-Path $shareRoot 'cert.pem' }
 
 if (-not (Test-Path $CertPath)) {
-  Write-Error "05-configure-network: $CertPath not found. Run 'susentorno generate-ca' on the host first."
+  Write-Error "configure-network: $CertPath not found. Run 'susentorno generate-ca' on the host first."
   exit 1
 }
 
@@ -26,10 +26,10 @@ Copy-Item -Force $CertPath $caStable
 # 3) Git for Windows: use the Windows store (schannel).
 git config --global http.sslBackend schannel
 
-Write-Host "05-configure-network: imported $CertPath into LocalMachine\Root; NODE_EXTRA_CA_CERTS=$caStable; git sslBackend=schannel"
+Write-Host "configure-network: imported $CertPath into LocalMachine\Root; NODE_EXTRA_CA_CERTS=$caStable; git sslBackend=schannel"
 
 # DNS and the default route now arrive via DHCP from the host (option 6 and option
 # 3), so there is nothing to configure here. The adapter stays on DHCP for both the
 # NAT and isolated networks, which makes switching between them a pure host operation.
 Clear-DnsClientCache
-Write-Host "05-configure-network: CA trusted; DNS and addressing come from the host via DHCP"
+Write-Host "configure-network: CA trusted; DNS and addressing come from the host via DHCP"
