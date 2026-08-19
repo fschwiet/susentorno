@@ -193,7 +193,7 @@ export async function ensureWindowsGoldenImage(
       // Session interaction and pointing at memory pressure during that
       // pre-OOBE phase, before Hyper-V's dynamic-memory balloon driver is
       // even available to help.
-      memoryStartupBytes: 6 * 1024 ** 3,
+      memoryStartupBytes: 8 * 1024 ** 3,
       switchName: 'Default Switch',
     }),
     'create build VM',
