@@ -144,6 +144,31 @@ describe('buildProvisioningScript', () => {
     expect(gitBlock).toContain('catch');
   });
 
+  it('registers the DesktopAppInstaller package before trusting winget', () => {
+    // Confirmed live, a third time, by mounting the built (but git-less)
+    // golden disk offline: Microsoft.DesktopAppInstaller was staged in
+    // WindowsApps and its winget.exe execution alias existed in the
+    // Administrator profile, but the package was never *registered* for
+    // that profile this early after an OOBE-skipped first logon. An
+    // unregistered alias is a phantom stub -- invoking it exits 0 without
+    // doing anything, so $LASTEXITCODE alone cannot tell success from a
+    // no-op (no DiagOutputDir was ever created, and Program Files\Git never
+    // existed, despite the stage marker advancing to "finalize"). The git
+    // stage must force-register the package before attempting install.
+    const gitBlock = script.slice(script.indexOf('"git"'), script.indexOf('"finalize"'));
+    expect(gitBlock).toContain('Add-AppxPackage');
+    expect(gitBlock).toContain('DesktopAppInstaller');
+  });
+
+  it('verifies git.exe actually exists rather than trusting winget exit code alone', () => {
+    // The same phantom-alias failure mode means a bare $LASTEXITCODE check
+    // can never be fully trusted for this package. The loop must confirm
+    // the binary landed on disk before declaring the stage done.
+    const gitBlock = script.slice(script.indexOf('"git"'), script.indexOf('"finalize"'));
+    expect(gitBlock).toContain('git.exe');
+    expect(gitBlock).toMatch(/Test-Path \$gitPath/);
+  });
+
   it('finalises in the right order: disable updates, clear autologon, deregister, shut down', () => {
     const order = ['NoAutoUpdate', 'AutoAdminLogon', 'Remove-ItemProperty', 'Stop-Computer'];
     let cursor = -1;

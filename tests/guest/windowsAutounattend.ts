@@ -74,19 +74,38 @@ export function buildProvisioningScript(): string {
     '}',
     '',
     'if ($stage -eq "git") {',
+    // Confirmed live by mounting the built (git-less) golden disk offline:
+    // Microsoft.DesktopAppInstaller is staged in WindowsApps and its
+    // winget.exe execution alias exists in the Administrator profile, but
+    // right after an OOBE-skipped first logon the package is not yet
+    // *registered* for that profile. An unregistered alias is a phantom
+    // stub: invoking it exits 0 and does nothing (no DiagOutputDir was ever
+    // created, Program Files\\Git never existed) -- so $LASTEXITCODE alone
+    // cannot distinguish success from a no-op. Force registration first.
+    '  try {',
+    '    Get-AppxPackage -AllUsers -Name Microsoft.DesktopAppInstaller | ForEach-Object {',
+    '      Add-AppxPackage -DisableDevelopmentMode -Register "$($_.InstallLocation)\\AppXManifest.xml"',
+    '    }',
+    '  } catch {',
+    '    Write-Host "provision: Add-AppxPackage DesktopAppInstaller threw: $_"',
+    '  }',
+    '  $gitPath = "$env:ProgramFiles\\Git\\cmd\\git.exe"',
     '  $gitInstalled = $false',
     '  for ($attempt = 1; $attempt -le 10; $attempt++) {',
     '    try {',
-    // winget can be unrecognized as a command this early (confirmed live:
-    // its own DiagOutputDir log directory did not exist), which is a
+    // winget can still be unrecognized as a command this early (confirmed
+    // live: its own DiagOutputDir log directory did not exist), which is a
     // terminating PowerShell error under $ErrorActionPreference = 'Stop' --
     // not a native exit code -- so it must be caught, not just checked via
     // $LASTEXITCODE, or a single early attempt kills the whole script.
     '      $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue',
     '      $wingetPath = if ($wingetCmd) { $wingetCmd.Source } else { "$env:LOCALAPPDATA\\Microsoft\\WindowsApps\\winget.exe" }',
     '      & $wingetPath install --id Git.Git --exact --silent --accept-source-agreements --accept-package-agreements --source winget',
-    '      if ($LASTEXITCODE -eq 0) { $gitInstalled = $true; break }',
-    '      Write-Host "provision: winget install Git.Git attempt $attempt failed with exit code $LASTEXITCODE"',
+    '      Write-Host "provision: winget install Git.Git attempt $attempt exit code $LASTEXITCODE"',
+    // The phantom-alias failure mode returns exit 0 having done nothing, so
+    // exit code alone is untrustworthy for this package: confirm the
+    // binary actually landed before declaring the stage done.
+    '      if ($LASTEXITCODE -eq 0 -and (Test-Path $gitPath)) { $gitInstalled = $true; break }',
     '    } catch {',
     '      Write-Host "provision: winget install Git.Git attempt $attempt threw: $_"',
     '    }',
