@@ -57,7 +57,7 @@ This is a deliberate constraint, carried over from the 2026-08-15 tier design's 
 
 Ubuntu's pipeline is bootstrappable from clean because `releases.ubuntu.com` publishes both a stable ISO URL and `SHA256SUMS`, so `isoCache.ts` downloads and verifies unattended. Windows has no equivalent: the Enterprise evaluation sits behind a registration form at `info.microsoft.com` and yields a short-lived signed URL. Unattended acquisition is therefore impossible, and this design gives it up rather than working around it.
 
-`SUSENTORNO_WINDOWS_ISO` names a local path to a Windows 11 Enterprise evaluation ISO. Obtaining it is a documented one-time prerequisite alongside Hyper-V, Docker, and `ssh-agent`. The harness reads the path, fails fast if it is unreadable, and hashes the file once so its digest can enter the stamp — pointing the variable at a different build invalidates the cached image.
+`SUSENTORNO_WINDOWS_ISO` names a local path to a Windows 11 Enterprise evaluation ISO, **x64, `en-us`** — the answer file encodes a locale and an image name, so an arbitrary Enterprise ISO of another architecture or language will not satisfy it. Obtaining it is a documented one-time prerequisite alongside Hyper-V, Docker, and `ssh-agent`. The harness reads the path, fails fast if it is unreadable, and hashes the file once so its digest can enter the stamp — pointing the variable at a different build invalidates the cached image.
 
 When the variable is unset, the entire role self-skips with a prescriptive message naming the variable and the acquisition documentation. There is precedent on both counts: `testing.md` already records that cli-tier tests *"self-skip when [`jq`] is unavailable"*, and commit `147f30a` established that a missing external prerequisite should produce a prescriptive message rather than a bare failure. Unlike Hyper-V or Docker, this prerequisite genuinely cannot be satisfied by a script, so a skip is truthful rather than merely convenient.
 
@@ -73,31 +73,37 @@ Secure Boot is **off on the build VM**, exactly as the Ubuntu build does via `bu
 
 In pass order:
 
-1. **WinPE pass:** set `BypassTPMCheck`, `BypassSecureBootCheck`, and `BypassRAMCheck` under `HKLM\SYSTEM\Setup\LabConfig`, so Setup proceeds on a VM with no vTPM.
+1. **`windowsPE` pass:** a `RunSynchronous` command sets `BypassTPMCheck`, `BypassSecureBootCheck`, `BypassRAMCheck`, and `BypassCPUCheck` under `HKLM\SYSTEM\Setup\LabConfig`. `BypassCPUCheck` is included because this build runs under nested Hyper-V on whatever CPU the developer has, and CPU compatibility is not something the ISO-plus-host contract guarantees.
 2. **Disk configuration:** GPT layout across the whole target disk.
-3. **Specialize/oobeSystem:** enable the built-in `Administrator` account with a harness-generated password; set `LocalAccountTokenFilterPolicy`; skip OOBE entirely, including the Microsoft-account push that `setup-guest.md:32` currently works around by unplugging the network adapter.
-4. **Policy:** disable Windows Update, Microsoft Store auto-update, DiagTrack telemetry, and consumer experiences; set `PreventDeviceEncryption`.
-5. **Autologon** for the built-in `Administrator`, with `AutoLogonCount` of 10 — the update loop reboots once per servicing pass and rarely needs more than a few, so 10 leaves headroom without leaving autologon enabled indefinitely. The provisioning script clears the credential explicitly at the end regardless of the remaining count.
+3. **`specialize` / `oobeSystem`:** enable the built-in `Administrator` account with a harness-generated password; skip OOBE entirely, including the Microsoft-account push that `setup-guest.md:32` currently works around by unplugging the network adapter.
+4. **Policy:** disable Microsoft Store auto-update, DiagTrack telemetry, and consumer experiences; set `PreventDeviceEncryption`. **Windows Update is deliberately *not* disabled here** — see section 1.5. It is disabled by the provisioning script's final step, after servicing completes, because several of the policy settings that disable Windows Update also prevent the COM update search from returning anything.
+5. **Autologon** for the built-in `Administrator`, with `AutoLogonCount` of 10 — the update loop reboots once per servicing pass and rarely needs more than a few, so 10 leaves headroom without leaving autologon enabled indefinitely. Autologon exists to let the provisioning state machine resume across reboots; it is not itself the resume mechanism.
+
+`LocalAccountTokenFilterPolicy` is deliberately **not** in this list. It governs token filtering for network remote administration, and the built-in RID-500 `Administrator` is already special-cased; setting it would be cargo-culted rather than load-bearing. Section 2.2 asserts elevation at runtime instead of assuming a policy delivers it.
 
 ### 1.4 Firmware, and the BitLocker trap
 
 The tier's economy rests on `buildNewDifferencingVhdCommand` — one golden parent, a thin child per role — and `vhd.ts` already warns that *"Hyper-V stamps parent identity into each child, so the golden VHDX must never be booted or modified after the build."*
 
-Windows 11 24H2 and later enable **automatic device encryption** during clean installs when the firmware supports it. If that engaged during the golden build, the volume would be sealed to the build VM's vTPM, every per-role child would present a different vTPM, and each would boot to a BitLocker recovery prompt — a symptom that looks like a boot hang, not an encryption problem.
+Windows 11 24H2 and later can enable **automatic device encryption** during clean installs when the hardware supports it. If that engaged during the golden build, the volume would be sealed to the build VM's TPM protector, and every per-role child — presenting a different vTPM — would boot to a BitLocker recovery prompt. The child disks are not corrupted; the volume is simply inaccessible without the original protector or recovery key. The symptom nonetheless reads as a boot hang rather than an encryption problem, which is what makes it expensive.
 
-The design therefore ships **no vTPM at all**. With no TPM present, automatic device encryption cannot engage, so the failure class is designed out rather than suppressed; `PreventDeviceEncryption` is set anyway as cheap belt-and-braces. Secure Boot stays on for role VMs with the `MicrosoftWindows` template, because it is a genuine boot-path property, production guests run with it on, and `vm.ts` already models the concept.
+Two things make this unlikely rather than certain: automatic device encryption is normally not armed for a purely local account, and this build creates one and skips Microsoft/Entra sign-in entirely. So the honest statement is that the design removes a plausible failure mode cheaply, not that it dodges a certainty.
+
+It does so by shipping **no vTPM at all**. Device encryption requires a TPM, so with none present it cannot engage — the failure class is designed out rather than suppressed; `PreventDeviceEncryption` is set anyway as cheap belt-and-braces. Secure Boot and vTPM are independent settings, so this costs nothing on the Secure Boot side. Secure Boot stays on for role VMs with the `MicrosoftWindows` template, because it is a genuine boot-path property, production guests run with it on, and `vm.ts` already models the concept.
 
 This diverges from `setup-guest.md:37`, which has real users enable a vTPM. The divergence is accepted because nothing in this role's test surface — DHCP leases, resolver behaviour, CA trust in `LocalMachine\Root`, proxy egress — is TPM-dependent. That reasoning does not generalise: ADR-0025 spent real effort closing the Ubuntu NetworkManager-versus-`networkd` divergence precisely because *that* one was not orthogonal to what was being asserted.
 
 ### 1.5 The provisioning script
 
-The analogue of Ubuntu's `late-commands`. Run once at first logon, as the built-in `Administrator`:
+The analogue of Ubuntu's `late-commands`, but it **cannot be a single script run once at first logon**. Windows Update requires reboots, and a reboot does not resume an interrupted `FirstLogonCommands` or a consumed `RunOnce` entry — the process would simply die at the first servicing reboot, and Git installation, later update passes, and shutdown would never happen. Autologon logs the user back in; it does not re-run anything by itself.
 
-1. **Install all Windows updates to exhaustion,** using the built-in `Microsoft.Update.Session` COM API rather than `PSWindowsUpdate` from PSGallery, so the build needs no module download. Loop search → download → install → reboot until a pass finds nothing.
+So provisioning is a **resumable state machine**. A persistent `HKLM\…\CurrentVersion\Run` entry (or an equivalent scheduled task with an at-logon trigger) re-invokes the script after every reboot, and the script reads a stage marker from disk to decide what to do next. It removes its own persistence entry only in the final stage:
+
+1. **Update to exhaustion.** Drive `Microsoft.Update.Session` — built into Windows, so no PSGallery module download — through search → download → install. Inspect `IInstallationResult.RebootRequired` and the per-update result codes explicitly rather than inferring success. If a reboot is required, record the stage and reboot; otherwise advance. This COM API works from an elevated interactive session, which autologon provides; no service context is needed.
 2. **Install Git** — `winget install --id Git.Git --exact --silent`.
-3. **Clear autologon** and shut down.
+3. **Finalise:** apply the Windows Update disable policy deferred from section 1.3, clear the autologon credential, remove the persistence entry, and shut down.
 
-Intermediate reboots leave the VM `Running`, so `waitForOff` remains an unambiguous "finished" signal and needs no change.
+Intermediate reboots leave the VM `Running`, so `waitForOff` remains an unambiguous "finished" signal and needs no change. A state machine that wedges mid-stage shows up as a build timeout, which is what the screenshots in section 1.8 exist for.
 
 Git is preinstalled rather than arriving from `01-install-packages.ps1` because pre-scripts run **pre-isolation**, on the Default Switch with full internet — winget has never run through the proxy in production, and `01-install-packages.ps1`'s own `BypassCertificatePinningForMicrosoftStore` toggle is direct evidence that winget and the Store fight a MITM. Having the role winget-install through the proxy would invent a requirement rather than test one, and would fail for reasons that say nothing about susentorno.
 
@@ -107,10 +113,13 @@ This is a deliberate *inclusion* in an image the house pattern otherwise keeps b
 
 `goldenStamp.ts` generalises to take a stamp path and an inputs object, so both pipelines share one hasher. The Windows inputs are: the ISO's SHA-256, the answer file, the provisioning script, the `Administrator` password, and a build-algorithm version.
 
+The stamp file must persist a **per-input digest map**, not the single combined hash `computeGoldenStamp()` writes today. Naming which input changed is a stated requirement of the stale-image error below, and a single digest cannot support it. The Ubuntu stamp can adopt the same format or keep its own; the shared hasher does not force the issue.
+
 The stamp covers **inputs, never content**. Baking Windows Update into the image makes the result a function of the calendar, so two developers with the same ISO get different images and no rebuild is byte-reproducible. This is a deliberate trade — a patched baseline is worth more than a reproducible one for a guest whose job is to reach the network — and the spec states it rather than implying a reproducibility the pipeline does not have.
 
 - **Missing image** → build automatically. There is no expectation to violate on a first run.
 - **Stale stamp** → throw, naming which input changed and how to force a rebuild (`SUSENTORNO_WINDOWS_IMAGE_REBUILD=1`). Rebuilding stays fully automated; it simply is not something that happens to you.
+- **Expired evaluation** → throw, same remedy. The Enterprise evaluation is time-limited, and an input-only stamp would otherwise stay valid forever while the guests inside it began shutting down periodically or refusing to run. The stamp therefore records the build date, and `ensureWindowsGoldenImage` refuses an image older than a configured maximum age well inside the evaluation window. This is the sharpest consequence of choosing a patched-but-unreproducible baseline, and without it the pipeline would fail confusingly months later rather than clearly.
 
 Ubuntu's silent-rebuild behaviour is unchanged. The divergence tracks a real cost difference — 20–30 minutes versus 60–120 — rather than being arbitrary.
 
@@ -135,7 +144,11 @@ Ubuntu's build is debuggable because `startSerialLog()` captures the whole insta
 
 Where the frames land differs by caller, for the same reason the Ubuntu tier splits its own artefacts. **Build** screenshots go to `.image-cache/`, retaining the most recent 10, and deliberately survive into the next run — a failed build's evidence has to still be there when you come back to it, and a per-run directory cannot do that. **Role** screenshots go to `test-results/guest/<timestamp>/windowsFresh/`, alongside every other role's per-run diagnostics, and are discarded with the rest of that run's output.
 
-For Windows Setup this is usually the entire diagnosis: the failure modes are "sitting at a language prompt" (malformed answer file), "sitting at a hardware-requirements refusal" (bypass keys wrong), and a bugcheck, all of which are legible in a picture. The asymmetry justifying the work is that `autounattend.xml` will be developed by iteration, and that loop is unbearable blind.
+The WMI method returns **raw RGB565 pixel data**, not an encoded image, so `vmScreenshot.ts` owns the two-byte-per-pixel decode plus BMP row order and row padding. That conversion is the module's pure core and is unit-tested against a synthetic buffer.
+
+**Set expectations accordingly.** Hyper-V's thumbnail capture is capped at a low resolution — on the order of 320×240 — so this is **state classification, not a readable framebuffer**. It reliably distinguishes "at a setup prompt" from "installing" from "bugcheck" from "at the desktop", and it will not let you read an error message. That is still the difference between knowing which of the failure modes you are in — malformed answer file, wrong bypass keys, wedged update stage — and knowing nothing, and it is what makes iterating on `autounattend.xml` tractable.
+
+When the picture is not enough, the escalation is offline log salvage: the build-timeout message names the target VHDX so `Panther\setupact.log` and `setuperr.log` can be mounted and read by hand. The spec does not automate that, because it is useless in exactly the early-boot cases where the screenshots are most needed.
 
 ## 2. The `windowsFresh` role
 
@@ -172,7 +185,9 @@ The Ubuntu roles reach their guests over SSH, across the very network under test
 
 The cost is that `windowsGuestExec.ts` shares nothing with `guestExec.ts`. That is correct rather than unfortunate — a shared abstraction over `bash -ic` and `Invoke-Command -VMName` would be a worse module than two honest ones.
 
-**Elevation.** `04-configure-network.ps1` declares `#Requires -RunAsAdministrator` and writes to `LocalMachine\Root` and machine-scope environment variables, so the session must be genuinely elevated. Authenticating as the **built-in `Administrator`** account sidesteps UAC admin-approval-mode filtering, and `LocalAccountTokenFilterPolicy` is set in the answer file as a second guard.
+**Elevation.** `04-configure-network.ps1` declares `#Requires -RunAsAdministrator` and writes to `LocalMachine\Root` and machine-scope environment variables, so the session must be genuinely elevated. PowerShell Direct does not inherit the host's elevation — it runs with whatever the supplied guest credential yields — but authenticating as the enabled built-in RID-500 `Administrator` normally produces a full administrative token.
+
+"Normally" is not good enough to build on, so the role **asserts elevation at runtime** before invoking the script, checking `WindowsPrincipal.IsInRole(Administrator)` inside the session and failing with a clear message if the token came back filtered. That replaces the `LocalAccountTokenFilterPolicy` guard the earlier draft leaned on, which governs network remote administration and would not have been doing the work attributed to it.
 
 **Credential.** `windowsCredential.ts` generates the password once and persists it in `.image-cache/` — gitignored, repo-local, the same treatment `harnessKeys.ts` gives the harness private key. The password is a stamp input, so losing the file forces a rebuild rather than leaving an unreachable image.
 
@@ -206,6 +221,8 @@ Grouped by what a failure would mean.
 | Names resolve to the host, so the real DNS responder answered | `Resolve-DnsName example.com` |
 | The deleted in-guest layer stays deleted | No `SusentornoDnsResponder` scheduled task |
 
+These queries must be **scoped to one interface**, not run bare. A Windows guest enumerates loopback and tunnel pseudo-adapters, and can retain disconnected or stale entries, so a bare `Get-NetIPAddress` or `Get-DnsClientServerAddress` would assert over a set rather than over the adapter under test. The role resolves the active default route first, takes its `InterfaceIndex`, and scopes the address, origin, and resolver assertions to that index.
+
 **The share is real.** `cert.pem` is readable over SMB at the internal host IP.
 
 **The shipped script did its job.** After running `04-configure-network.ps1`: the CA is present in `LocalMachine\Root`; machine-scope `NODE_EXTRA_CA_CERTS` is set and its file exists; `git config --global http.sslBackend` reads `schannel`.
@@ -223,6 +240,8 @@ Grouped by what a failure would mean.
 
 `api.anthropic.com` resolves to the stack's local mock upstream, because `startProxyStack` passes `--upstream-override api.anthropic.com=host.docker.internal:<port>`; the assertion is about the guest accepting susentorno's leaf, not about reaching Anthropic. `github.com` and `pypi.org` are genuinely external.
 
+**Revocation checking must be disabled on the terminated paths.** `src/ca.ts` issues leaves with no CRL distribution point and no OCSP responder, and Schannel treats "revocation status unknown" as a failure by default — `templates/vm-shared-windows/verify-config.ps1:85-91` already documents exactly this and passes `--ssl-no-revoke` for `api.anthropic.com`. The role follows that precedent: `curl.exe --ssl-no-revoke` for the terminated destination, and `git -c http.schannelCheckRevoke=false ls-remote …` for the GitHub assertion, which hits the *outer* proxy's equally revocation-less leaf on a nested host. Chain validation stays fully active in both cases; only revocation status is waived, and only where susentorno itself is the issuer. The passthrough `pypi.org` request keeps revocation checking on, because there the guest is validating a real public certificate.
+
 The `api.anthropic.com` row is load-bearing and easy to omit by accident. Without a TLS-terminated destination, nothing exercises the proxy CA and the `LocalMachine\Root` check degrades into reading configuration back — the same weak-assertion trap that makes the bare `sslBackend` readback insufficient on its own.
 
 ## 3. Trust surfaces
@@ -232,7 +251,7 @@ Three distinct surfaces are in play, and conflating them produced a wrong conclu
 | Surface | Needed for | Windows status |
 |---|---|---|
 | Proxy CA | TLS-**terminated** auth-list destinations, where the guest sees susentorno's leaf | Handled by `04-configure-network.ps1` — `LocalMachine\Root` and `NODE_EXTRA_CA_CERTS` |
-| Public root program | **Passthrough** allow-list destinations, where TLS stays end-to-end with the real service | Free — Windows ships the Microsoft root program; Node ships Mozilla's |
+| Public root program | **Passthrough** allow-list destinations, where TLS stays end-to-end with the real service | Mostly free — Windows ships the Microsoft root program and Node ships Mozilla's, but see the caveat below |
 | Host ambient extra roots | A host that is itself behind a terminating proxy | **Nothing does this for Windows.** `propagateAmbientTrust` is Ubuntu-only and wired solely into `setup-guest-unix` |
 
 ### 3.1 Why the harness propagates ambient trust
@@ -247,6 +266,10 @@ The third surface is not hypothetical. susentorno is developed from inside a sus
 The existing Ubuntu roles avoid this only by accident: `phases` and `fresh` make no TLS assertion against an outer-terminated host, and `e2e` survives because it runs `setup-guest-unix`, which calls `propagateAmbientTrust`. The machinery exists; it is wired into exactly one role.
 
 So `windowsAmbientTrust.ts` installs the host's ambient roots into the guest's `LocalMachine\Root` over PowerShell Direct before the egress assertions, driven by the **production** `enumerateHostTrustedRoots()` from `src/guestSetup/hostTrustStore.ts` — which reads the host's Windows store and is already agnostic about the guest. Only the guest-side installer is harness code, because that genuinely does not exist for Windows.
+
+It must **diff, not bulk-import**. `enumerateHostTrustedRoots()` returns every accepted host root, not the non-public subset, and `src/guestSetup/ambientTrust.ts` handles that by fingerprinting the guest's existing roots and importing only the difference (`buildListGuestFingerprintsCommand`, `parseGuestFingerprints`, `diffAmbientCandidates`). The Windows installer mirrors that shape — enumerate the guest's `LocalMachine\Root` thumbprints, diff by SHA-256 of the DER bytes, import only what is missing — and a unit test proves it does not blindly re-import the entire host store.
+
+**Caveat on the public-root row.** Windows populates roots both from the installed store and through automatic root retrieval over the network. An isolated guest cannot perform that retrieval unless the policy permits the Microsoft CTL and AIA endpoints, which the test fixture does not enumerate. The chains for `pypi.org` and `github.com` are very likely already present after the golden build's update pass, but "the public root program is free on Windows" is true of a connected machine, not axiomatically of an isolated one. Implementation should verify the two chains rather than assume them; if either is missing, the fix is the same ambient-import path rather than a policy change.
 
 On this machine the `git ls-remote` assertion then exercises something worth having: the inner proxy validating an outer-terminated upstream against ambient trust, which is [ADR-0026](../../adr/0026-validate-upstream-certificates-against-ambient-trust.md)'s subject.
 
@@ -275,13 +298,17 @@ ADR-0024's test — *does removing it break a product behaviour?* — applied to
 | `verify-config.ps1` | Decouple the `(05)`/`(06)` section labels from script numbers |
 | `post-scripts/*` | Unchanged — required end to end |
 
+**One removal needs a validation step rather than an argument.** `Microsoft.VCRedist.2015+.x64` is removed on the strength of its own comment tying it to Playwright, which is not shipped behaviour — but the Linux precedent cannot establish anything about Windows native runtime DLLs. The retained `Anthropic.ClaudeCode` native installer, the pnpm-managed Node runtime, and the pi agent all carry native Windows components. Implementation must smoke-check that those still start on a clean Enterprise image with VCRedist absent, and restore it if they do not. This is validation, not a reason to keep it.
+
 The three kept packages are each called by a shipped script: `jq` by the home settings transforms, `Git.Git` by both `04-configure-network.ps1` and `01-auth-config.ps1`, `GitHub.cli` by `01-auth-config.ps1`. `Python.Python.3.14` and `pip install PyYAML` go because Ubuntu never installed them — it relies on the distribution's `python3` — and no shipped script calls Python.
 
 Windows drops from four built-in pre-scripts to three, so both platforms now weave `nn-configure-network` out as `04-`. This **closes** the divergence ADR-0024 recorded as a lasting consequence (*"Windows keeps four built-ins and stays `05-`, so the two platforms' woven numbering legitimately diverges"*).
 
 ### 4.1 Fallout
 
-- `tests/cli/updateShares.test.ts` asserts on the woven output tree and names `04-configure-tools.ps1`. The Linux precedent used exactly this as the failing test that drives the deletion.
+- `tests/unit/templates.test.ts:33` lists `vm-shared-windows/pre-scripts/04-configure-tools.ps1` in `expectedTemplateFiles`, and `:148` reaches into `nn-configure-network.ps1` directly. This is the failing test that drives the deletion.
+- `tests/unit/initEnv.test.ts:60` expects the woven `vm-shared-windows/pre-scripts/05-configure-network.ps1` and becomes `04-`.
+- `tests/cli/updateShares.test.ts` does **not** currently name either file. It is worth *adding* a Windows renumbering assertion there, but it is not part of the existing fallout.
 - `setup-guest.md:222` instructs `.\05-configure-network.ps1 -HostIp …`, and `:229` names both platforms' scripts by number. Both become `04-`.
 - `development.md:11-14` justifies its `ssh-agent` prerequisite by the guest tier's needs. With the template no longer enabling the service, developing susentorno inside a Windows guest requires enabling it manually. This is a documentation note, not a new requirement — the prerequisite was always the host's, and the `windowsFresh` role does not need it at all.
 - `testing.md:52` gains `SUSENTORNO_WINDOWS_ISO` and this role's timings; `:77` gains the skip behaviour.
@@ -310,7 +337,7 @@ Checked and deliberately **not** touched: `templates/home-jq-transforms/manifest
 |---|---|
 | `hyperv/imageCache.ts` | `GuestRole` gains `windowsFresh`; Windows golden VHDX, stamp, credential, and screenshot paths; ISO path resolved from the environment |
 | `hyperv/goldenStamp.ts` | Generalise to `(stampPath, inputs)` so both pipelines share one hasher |
-| `hyperv/sweep.ts` | Remove both share names |
+| `hyperv/sweep.ts` | Remove both share names, **and stop deleting the Windows golden image**. `isSweepableChildVhd()` currently deletes every `${NAME_PREFIX}-*.vhdx` except literally `${NAME_PREFIX}-golden.vhdx`, so any naturally named Windows parent — `susentorno-test-windows-golden.vhdx` — would be destroyed at every startup and teardown, silently forcing a multi-hour rebuild. The predicate must exempt the full set of cached parents rather than one hard-coded filename; deriving the sweepable set from the known role names is the more robust inversion |
 | `hyperv/vm.ts` | Add a `MicrosoftWindows`-template Secure Boot builder alongside the existing UEFI-CA one |
 | `testShare.ts` | Parameterise by share folder |
 | `globalSetup.ts` | Build the Windows golden image when the ISO variable is set; skip silently otherwise |
@@ -339,7 +366,8 @@ Sweep is unchanged in character: name-driven and origin-blind, at startup and te
 Following the precedent that the harness's pure functions get unit tests:
 
 - `buildAutounattendXml()` — bypass keys present, built-in `Administrator` enabled, `LocalAccountTokenFilterPolicy` set, OOBE skipped, Update/Store/telemetry/consumer-experiences disabled, `PreventDeviceEncryption` set, autologon count sufficient.
-- `buildProvisioningScript()` — update loop, Git install, autologon cleared, shutdown last.
+- `buildProvisioningScript()` — stage transitions resume correctly across a simulated reboot, the persistence entry is removed only in the final stage, Windows Update is disabled only after servicing, and shutdown is last.
+- The ambient-root diff — a host root already present in the guest is not re-imported; a missing one is.
 - Windows stamp hashing — each input's change produces a different stamp; identical inputs produce an identical one.
 - PowerShell Direct command builders — nested quoting round-trips values containing quotes, spaces, and backticks.
 - BMP assembly from a synthetic pixel buffer.
