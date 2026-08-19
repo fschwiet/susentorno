@@ -54,6 +54,17 @@ const BUILD_ALGORITHM_VERSION = 1;
  */
 export const MAX_IMAGE_AGE_DAYS = 60;
 const BUILD_TIMEOUT_MS = 3 * 60 * 60_000;
+/**
+ * Hyper-V's firmware BootOrder stays pinned to the DVD for every reboot, not
+ * just the first: Setup's own specialize-phase reboots ("your computer may
+ * restart a few times") and later Windows Update's reboots all hit the same
+ * unattended "press any key to boot from CD or DVD" prompt, since nothing
+ * here ever reorders the boot devices once the disk is actually installed.
+ * Confirmed live: Setup's *second* self-managed reboot failed identically to
+ * the first, well after a fixed 20-second keystroke window had elapsed.
+ * Generous enough to cover a full 60-120 minute build with margin.
+ */
+const DEFEAT_CD_BOOT_PROMPT_SECONDS = 2 * 60 * 60;
 
 const buildVmName = `${NAME_PREFIX}-windows-golden-build`;
 const targetSize = 127 * 1024 ** 3;
@@ -222,16 +233,20 @@ export async function ensureWindowsGoldenImage(
     }
     // Windows Setup media's own boot loader prompts "Press any key to boot
     // from CD or DVD..." with a short timeout before falling through to the
-    // next boot device; an unattended start never presses one. Confirmed on
-    // a real host: without this, the build VM sits at the firmware's boot
-    // summary ("the boot loader failed") until BUILD_TIMEOUT_MS.
-    await run(
+    // next boot device; an unattended start never presses one. Runs for the
+    // length of the build (see DEFEAT_CD_BOOT_PROMPT_SECONDS), not just the
+    // first boot, and concurrently rather than blocking so screenshot
+    // capture starts immediately.
+    const cdPromptDefeat = run(
       exec,
-      buildDefeatCdBootPromptCommand(buildVmName, 20),
+      buildDefeatCdBootPromptCommand(buildVmName, DEFEAT_CD_BOOT_PROMPT_SECONDS),
       'clear the DVD "press any key" prompt',
-    );
+    ).catch((error) => {
+      console.error(`windowsGoldenImage: keystroke defeat ended: ${String(error)}`);
+    });
     screenshots = startScreenshotCapture(exec, buildVmName, windowsBuildScreenshotDir);
     await waitForOff(exec);
+    await cdPromptDefeat;
   } finally {
     await screenshots?.stop();
     await removeBuildVm(exec);

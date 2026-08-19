@@ -19,4 +19,15 @@ describe('buildDefeatCdBootPromptCommand', () => {
     const command = buildDefeatCdBootPromptCommand('vm', 25);
     expect(command).toContain('AddSeconds(25)');
   });
+
+  it('stops early once the VM is no longer running, rather than blocking for the full duration', () => {
+    // The duration is generous (covers a whole 60-120 minute build), so the
+    // loop must exit as soon as the VM powers off -- otherwise a caller
+    // awaiting this command after a successful build would hang for however
+    // much of the duration remained.
+    const command = buildDefeatCdBootPromptCommand('vm', 7200);
+    expect(command).toContain('Get-VM');
+    expect(command).toMatch(/-ne\s+'?Running'?|!=\s+'?Running'?/);
+    expect(command).toContain('break');
+  });
 });
