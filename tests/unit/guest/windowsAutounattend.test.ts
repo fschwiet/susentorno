@@ -32,6 +32,18 @@ describe('buildAutounattendXml', () => {
     expect(xml).toContain(WINDOWS_IMAGE_NAME);
   });
 
+  it('names an explicit install target so Setup never falls back to the interactive disk picker', () => {
+    // InstallToAvailablePartition=false with no InstallTo leaves Setup with no
+    // automatic target at all, and it stops at "Select location to install
+    // Windows 11" waiting for input that never comes in an unattended build —
+    // confirmed live: the build VM sat there for 37 minutes.
+    expect(xml).toContain('<InstallTo>');
+    expect(xml).toContain('<DiskID>0</DiskID>');
+    // PartitionID 3 is the Primary/Windows partition per DiskConfiguration's
+    // CreatePartitions (Order 3) and ModifyPartitions (NTFS, Letter C).
+    expect(xml).toContain('<PartitionID>3</PartitionID>');
+  });
+
   it('prevents device encryption and quiets the guest, but does NOT disable Windows Update', () => {
     expect(xml).toContain('PreventDeviceEncryption');
     expect(xml).toContain('DisableStoreAutoUpdate');

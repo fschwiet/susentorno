@@ -137,6 +137,10 @@ export function buildAutounattendXml(inputs: AutounattendInputs): string {
               <Value>${WINDOWS_IMAGE_NAME}</Value>
             </MetaData>
           </InstallFrom>
+          <InstallTo>
+            <DiskID>0</DiskID>
+            <PartitionID>3</PartitionID>
+          </InstallTo>
           <InstallToAvailablePartition>false</InstallToAvailablePartition>
         </OSImage>
       </ImageInstall>
