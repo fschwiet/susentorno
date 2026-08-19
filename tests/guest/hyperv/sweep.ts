@@ -2,10 +2,10 @@ import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { PowerShellExec } from '../../../src/guestSetup/powerShellExec';
 import {
+  ALL_SHARE_NAMES,
   buildRemoveLocalUserCommand,
   buildRemoveSmbShareCommand,
   SHARE_ACCOUNT,
-  SHARE_NAME,
 } from '../testShare';
 import { GOLDEN_PARENT_VHD_NAMES, imageCacheDir, NAME_PREFIX } from './imageCache';
 import {
@@ -33,6 +33,8 @@ export async function sweepIsolationResidue(exec: PowerShellExec): Promise<void>
   if (existsSync(imageCacheDir))
     for (const entry of readdirSync(imageCacheDir))
       if (isSweepableChildVhd(entry)) rmSync(join(imageCacheDir, entry), { force: true });
-  await exec.run(buildRemoveSmbShareCommand(SHARE_NAME));
+  for (const shareName of ALL_SHARE_NAMES) {
+    await exec.run(buildRemoveSmbShareCommand(shareName));
+  }
   await exec.run(buildRemoveLocalUserCommand(SHARE_ACCOUNT));
 }
