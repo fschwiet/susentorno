@@ -352,7 +352,7 @@ Checked and deliberately **not** touched: `templates/home-jq-transforms/manifest
 | `hyperv/imageCache.ts` | `GuestRole` gains `windowsFresh`; Windows golden VHDX, stamp, credential, and screenshot paths; ISO path resolved from the environment |
 | `hyperv/goldenStamp.ts` | Generalise to `(stampPath, inputs)` so both pipelines share one hasher |
 | `hyperv/sweep.ts` | Remove both share names, **and stop deleting the Windows golden image**. `isSweepableChildVhd()` currently deletes every `${NAME_PREFIX}-*.vhdx` except literally `${NAME_PREFIX}-golden.vhdx`, so any naturally named Windows parent — `susentorno-test-windows-golden.vhdx` — would be destroyed at every startup and teardown, silently forcing a multi-hour rebuild. The predicate must exempt the full set of cached parents rather than one hard-coded filename; deriving the sweepable set from the known role names is the more robust inversion |
-| `hyperv/vm.ts` | Add a `MicrosoftWindows`-template Secure Boot builder alongside the existing UEFI-CA one |
+| `hyperv/vm.ts` | Add a `MicrosoftWindows`-template Secure Boot builder alongside the existing UEFI-CA one; add `Add-VMDvdDrive` and a DVD-targeting variant of `buildSetFirstBootDeviceCommand`, which currently resolves a `Get-VMHardDiskDrive` by path and cannot select an optical drive |
 | `testShare.ts` | Parameterise by share folder |
 | `globalSetup.ts` | Build the Windows golden image when the ISO variable is set; skip silently otherwise |
 
@@ -398,7 +398,7 @@ Following the precedent that the harness's pure functions get unit tests:
 - **Ambient trust** — the host's non-public trusted roots, propagated into a guest so it can validate the same terminated upstreams the host can. `CONTEXT.md` currently defines only the host-side **Upstream trust bundle**, and section 3 turned entirely on the guest-side concept having no name. *Avoid:* extra CAs, corporate roots.
 - **Guest role** — one disposable guest identity within the guest test tier, from which its VM name, differencing disk, serial or screenshot channel, and diagnostics directory all derive. Follows the precedent that **Isolation name** already reaches into test vocabulary. *Avoid:* test guest, VM name.
 
-## 8.1 Implementation staging
+## Implementation staging
 
 The spec is one coherent scope, but it should **not** land as one indivisible commit: it combines several unproven Windows platform mechanisms with a broad template deletion that shares none of their risk. The plan should stage it in dependency order, each stage independently reviewable and revertible:
 
