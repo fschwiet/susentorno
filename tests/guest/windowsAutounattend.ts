@@ -1,4 +1,5 @@
-export const WINDOWS_GUEST_HOSTNAME = 'susentorno-test-win';
+/** Windows computer names are NetBIOS names, hard-limited to 15 characters. */
+export const WINDOWS_GUEST_HOSTNAME = 'susentorno-win';
 /** Must match an image in the supplied ISO; see SUSENTORNO_WINDOWS_ISO's x64/en-us contract. */
 export const WINDOWS_IMAGE_NAME = 'Windows 11 Enterprise Evaluation';
 export const PROVISIONING_SCRIPT_PATH = 'C:\\Windows\\Setup\\Scripts\\susentorno-provision.ps1';

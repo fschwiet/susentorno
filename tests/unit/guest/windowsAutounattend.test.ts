@@ -12,6 +12,16 @@ const xml = buildAutounattendXml({
   provisioningScript: buildProvisioningScript(),
 });
 
+describe('WINDOWS_GUEST_HOSTNAME', () => {
+  it('fits the NetBIOS computer-name limit of 15 characters', () => {
+    // Confirmed live: a longer name makes Setup reject the whole unattend.xml
+    // as invalid during the specialize pass ("/settings/ComputerName ...
+    // Value is invalid"), which surfaces many minutes later, after the first
+    // reboot, as the generic "computer restarted unexpectedly" dialog.
+    expect(WINDOWS_GUEST_HOSTNAME.length).toBeLessThanOrEqual(15);
+  });
+});
+
 describe('buildAutounattendXml', () => {
   it('bypasses every Setup hardware gate, including CPU', () => {
     for (const key of [
