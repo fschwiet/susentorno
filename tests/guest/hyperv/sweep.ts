@@ -7,7 +7,7 @@ import {
   SHARE_ACCOUNT,
   SHARE_NAME,
 } from '../testShare';
-import { imageCacheDir, NAME_PREFIX } from './imageCache';
+import { GOLDEN_PARENT_VHD_NAMES, imageCacheDir, NAME_PREFIX } from './imageCache';
 import {
   buildGetVmNamesCommand,
   buildRemoveVmCommand,
@@ -19,7 +19,7 @@ export function isSweepableChildVhd(filename: string): boolean {
   return (
     filename.endsWith('.vhdx') &&
     filename.startsWith(`${NAME_PREFIX}-`) &&
-    filename !== `${NAME_PREFIX}-golden.vhdx`
+    !GOLDEN_PARENT_VHD_NAMES.includes(filename)
   );
 }
 
