@@ -126,17 +126,22 @@ describe('buildProvisioningScript', () => {
   });
 
   it('retries and checks the git install rather than silently proceeding on failure', () => {
-    // Confirmed live: winget install Git.Git can fail on a freshly-specialized
-    // image with OOBE skipped (winget's own app registration is not always
-    // ready yet), and the script previously never checked $LASTEXITCODE at
-    // all -- it just moved on to "finalize" regardless. The golden image
-    // built, Setup completed, and the failure surfaced only much later, as a
-    // "'git' is not recognized" error from inside the actual windowsFresh
-    // role test.
+    // Confirmed live, twice: winget install Git.Git fails on a freshly-
+    // specialized image with OOBE skipped. First fix (checking
+    // $LASTEXITCODE) did not close the gap -- confirmed via a second live
+    // rebuild -- because winget itself is not yet command-resolvable that
+    // early, and an unrecognized command is a terminating PowerShell error
+    // under $ErrorActionPreference = 'Stop', not a native exit code: it
+    // never reached the $LASTEXITCODE check at all (winget's own
+    // DiagOutputDir log directory did not even exist on the built image).
     expect(script).toContain('LASTEXITCODE');
-    // The git block must contain a retry loop, not a single bare attempt.
+    // The git block must contain a retry loop, not a single bare attempt,
+    // and must wrap the winget call so a not-yet-resolvable command is
+    // retried rather than terminating the whole provisioning script.
     const gitBlock = script.slice(script.indexOf('"git"'), script.indexOf('"finalize"'));
     expect(gitBlock).toMatch(/for\s*\(|while\s*\(/);
+    expect(gitBlock).toContain('try');
+    expect(gitBlock).toContain('catch');
   });
 
   it('finalises in the right order: disable updates, clear autologon, deregister, shut down', () => {

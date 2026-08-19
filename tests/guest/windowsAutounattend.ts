@@ -75,10 +75,21 @@ export function buildProvisioningScript(): string {
     '',
     'if ($stage -eq "git") {',
     '  $gitInstalled = $false',
-    '  for ($attempt = 1; $attempt -le 5; $attempt++) {',
-    '    winget install --id Git.Git --exact --silent --accept-source-agreements --accept-package-agreements --source winget',
-    '    if ($LASTEXITCODE -eq 0) { $gitInstalled = $true; break }',
-    '    Write-Host "provision: winget install Git.Git attempt $attempt failed with exit code $LASTEXITCODE"',
+    '  for ($attempt = 1; $attempt -le 10; $attempt++) {',
+    '    try {',
+    // winget can be unrecognized as a command this early (confirmed live:
+    // its own DiagOutputDir log directory did not exist), which is a
+    // terminating PowerShell error under $ErrorActionPreference = 'Stop' --
+    // not a native exit code -- so it must be caught, not just checked via
+    // $LASTEXITCODE, or a single early attempt kills the whole script.
+    '      $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue',
+    '      $wingetPath = if ($wingetCmd) { $wingetCmd.Source } else { "$env:LOCALAPPDATA\\Microsoft\\WindowsApps\\winget.exe" }',
+    '      & $wingetPath install --id Git.Git --exact --silent --accept-source-agreements --accept-package-agreements --source winget',
+    '      if ($LASTEXITCODE -eq 0) { $gitInstalled = $true; break }',
+    '      Write-Host "provision: winget install Git.Git attempt $attempt failed with exit code $LASTEXITCODE"',
+    '    } catch {',
+    '      Write-Host "provision: winget install Git.Git attempt $attempt threw: $_"',
+    '    }',
     '    Start-Sleep -Seconds 30',
     '  }',
     '  if (-not $gitInstalled) {',
@@ -87,7 +98,7 @@ export function buildProvisioningScript(): string {
     // the next logon (LogonCount=10 gives real headroom), rather than
     // silently proceeding to finalize with no git installed -- confirmed
     // live: that is exactly what happened before this check existed.
-    '    throw "provision: winget install Git.Git failed after 5 attempts"',
+    '    throw "provision: winget install Git.Git failed after 10 attempts"',
     '  }',
     '  Set-Stage "finalize"; $stage = "finalize"',
     '}',
