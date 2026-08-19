@@ -77,7 +77,7 @@ In pass order:
 2. **Disk configuration:** GPT layout across the whole target disk.
 3. **Specialize/oobeSystem:** enable the built-in `Administrator` account with a harness-generated password; set `LocalAccountTokenFilterPolicy`; skip OOBE entirely, including the Microsoft-account push that `setup-guest.md:32` currently works around by unplugging the network adapter.
 4. **Policy:** disable Windows Update, Microsoft Store auto-update, DiagTrack telemetry, and consumer experiences; set `PreventDeviceEncryption`.
-5. **Autologon** for the built-in `Administrator`, with a logon count sufficient to survive the provisioning script's reboots, running the provisioning script once at first logon.
+5. **Autologon** for the built-in `Administrator`, with `AutoLogonCount` of 10 — the update loop reboots once per servicing pass and rarely needs more than a few, so 10 leaves headroom without leaving autologon enabled indefinitely. The provisioning script clears the credential explicitly at the end regardless of the remaining count.
 
 ### 1.4 Firmware, and the BitLocker trap
 
@@ -120,8 +120,10 @@ Ubuntu's silent-rebuild behaviour is unchanged. The divergence tracks a real cos
 |---|---|
 | Installer VHDX | 8 GB, FAT32, ESP-typed |
 | Golden VHDX | Dynamic, 127 GB maximum (matching `setup-guest.md`; realistically ~40 GB consumed) |
-| Build VM | 4 GB startup memory, 2 vCPU, automatic checkpoints disabled |
-| Role VM | 4 GB dynamic memory (2–6 GB), 2 vCPU, Secure Boot on, no vTPM |
+| Build VM | 4 GB startup memory, 2 vCPU, automatic checkpoints disabled, attached to **`Default Switch`** |
+| Role VM | 4 GB dynamic memory (2–6 GB), 2 vCPU, Secure Boot on, no vTPM, attached to **`susentorno-test-internal`** |
+
+The build VM is on the Default Switch — Hyper-V ICS, with real gateway and DNS — for the same reason the Ubuntu build is: Windows Update and `winget` need general internet, and the build is not the thing under test. The role VM never touches the Default Switch at all, which is what makes it the `fresh` shape rather than the `phases` shape.
 
 Automatic checkpoints are disabled on the build VM for the reason `goldenImage.ts` already documents: they would place writes in transient AVHDX overlays that `Remove-VM` discards along with the finished image.
 
@@ -129,7 +131,9 @@ Automatic checkpoints are disabled on the build VM for the reason `goldenImage.t
 
 Ubuntu's build is debuggable because `startSerialLog()` captures the whole install, kept deliberately outside the per-run results directory *"[because] a failed build's log has to still be there on the next run."* Windows Setup writes nothing to serial, and PowerShell Direct is unavailable until the guest reaches OOBE — so during the window most likely to fail, there is no channel at all. The failure signature is a VM that never powers off, ninety minutes later.
 
-`vmScreenshot.ts` captures the VM framebuffer through WMI (`Msvm_VirtualSystemManagementService.GetVirtualSystemThumbnailImage`), converting the returned pixel buffer to a BMP. It exposes the same `start(...)`/`stop()` shape as `startSerialLog`, captures every two minutes, retains the most recent handful in `.image-cache/`, and — like the serial log — deliberately survives into the next run.
+`vmScreenshot.ts` captures the VM framebuffer through WMI (`Msvm_VirtualSystemManagementService.GetVirtualSystemThumbnailImage`), converting the returned pixel buffer to a BMP. It exposes the same `start(...)`/`stop()` shape as `startSerialLog` and captures every two minutes.
+
+Where the frames land differs by caller, for the same reason the Ubuntu tier splits its own artefacts. **Build** screenshots go to `.image-cache/`, retaining the most recent 10, and deliberately survive into the next run — a failed build's evidence has to still be there when you come back to it, and a per-run directory cannot do that. **Role** screenshots go to `test-results/guest/<timestamp>/windowsFresh/`, alongside every other role's per-run diagnostics, and are discarded with the rest of that run's output.
 
 For Windows Setup this is usually the entire diagnosis: the failure modes are "sitting at a language prompt" (malformed answer file), "sitting at a hardware-requirements refusal" (bypass keys wrong), and a bugcheck, all of which are legible in a picture. The asymmetry justifying the work is that `autounattend.xml` will be developed by iteration, and that loop is unbearable blind.
 
@@ -144,7 +148,13 @@ Named for the shape it tests, not the operating system. Existing roles are `phas
 1. `startProxyStack({ forward: { isolationName: 'test' } })` — the real `run-hosting` on the test Internal switch, same as every other role.
 2. Create the SMB share over `envRoot/vm-shared-windows`.
 3. Cut a differencing disk off the Windows golden parent; create a Gen 2 VM on `susentorno-test-internal` with Secure Boot on and no vTPM; start it; begin screenshot capture.
-4. Poll `Invoke-Command -VMName … { $true }` until the VMBus session answers.
+4. Poll `Invoke-Command -VMName … { $true }` until the VMBus session answers, with a 20-minute ceiling; exceeding it throws and names the screenshot directory, since that is the OOBE-failed signature.
+5. Propagate ambient trust into the guest (section 3.1) — **before** any assertion that performs a TLS handshake.
+6. Mount the share, then run `04-configure-network.ps1` from it (section 2.4).
+
+Ordering in steps 5 and 6 matters: the ambient roots must be in place before the `git ls-remote` and passthrough `:443` assertions, and the proxy CA must be in place before the terminated-destination assertion.
+
+The whole of `beforeAll` must fit `vitest.guest.config.ts`'s `hookTimeout` of 1,800,000 ms. The golden image build is not subject to it — that runs in `globalSetup`, outside per-file hooks.
 
 There is **no address discovery and no reachability probe**. The guest's address is something the test asks about, not a precondition for asking anything — which is the whole point of the transport choice below.
 
@@ -178,6 +188,8 @@ The role invokes `powershell -ExecutionPolicy Bypass -File \\<internal-host-ip>\
 
 `-ExecutionPolicy` is passed per-invocation rather than mutating machine policy: `setup-guest.md:217` has manual users run `Set-ExecutionPolicy Bypass`, and a `.ps1` fetched over UNC lands in the Internet zone, but the test should leave behind no state the manual flow would not.
 
+The `04-` prefix is the **post-trim** name. Section 4 renumbers it from `05-`, so the role and the trim land in the same changeset and the role cannot be implemented against the current tree without it.
+
 The script is invoked **by path**, not through `listScripts`/`runPreScripts`. `listScripts.ts`'s regex is `/^(\d{2})-(.+)\.sh$/` and teaching the production provisioning modules about PowerShell is the follow-on spec's job. Invoking by path keeps this design's `src/` changes at zero.
 
 ### 2.5 Assertions
@@ -207,7 +219,9 @@ Grouped by what a failure would mean.
 | Returns 200 | `https://api.anthropic.com/` | **TLS-terminated** destination — the guest accepts susentorno's leaf, so the CA import actually worked |
 | Connection dropped, non-zero `curl` exit | `https://blocked.example.com/` | Default-deny on `:443` |
 | Returns 403 | `http://blocked.example.com/` | Default-deny on `:80` |
-| Succeeds | `git ls-remote` against a pinned small public repository on `github.com` | Git doing real TLS through the proxy on schannel's trust path |
+| Succeeds | `git ls-remote https://github.com/git/git` | Git doing real TLS through the proxy on schannel's trust path |
+
+`api.anthropic.com` resolves to the stack's local mock upstream, because `startProxyStack` passes `--upstream-override api.anthropic.com=host.docker.internal:<port>`; the assertion is about the guest accepting susentorno's leaf, not about reaching Anthropic. `github.com` and `pypi.org` are genuinely external.
 
 The `api.anthropic.com` row is load-bearing and easy to omit by accident. Without a TLS-terminated destination, nothing exercises the proxy CA and the `LocalMachine\Root` check degrades into reading configuration back — the same weak-assertion trap that makes the bare `sslBackend` readback insufficient on its own.
 
@@ -316,7 +330,7 @@ Every failure names its own remedy.
 | PowerShell Direct never answers | Same — this is the OOBE-failed signature |
 | Assertion fails | `windowsDiagnostics` dumps IP configuration, routes, resolvers, `LocalMachine\Root` contents, and relevant event logs, each collected independently so one broken command cannot hide the others |
 
-Screenshots live in `.image-cache/` and survive into the next run, following `goldenBuildSerialLogPath`'s reasoning that *"a failed build's log has to still be there on the next run, and a per-run directory cannot do that."* Per-run assertion diagnostics live under `test-results/guest/<timestamp>/windowsFresh/`, matching every other role.
+Artefact locations are split as section 1.8 describes: build screenshots in `.image-cache/`, surviving into the next run; role screenshots and assertion diagnostics under `test-results/guest/<timestamp>/windowsFresh/`, matching every other role.
 
 Sweep is unchanged in character: name-driven and origin-blind, at startup and teardown.
 
