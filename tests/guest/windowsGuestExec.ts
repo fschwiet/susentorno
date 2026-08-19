@@ -39,6 +39,16 @@ export function buildInvokeDirectCommand(
 ): string {
   const encoded = Buffer.from(script, 'utf8').toString('base64');
   return [
+    // Confirmed live and 100% reproducible: when this host process's own
+    // $env:PSModulePath has PowerShell 7's module paths mixed in (true
+    // whenever pwsh.exe sits anywhere in the process's ancestry), Windows
+    // PowerShell 5.1 resolves Microsoft.PowerShell.Security to an
+    // incompatible PS7 build and ConvertTo-SecureString fails to load its
+    // module on every single invocation — which waitForPowerShellDirect saw
+    // as 80 identical failures over 20 minutes, despite the guest itself
+    // answering fine outside the harness. Prepending the real WinPS5.1
+    // system32 module path fixes it regardless of what was inherited.
+    '$env:PSModulePath = "$env:SystemRoot\\System32\\WindowsPowerShell\\v1.0\\Modules;" + $env:PSModulePath',
     "$ErrorActionPreference = 'Stop'",
     `$secure = ConvertTo-SecureString ${quoteForPowerShell(credential.password)} -AsPlainText -Force`,
     `$credential = New-Object System.Management.Automation.PSCredential(${quoteForPowerShell(credential.username)}, $secure)`,

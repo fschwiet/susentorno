@@ -33,6 +33,23 @@ describe('buildInvokeDirectCommand', () => {
     const encoded = Buffer.from(nasty, 'utf8').toString('base64');
     expect(buildInvokeDirectCommand('vm', credential, nasty)).toContain(encoded);
   });
+
+  it('resets PSModulePath before touching ConvertTo-SecureString', () => {
+    // Confirmed live and 100% reproducible: when the *host* process's own
+    // $env:PSModulePath has been prepended with PowerShell 7's module paths
+    // (which happens whenever pwsh.exe sits anywhere in this process's
+    // ancestry — e.g. a session launched via pwsh rather than cmd/bash),
+    // Windows PowerShell 5.1 resolves Microsoft.PowerShell.Security to an
+    // incompatible PS7 build and ConvertTo-SecureString fails with
+    // "the module could not be loaded" — silently, every single retry,
+    // which is exactly what waitForPowerShellDirect saw: 80 attempts over
+    // 20 minutes, all failing the same way, despite the guest itself
+    // answering fine outside the harness. Prepending the real WinPS5.1
+    // system32 module path before anything else runs fixes it regardless
+    // of what the parent process inherited.
+    expect(command.indexOf('PSModulePath')).toBeLessThan(command.indexOf('ConvertTo-SecureString'));
+    expect(command).toContain('System32\\WindowsPowerShell\\v1.0\\Modules');
+  });
 });
 
 describe('createWindowsGuestExec', () => {
