@@ -221,7 +221,10 @@ describe('buildProvisioningScript', () => {
   });
 
   it('fails loud, not silent, when an embedded cert fails to import', () => {
-    const certBlock = script.slice(script.indexOf('SUSENTORNO'), script.indexOf('if ($stage -eq "update")'));
+    const certBlock = script.slice(
+      script.indexOf('SUSENTORNO'),
+      script.indexOf('if ($stage -eq "update")'),
+    );
     expect(certBlock).toContain('catch');
     expect(certBlock).toContain('throw');
   });
