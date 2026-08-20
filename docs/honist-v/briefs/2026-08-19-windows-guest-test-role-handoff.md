@@ -1,11 +1,11 @@
 # Hand-off: `windowsFresh` guest role implementation
 
 **Plan:** [`docs/honist-v/plans/2026-08-18-windows-guest-test-role.md`](./2026-08-18-windows-guest-test-role.md)
-**Status as of:** 2026-08-19, evening. Written because the session has drifted well past the plan's own text — this document is what a fresh reader (human or agent) needs instead of re-deriving the last several hours from the plan and the git log.
+**Status as of:** 2026-08-20. Written 2026-08-19 evening because the session had drifted well past the plan's own text; updated 2026-08-20 after the live rebuild this document called for actually ran. This document is what a fresh reader (human or agent) needs instead of re-deriving the last two days from the plan and the git log.
 
 ## One-paragraph summary
 
-All 16 tasks in the plan are implemented and unit-tested (775 unit tests passing across 109 files). The code was then run live, repeatedly, against a real Hyper-V build — which the plan's own Task 11 text calls "the long pole... verified by actually building an image." That live verification surfaced seven real bugs, all fixed and committed. An eighth issue was diagnosed and is now **fixed in code, but not yet live-verified**: the nested Windows build VM cannot install git or complete Windows Update because it doesn't trust this host's own TLS-intercepting proxy CA — and this host, it turns out, is itself a susentorno guest, which the plan never anticipated. The fix (embed the host's trusted roots on the answer-file ISO, import them first thing in the provisioning script) landed with unit tests; the live rebuild that proves it actually clears the blocker has not run yet. A live build was paused at the Hyper-V console earlier in the session, hand-nursed by the user past two autologon failures, blocked on this exact issue, then powered off and deleted (see "Live session state" below) — the next build starts clean.
+All 16 tasks in the plan are implemented and unit-tested (776 unit tests passing across 109 files). The code was then run live, repeatedly, against a real Hyper-V build — which the plan's own Task 11 text calls "the long pole... verified by actually building an image." That live verification surfaced nine real bugs, all fixed (eight committed; the ninth — a `-Command` argv-length limit in `powerShellExec.ts`, see the 2026-08-20 update below — is applied but not yet committed). The nested-guest CA-trust fix (embed this host's trusted roots on the answer-file ISO, import them first thing in the provisioning script) is now **live-verified**: a full rebuild confirmed all 23 roots import successfully. But that fix turned out not to be sufficient — a live rebuild still lands at 12/14, and the two failures now trace to a genuinely different, non-code cause: Microsoft's Windows Update domains are TLS-unreachable from this host's network entirely (confirmed directly, without any VM), while general internet access works fine. See "Update — 2026-08-20" below for the full diagnosis, a two-second reproduction snippet, and why this is not something a further code change here can fix. A live build was paused at the Hyper-V console earlier in the session on 2026-08-19, hand-nursed by the user past two autologon failures, then powered off and deleted (see "Live session state" below); the golden-image VHDX and network from the 2026-08-20 rebuild were torn down cleanly by the test harness itself, no manual intervention needed.
 
 ## What's done
 
@@ -81,9 +81,53 @@ This is new since the last time this document's content would have been in anyon
 
 **Live session state:** the hand-nursed build (manually logged in as `Administrator` after autologon stopped working — a separate, likely-Windows-Update-triggered clearing of the plaintext `DefaultPassword` registry value, not a bug in our unattend.xml) has been powered off and the build VM deleted. Nothing left running or orphaned; the next build starts clean.
 
+## Update — 2026-08-20: CA fix live-verified as working; a second, environmental blocker sits underneath it
+
+The live rebuild this section calls for ran. Two things came out of it: a real, unrelated bug in the harness that was silently corrupting the attempt, and — once that was out of the way — proof that the CA-embedding fix above works exactly as designed, plus discovery that it was never sufficient on its own.
+
+**Bug #1, found and fixed: `-Command` argv length limit in `src/guestSetup/powerShellExec.ts`.** `createRealPowerShellExec` passed the entire assembled PowerShell command as one `-Command` argv element. Windows' `CreateProcess` hard-caps a process's total command line at 32,767 characters. `buildAnswerIsoCommand` (`answerFileIso.ts`) inlines every embedded file as base64 into that single command, and this host has 23 host-trusted roots — `buildCaCertFiles` alone pushes the assembled command to ~73,000 characters. Confirmed empirically by bisecting on root count: the command succeeds through 5 roots (32,603 chars) and fails from 8 roots (38,248 chars) onward, exiting 1 with **zero captured output** (a latent second bug: `answerFileIso.ts`'s error only surfaces `stdout`, and execa's combined `all` stream was empty here, so the real failure was invisible without re-running the exact command standalone to watch it fail live). Fixed by routing any command over 8,000 characters through a temp `.ps1` file invoked with `-File` instead of `-Command` — behaviourally identical for a semicolon-joined statement sequence, with no argv-length ceiling. Unit-tested (`buildPowerShellFileArgv`, mirroring the existing `buildPowerShellArgv` test); `createRealPowerShellExec` itself stays without a dedicated unit test, consistent with this codebase's no-execa-mocking precedent. **Applied, not yet committed.**
+
+**With that fixed, the live rebuild ran end-to-end** — a genuine ~69-minute build, not a cache hit — and for the first time reached the git-install stage at all. Result: still 12/14, the same two git-dependent test failures as every previous attempt. But the *reason* is different from what was assumed:
+
+- Mounting the resulting golden-image VHDX offline (`.image-cache/susentorno-test-windows-golden.vhdx`) and reading its transcript (`Windows\Setup\Scripts\susentorno-stage.log`) shows all 23 embedded CA roots importing into `LocalMachine\Root` successfully, every single retry — the CA-embedding fix works exactly as designed. Confirmed too: `git.exe` never landed on disk (`Test-Path "...\Program Files\Git\cmd\git.exe"` is `False` on the mounted image) and the Machine `PATH` registry value has no Git entry, because the provisioning script never got past the *first* Windows Update stage.
+- The very next call after cert import — `$searcher.Search(...)` on `Microsoft.Update.Session`/`CreateUpdateSearcher()` — still throws `0x80072EFD` (`WININET_E_CANNOT_CONNECT`), the identical error the "Current live blocker" section above attributed to missing CA trust.
+- Since cert import is now proven to succeed and the failure is unchanged, that attribution doesn't hold. Running the identical COM call from **this host** (not the guest — no VM involved), which already trusts the proxy CA, throws the same `0x80072EFD`. Direct `Invoke-WebRequest` calls to `ctldl.windowsupdate.com`, `download.windowsupdate.com`, `tas02.sls.update.microsoft.com`, and `www.microsoft.com` all fail with **"The SSL connection could not be established"** — a handshake failure, not a trust rejection — while the same call to `github.com` succeeds (200 OK) at the same moment. Neither WinINet nor WinHTTP has an explicit proxy configured (`ProxyEnable=0`; `netsh winhttp show proxy` → "Direct access"), consistent with the transparent-interception model described above; `nslookup` for these domains still resolves to the interception address as expected.
+
+**Conclusion: Microsoft's Windows Update domains specifically are TLS-unreachable from this host/network, while general internet access is fine.** This is not a certificate-trust gap — the CA-embedding fix could never have closed it, because the connection itself never completes the handshake. It's a property of whatever sits upstream of this host (the "outer proxy" from the diagnosis above — plausibly a sandbox/network policy that blocks Microsoft's update infrastructure specifically), not a bug in this codebase. Every further live-build attempt will reproduce this identically, at the cost of another ~70 minutes each time, until either this runs from a network where those domains are actually reachable, or whatever blocks them upstream allows them through.
+
+**Reproducing the failure directly, without a live build (seconds, not an hour):**
+
+```powershell
+# From an elevated PowerShell on the host (or any machine on the same network
+# path) — no VM, no golden image build required.
+try {
+  $session = New-Object -ComObject Microsoft.Update.Session
+  $searcher = $session.CreateUpdateSearcher()
+  $result = $searcher.Search("IsInstalled=0 and IsHidden=0")
+  Write-Output "Search succeeded: $($result.Updates.Count) updates found"
+} catch {
+  Write-Output "Search FAILED: 0x$($_.Exception.HResult.ToString('X8')) — $($_.Exception.Message)"
+}
+
+# Isolates it to specific domains rather than the COM API: compare a
+# Microsoft/Windows-Update host against a known-good control.
+foreach ($h in 'www.microsoft.com', 'ctldl.windowsupdate.com', 'github.com') {
+  try {
+    $r = Invoke-WebRequest -Uri "https://$h" -UseBasicParsing -TimeoutSec 10 -Method Head
+    Write-Output "$h : OK $($r.StatusCode)"
+  } catch {
+    Write-Output "$h : FAILED - $($_.Exception.Message)"
+  }
+}
+```
+
+Expected output on this host as of 2026-08-20: the COM search throws `0x80072EFD`; `www.microsoft.com` and `ctldl.windowsupdate.com` fail with an SSL-connection error; `github.com` returns `OK 200`. If Microsoft's domains ever start succeeding here, the golden-image build is worth re-running — the code-side fix is already done and live-verified up to exactly this point.
+
 ## What's left, in order
 
-1. ~~**Implement the CA-embedding fix** described above (new code in `windowsAutounattend.ts`'s provisioning script and `windowsGoldenImage.ts`'s build orchestration — export cert from host, embed via `answerFileIso.ts`, import first thing in the guest). TDD as usual; this is a real, well-evidenced fix, not a guess.~~ **Done**, code + unit tests (see "Current live blocker" above) — not yet exercised live.
-2. **Get one fully clean, unattended `pnpm vitest run --config vitest.guest.config.ts tests/guest/windowsFresh.test.ts`** — 14/14, no manual intervention, matching the plan's own definition of "verified." (No leftover build VM or hand-nursed session to account for — the environment starts clean.) This is also the first live test of the CA-embedding fix above; if it doesn't clear the TLS trust error, treat step 1 as still open.
-3. **Re-run the plan's Task 16 Step 5 verification checklist** (bottom of the plan doc) — none of its items have been formally re-checked since these fixes landed: unit tier, CLI tier, guest tier with and without the ISO var, cache reuse on a second run, stale-image error naming a changed input, and clean `Get-VM` output after a full run.
-4. Once 2 and 3 are green, mark Tasks 11 and 15 `completed` and close out the plan per the executing-plans skill's normal final step.
+1. ~~**Implement the CA-embedding fix** described above (new code in `windowsAutounattend.ts`'s provisioning script and `windowsGoldenImage.ts`'s build orchestration — export cert from host, embed via `answerFileIso.ts`, import first thing in the guest). TDD as usual; this is a real, well-evidenced fix, not a guess.~~ **Done**, code + unit tests, and now live-verified: all 23 roots import successfully in a real build (see the 2026-08-20 update above).
+2. ~~**Fix the `-Command` argv-length limit**~~ **Done**, code + unit test (see the 2026-08-20 update above) — applied but not yet committed.
+3. **Resolve or route around the Windows-Update-domain network block** described in the 2026-08-20 update — this, not anything in this codebase, is what stands between here and a clean 14/14. Not a code task: either get `ctldl.windowsupdate.com` / `*.update.microsoft.com` / `www.microsoft.com` reachable from whatever network this build runs on, or run the build from a network where they already are. Use the reproduction snippet above to check without paying for a full rebuild.
+4. **Get one fully clean, unattended `pnpm vitest run --config vitest.guest.config.ts tests/guest/windowsFresh.test.ts`** — 14/14, no manual intervention, matching the plan's own definition of "verified." (No leftover build VM or hand-nursed session to account for — the environment starts clean; the last run's VM and network were torn down cleanly.) Blocked on step 3.
+5. **Re-run the plan's Task 16 Step 5 verification checklist** (bottom of the plan doc) — none of its items have been formally re-checked since these fixes landed: unit tier, CLI tier, guest tier with and without the ISO var, cache reuse on a second run, stale-image error naming a changed input, and clean `Get-VM` output after a full run.
+6. Once 4 and 5 are green, mark Tasks 11 and 15 `completed` and close out the plan per the executing-plans skill's normal final step.
