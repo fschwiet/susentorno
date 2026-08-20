@@ -11,6 +11,7 @@ const args = {
   provisioningScript: 'Write-Host hi',
   isoSha256: 'a'.repeat(64),
   password: 'secret',
+  certsSha256: 'c'.repeat(64),
 };
 
 describe('buildWindowsStampInputs', () => {
@@ -18,6 +19,7 @@ describe('buildWindowsStampInputs', () => {
     expect(Object.keys(buildWindowsStampInputs(args)).sort()).toEqual([
       'answerXml',
       'buildAlgorithmVersion',
+      'certsSha256',
       'isoSha256',
       'password',
       'provisioningScript',
@@ -31,6 +33,7 @@ describe('buildWindowsStampInputs', () => {
       ['provisioningScript', 'Write-Host bye'],
       ['isoSha256', 'b'.repeat(64)],
       ['password', 'other'],
+      ['certsSha256', 'd'.repeat(64)],
     ] as const) {
       const next = computeStampMap(buildWindowsStampInputs({ ...args, [key]: value }));
       expect(diffStampMaps(previous, next), key).toEqual([key]);

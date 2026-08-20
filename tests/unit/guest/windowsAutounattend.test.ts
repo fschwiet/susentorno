@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildAutounattendXml,
+  buildCaCertFiles,
   buildProvisioningScript,
   PROVISIONING_SCRIPT_ISO_FILENAME,
   PROVISIONING_SCRIPT_PATH,
@@ -199,5 +200,47 @@ describe('buildProvisioningScript', () => {
 
   it('records a stage marker so a resumed run knows where it left off', () => {
     expect(script).toContain('susentorno-stage.txt');
+  });
+
+  it('imports embedded CA certificates before anything touches the network, on every invocation', () => {
+    // Windows Update's COM search and winget both fail TLS validation
+    // identically when this host is itself behind an intercepting proxy the
+    // build VM has never seen (confirmed live: WININET_E_CANNOT_CONNECT and
+    // "Could not establish trust relationship" respectively). The import
+    // must therefore run before the stage dispatch, not gated inside a
+    // single stage, so it also covers a run resumed straight into "git".
+    // Re-importing an already-trusted cert is a silent no-op, not an error
+    // (confirmed against a real LocalMachine\Root store), so running it
+    // unconditionally on every invocation costs nothing.
+    const stageDispatchIndex = script.indexOf('if ($stage -eq "update")');
+    const certImportIndex = script.indexOf('LocalMachine');
+    expect(certImportIndex).toBeGreaterThan(-1);
+    expect(certImportIndex).toBeLessThan(stageDispatchIndex);
+    expect(script).toContain('SUSENTORNO');
+    expect(script).toContain('*.pem');
+  });
+
+  it('fails loud, not silent, when an embedded cert fails to import', () => {
+    const certBlock = script.slice(script.indexOf('SUSENTORNO'), script.indexOf('if ($stage -eq "update")'));
+    expect(certBlock).toContain('catch');
+    expect(certBlock).toContain('throw');
+  });
+});
+
+describe('buildCaCertFiles', () => {
+  it('embeds nothing when there are no extra roots to trust', () => {
+    expect(buildCaCertFiles([])).toEqual({});
+  });
+
+  it('names one uniquely-named .pem file per cert', () => {
+    const files = buildCaCertFiles([
+      { thumbprint: 'AA', sha256: 'a'.repeat(64), pem: 'PEM-A' },
+      { thumbprint: 'BB', sha256: 'b'.repeat(64), pem: 'PEM-B' },
+    ]);
+    const names = Object.keys(files);
+    expect(names).toHaveLength(2);
+    expect(new Set(names).size).toBe(2);
+    for (const name of names) expect(name).toMatch(/\.pem$/);
+    expect(Object.values(files).sort()).toEqual(['PEM-A', 'PEM-B']);
   });
 });

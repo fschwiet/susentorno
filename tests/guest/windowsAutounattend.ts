@@ -1,3 +1,5 @@
+import type { HostTrustedRoot } from '../../src/guestSetup/hostTrustStore';
+
 /** Windows computer names are NetBIOS names, hard-limited to 15 characters. */
 export const WINDOWS_GUEST_HOSTNAME = 'susentorno-win';
 /** Must match an image in the supplied ISO; see SUSENTORNO_WINDOWS_ISO's x64/en-us contract. */
@@ -43,6 +45,38 @@ export function buildProvisioningScript(): string {
     `Start-Transcript -Path "${STAGE_MARKER_PATH.replace(/\.txt$/, '.log')}" -Append -ErrorAction SilentlyContinue`,
     '$stage = if (Test-Path $stagePath) { (Get-Content $stagePath -Raw).Trim() } else { "update" }',
     'function Set-Stage($value) { Set-Content -LiteralPath $stagePath -Value $value -Encoding ascii }',
+    '',
+    // The answer-file ISO's SUSENTORNO volume stays mounted as the build
+    // VM's second DVD drive for the whole build (see windowsGoldenImage.ts),
+    // so any CA certificates shipped alongside this script are still
+    // reachable here on every resumed run, not just the first boot. This
+    // runs before the stage dispatch below -- unconditionally, on every
+    // invocation, not gated behind a single stage -- because both the
+    // Windows Update COM search and winget's own download fail TLS
+    // validation identically when this host is itself behind a
+    // TLS-intercepting proxy the build VM has never seen (confirmed live:
+    // WININET_E_CANNOT_CONNECT from the update searcher, "Could not
+    // establish trust relationship" from Invoke-WebRequest). Re-importing an
+    // already-trusted certificate is a silent no-op, not an error (confirmed
+    // against a real LocalMachine\\Root store), so there is no cost to
+    // running this every time rather than tracking whether it already ran.
+    '$certVolume = Get-Volume -FileSystemLabel "SUSENTORNO" -ErrorAction SilentlyContinue',
+    'if ($certVolume) {',
+    '  try {',
+    '    $certFiles = Get-ChildItem -Path ($certVolume.DriveLetter + ":\\*.pem") -ErrorAction SilentlyContinue',
+    '    $certStore = [System.Security.Cryptography.X509Certificates.X509Store]::new("Root", "LocalMachine")',
+    '    $certStore.Open("ReadWrite")',
+    '    foreach ($certFile in $certFiles) {',
+    '      $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($certFile.FullName)',
+    '      $certStore.Add($cert)',
+    '      Write-Host "provision: trusted embedded CA $($cert.Thumbprint) from $($certFile.Name)"',
+    '    }',
+    '    $certStore.Close()',
+    '  } catch {',
+    '    Stop-Transcript | Out-Null',
+    '    throw "provision: importing an embedded CA certificate failed: $_"',
+    '  }',
+    '}',
     '',
     'if ($stage -eq "update") {',
     '  $session = New-Object -ComObject Microsoft.Update.Session',
@@ -150,6 +184,22 @@ export function buildProvisioningScript(): string {
     '}',
     '',
   ].join('\r\n');
+}
+
+/**
+ * One uniquely-named .pem file per root, for merging into the answer-file
+ * ISO's extra files alongside the provisioning script. The provisioning
+ * script itself discovers these by wildcard (`*.pem` on the SUSENTORNO
+ * volume), so the naming only needs to be unique, not agreed with the script
+ * — the sha256 is included purely so a stray file is traceable back to a
+ * specific host root during debugging.
+ */
+export function buildCaCertFiles(roots: HostTrustedRoot[]): Record<string, string> {
+  const files: Record<string, string> = {};
+  for (const root of roots) {
+    files[`susentorno-ca-${root.sha256}.pem`] = root.pem;
+  }
+  return files;
 }
 
 export interface AutounattendInputs {

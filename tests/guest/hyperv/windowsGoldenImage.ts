@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
+import { enumerateHostTrustedRoots } from '../../../src/guestSetup/hostTrustStore';
 import { buildStartVmCommand } from '../../../src/guestSetup/hyperVOperations';
 import { buildGetVmCommand, parseGetVmResult } from '../../../src/guestSetup/hyperVQueries';
 import type { PowerShellExec } from '../../../src/guestSetup/powerShellExec';
 import { quoteForPowerShell } from '../../../src/guestSetup/quoteForPowerShell';
 import {
   buildAutounattendXml,
+  buildCaCertFiles,
   buildProvisioningScript,
   PROVISIONING_SCRIPT_ISO_FILENAME,
 } from '../windowsAutounattend';
@@ -78,6 +80,17 @@ export interface WindowsStampArgs {
   provisioningScript: string;
   isoSha256: string;
   password: string;
+  /**
+   * Sorted, joined sha256 of the host's trusted roots at build time (see
+   * enumerateHostTrustedRoots). These are embedded on the answer-file ISO
+   * for the build VM's provisioning script to import, but discovered there
+   * by wildcard rather than named in answerXml/provisioningScript's own
+   * text — so without this field, a rotated proxy CA would change what gets
+   * built without moving the stamp, and a stale-trust image would keep
+   * being served with no signal. A CA rotation is expected to be rare, so
+   * this field moving is expected to be rare too.
+   */
+  certsSha256: string;
 }
 
 export function buildWindowsStampInputs(args: WindowsStampArgs): StampInputs {
@@ -86,6 +99,7 @@ export function buildWindowsStampInputs(args: WindowsStampArgs): StampInputs {
     provisioningScript: args.provisioningScript,
     isoSha256: args.isoSha256,
     password: args.password,
+    certsSha256: args.certsSha256,
     buildAlgorithmVersion: BUILD_ALGORITHM_VERSION,
   };
 }
@@ -172,11 +186,24 @@ export async function ensureWindowsGoldenImage(
   const provisioningScript = buildProvisioningScript();
   const answerXml = buildAutounattendXml({ password: credential.password });
   const isoSha256 = await fileSha256(isoPath);
+  // Enumerated unconditionally, alongside isoSha256 above, even on a
+  // cache-hit path where no rebuild happens: this host's trusted-root set is
+  // itself a build input, and the stamp comparison below needs its hash
+  // either way. See "Current live blocker" in
+  // docs/honist-v/briefs/2026-08-19-windows-guest-test-role-handoff.md —
+  // this host running the harness can itself be a nested susentorno guest
+  // behind a TLS-intercepting proxy the build VM has never seen.
+  const { roots: trustedRoots } = await enumerateHostTrustedRoots(exec);
+  const certsSha256 = trustedRoots
+    .map((root) => root.sha256)
+    .sort()
+    .join(',');
   const inputs = buildWindowsStampInputs({
     answerXml,
     provisioningScript,
     isoSha256,
     password: credential.password,
+    certsSha256,
   });
   const next = computeStampMap(inputs);
   const previous = readStampMap(windowsGoldenStampPath);
@@ -198,6 +225,7 @@ export async function ensureWindowsGoldenImage(
 
   await writeAnswerFileIso(exec, windowsAnswerIsoPath, answerXml, {
     [PROVISIONING_SCRIPT_ISO_FILENAME]: provisioningScript,
+    ...buildCaCertFiles(trustedRoots),
   });
   await run(exec, buildNewVhdCommand(windowsGoldenVhdPath, targetSize), 'create golden disk');
   await run(
