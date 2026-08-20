@@ -49,3 +49,29 @@ export function parseVmNames(stdout: string): string[] {
     .map((value: { Name?: unknown }) => value.Name)
     .filter((name: unknown): name is string => typeof name === 'string' && name !== '');
 }
+
+/**
+ * Windows guests boot with the Microsoft Windows template; the UEFI CA
+ * template above is for Ubuntu's shim. No vTPM accompanies it — Secure Boot
+ * and vTPM are independent, and omitting the TPM is what keeps automatic
+ * device encryption from sealing the golden volume to the build VM (see the
+ * spec's section 1.4).
+ */
+export const SECURE_BOOT_WINDOWS_TEMPLATE = 'MicrosoftWindows';
+
+export function buildEnableSecureBootWindowsCommand(name: string): string {
+  return `Set-VMFirmware -VMName ${quoteForPowerShell(name)} -EnableSecureBoot On -SecureBootTemplate ${quoteForPowerShell(SECURE_BOOT_WINDOWS_TEMPLATE)}`;
+}
+
+export function buildAddVmDvdDriveCommand(name: string, path: string): string {
+  return `Add-VMDvdDrive -VMName ${quoteForPowerShell(name)} -Path ${quoteForPowerShell(path)} | Out-Null`;
+}
+
+/**
+ * buildSetFirstBootDeviceCommand resolves a Get-VMHardDiskDrive by path and
+ * cannot select an optical drive, so the DVD boot path needs its own builder.
+ */
+export function buildSetFirstBootDvdCommand(name: string, path: string): string {
+  const vm = quoteForPowerShell(name);
+  return `$dvd = Get-VMDvdDrive -VMName ${vm} | Where-Object { $_.Path -eq ${quoteForPowerShell(path)} }; Set-VMFirmware -VMName ${vm} -FirstBootDevice $dvd`;
+}

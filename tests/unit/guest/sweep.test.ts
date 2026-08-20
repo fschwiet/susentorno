@@ -7,12 +7,14 @@ describe('isSweepableChildVhd', () => {
       'susentorno-test-phases.vhdx',
       'susentorno-test-e2e.vhdx',
       'susentorno-test-fresh.vhdx',
+      'susentorno-test-windowsFresh.vhdx',
       'susentorno-test-golden-installer.vhdx',
       'susentorno-test-golden-seed.vhdx',
     ])
-      expect(isSweepableChildVhd(name)).toBe(true);
+      expect(isSweepableChildVhd(name), name).toBe(true);
     for (const name of [
       'susentorno-test-golden.vhdx',
+      'susentorno-test-windows-golden.vhdx',
       'ubuntu-26.04-live-server-amd64.iso',
       'susentorno-test-golden.vhdx.stamp',
       'golden-build-serial.log',
@@ -20,6 +22,6 @@ describe('isSweepableChildVhd', () => {
       'susentorno-other-e2e.vhdx',
       'my-vm.vhdx',
     ])
-      expect(isSweepableChildVhd(name)).toBe(false);
+      expect(isSweepableChildVhd(name), name).toBe(false);
   });
 });

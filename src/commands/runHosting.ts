@@ -42,6 +42,17 @@ import { readMcpServers } from '../mcpServers';
 import { allocateMcpPorts } from '../runHosting/allocateMcpPorts';
 import { spawnMcpServer, probeMcpReady } from '../runHosting/mcpProcess';
 import { killProcessTree } from '../runHosting/killProcessTree';
+import { enumerateHostTrustedRoots, HostTrustStoreError } from '../guestSetup/hostTrustStore';
+import { createRealPowerShellExec } from '../guestSetup/powerShellExec';
+import {
+  assembleUpstreamTrustBundle,
+  formatTrustBundleSummary,
+  parseExtraCaPem,
+  readPublicRootProgram,
+  UpstreamTrustBundleError,
+  writeUpstreamTrustBundle,
+  type UpstreamTrustBundle,
+} from '../runHosting/upstreamTrustBundle';
 
 interface RunHostingOptions {
   credentials: string;
@@ -57,6 +68,7 @@ interface RunHostingOptions {
   upstreamOverride: UpstreamOverride[];
   injectFault?: InjectFault;
   skipAllowList?: boolean;
+  verifyUpstreamOverrides?: string;
 }
 
 function collectOverride(value: string, previous: UpstreamOverride[]): UpstreamOverride[] {
@@ -138,6 +150,11 @@ export function registerRunHosting(program: Command): void {
       '--inject-fault <crash-config|never-ready>',
       'render a deliberately broken envoy.yaml to exercise proxy robustness (test use only)',
     )
+    .option(
+      '--verify-upstream-overrides <caPath>',
+      'validate --upstream-override upstreams against this CA instead of accepting any ' +
+        'certificate, and add it to the upstream trust bundle (test use only)',
+    )
     .option('--skip-allow-list', 'do not enforce allow-list.txt; block-list.txt is still enforced')
     .action(async (options: RunHostingOptions) => {
       const alert = createRealAbnormalExitAlert();
@@ -186,6 +203,61 @@ export function registerRunHosting(program: Command): void {
           process.exitCode = 1;
           return;
         }
+
+        // Assembled once per process, before anything binds: envoy.yaml names a
+        // constant trusted_ca filename, so policy reloads never re-enumerate.
+        let extraCaPem: string | undefined;
+        let bundle: UpstreamTrustBundle;
+        try {
+          if (options.verifyUpstreamOverrides !== undefined) {
+            extraCaPem = parseExtraCaPem(readFileSync(options.verifyUpstreamOverrides, 'utf8'));
+          }
+          const snapshot = await enumerateHostTrustedRoots(createRealPowerShellExec());
+          bundle = assembleUpstreamTrustBundle({
+            publicRoots: readPublicRootProgram(),
+            hostRoots: snapshot.roots,
+            disallowedSha256: snapshot.disallowedSha256,
+            // Only actually trusted when there's an override to use it for —
+            // otherwise --verify-upstream-overrides without --upstream-override
+            // would expand the trust bundle for every real destination too,
+            // rather than being the harmless no-op it's documented as. The file
+            // is still parsed eagerly above, so a bad path fails startup either way.
+            extraCaPem: options.upstreamOverride.length > 0 ? extraCaPem : undefined,
+          });
+          writeUpstreamTrustBundle(paths.upstreamTrustBundle, bundle);
+        } catch (err) {
+          // Do NOT set alertOnNonzeroExit = false here. These are startup
+          // refusals like any other, and the abnormal-exit alert should fire.
+          if (err instanceof HostTrustStoreError || err instanceof UpstreamTrustBundleError) {
+            const prefix =
+              options.verifyUpstreamOverrides !== undefined &&
+              err instanceof UpstreamTrustBundleError
+                ? 'run-hosting: --verify-upstream-overrides: '
+                : 'run-hosting: ';
+            console.error(`${prefix}${err.message}`);
+            process.exitCode = 1;
+            return;
+          }
+          if ((err as NodeJS.ErrnoException)?.code !== undefined) {
+            console.error(
+              `run-hosting: --verify-upstream-overrides: could not read ${options.verifyUpstreamOverrides}: ${(err as Error).message}`,
+            );
+            process.exitCode = 1;
+            return;
+          }
+          throw err;
+        }
+        console.log(`run-hosting: ${formatTrustBundleSummary(bundle)}`);
+
+        // "(test use only)" in help text is a convention; this is an observable
+        // fact about what is currently unprotected.
+        if (options.verifyUpstreamOverrides === undefined && options.upstreamOverride.length > 0) {
+          console.warn(
+            'run-hosting: WARNING — upstream certificate validation is DISABLED for: ' +
+              options.upstreamOverride.map((o) => o.sniHost).join(', '),
+          );
+        }
+
         const secretPath = options.secret ?? paths.sdsSecret;
         if (options.skipAllowList) {
           console.log(
@@ -311,6 +383,7 @@ export function registerRunHosting(program: Command): void {
               options.injectFault,
               mcpServersWithPorts,
               options.skipAllowList,
+              options.verifyUpstreamOverrides !== undefined,
             ),
           ensureLeaf: (sans) =>
             ensureLeaf(

@@ -42,6 +42,17 @@ describe('buildEnumerateTrustedRootsCommand', () => {
     expect(command).toContain('[Convert]::ToBase64String($_.RawData)');
     expect(command).toContain('ConvertTo-Json -Compress');
   });
+
+  it('emits roots and the disallowed set as one JSON object', () => {
+    expect(command).toContain('Roots = $keptRoots');
+    expect(command).toContain('Disallowed = $disallowedOut');
+    expect(command).toContain('ConvertTo-Json -Compress');
+  });
+
+  it('does not swallow a Disallowed enumeration failure', () => {
+    expect(command).not.toContain('catch {}');
+    expect(command).not.toContain('catch { }');
+  });
 });
 
 /** A throwaway self-signed cert, purely to get real DER bytes to encode. */
@@ -61,37 +72,52 @@ function fakeDerBase64(commonName: string): string {
 }
 
 describe('parseTrustedRootsResult', () => {
-  it('returns an empty array for empty stdout', () => {
-    expect(parseTrustedRootsResult('')).toEqual([]);
-    expect(parseTrustedRootsResult('   ')).toEqual([]);
+  it('returns empty roots and no distrust for empty stdout', () => {
+    expect(parseTrustedRootsResult('')).toEqual({ roots: [], disallowedSha256: [] });
+    expect(parseTrustedRootsResult('   ')).toEqual({ roots: [], disallowedSha256: [] });
   });
 
-  it('parses a single object, deriving sha256 over the DER bytes and a valid PEM', () => {
+  it('parses roots, deriving sha256 over the DER bytes and a valid PEM', () => {
     const base64 = fakeDerBase64('single-root');
-    const stdout = JSON.stringify({ Thumbprint: 'ABC123', RawDataBase64: base64 });
-    const [root] = parseTrustedRootsResult(stdout);
-    expect(root.thumbprint).toBe('ABC123');
-    expect(root.sha256).toBe(
+    const stdout = JSON.stringify({
+      Roots: [{ Thumbprint: 'ABC123', RawDataBase64: base64 }],
+      Disallowed: [],
+    });
+    const { roots } = parseTrustedRootsResult(stdout);
+    expect(roots).toHaveLength(1);
+    expect(roots[0].thumbprint).toBe('ABC123');
+    expect(roots[0].sha256).toBe(
       createHash('sha256').update(Buffer.from(base64, 'base64')).digest('hex'),
     );
-    expect(() => new X509Certificate(root.pem)).not.toThrow();
+    expect(() => new X509Certificate(roots[0].pem)).not.toThrow();
   });
 
-  it('parses an array of objects', () => {
-    const stdout = JSON.stringify([
-      { Thumbprint: 'A', RawDataBase64: fakeDerBase64('root-a') },
-      { Thumbprint: 'B', RawDataBase64: fakeDerBase64('root-b') },
+  it('returns the disallowed set as DER sha256 fingerprints', () => {
+    const base64 = fakeDerBase64('distrusted-root');
+    const stdout = JSON.stringify({
+      Roots: [],
+      Disallowed: [{ Thumbprint: 'BAD1', RawDataBase64: base64 }],
+    });
+    const { disallowedSha256 } = parseTrustedRootsResult(stdout);
+    expect(disallowedSha256).toEqual([
+      createHash('sha256').update(Buffer.from(base64, 'base64')).digest('hex'),
     ]);
-    expect(parseTrustedRootsResult(stdout)).toHaveLength(2);
   });
 
   it('skips entries missing a thumbprint or raw data rather than throwing', () => {
-    const stdout = JSON.stringify([
-      { Thumbprint: 'A' },
-      { RawDataBase64: fakeDerBase64('no-thumbprint') },
-      { Thumbprint: 'C', RawDataBase64: fakeDerBase64('root-c') },
-    ]);
-    expect(parseTrustedRootsResult(stdout)).toHaveLength(1);
+    const stdout = JSON.stringify({
+      Roots: [
+        { Thumbprint: 'A' },
+        { RawDataBase64: fakeDerBase64('no-thumbprint') },
+        { Thumbprint: 'C', RawDataBase64: fakeDerBase64('root-c') },
+      ],
+      Disallowed: [],
+    });
+    expect(parseTrustedRootsResult(stdout).roots).toHaveLength(1);
+  });
+
+  it('tolerates the fields being absent entirely', () => {
+    expect(parseTrustedRootsResult('{}')).toEqual({ roots: [], disallowedSha256: [] });
   });
 
   it('throws on unparseable JSON', () => {
@@ -125,13 +151,29 @@ describe('enumerateHostTrustedRoots', () => {
     ).rejects.toThrow(HostTrustStoreError);
   });
 
-  it('dedupes across LocalMachine and CurrentUser before returning', async () => {
+  it('dedupes roots across LocalMachine and CurrentUser before returning', async () => {
     const base64 = fakeDerBase64('dup-root');
-    const stdout = JSON.stringify([
-      { Thumbprint: 'LM', RawDataBase64: base64 },
-      { Thumbprint: 'CU', RawDataBase64: base64 },
-    ]);
-    const roots = await enumerateHostTrustedRoots(fakeExec({ exitCode: 0, stdout }));
+    const stdout = JSON.stringify({
+      Roots: [
+        { Thumbprint: 'LM', RawDataBase64: base64 },
+        { Thumbprint: 'CU', RawDataBase64: base64 },
+      ],
+      Disallowed: [],
+    });
+    const { roots } = await enumerateHostTrustedRoots(fakeExec({ exitCode: 0, stdout }));
     expect(roots).toHaveLength(1);
+  });
+
+  it('carries the disallowed fingerprints out alongside the roots', async () => {
+    const badBase64 = fakeDerBase64('distrusted');
+    const stdout = JSON.stringify({
+      Roots: [{ Thumbprint: 'OK', RawDataBase64: fakeDerBase64('good') }],
+      Disallowed: [{ Thumbprint: 'NO', RawDataBase64: badBase64 }],
+    });
+    const snapshot = await enumerateHostTrustedRoots(fakeExec({ exitCode: 0, stdout }));
+    expect(snapshot.roots).toHaveLength(1);
+    expect(snapshot.disallowedSha256).toEqual([
+      createHash('sha256').update(Buffer.from(badBase64, 'base64')).digest('hex'),
+    ]);
   });
 });

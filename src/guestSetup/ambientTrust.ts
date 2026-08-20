@@ -80,7 +80,7 @@ export async function propagateAmbientTrust(
   }
 
   onStep('enumerate host trusted roots');
-  const hostRoots = await enumerateHostTrustedRoots(exec);
+  const { roots: hostRoots } = await enumerateHostTrustedRoots(exec);
 
   onStep('fingerprint guest trust bundle');
   const fingerprintResult = await remoteExec.capture(buildListGuestFingerprintsCommand());

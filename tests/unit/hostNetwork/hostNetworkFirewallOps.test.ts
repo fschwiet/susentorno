@@ -73,12 +73,15 @@ describe('buildCreateSmbRuleCommand', () => {
 });
 
 describe('buildRemoveRulesByNameCommand', () => {
-  it('removes every matching rule per name, quoted, tracking removed/failed separately', () => {
+  it('matches every name in a single -DisplayName array, quoted, tracking removed/failed separately', () => {
     const command = buildRemoveRulesByNameCommand(["susentorno's rule", 'another rule']);
-    expect(command).toContain("'susentorno''s rule'");
-    expect(command).toContain("'another rule'");
-    expect(command).toContain('Remove-NetFirewallRule -ErrorAction Stop');
-    expect(command).toContain('catch { $failed++ }');
+    expect(command).toContain(
+      "Get-NetFirewallRule -DisplayName @('susentorno''s rule', 'another rule')",
+    );
+    expect(command).toContain(
+      '$matched | Remove-NetFirewallRule -ErrorAction SilentlyContinue -ErrorVariable errs',
+    );
+    expect(command).toContain('$failed = $errs.Count; $removed = $matched.Count - $failed');
     expect(command).toContain('Write-Output "$removed,$failed"');
   });
 });
@@ -89,17 +92,25 @@ describe('buildRemoveStaleQueryUserRulesCommand', () => {
     expect(command).toContain('*Query User*');
     expect(command).toContain(`EndsWith('${NODE_PATH}'`);
     expect(command).toContain('OrdinalIgnoreCase');
-    expect(command).toContain('Remove-NetFirewallRule -ErrorAction Stop');
+    expect(command).toContain(
+      '$matched | Remove-NetFirewallRule -ErrorAction SilentlyContinue -ErrorVariable errs',
+    );
     expect(command).toContain('Write-Output "$removed,$failed"');
   });
 });
 
 describe('buildRemoveRulesByInterfaceCommand', () => {
-  it('matches rules by interface filter regardless of name, tracking removed/failed separately', () => {
+  it('resolves the adapter to its InterfaceGuid and matches rules via the registry-stored IF= token, tracking removed/failed separately', () => {
     const command = buildRemoveRulesByInterfaceCommand(ADAPTER);
-    expect(command).toContain('Get-NetFirewallInterfaceFilter -AssociatedNetFirewallRule');
-    expect(command).toContain(`-eq '${ADAPTER}'`);
-    expect(command).toContain('Remove-NetFirewallRule -ErrorAction Stop');
+    expect(command).toContain(`Get-NetAdapter -InterfaceAlias '${ADAPTER}'`);
+    expect(command).toContain(
+      "Get-Item -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\FirewallRules'",
+    );
+    expect(command).toContain('$needle = "IF=$($adapter.InterfaceGuid)|"');
+    expect(command).toContain('Get-NetFirewallRule -Name $names -ErrorAction SilentlyContinue');
+    expect(command).toContain(
+      '$matched | Remove-NetFirewallRule -ErrorAction SilentlyContinue -ErrorVariable errs',
+    );
     expect(command).toContain('Write-Output "$removed,$failed"');
   });
 });

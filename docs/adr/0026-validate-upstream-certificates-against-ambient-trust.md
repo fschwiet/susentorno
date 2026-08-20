@@ -1,0 +1,20 @@
+# Validate upstream certificates against the public root program plus the host's ambient trust
+
+Every TLS-terminated upstream — the github, claude, codex, and auth-candidate clusters — is verified against a bundle assembled at `run-hosting` startup from Node's bundled public root program (`tls.rootCertificates`) **and** the host's own trusted roots, with `match_typed_subject_alt_names` requiring a DNS SAN matching the cluster's configured SNI host. Previously `buildTlsUpstreamCluster` emitted `common_tls_context: {}`, which disables verification entirely, so the proxy would inject a real host credential into a connection to any upstream that answered — then re-wrap the response in its own CA, which every guest trusts, making the substitution undetectable from inside the guest.
+
+## Considered Options
+
+- **The Envoy container's own `/etc/ssl/certs/ca-certificates.crt`.** No assembly needed, but it contains no ambient interception CA, so it breaks susentorno on any host behind a corporate middlebox — including the nested case where the host is itself a susentorno guest.
+- **The Windows root store alone.** Measured on a real host: 58 roots against Node's 118. Windows ships a subset and fetches the rest on demand via CTL auto-update, which Envoy cannot trigger, so origins whose root has not been cached yet would fail intermittently and per-machine.
+- **Chain verification without SAN matching.** Rejects self-signed and attacker-minted certificates, but still accepts a validly issued certificate for an unrelated domain — so anyone controlling any domain could still collect the injected credential. Envoy's own documentation states SAN matching must be used together with `trusted_ca`.
+
+## Consequences
+
+- The security property is now "a certificate **for the configured DNS name**, issued by **any CA in Node's bundled root program or the host's trust store**" — not unqualified validation. **The integrity of the host's trust store is therefore a security boundary**: any enterprise, interception, or otherwise ambient CA the host trusts can still mint a certificate this proxy accepts for a credential-injected destination. That is the deliberate price of working behind a middlebox, and it inherits an exposure the host already has, since the host's own direct use of these same credentials depends on the same store.
+- The bundle reuses `enumerateHostTrustedRoots`, built for guest ambient-trust propagation ([[ambient-tls-trust-auto-detection]] in the specs), which is why turning validation on did not require a second trust-detection mechanism.
+- `run-hosting` gains a PowerShell call but **not** an elevation requirement: `X509Store.Open('ReadOnly')` on `LocalMachine\Root` works with a non-elevated token.
+- Assembly happens once per `run-hosting` process. `envoy.yaml` names a constant `trusted_ca` filename, so policy reloads and blue/green swaps re-read the file without re-enumerating; picking up a host trust change requires restarting `run-hosting`.
+- Leaf revocation is **not** checked — no CRL, no OCSP. "Validated" here means chain plus name, nothing more.
+- The Windows `Disallowed` cross-check applied to both sources is **best-effort and cannot be made otherwise**: `X509Store.Open('ReadOnly')` returns `count=0` for a bogus store name rather than throwing, so "the distrust store is empty" and "we did not really read it" are indistinguishable. Failing closed on a thrown error is still worth doing, but the filter is not a guarantee.
+- `--upstream-override` still renders `ACCEPT_UNTRUSTED` unless `--verify-upstream-overrides` is passed, so the existing proxy-stack suites keep working; `run-hosting` logs a warning naming any destination left unverified.
+- Passthrough destinations are unaffected ([[transparent-interception-and-network-isolation-boundary]]): they are `tcp_proxy`, so the guest validates end to end itself. The downstream half of the TLS story is unchanged ([[root-ca-plus-derived-leaf]]), as is what is at stake on the terminated hop ([[credential-injection-at-proxy]]).

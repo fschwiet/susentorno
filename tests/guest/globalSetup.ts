@@ -10,8 +10,10 @@ import { checkGatewayPortsFree } from '../checkGatewayPortsFree';
 import { ensureSshAgentIdentity, removeSshAgentIdentity } from '../sshAgentIdentity';
 import { ensureHarnessKeys } from './harnessKeys';
 import { ensureGoldenImage } from './hyperv/goldenImage';
-import { harnessKeyPath, ISOLATION_NAME } from './hyperv/imageCache';
+import { harnessKeyPath, ISOLATION_NAME, windowsIsoPath } from './hyperv/imageCache';
 import { sweepIsolationResidue } from './hyperv/sweep';
+import { ensureWindowsCredential } from './hyperv/windowsCredential';
+import { ensureWindowsGoldenImage } from './hyperv/windowsGoldenImage';
 
 const exec = createRealPowerShellExec();
 
@@ -24,6 +26,19 @@ export async function setup(): Promise<void> {
   await ensureSshAgentIdentity(harnessKeyPath);
   await sweepIsolationResidue(exec);
   await ensureGoldenImage(exec, keys);
+
+  // Optional by design: the Windows evaluation ISO cannot be fetched
+  // unattended, so its absence skips the windowsFresh role rather than
+  // failing the tier. See testing.md.
+  if (windowsIsoPath() !== null) {
+    console.log('guest: building/validating the Windows golden image...');
+    await ensureWindowsGoldenImage(exec, ensureWindowsCredential());
+  } else {
+    console.log(
+      'guest: SUSENTORNO_WINDOWS_ISO is not set — skipping the windowsFresh role. ' +
+        'Set it to an x64 en-us Windows 11 Enterprise evaluation ISO to enable it (see testing.md).',
+    );
+  }
 
   await deleteHostNetwork({ exec, isolationName: ISOLATION_NAME, homedir: homedir() });
   const subnet = findFreeSubnet(detectTakenRanges());

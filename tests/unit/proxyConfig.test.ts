@@ -6,6 +6,7 @@ import {
   NO_ACCOUNT_ID_MARKER_HEADER,
   NO_ACCOUNT_ID_SENTINEL_VALUE,
   AUTH_POST_FILTER_LUA,
+  UPSTREAM_TRUST_BUNDLE_CONTAINER_PATH,
 } from '../../src/envoyConfig';
 import type { Allowlist } from '../../src/allowlist';
 
@@ -721,5 +722,80 @@ describe('proxy policy block-list and skip-allow-list routing', () => {
         (fc: any) => fc.filter_chain_match?.server_names?.length === 0,
       ),
     ).toBe(false);
+  });
+});
+
+describe('upstream certificate validation', () => {
+  const terminatingAllowlist: Allowlist = {
+    passthrough: [],
+    claudeAuthenticated: ['api.anthropic.com:443'],
+    githubAuthenticated: ['api.github.com:443'],
+    codexAuthenticated: ['chatgpt.com:443'],
+    authCandidate: ['auth-candidate.test:443'],
+    blocked: [],
+    warnings: [],
+  };
+
+  const tlsClusters = (config: any) =>
+    config.static_resources.clusters.filter(
+      (c: any) =>
+        c.transport_socket?.typed_config?.['@type']?.endsWith('UpstreamTlsContext') === true,
+    );
+
+  it('gives every TLS-terminated cluster a trusted_ca and a DNS SAN matcher on its own SNI host', () => {
+    const config = generateEnvoyConfig(terminatingAllowlist) as any;
+    const clusters = tlsClusters(config);
+    expect(clusters).toHaveLength(4);
+    for (const cluster of clusters) {
+      const tls = cluster.transport_socket.typed_config;
+      const validation = tls.common_tls_context.validation_context;
+      expect(validation.trusted_ca.filename).toBe(UPSTREAM_TRUST_BUNDLE_CONTAINER_PATH);
+      expect(validation.match_typed_subject_alt_names).toEqual([
+        { san_type: 'DNS', matcher: { exact: tls.sni } },
+      ]);
+      expect(validation.trust_chain_verification).toBeUndefined();
+    }
+  });
+
+  it('never renders ACCEPT_UNTRUSTED when no overrides are configured', () => {
+    const yaml = JSON.stringify(generateEnvoyConfig(terminatingAllowlist));
+    expect(yaml).not.toContain('ACCEPT_UNTRUSTED');
+  });
+
+  it('keeps ACCEPT_UNTRUSTED for an override when verifyUpstreamOverrides is not set', () => {
+    const config = generateEnvoyConfig(terminatingAllowlist, {
+      overrides: [{ sniHost: 'api.anthropic.com', target: 'host.docker.internal:9999' }],
+    }) as any;
+    const cluster = tlsClusters(config).find(
+      (c: any) => c.transport_socket.typed_config.sni === 'api.anthropic.com',
+    );
+    expect(cluster.transport_socket.typed_config.common_tls_context).toEqual({
+      validation_context: { trust_chain_verification: 'ACCEPT_UNTRUSTED' },
+    });
+  });
+
+  it('validates an override against the SNI host, not the override target, when opted in', () => {
+    const config = generateEnvoyConfig(terminatingAllowlist, {
+      overrides: [{ sniHost: 'api.anthropic.com', target: 'host.docker.internal:9999' }],
+      verifyUpstreamOverrides: true,
+    }) as any;
+    const cluster = tlsClusters(config).find(
+      (c: any) => c.transport_socket.typed_config.sni === 'api.anthropic.com',
+    );
+    const validation = cluster.transport_socket.typed_config.common_tls_context.validation_context;
+    expect(validation.trusted_ca.filename).toBe(UPSTREAM_TRUST_BUNDLE_CONTAINER_PATH);
+    expect(validation.match_typed_subject_alt_names).toEqual([
+      { san_type: 'DNS', matcher: { exact: 'api.anthropic.com' } },
+    ]);
+  });
+
+  it('leaves the MCP cluster cleartext', () => {
+    const config = generateEnvoyConfig(terminatingAllowlist, {
+      mcpServers: [{ hostname: 'mcp.test', port: 7000 }],
+    }) as any;
+    const mcp = config.static_resources.clusters.find(
+      (c: any) => c.name === 'cluster_mcp_mcp_test',
+    );
+    expect(mcp.transport_socket).toBeUndefined();
   });
 });

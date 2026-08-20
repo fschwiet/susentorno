@@ -1,8 +1,8 @@
 import { join } from 'node:path';
 import { repoRoot } from '../../testEnvRoot';
 
-/** The four per-test guests. One differencing disk and one VM each. */
-export type GuestRole = 'phases' | 'e2e' | 'fresh' | 'ambientTrust';
+/** The five per-test guests. One differencing disk and one VM each. */
+export type GuestRole = 'phases' | 'e2e' | 'fresh' | 'ambientTrust' | 'windowsFresh';
 
 /**
  * One isolation name derives everything this tier touches on the host — the
@@ -51,3 +51,40 @@ export function roleVmName(role: GuestRole): string {
 export function rolePipeName(role: GuestRole): string {
   return `${NAME_PREFIX}-${role}`;
 }
+
+/**
+ * Cached parents, never swept. `isSweepableChildVhd` inverts this list rather
+ * than excluding one hard-coded filename: with two golden images, an
+ * exclusion-of-one predicate silently destroys the other and forces a
+ * multi-hour rebuild on every run.
+ */
+export const GOLDEN_PARENT_VHD_NAMES: readonly string[] = [
+  `${NAME_PREFIX}-golden.vhdx`,
+  `${NAME_PREFIX}-windows-golden.vhdx`,
+];
+
+export const WINDOWS_ISO_ENV_VAR = 'SUSENTORNO_WINDOWS_ISO';
+export const WINDOWS_REBUILD_ENV_VAR = 'SUSENTORNO_WINDOWS_IMAGE_REBUILD';
+
+/**
+ * Unlike the Ubuntu ISO, the Windows evaluation cannot be downloaded
+ * unattended — it sits behind a registration form yielding a short-lived
+ * signed URL. The path is therefore supplied, and its absence skips the role
+ * rather than failing the tier.
+ */
+export function windowsIsoPath(env: NodeJS.ProcessEnv = process.env): string | null {
+  const value = env[WINDOWS_ISO_ENV_VAR];
+  return value !== undefined && value.trim() !== '' ? value : null;
+}
+
+export const windowsGoldenVhdPath = join(imageCacheDir, `${NAME_PREFIX}-windows-golden.vhdx`);
+export const windowsGoldenStampPath = `${windowsGoldenVhdPath}.stamp`;
+/** Guest Administrator password, generated once and reused; a stamp input. */
+export const windowsCredentialPath = join(imageCacheDir, `${NAME_PREFIX}-windows-credential.json`);
+/** The one-file ISO carrying autounattend.xml, attached as a second DVD. */
+export const windowsAnswerIsoPath = join(imageCacheDir, `${NAME_PREFIX}-windows-answer.iso`);
+/**
+ * Deliberately not under test-results/<timestamp>/: like the Ubuntu build's
+ * serial log, a failed build's frames have to still be there on the next run.
+ */
+export const windowsBuildScreenshotDir = join(imageCacheDir, 'windows-build-screenshots');

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ALL_SHARE_NAMES,
   buildGrantNtfsReadExecuteCommand,
   buildNewLocalUserCommand,
   buildNewSmbShareCommand,
@@ -7,15 +8,20 @@ import {
   buildRemoveSmbShareCommand,
   buildRevokeNtfsAceCommand,
   generateSharePassword,
+  shareNameFor,
   SHARE_ACCOUNT,
-  SHARE_NAME,
 } from '../../guest/testShare';
 
 describe('test share', () => {
-  it('uses a local-account-safe, machine-global-share-safe name', () => {
+  it('uses a local-account-safe, machine-global-share-safe name per share folder', () => {
     expect(SHARE_ACCOUNT).toBe('susentorno-test');
     expect(SHARE_ACCOUNT.length).toBeLessThanOrEqual(20);
-    expect(SHARE_NAME).toBe('susentorno-test-vm-shared-linux');
+    expect(shareNameFor('vm-shared-linux')).toBe('susentorno-test-vm-shared-linux');
+    expect(shareNameFor('vm-shared-windows')).toBe('susentorno-test-vm-shared-windows');
+    expect(ALL_SHARE_NAMES).toEqual([
+      'susentorno-test-vm-shared-linux',
+      'susentorno-test-vm-shared-windows',
+    ]);
   });
   it('generates distinct policy-safe passwords', () => {
     const password = generateSharePassword();
@@ -36,10 +42,14 @@ describe('test share', () => {
     );
   });
   it('creates a single-account read-only share and removes it idempotently', () => {
-    expect(buildRemoveSmbShareCommand(SHARE_NAME)).toContain(
+    expect(buildRemoveSmbShareCommand(shareNameFor('vm-shared-linux'))).toContain(
       '-Force -ErrorAction SilentlyContinue',
     );
-    const command = buildNewSmbShareCommand(SHARE_NAME, 'C:\\repo\\share', SHARE_ACCOUNT);
+    const command = buildNewSmbShareCommand(
+      shareNameFor('vm-shared-linux'),
+      'C:\\repo\\share',
+      SHARE_ACCOUNT,
+    );
     expect(command).toContain("-Name 'susentorno-test-vm-shared-linux'");
     expect(command).toContain("-Path 'C:\\repo\\share'");
     expect(command).toContain("-ReadAccess 'susentorno-test'");

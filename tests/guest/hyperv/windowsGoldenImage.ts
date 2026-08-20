@@ -1,0 +1,296 @@
+import { createHash } from 'node:crypto';
+import { createReadStream, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+import { enumerateHostTrustedRoots } from '../../../src/guestSetup/hostTrustStore';
+import { buildStartVmCommand } from '../../../src/guestSetup/hyperVOperations';
+import { buildGetVmCommand, parseGetVmResult } from '../../../src/guestSetup/hyperVQueries';
+import type { PowerShellExec } from '../../../src/guestSetup/powerShellExec';
+import { quoteForPowerShell } from '../../../src/guestSetup/quoteForPowerShell';
+import {
+  buildAutounattendXml,
+  buildCaCertFiles,
+  buildProvisioningScript,
+  PROVISIONING_SCRIPT_ISO_FILENAME,
+} from '../windowsAutounattend';
+import { writeAnswerFileIso } from './answerFileIso';
+import { buildDefeatCdBootPromptCommand } from './windowsBootPrompt';
+import {
+  imageCacheDir,
+  NAME_PREFIX,
+  windowsAnswerIsoPath,
+  windowsBuildScreenshotDir,
+  windowsGoldenStampPath,
+  windowsGoldenVhdPath,
+  windowsIsoPath,
+  WINDOWS_ISO_ENV_VAR,
+  WINDOWS_REBUILD_ENV_VAR,
+} from './imageCache';
+import {
+  clearStampMap,
+  computeStampMap,
+  diffStampMaps,
+  readStampMap,
+  stampAgeDays,
+  STAMP_BUILT_AT_KEY,
+  writeStampMap,
+  type StampInputs,
+} from './stampMap';
+import { startScreenshotCapture } from './vmScreenshot';
+import { buildNewVhdCommand } from './vhd';
+import {
+  buildAddVmDvdDriveCommand,
+  buildDisableSecureBootCommand,
+  buildAddVmHardDiskCommand,
+  buildNewVmCommand,
+  buildRemoveVmCommand,
+  buildSetFirstBootDvdCommand,
+  buildSetVmProcessorCommand,
+  buildTurnOffVmCommand,
+} from './vm';
+
+export class WindowsImageError extends Error {}
+
+/** Increment when the build pipeline, rather than a seed input, changes. */
+const BUILD_ALGORITHM_VERSION = 1;
+/**
+ * The Enterprise evaluation is time-limited. An input-only stamp would stay
+ * valid forever while guests inside began shutting down periodically, so the
+ * build date is recorded and an old image is refused with a clear reason
+ * rather than failing confusingly months later.
+ */
+export const MAX_IMAGE_AGE_DAYS = 60;
+const BUILD_TIMEOUT_MS = 3 * 60 * 60_000;
+/**
+ * Hyper-V's firmware BootOrder stays pinned to the DVD for every reboot, not
+ * just the first: Setup's own specialize-phase reboots ("your computer may
+ * restart a few times") and later Windows Update's reboots all hit the same
+ * unattended "press any key to boot from CD or DVD" prompt, since nothing
+ * here ever reorders the boot devices once the disk is actually installed.
+ * Confirmed live: Setup's *second* self-managed reboot failed identically to
+ * the first, well after a fixed 20-second keystroke window had elapsed.
+ * Generous enough to cover a full 60-120 minute build with margin.
+ */
+const DEFEAT_CD_BOOT_PROMPT_SECONDS = 2 * 60 * 60;
+
+const buildVmName = `${NAME_PREFIX}-windows-golden-build`;
+const targetSize = 127 * 1024 ** 3;
+
+export interface WindowsStampArgs {
+  answerXml: string;
+  provisioningScript: string;
+  isoSha256: string;
+  password: string;
+  /**
+   * Sorted, joined sha256 of the host's trusted roots at build time (see
+   * enumerateHostTrustedRoots). These are embedded on the answer-file ISO
+   * for the build VM's provisioning script to import, but discovered there
+   * by wildcard rather than named in answerXml/provisioningScript's own
+   * text — so without this field, a rotated proxy CA would change what gets
+   * built without moving the stamp, and a stale-trust image would keep
+   * being served with no signal. A CA rotation is expected to be rare, so
+   * this field moving is expected to be rare too.
+   */
+  certsSha256: string;
+}
+
+export function buildWindowsStampInputs(args: WindowsStampArgs): StampInputs {
+  return {
+    answerXml: args.answerXml,
+    provisioningScript: args.provisioningScript,
+    isoSha256: args.isoSha256,
+    password: args.password,
+    certsSha256: args.certsSha256,
+    buildAlgorithmVersion: BUILD_ALGORITHM_VERSION,
+  };
+}
+
+export function describeStaleImage(changed: string[], ageDays: number | null): string {
+  const reasons: string[] = [];
+  if (changed.length > 0) reasons.push(`these build inputs changed: ${changed.join(', ')}`);
+  if (ageDays !== null && ageDays > MAX_IMAGE_AGE_DAYS) {
+    reasons.push(
+      `the image is ${ageDays} days old, past the ${MAX_IMAGE_AGE_DAYS}-day ceiling that keeps it ` +
+        'inside the Windows evaluation window',
+    );
+  }
+  return (
+    `windowsGoldenImage: the cached image at ${windowsGoldenVhdPath} is stale — ` +
+    `${reasons.join('; ')}. Rebuilding takes 60-120 minutes, so it is not done for you: ` +
+    `re-run with ${WINDOWS_REBUILD_ENV_VAR}=1 to rebuild.`
+  );
+}
+
+async function fileSha256(path: string): Promise<string> {
+  const hash = createHash('sha256');
+  await pipeline(createReadStream(path), hash);
+  return hash.digest('hex');
+}
+
+async function run(exec: PowerShellExec, command: string, what: string): Promise<string> {
+  const { exitCode, stdout } = await exec.run(command);
+  if (exitCode !== 0) {
+    throw new WindowsImageError(
+      `windowsGoldenImage: ${what} failed (exit ${exitCode}): ${stdout || command}`,
+    );
+  }
+  return stdout;
+}
+
+async function removeBuildVm(exec: PowerShellExec): Promise<void> {
+  await exec.run(buildTurnOffVmCommand(buildVmName));
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    const { stdout } = await exec.run(buildGetVmCommand(buildVmName));
+    const vm = parseGetVmResult(stdout, buildVmName);
+    if (!vm || vm.state === 'Off') break;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+  await exec.run(buildRemoveVmCommand(buildVmName));
+}
+
+async function waitForOff(exec: PowerShellExec): Promise<void> {
+  const deadline = Date.now() + BUILD_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const { stdout } = await exec.run(buildGetVmCommand(buildVmName));
+    if (parseGetVmResult(stdout, buildVmName)?.state === 'Off') return;
+    await new Promise((resolve) => setTimeout(resolve, 30_000));
+  }
+  throw new WindowsImageError(
+    `windowsGoldenImage: the build VM never powered off within ${Math.round(
+      BUILD_TIMEOUT_MS / 60_000,
+    )} minutes.\n` +
+      `  Screenshots: ${windowsBuildScreenshotDir}\n` +
+      `  Target disk: ${windowsGoldenVhdPath} — mount it offline and read ` +
+      'Windows\\Panther\\setupact.log and setuperr.log for detail the thumbnails cannot show.',
+  );
+}
+
+export async function ensureWindowsGoldenImage(
+  exec: PowerShellExec,
+  credential: { username: string; password: string },
+  opts: { force?: boolean } = {},
+): Promise<string> {
+  const isoPath = windowsIsoPath();
+  if (isoPath === null) {
+    throw new WindowsImageError(
+      `windowsGoldenImage: ${WINDOWS_ISO_ENV_VAR} is not set. Point it at an x64 en-us Windows 11 ` +
+        'Enterprise evaluation ISO (see testing.md).',
+    );
+  }
+  if (!existsSync(isoPath)) {
+    throw new WindowsImageError(
+      `windowsGoldenImage: ${WINDOWS_ISO_ENV_VAR} points at '${isoPath}', which does not exist.`,
+    );
+  }
+
+  const provisioningScript = buildProvisioningScript();
+  const answerXml = buildAutounattendXml({ password: credential.password });
+  const isoSha256 = await fileSha256(isoPath);
+  // Enumerated unconditionally, alongside isoSha256 above, even on a
+  // cache-hit path where no rebuild happens: this host's trusted-root set is
+  // itself a build input, and the stamp comparison below needs its hash
+  // either way. See "Current live blocker" in
+  // docs/honist-v/briefs/2026-08-19-windows-guest-test-role-handoff.md —
+  // this host running the harness can itself be a nested susentorno guest
+  // behind a TLS-intercepting proxy the build VM has never seen.
+  const { roots: trustedRoots } = await enumerateHostTrustedRoots(exec);
+  const certsSha256 = trustedRoots
+    .map((root) => root.sha256)
+    .sort()
+    .join(',');
+  const inputs = buildWindowsStampInputs({
+    answerXml,
+    provisioningScript,
+    isoSha256,
+    password: credential.password,
+    certsSha256,
+  });
+  const next = computeStampMap(inputs);
+  const previous = readStampMap(windowsGoldenStampPath);
+  const force = opts.force === true || process.env[WINDOWS_REBUILD_ENV_VAR] === '1';
+
+  if (existsSync(windowsGoldenVhdPath) && !force) {
+    const changed = diffStampMaps(previous, next);
+    const ageDays = previous === null ? null : stampAgeDays(previous);
+    const tooOld = ageDays !== null && ageDays > MAX_IMAGE_AGE_DAYS;
+    if (changed.length === 0 && !tooOld) return windowsGoldenVhdPath;
+    throw new WindowsImageError(describeStaleImage(changed, ageDays));
+  }
+
+  mkdirSync(imageCacheDir, { recursive: true });
+  clearStampMap(windowsGoldenStampPath);
+  await removeBuildVm(exec);
+  rmSync(windowsGoldenVhdPath, { force: true });
+  rmSync(windowsBuildScreenshotDir, { recursive: true, force: true });
+
+  await writeAnswerFileIso(exec, windowsAnswerIsoPath, answerXml, {
+    [PROVISIONING_SCRIPT_ISO_FILENAME]: provisioningScript,
+    ...buildCaCertFiles(trustedRoots),
+  });
+  await run(exec, buildNewVhdCommand(windowsGoldenVhdPath, targetSize), 'create golden disk');
+  await run(
+    exec,
+    buildNewVmCommand(buildVmName, {
+      // Not the guest's memory pressure: the "computer restarted
+      // unexpectedly" crashes this build once went through at 4-8 GiB alike
+      // turned out to be two unrelated bugs (WINDOWS_GUEST_HOSTNAME exceeding
+      // the 15-character NetBIOS limit, and a FirstLogonCommands CommandLine
+      // exceeding unattend.xml's ~4096-character field limit — both fixed).
+      // 4 GiB is Windows 11's bare documented minimum and is kept modest here
+      // for the *host's* sake: this build VM runs alongside Docker/WSL2 and
+      // everything else on the machine actually driving it.
+      memoryStartupBytes: 4 * 1024 ** 3,
+      switchName: 'Default Switch',
+    }),
+    'create build VM',
+  );
+  await run(
+    exec,
+    `Set-VM -Name ${quoteForPowerShell(buildVmName)} -AutomaticCheckpointsEnabled $false`,
+    'disable automatic checkpoints',
+  );
+
+  let screenshots: ReturnType<typeof startScreenshotCapture> | undefined;
+  try {
+    for (const [command, what] of [
+      [buildAddVmHardDiskCommand(buildVmName, windowsGoldenVhdPath), 'attach target disk'],
+      [buildAddVmDvdDriveCommand(buildVmName, isoPath), 'attach installation ISO'],
+      [buildAddVmDvdDriveCommand(buildVmName, windowsAnswerIsoPath), 'attach answer-file ISO'],
+      [buildSetVmProcessorCommand(buildVmName, 2), 'set processors'],
+      // Off for the build, exactly as the Ubuntu build does: it is not a
+      // property the installed image persists, and it removes one variable
+      // from the least-debuggable phase. The role VM enables it.
+      [buildDisableSecureBootCommand(buildVmName), 'disable Secure Boot for the build'],
+      [buildSetFirstBootDvdCommand(buildVmName, isoPath), 'boot the installation ISO'],
+      [buildStartVmCommand(buildVmName), 'start build VM'],
+    ] as const) {
+      await run(exec, command, what);
+    }
+    // Windows Setup media's own boot loader prompts "Press any key to boot
+    // from CD or DVD..." with a short timeout before falling through to the
+    // next boot device; an unattended start never presses one. Runs for the
+    // length of the build (see DEFEAT_CD_BOOT_PROMPT_SECONDS), not just the
+    // first boot, and concurrently rather than blocking so screenshot
+    // capture starts immediately.
+    const cdPromptDefeat = run(
+      exec,
+      buildDefeatCdBootPromptCommand(buildVmName, DEFEAT_CD_BOOT_PROMPT_SECONDS),
+      'clear the DVD "press any key" prompt',
+    ).catch((error) => {
+      console.error(`windowsGoldenImage: keystroke defeat ended: ${String(error)}`);
+    });
+    screenshots = startScreenshotCapture(exec, buildVmName, windowsBuildScreenshotDir);
+    await waitForOff(exec);
+    await cdPromptDefeat;
+  } finally {
+    await screenshots?.stop();
+    await removeBuildVm(exec);
+  }
+
+  rmSync(windowsAnswerIsoPath, { force: true });
+  writeStampMap(windowsGoldenStampPath, {
+    ...next,
+    [STAMP_BUILT_AT_KEY]: new Date().toISOString(),
+  });
+  return windowsGoldenVhdPath;
+}

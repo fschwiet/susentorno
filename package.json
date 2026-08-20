@@ -7,6 +7,7 @@
     "node": ">=18"
   },
   "packageManager": "pnpm@11.3.0",
+  "license": "MIT",
   "repository": "https://github.com/fschwiet/fschwiet-agent",
   "bin": {
     "susentorno": "dist/cli.js"
@@ -20,7 +21,7 @@
   ],
   "scripts": {
     "build": "tsup && node scripts/copy-vm-applier.mjs",
-    "reinstall:global": "pnpm uninstall -g susentorno && pnpm build && pnpm install -g .",
+    "install:global": "(pnpm uninstall -g susentorno || cd .) && pnpm build && pnpm install -g .",
     "prepack": "pnpm build",
     "cli": "pnpm build && node dist/cli.js",
     "typecheck": "tsc --noEmit",

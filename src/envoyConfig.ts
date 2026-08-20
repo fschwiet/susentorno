@@ -7,6 +7,9 @@ export interface UpstreamOverride {
   target: string;
 }
 
+/** Where docker-compose.yml's `./ca:/etc/envoy/ca:ro` mount exposes the assembled bundle. */
+export const UPSTREAM_TRUST_BUNDLE_CONTAINER_PATH = '/etc/envoy/ca/upstream-trust.pem';
+
 /**
  * Proxy-internal marker header. A pre-filter sets it (alongside a sentinel
  * `Authorization` value) only when the client sent no Authorization header at all,
@@ -66,6 +69,9 @@ export interface BuildEnvoyConfigOptions {
   fault?: InjectFault;
   mcpServers?: McpServerUpstream[];
   skipAllowList?: boolean;
+  /** Test-only. Render override clusters with the production validation context
+   * instead of ACCEPT_UNTRUSTED. Set by run-hosting's --verify-upstream-overrides. */
+  verifyUpstreamOverrides?: boolean;
 }
 
 function sanitizeName(host: string): string {
@@ -97,10 +103,23 @@ function buildTlsUpstreamCluster(
   sniHost: string,
   portStr: string,
   override: UpstreamOverride | undefined,
+  verifyOverrides: boolean,
 ) {
   const [upstreamHost, upstreamPortStr] = override
     ? override.target.split(':')
     : [sniHost, portStr];
+  // trust_chain_verification is omitted on the validating branch: VERIFY_TRUST_CHAIN
+  // is already Envoy's default. The SAN matcher keys off sniHost, never the
+  // override target, because that is the name the origin must actually prove.
+  const commonTlsContext =
+    override && !verifyOverrides
+      ? { validation_context: { trust_chain_verification: 'ACCEPT_UNTRUSTED' } }
+      : {
+          validation_context: {
+            trusted_ca: { filename: UPSTREAM_TRUST_BUNDLE_CONTAINER_PATH },
+            match_typed_subject_alt_names: [{ san_type: 'DNS', matcher: { exact: sniHost } }],
+          },
+        };
   return {
     name: clusterName,
     type: 'STRICT_DNS',
@@ -127,9 +146,7 @@ function buildTlsUpstreamCluster(
       typed_config: {
         '@type': 'type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext',
         sni: sniHost,
-        common_tls_context: override
-          ? { validation_context: { trust_chain_verification: 'ACCEPT_UNTRUSTED' } }
-          : {},
+        common_tls_context: commonTlsContext,
       },
     },
   };
@@ -156,7 +173,11 @@ function authCandidateAccessLog(): Record<string, unknown>[] {
   ];
 }
 
-function buildAuthCandidateEntry(entry: string, overrides: UpstreamOverride[]) {
+function buildAuthCandidateEntry(
+  entry: string,
+  overrides: UpstreamOverride[],
+  verifyOverrides: boolean,
+) {
   const [sniHost, portStr] = entry.split(':');
   const override = overrides.find((o) => o.sniHost === sniHost);
   const clusterName = `cluster_authcandidate_${sanitizeName(sniHost)}`;
@@ -215,7 +236,7 @@ function buildAuthCandidateEntry(entry: string, overrides: UpstreamOverride[]) {
     ],
   };
 
-  const cluster = buildTlsUpstreamCluster(clusterName, sniHost, portStr, override);
+  const cluster = buildTlsUpstreamCluster(clusterName, sniHost, portStr, override, verifyOverrides);
   return { filterChain, cluster };
 }
 
@@ -328,6 +349,7 @@ function buildGithubEntry(
   sdsResource: string,
   sdsFile: string,
   gateSource: string,
+  verifyOverrides: boolean,
 ) {
   const [sniHost, portStr] = entry.split(':');
   const override = overrides.find((o) => o.sniHost === sniHost);
@@ -425,12 +447,12 @@ function buildGithubEntry(
     ],
   };
 
-  const cluster = buildTlsUpstreamCluster(clusterName, sniHost, portStr, override);
+  const cluster = buildTlsUpstreamCluster(clusterName, sniHost, portStr, override, verifyOverrides);
 
   return { filterChain, cluster };
 }
 
-function buildClaudeEntry(entry: string, overrides: UpstreamOverride[]) {
+function buildClaudeEntry(entry: string, overrides: UpstreamOverride[], verifyOverrides: boolean) {
   const [sniHost, portStr] = entry.split(':');
   const override = overrides.find((o) => o.sniHost === sniHost);
   const clusterName = `cluster_claude_${sanitizeName(sniHost)}`;
@@ -533,7 +555,7 @@ function buildClaudeEntry(entry: string, overrides: UpstreamOverride[]) {
     ],
   };
 
-  const cluster = buildTlsUpstreamCluster(clusterName, sniHost, portStr, override);
+  const cluster = buildTlsUpstreamCluster(clusterName, sniHost, portStr, override, verifyOverrides);
 
   return { filterChain, cluster };
 }
@@ -570,7 +592,7 @@ function envoy_on_request(request_handle)
 end
 `;
 
-function buildCodexEntry(entry: string, overrides: UpstreamOverride[]) {
+function buildCodexEntry(entry: string, overrides: UpstreamOverride[], verifyOverrides: boolean) {
   const [sniHost, portStr] = entry.split(':');
   const override = overrides.find((o) => o.sniHost === sniHost);
   const clusterName = `cluster_codex_${sanitizeName(sniHost)}`;
@@ -695,7 +717,7 @@ function buildCodexEntry(entry: string, overrides: UpstreamOverride[]) {
     ],
   };
 
-  const cluster = buildTlsUpstreamCluster(clusterName, sniHost, portStr, override);
+  const cluster = buildTlsUpstreamCluster(clusterName, sniHost, portStr, override, verifyOverrides);
   return { filterChain, cluster };
 }
 
@@ -907,24 +929,27 @@ export function generateEnvoyConfig(
 ): Record<string, unknown> {
   const overrides = options.overrides ?? [];
   const skipAllowList = options.skipAllowList ?? false;
+  const verifyOverrides = options.verifyUpstreamOverrides ?? false;
   const adminPortValue =
     options.fault === 'crash-config' ? 70000 : options.fault === 'never-ready' ? 9902 : 9901;
 
   const claudeBuilt = allowlist.claudeAuthenticated
     .filter((e) => e.endsWith(':443'))
-    .map((e) => buildClaudeEntry(e, overrides));
+    .map((e) => buildClaudeEntry(e, overrides, verifyOverrides));
   const codexBuilt = allowlist.codexAuthenticated
     .filter((e) => e.endsWith(':443'))
-    .map((e) => buildCodexEntry(e, overrides));
+    .map((e) => buildCodexEntry(e, overrides, verifyOverrides));
   const authCandidateBuilt = allowlist.authCandidate
     .filter((e) => e.endsWith(':443'))
-    .map((e) => buildAuthCandidateEntry(e, overrides));
+    .map((e) => buildAuthCandidateEntry(e, overrides, verifyOverrides));
   const githubBuilt = allowlist.githubAuthenticated
     .filter((e) => e.endsWith(':443'))
     .map((e) => {
       const host = e.split(':')[0];
       const cfg = GITHUB_INJECTION[host];
-      return cfg ? buildGithubEntry(e, overrides, cfg.sdsResource, cfg.sdsFile, cfg.gate) : null;
+      return cfg
+        ? buildGithubEntry(e, overrides, cfg.sdsResource, cfg.sdsFile, cfg.gate, verifyOverrides)
+        : null;
     })
     .filter((b): b is NonNullable<typeof b> => b !== null);
   const mcpBuilt = (options.mcpServers ?? []).map(buildMcpEntry);

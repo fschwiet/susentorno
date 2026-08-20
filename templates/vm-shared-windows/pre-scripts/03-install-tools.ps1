@@ -12,10 +12,4 @@ winget install Anthropic.ClaudeCode
 # Codex CLI — cross-platform npm package via pnpm.
 pnpm add -g @openai/codex
 
-# dotnet tools
-## dotnet tool install --global was confirmed to be idempotent
-
-dotnet tool install --global dotnet-outdated-tool
-dotnet tool install --global csharpier
-
-Write-Host "03-install-tools: node, claude, codex, and VS Code installed. Open a new terminal so PATH updates apply."
+Write-Host "03-install-tools: node runtime, pi-coding-agent, claude, and codex installed. Open a new terminal so PATH updates apply."
