@@ -28,6 +28,10 @@ api.nuget.org:443
 # Windows
 cdn.winget.microsoft.com:443
 storeedgefd.dsx.mp.microsoft.com:443
+www.microsoft.com:443
+*.windowsupdate.com:443
+*.windowsupdate.com:80
+*.update.microsoft.com:443
 
 ## misc
 cdn.fwupd.org:443
