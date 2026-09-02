@@ -39,11 +39,15 @@ export function createHarnessRemoteExec(target: SshTarget): RemoteExecWithCaptur
 export async function guestCapture(
   target: SshTarget,
   remoteCommand: string,
-): Promise<{ stdout: string; exitCode: number }> {
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const result = await execa(
     'ssh',
     [...buildHarnessSshOptions(), ...buildSshRunArgv(target, remoteCommand)],
     { reject: false, all: true },
   );
-  return { stdout: result.stdout ?? '', exitCode: result.exitCode ?? 1 };
+  return {
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
+    exitCode: result.exitCode ?? 1,
+  };
 }

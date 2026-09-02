@@ -108,7 +108,13 @@ describe('propagateAmbientTrust against a throwaway host CA', () => {
       target,
       `openssl verify -purpose sslserver -CAfile /etc/ssl/certs/ca-certificates.crt ${remoteLeafPath}`,
     );
-    expect(verify.stdout).toContain('OK');
+    // stdout alone is ambiguous when empty: `-t` merges the remote command's
+    // own stdout/stderr onto one pty stream, so an empty stdout here means
+    // the command never ran at all — e.g. the ssh transport itself dropped —
+    // and the reason for that lives in ssh's own (non-pty) stderr, not the
+    // remote command's. Surfacing exitCode + stderr turns a bare '' into a
+    // diagnosable failure (see issue #94).
+    expect(verify.stdout, `exitCode=${verify.exitCode}, stderr=${verify.stderr}`).toContain('OK');
 
     // Idempotent rerun: nothing new to install, and the first run's file is
     // still there — this is the concrete check for "this trust persists."
