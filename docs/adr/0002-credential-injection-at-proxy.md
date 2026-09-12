@@ -1,19 +1,16 @@
-# Real credentials are injected at the proxy; the guest holds only placeholders
+# Host credentials are injected at the proxy; the guest holds only placeholders
 
-The guest never holds a usable credential. Each supported provider seeds the guest with a fixed **placeholder** (Claude `sk-ant-oat-susentorno-PLACEHOLDER`, GitHub `ghp-susentorno-PLACEHOLDER`, a far-future placeholder JWT for Codex), so the CLI believes it is logged in; the host proxy TLS-terminates that provider's host(s) and swaps in the real credential from a file-based SDS secret before forwarding upstream. This is a **per-provider pattern**: each provider gets its own placeholder, its own Lua pre-filter, its own SDS resource/secret file, and its own `#pragma <provider> authenticated` allowlist section (real auth schemes were discovered empirically via [[allowlist-format-and-parse-trust-boundary]]'s `#pragma auth candidate`). The real token never enters the guest, never appears on any guest-reachable network surface, and is never written to the access log ([[envoy-access-log-contract]]).
+The guest never holds a usable external-service credential. Each **host credential channel** owns a deliberately unusable placeholder pattern, its auth-list destinations ([[split-allow-auth-block-lists-and-skip-allow-list]]), proxy gate, host secret material, and refresh lifecycle. When a request presents the recognized placeholder, Envoy TLS-terminates the destination and replaces it with the host credential before forwarding upstream; absent or foreign credentials pass through unchanged. The real credential never enters the guest or the access log ([[envoy-access-log-contract]]).
 
-## Status
-
-accepted — began Claude-only (2026-07-01), generalized to GitHub (2026-07-19) and Codex (2026-07-20); the per-credential state machine lives in `src/runHosting/credentialChannel.ts`.
+A channel may have several **placeholder mounts**. The Codex channel seeds both `~/.codex/auth.json` and Pi Coding Agent's `~/.pi/agent/auth.json` with the same access-token literal, allowing both clients to use one exact-match proxy gate. Pi's transform is static rather than generated from `src/codexPlaceholder.ts`, so those copies must stay byte-identical; the shared JWT claim shape must also satisfy both clients. This guest-only reuse was chosen over adding a second proxy placeholder and widening the security-sensitive gate.
 
 ## Considered Options
 
-- **The Lua filter as a fail-closed gate that 403s any non-placeholder credential** (the original design). Reversed 2026-07-21 to **pass-through**: the filter injects the real credential *only* when the header exactly matches the placeholder, and otherwise leaves the request's own `Authorization` untouched (and injects nothing when it is absent). The gate was never the security boundary — the guest has no real credential to protect against, so rejection bought nothing and broke legitimate second-credential flows (e.g. Claude's `sk-ant-si-` session token, and endpoints that expect no auth at all).
+- **Reject every non-placeholder credential at the proxy.** Rejected because the guest has no host credential to protect and some clients legitimately use a second credential or no authentication on related endpoints. Injection is exact-match and fail-closed with respect to releasing the host credential, but otherwise preserves the guest's request.
 
 ## Consequences
 
-- Placeholders must satisfy each client's *own* local validity checks so the guest never tries to refresh on its own — hence Codex's placeholder is a structurally valid JWT with a year-2100 `exp`, and Claude's `expiresAt` is set far in the future.
-- GitHub's `github.com` Basic-auth gate checks only the password half of `Basic base64(user:pass)`, because the username is chosen by git's credential helper and unknown at config-generation time.
-- Each provider's real secret is a separate SDS file so a Claude token rotation (which rewrites its file) never clobbers another provider's credential.
-- Choosing to inject at the proxy rather than reverse-engineer OAuth is [[no-oauth-refresh-piggyback-host-cli]].
-- The codex/`chatgpt.com` chain injects **two** headers, not one: `Authorization` and `chatgpt-account-id`, via two `credential_injector` filters sharing a single Lua pre-filter. The account-id injector is coupled to the Authorization one — the real account id is only ever attached when Authorization was recognized as the codex placeholder, never to a foreign or missing credential. Codex's own guest auth file (`~/.codex/auth.json`) no longer carries any real value at all, including account id — full consistency with every other placeholder.
+- Placeholders satisfy each client's local validity checks so clients do not initiate their own refresh. Codex uses structurally valid JWTs with a year-2100 expiry and a placeholder account-id claim needed by Pi.
+- GitHub's `github.com` gate checks the password half of Basic authentication because git's credential helper chooses the username. GitHub secret shapes use separate SDS files so independent values cannot overwrite one another.
+- Codex injection couples `Authorization` and `chatgpt-account-id`: the real account id is attached only when the bearer matches the Codex placeholder, never to an absent or foreign credential.
+- The host-side CLI refresh strategy is recorded in [[no-oauth-refresh-piggyback-host-cli]].

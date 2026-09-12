@@ -1,13 +1,13 @@
 # `run-hosting` owns the whole hosting lifecycle as one long-running command
 
-`run-hosting` is the single foreground command that owns the proxy end to end: it builds `envoy.yaml` from the allow list, writes the SDS secrets, watches both `~/.claude/.credentials.json` and `proxy/allowlist.txt` (event-driven file watchers, not polling), reissues the TLS leaf when the terminated-host set changes, streams the tagged access log inline, runs the guest-facing forwarder, and (later) serves DNS + DHCP. Separate `build-envoy-config` and `proxy-logs` commands were **removed** — their work happens inside `run-hosting`.
+`run-hosting` is the single foreground command that owns the proxy stack and its supporting host services. It reads the allow, auth, and block lists; writes current Claude and Codex secrets; assembles upstream trust; derives the TLS leaf; starts and supervises Envoy colors and declared host-run MCP servers; streams classified access logs; and serves the gateway forwarder, DNS, and DHCP. It watches all three policy files and the Claude and Codex credential sources, applying changes without a separate build or log-viewer command; `mcp-servers.yaml` is deliberately read only at startup.
 
 ## Considered Options
 
-- **Keep logging as a separate `proxy-logs` / `docker compose logs --follow` viewer.** Rejected: it followed the container being destroyed on every credential/allowlist restart and silently went dead. `run-hosting` owns every container recreation, so it re-attaches its own follow and never loses the stream.
-- **Keep `build-envoy-config` as a manual step.** Rejected: editing the allow list should take effect live with no separate build/restart command.
+- **Separate configuration generation and log-following commands.** Rejected because policy and credential changes need to take effect automatically, and an independent Docker log follower would lose the container across a swap.
 
 ## Consequences
 
-- Editing `allowlist.txt` (or a credential rotating) takes effect on the running proxy automatically, with the leaf reissued only when the terminated hosts actually change.
-- `run-hosting` must stay running for the guest to have egress — a hard dependency the rest of the design leans on (token freshness, forwarding, and later DNS/DHCP). See [[blue-green-container-swap-for-restarts]], [[loopback-publish-with-node-forwarder]], [[host-side-dns-and-dhcp]].
+- `run-hosting` must remain running for an isolated guest to obtain an address, resolve names, and reach permitted destinations.
+- Credential and policy changes use [[blue-green-container-swap-for-restarts]] through the stable gateway described by [[loopback-publish-with-node-forwarder]].
+- A fatal MCP-server or proxy-stack failure tears down the owned services together rather than leaving a silently degraded subset.

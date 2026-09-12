@@ -1,6 +1,6 @@
 # Apply proxy changes by a blue/green container swap, not hot-reload
 
-Every change that Envoy reads only at startup — a credential rotation or an allow-list edit — is applied by bringing up a second, idle Envoy container (blue/green), health-gating it on its own admin `/ready`, atomically flipping the forwarder's target to it, then draining and stopping the old one. New connections never hit a dead listener; connections already open on the old color are drained up to a timeout. Both colors run an identical Envoy internally on 443/80/9901 and differ only in the loopback ports they publish, which `run-hosting` allocates per swap.
+Every change that Envoy reads only at startup — a credential rotation or network-policy edit — is applied by bringing up a second, idle Envoy container (blue/green), health-gating it on its own admin `/ready`, atomically flipping the forwarder's target to it, then draining and stopping the old one. New connections never hit a dead listener; connections already open on the old color are drained up to a timeout. Both colors run an identical Envoy internally on 443/80/9901 and differ only in the loopback ports they publish, which `run-hosting` allocates per swap.
 
 ## Considered Options
 

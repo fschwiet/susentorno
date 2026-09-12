@@ -10,5 +10,5 @@ Docker publishes Envoy on `127.0.0.1` only, and `run-hosting` runs a byte-transp
 ## Consequences
 
 - Forwarding is active only while `run-hosting` runs — acceptable, since token freshness already requires that.
-- The forwarder is byte-transparent (no HTTP/TLS awareness), so it serves all three Envoy modes identically, and it later became the stable front door the blue/green swap flips between ([[blue-green-container-swap-for-restarts]]).
-- The forwarder has real automated coverage as of [[guest-layer-tested-against-real-hyperv]]: the guest tier binds the Internal-switch adapter and a real Ubuntu guest reaches Envoy through it.
+- The forwarder is byte-transparent (no HTTP/TLS awareness), so it serves every Envoy route identically and provides the stable front door that the blue/green swap flips between ([[blue-green-container-swap-for-restarts]]).
+- The guest tier provides real automated coverage: it binds the Internal-switch adapter and reaches Envoy from a real Ubuntu guest ([[guest-layer-tested-against-real-hyperv]]).

@@ -1,9 +1,11 @@
 # An environment is a `.susentorno` folder owned by the working directory
 
-Every command except `init` and `import-sbx-network-policy` treats the current working directory as the environment root, operating on `<cwd>/.susentorno` and failing fast if it is absent — no parent-directory search, no `--dir` flag. There is **no upgrade path** for a `.susentorno` folder: it is rebuilt from scratch (`init` refuses to touch an existing one), though already-present valid CA/credential material is reused and never silently overwritten. Only **one proxy container can run at a time**: the compose project name is pinned (`name: susentorno`), so bringing up any environment's proxy — or running the test suite — deterministically replaces whichever proxy was running instead of colliding on the host ports.
+Environment-scoped commands operate on `<cwd>/.susentorno`, with no parent-directory search or `--dir` override, and fail fast when it is absent. `init` creates that environment; `import-sbx-network-policy` and the host-level `create-host-network`/`delete-host-network` commands do not require one. There is no in-place environment upgrade: `init` refuses an existing `.susentorno`, while durable CA material is reused only by the commands that regenerate its derived state.
+
+Only one proxy stack can run on a host at a time because its Compose project and container names are fixed. The proxy-stack and guest suites use `test-results/.susentorno`, not a repository-root environment, and reject the standard conflict when `run-hosting` is already serving the gateway ports; they still share the same single proxy-stack identity.
 
 ## Consequences
 
-- Running `pnpm test` replaces a running deployment's proxy container (accepted single-proxy semantics), but no longer corrupts its files; re-running `run-hosting` in the environment directory restores it.
-- The user is responsible for running one environment at a time.
-- Motivated by the original problem that generated files lived mixed into the repo and `pnpm test` clobbered live deployment files; the fix was to make an environment a property of the directory.
+- A repository-root `.susentorno` may be a manually created, long-running environment and is not test residue.
+- The user is responsible for running one environment's proxy stack at a time.
+- Keeping generated state under the owning working directory prevents different environments from overwriting each other's files even though their runtime proxy stack is host-global.

@@ -1,6 +1,6 @@
 # The Windows guest layer is tested against a real Hyper-V guest over PowerShell Direct
 
-The `guest` tier gains a `windowsFresh` role: a real Windows 11 guest, booted from a differencing disk off a self-built golden image, on the real `susentorno-test-internal` switch, served by the real `run-hosting`.
+The `guest` tier includes a `windowsFresh` role: a real Windows 11 guest, booted from a differencing disk off a self-built golden image, on the real `susentorno-test-internal` switch, served by the real `run-hosting`.
 
 The claim is: **a real Windows guest, on a real Hyper-V Internal switch, served by the real `run-hosting`, takes its entire network configuration from the host and reaches exactly the destinations the network policy permits and nothing else.**
 
@@ -31,4 +31,4 @@ accepted (2026-08-18)
 - Revocation checking is waived on susentorno-issued leaves — `src/ca.ts` emits no CRL or OCSP endpoint and Schannel fails closed on unknown status. Chain validation stays active.
 - Windows Setup diagnostics are framebuffer thumbnails at roughly 320×240: state classification, not readable text. Offline `Panther\setupact.log` salvage is the named escalation.
 - `.image-cache/` grows by roughly 50–60 GB. A cold build takes 60–120 minutes, longer under nested virtualisation.
-- This discharges [[shipped-guest-templates-carry-only-requirements]]'s deferred Windows exception. Both platforms now weave `nn-configure-network` out as `04-`.
+- This coverage supports applying [[shipped-guest-templates-carry-only-requirements]] equally to both platforms; each weaves `nn-configure-network` out as `04-`.

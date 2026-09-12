@@ -1,30 +1,20 @@
 # The guest layer is tested against real Hyper-V VMs
 
-The guest tier boots real Hyper-V virtual machines on a real Internal switch, served by the real `run-hosting`, and asserts from inside them. It replaces the QEMU-in-WSL2 harness [[vm-tests-via-qemu-in-wsl2]], which supplied `dnsmasq` and `socat` in place of the production DNS responder, DHCP server, and gateway forwarder. The only remaining substitution is `gh`, shadowed at `/usr/local/bin/gh` so `post-scripts/01-auth-config.sh` does not need a real GitHub token.
+The guest tier boots disposable Hyper-V virtual machines on a real Internal switch served by the real `run-hosting`, then asserts behavior from inside the guests. This supersedes the QEMU-in-WSL2 harness ([[vm-tests-via-qemu-in-wsl2]]) so DNS, DHCP, gateway forwarding, firewall confinement, VM switching, and guest setup run through the production Windows/Hyper-V path rather than harness substitutes.
 
-The claim is: **a real Ubuntu guest, on a real Hyper-V Internal switch, served by the real `run-hosting`, reaches exactly the destinations the network policy permits and nothing else.**
+The Ubuntu harness builds its golden image from the Ubuntu installer and creates a differencing disk per guest role. Its sole command substitution is `gh`, shadowed so the shipped authentication post-script needs no real GitHub credential. The Windows role and its deliberate harness substitutions are recorded separately in [[windows-guest-tested-over-powershell-direct]].
 
-The tier is bootstrappable from clean: it builds an Ubuntu golden image from `ubuntu-26.04-live-server-amd64.iso` with an unattended autoinstall, its own host network via `create-host-network --isolation-name test`, and its own SMB share and local account. Per-test guests boot from differencing disks off that parent, so no test can see another's writes. Everything derives from the `test` isolation name and is swept by name at startup and teardown.
-
-Fidelity over portability is accepted. This tier runs only on a Windows host with Hyper-V, the platform susentorno targets ([[hyper-v-only-target]]).
-
-## Status
-
-accepted (2026-08-15). Supersedes [[vm-tests-via-qemu-in-wsl2]].
+Per-run host state and guest roles derive from the `test` isolation name: host network, share account, SMB share, guest VMs, differencing disks, and artifact locations. Startup and teardown sweep that live state, while each role's differencing disk prevents writes from leaking between tests. Golden images remain in the separate cache. Fidelity to the supported platform is preferred over portability.
 
 ## Considered Options
 
-- **Port the old harness to Hyper-V while keeping `dnsmasq` and `socat`.** Rejected: it would pay the cost of a host-state-touching tier without testing the production network services.
-- **A manually-built golden VM plus checkpoints.** Rejected: it is not bootstrappable from source.
-- **Convert a cloud image or use `qemu-img`.** Rejected: Ubuntu publishes no suitable 26.04 VHD/VHDX, and a new conversion dependency would retain the cloud-image-versus-installer fidelity gap.
-- **Repack the ISO with a Node ISO-writing library.** Rejected: the harness writes the supported UEFI installer media directly using Windows built-ins.
-- **Split `e2e` out of the default tier.** Rejected: `setup-guest-unix` itself would become the one wiring path that routine verification does not exercise.
+- **Keep QEMU inside WSL2.** Rejected because its own DNS, DHCP, and forwarding services could not verify the production host services or Hyper-V switching behavior.
+- **Use a manually prepared Ubuntu golden VM or cloud-image conversion.** Rejected because the Ubuntu image must be defined and bootstrappable from repository-controlled installer inputs without a new conversion dependency.
+- **Split end-to-end scenarios out of the guest tier.** Rejected because behavior observed from inside a disposable guest belongs in that tier even when it crosses the CLI and proxy stack.
 
 ## Consequences
 
-- [[loopback-publish-with-node-forwarder]]'s forwarder and [[host-side-dns-and-dhcp]]'s DNS and DHCP servers gain real guest coverage. `startProxyStack` forwards on the test Internal-switch address instead of disabling forwarding.
-- The guest tier binds the real `:80`/`:443`, so it rejects even one occupied gateway port before creating host state. A live `run-hosting` remains incompatible because the Envoy container names are global.
-- The isolation name also derives test guest VMs, differencing disks, SMB share, and local account. The shipped default account is `susentorno`; an isolated installation uses `susentorno-<name>` explicitly.
-- `pnpm test` no longer needs WSL2, KVM, nested virtualization, mirrored networking, or `ignoredPorts=67`. It requires an elevated shell, Hyper-V, Docker, and an `ssh-agent` holding the harness key.
-- A warm tier takes roughly 15–25 minutes; a cold golden-image build adds roughly 20–30 minutes. `.image-cache/` is gitignored and repo-local because live tiers cannot safely run in parallel worktrees.
-- `ssh-agent` is load-bearing for the e2e test's production bare SSH client. A broad user `IdentitiesOnly yes` SSH configuration can still defeat agent discovery.
+- The default pipeline requires an elevated Windows host with Hyper-V, Docker, and an `ssh-agent`; it no longer requires WSL2, KVM, mirrored networking, or port-sharing exceptions.
+- The guest tier binds the real gateway ports and shares the global Envoy container names, so it refuses to run alongside a live `run-hosting`.
+- Golden images are cached in repository-local `.image-cache/`; live tiers and their shared host state cannot run safely in parallel worktrees.
+- Ubuntu guests use SSH for the production setup path, making the harness key and the invoking SSH client's configuration part of the test prerequisites.
