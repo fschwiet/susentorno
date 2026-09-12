@@ -6,8 +6,7 @@ import { join } from 'node:path';
  * `.susentorno` test environment. It lives under `test-results/` (already
  * gitignored, already the guest suite's artifact home) rather than the repo root,
  * so the residue plainly reads as throwaway test output instead of a live
- * susentorno deployment. See
- * docs/honist-v/specs/2026-07-25-relocate-test-environment-design.md.
+ * susentorno deployment.
  */
 
 // This file is at <repo>/tests/, so one `..` reaches the repo root.

@@ -189,9 +189,7 @@ export async function ensureWindowsGoldenImage(
   // Enumerated unconditionally, alongside isoSha256 above, even on a
   // cache-hit path where no rebuild happens: this host's trusted-root set is
   // itself a build input, and the stamp comparison below needs its hash
-  // either way. See "Current live blocker" in
-  // docs/honist-v/briefs/2026-08-19-windows-guest-test-role-handoff.md —
-  // this host running the harness can itself be a nested susentorno guest
+  // either way. The host running the harness can itself be a nested susentorno guest
   // behind a TLS-intercepting proxy the build VM has never seen.
   const { roots: trustedRoots } = await enumerateHostTrustedRoots(exec);
   const certsSha256 = trustedRoots
