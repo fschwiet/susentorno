@@ -10,12 +10,12 @@ Tests are split across the `unit`, `cli`, `proxy-stack`, and `guest` tiers, name
 
 ### Issue tracker
 
-Issues live as GitHub issues on `fschwiet/susentorno`, managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues, specs, and wayfinder maps live as markdown files under `docs/matt-pocock/`. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+The five canonical triage roles, used verbatim as `Status:` values. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
-Single-context layout — `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
