@@ -102,7 +102,7 @@ beforeAll(async () => {
   // command reaches either one, since its only stdin is reserved for the SMB password.
   await isolateVmToSwitch({ exec, vmName }, internalSwitchName);
   isolatedAddress = await discoverAndTrust(internal, keys.guestHostPublicKey);
-  await reconcileVmToSwitch({ exec, vmName }, 'Default Switch');
+  await reconcileVmToSwitch({ exec, vmName, offConfirmTimeoutMs: 60_000 }, 'Default Switch');
   setupAddress = await discoverAndTrust(natNetwork, keys.guestHostPublicKey);
   target = { address: setupAddress, username: GUEST_USERNAME };
 
