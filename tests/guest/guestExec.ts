@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import {
   buildScpArgv,
   buildSshRunArgv,
+  buildSshCaptureArgv,
   type RemoteExecResult,
   type RemoteExecWithCapture,
   type SshTarget,
@@ -42,7 +43,7 @@ export async function guestCapture(
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const result = await execa(
     'ssh',
-    [...buildHarnessSshOptions(), ...buildSshRunArgv(target, remoteCommand)],
+    [...buildHarnessSshOptions(), ...buildSshCaptureArgv(target, remoteCommand)],
     { reject: false, all: true },
   );
   return {

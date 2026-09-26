@@ -46,10 +46,27 @@ export interface SshTarget {
  * shell-quoted argument by the time it reaches `bash -ic`, or bash -c would
  * treat only the first word as the script and the rest as positional
  * parameters.
+ *
+ * Uses `-t` to allocate a pseudo-terminal, which is useful for interactive
+ * commands (e.g., sudo password prompts).
  */
 export function buildSshRunArgv(target: SshTarget, remoteCommand: string): string[] {
   return [
     '-t',
+    `${target.username}@${target.address}`,
+    'bash',
+    '-ic',
+    quoteForRemoteShell(remoteCommand),
+  ];
+}
+
+/**
+ * Like buildSshRunArgv, but without the `-t` flag. Used for capturing
+ * output in non-interactive environments (tests, CI) where stdin is not
+ * a TTY and forcing PTY allocation causes SSH to fail or produce warnings.
+ */
+export function buildSshCaptureArgv(target: SshTarget, remoteCommand: string): string[] {
+  return [
     `${target.username}@${target.address}`,
     'bash',
     '-ic',
@@ -82,7 +99,7 @@ export function createSshRemoteExec(target: SshTarget): RemoteExecWithCapture {
       return { exitCode: result.exitCode ?? 1 };
     },
     async capture(remoteCommand: string): Promise<RemoteExecCaptureResult> {
-      const result = await execa('ssh', buildSshRunArgv(target, remoteCommand), {
+      const result = await execa('ssh', buildSshCaptureArgv(target, remoteCommand), {
         reject: false,
         all: true,
       });

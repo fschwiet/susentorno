@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { buildSshRunArgv, buildScpArgv } from '../../../src/guestSetup/remoteExec';
+import {
+  buildSshRunArgv,
+  buildSshCaptureArgv,
+  buildScpArgv,
+} from '../../../src/guestSetup/remoteExec';
 
 describe('buildSshRunArgv', () => {
   it('wraps the command in bash -ic with -t and the quoted command as one argv element', () => {
@@ -10,6 +14,18 @@ describe('buildSshRunArgv', () => {
   it('escapes a single quote inside the command', () => {
     const argv = buildSshRunArgv({ address: 'host', username: 'ubuntu' }, "echo 'hi'");
     expect(argv[4]).toBe("'echo '\\''hi'\\'''");
+  });
+});
+
+describe('buildSshCaptureArgv', () => {
+  it('wraps the command in bash -ic without -t and the quoted command as one argv element', () => {
+    const argv = buildSshCaptureArgv({ address: '192.168.1.50', username: 'ubuntu' }, 'echo hi');
+    expect(argv).toEqual(['ubuntu@192.168.1.50', 'bash', '-ic', "'echo hi'"]);
+  });
+
+  it('escapes a single quote inside the command', () => {
+    const argv = buildSshCaptureArgv({ address: 'host', username: 'ubuntu' }, "echo 'hi'");
+    expect(argv[3]).toBe("'echo '\\''hi'\\'''");
   });
 });
 
