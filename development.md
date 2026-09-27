@@ -8,15 +8,16 @@ Requirements and setup for running susentorno's own test suite. See [testing.md]
 - An **elevated (Administrator)** terminal. The `host-network` and `guest` tiers create and delete real Hyper-V switches, firewall rules, VMs, VHDs, SMB shares, and a Windows local account.
 - **Hyper-V** enabled, with a working **Default Switch** (the guest tier's golden-image build needs ICS internet through it).
 - **Docker Desktop** running, for the `proxy-stack` and `guest` tiers.
-- A running **`ssh-agent`**. The guest tier's end-to-end test runs the real `setup-guest-unix`, whose bare `ssh` finds the harness key through the agent. Windows ships the service **Disabled**, so a fresh machine always needs this:
+- A running **`ssh-agent`**. Windows ships the service **Disabled**, so a fresh machine needs:
   ```powershell
   Set-Service ssh-agent -StartupType Automatic
   Start-Service ssh-agent
   ```
-  Run `pnpm test` from **PowerShell**, not Git Bash: Git Bash resolves `ssh-add`/`ssh` to Git for Windows' OpenSSH, which wants `SSH_AUTH_SOCK` and cannot see the service's agent at all. If you develop susentorno from inside a Windows guest, note that `templates/vm-shared-windows/` no longer enables this service for you — it was removed as a preference under [ADR-0024](docs/adr/0024-shipped-guest-templates-carry-only-requirements.md). Run the two commands above manually, or add them to your own `.susentorno/pre-scripts/`.
-- **`SUSENTORNO_WINDOWS_ISO`** set to a local path (not a mapped drive or network share) of an x64 `en-us` Windows 11 Enterprise evaluation ISO. The guest tier's `windowsFresh` role requires it; see [testing.md](testing.md).
-- **~60–70 GB free disk**. The guest tier caches an Ubuntu ISO and golden Ubuntu and Windows VM images in `.image-cache/`, and builds them on the first run (~20–30 minutes for Ubuntu, 60–120 minutes for Windows). All are gitignored; delete the directory to force a rebuild.
-- No WSL2, KVM, or nested virtualization is required. Test startup gates verify each prerequisite and name the fix for whatever is missing.
+  Run `pnpm check` from **PowerShell**, not Git Bash, whose OpenSSH cannot see this agent. Windows guest templates do not enable the service; configure it yourself.
+- **`SUSENTORNO_WINDOWS_ISO`** set to a local path (not a mapped drive or network share) of an x64 `en-us` Windows 11 Enterprise evaluation ISO. See [testing.md](testing.md).
+- **~60–70 GB free disk** for the cached Ubuntu ISO and golden Ubuntu and Windows VM images in `.image-cache/`. First builds take ~20–30 minutes for Ubuntu and 60–120 minutes for Windows.
+- **Memory:** `pnpm check` has succeeded in a 12 GB VM; this is an observation, not a guaranteed minimum. When running it through Claude Code with less than 16 GB, set `CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP=1` before starting Claude Code.
+- No WSL2, KVM, or nested virtualization is required. Startup gates report missing prerequisites.
 
 ## Verification pipeline
 
@@ -24,7 +25,7 @@ Run these commands in order to verify a change is correct (fail-fast order):
 
 | Step | Command | What it checks |
 | --- | --- | --- |
-| 1 | `pnpm test:preflight` | Every tier's host prerequisites, all reported in one run (a preflight suite, not a tier) |
+| 1 | `pnpm preflight` | Every tier's host prerequisites, all reported in one run (a preflight suite, not a tier) |
 | 2 | `pnpm format:check` | Prettier formatting |
 | 3 | `pnpm lint` | ESLint rules |
 | 4 | `pnpm typecheck` | TypeScript types (no emit) |
@@ -40,7 +41,7 @@ See [testing.md](testing.md) for what each tier's test surface is, how to choose
 Run the full pipeline (steps 1–10) in one command:
 
 ```
-pnpm test
+pnpm check
 ```
 
 > The cli suite shells out to `jq`; install it on the dev host (and CI) or the jq-dependent tests self-skip.

@@ -51,40 +51,33 @@ Install the project's Node dependencies before running any tier.
 | `proxy-stack` | A Windows host, a production build (`pnpm build`), Docker running, and Docker Compose available (`docker compose version` succeeds). Windows Firewall must not block this `node.exe`. Stop any live `susentorno run-hosting` process first. No guest or real credential is required. |
 | `guest` | A Windows host with Hyper-V available (the `vmms` service running), an elevated (Administrator) PowerShell/terminal, Docker running, Docker Compose available, a running `ssh-agent`, and `SUSENTORNO_WINDOWS_ISO` (required) pointing at an **x64, `en-us`** Windows 11 Enterprise evaluation ISO. That path should be local, not a mapped drive or network share: Hyper-V attaches the ISO directly to the build VM, and mapped drive letters are invisible to it. Stop any live `susentorno run-hosting` process first — this tier binds the real `:80`/`:443` and manages the same Envoy containers. The first run builds a golden Ubuntu image (~20–30 minutes) and a golden Windows image (60–120 minutes); later runs reuse them from `.image-cache/`, which grows by roughly 50–60 GB. Every run hashes the full ISO. |
 
-See [development.md](development.md) for the guest-tier prerequisites. The guest tier creates and refreshes its cached golden image automatically at `.image-cache/`; the first run takes longer. It is gitignored and repo-local because live tiers act on one shared host network adapter and cannot safely run from parallel worktrees.
+Guest images are cached in `.image-cache/`. Ubuntu images refresh automatically, but a stale Windows image requires an explicit `SUSENTORNO_WINDOWS_IMAGE_REBUILD=1` rebuild.
 
-A missing live-tier prerequisite is an environmental failure, not a product failure. Run `pnpm test:preflight` to see every missing prerequisite at once (see [The preflight suite](#the-preflight-suite)). Both live tiers fail fast when Docker is unavailable or `run-hosting` would conflict with their shared proxy stack. The `host-network` and `guest` tiers check for an elevated shell and Hyper-V; the `proxy-stack` and `guest` tiers check for Docker Compose. The guest tier also checks for free gateway ports, an `ssh-agent` that the SSH it will actually invoke can see, and a valid Windows ISO (set, existing, and holding an x64 `en-us` image, verified by mounting it read-only, which needs the elevated shell) before building an image or booting anything.
+A missing live-tier prerequisite is an environmental failure, not a product failure. Each live tier fails fast on its own prerequisites; run `pnpm preflight` to report every tier's missing prerequisites together.
 
 ## The preflight suite
 
-The preflight is a **preflight suite, not a tier**. It exercises no product surface; it checks whether this host can run each tier. `pnpm test:preflight` runs every tier's prerequisites in a few seconds and reports one test per prerequisite, grouped by tier. Unlike a tier, it does not stop at the first failure, so one run lists everything to fix. A tier with no prerequisites appears as an empty, skipped group.
+The preflight is a **preflight suite, not a tier**. It exercises no product surface; it checks whether this host can run each tier. `pnpm preflight` runs every tier's prerequisites in a few seconds and reports one test per prerequisite, grouped by tier. Unlike a tier, it does not stop at the first failure, so one run lists everything to fix. A tier with no prerequisites appears as an empty, skipped group.
 
 Each tier's prerequisites are an ordered list of `{ name, check }` entries (see `tests/prerequisites.ts`), exported from that tier's `prerequisites.ts`, such as `tests/proxy-stack/prerequisites.ts`. `check` is an async function that resolves when the prerequisite is met and throws an error whose message names the fix when it is not. An optional prerequisite, such as `cli`'s `jq`, resolves with `skipPrerequisite(reason)` when absent; the preflight shows it as a skipped test with that reason, and a tier's `globalSetup` does not treat it as a failure. Windows-only checks (elevation, Hyper-V, Windows Firewall, the Windows ISO) fail on any other platform, such as inside a susentorno Linux guest, with a message that the tier needs a Windows Hyper-V host. The tier's `globalSetup` runs the same list in order and stops at the first failure, so the preflight passing means the tier will get past its own checks.
 
 To add a prerequisite, add an entry to the tier's list. Both the tier's `globalSetup` and the preflight pick it up with no other edit, and removing an entry removes its preflight test. A prerequisite shared by several tiers is listed in each tier that needs it. The tier → list map in `tests/preflight/preflight.test.ts` changes only when a tier is added. The suite's config is `vitest.preflight.config.ts`, and its tests run serially because several checks touch shared host state.
 
-## Running an individual test file
+## Running individual tests
 
-Use `pnpm vitest run` (or `pnpm exec vitest run`), pointing at the file and the tier's config:
+Pass a file to its tier command:
 
-```sh
-pnpm vitest run tests/unit/codexPlaceholder.test.ts
-pnpm vitest run --config vitest.cli.config.ts tests/cli/someTest.test.ts
-pnpm vitest run --config vitest.proxy-stack.config.ts tests/proxy-stack/someTest.test.ts
-pnpm build && pnpm vitest run --config vitest.guest.config.ts tests/guest/someTest.test.ts
+```powershell
+pnpm test:unit -- .\tests\unit\collisions.test.ts
 ```
 
-Omitting `--config` runs against the default `unit` config. Add `-t "test name"` to narrow to a single test case within the file.
+Or select tests by name:
 
-Never use `npx` or `pnpx` to invoke `vitest` or other project tooling. `npx` happens to fall back to the local install, but `pnpx` (an alias for `pnpm dlx`) fetches an isolated copy and ignores this project's pinned `node_modules`/lockfile versions entirely — either way, use the `pnpm` forms above so tests run against the exact toolchain this project locks.
+```powershell
+pnpm test:unit -- -t "VM share collision detection"
+```
 
-## Default verification pipeline
-
-`pnpm test` runs the preflight suite first, then formatting, linting, type checking, the `unit` tier, a production build, the `cli` tier, the `host-network` tier, the `proxy-stack` tier, and the `guest` tier, in fail-fast order. An unready host therefore fails in seconds, with every missing prerequisite listed, before any other step runs. The Verification Pipeline section of [development.md](development.md) is the source of truth for the exact step order.
-
-The `guest` tier's prerequisites (an elevated shell, Hyper-V, Docker, `ssh-agent`, and the Windows ISO — see [development.md](development.md)) are therefore required for any full `pnpm test` run, not just for working on `templates/vm-shared-linux/` directly. Guest boots, a reboot through isolation, and the e2e file's real package installs take minutes each — expect `pnpm test` to be slow.
-
-The `windowsFresh` role is not optional. The Windows evaluation ISO cannot be downloaded unattended, so `SUSENTORNO_WINDOWS_ISO` must name a locally supplied, local-path ISO; when it is unset, missing, or not an x64 `en-us` image, the preflight and `pnpm test:guest` fail rather than skipping the role. There is no opt-out. Its first build takes 60–120 minutes and adds roughly 50–60 GB to `.image-cache/`. A stale Windows image is **not** rebuilt silently the way the Ubuntu one is — the tier stops and names which build input changed, because a rebuild costs 60–120 minutes. Re-run with `SUSENTORNO_WINDOWS_IMAGE_REBUILD=1` to rebuild deliberately.
+Substitute the appropriate tier command when running tests outside `unit`.
 
 ## Test support and residue
 
