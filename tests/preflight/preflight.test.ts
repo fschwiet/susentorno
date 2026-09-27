@@ -26,7 +26,7 @@ for (const [tier, prerequisites] of Object.entries(tiers)) {
     for (const { name, check } of prerequisites) {
       it(name, async (context) => {
         const outcome = await check();
-        if (outcome) context.skip(outcome.skipped);
+        if (outcome) context.skip(outcome.reason);
       });
     }
   });

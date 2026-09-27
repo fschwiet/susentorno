@@ -70,7 +70,7 @@ export const WINDOWS_REBUILD_ENV_VAR = 'SUSENTORNO_WINDOWS_IMAGE_REBUILD';
  * Unlike the Ubuntu ISO, the Windows evaluation cannot be downloaded
  * unattended — it sits behind a registration form yielding a short-lived
  * signed URL. The path is therefore supplied, and it is required: this is the
- * input to the guest tier's Windows ISO prerequisite (tests/checkWindowsIso.ts),
+ * input to the guest tier's Windows ISO prerequisite (tests/guest/checkWindowsIso.ts),
  * so an unset variable fails the tier rather than silently skipping a role.
  */
 export function windowsIsoPath(env: NodeJS.ProcessEnv = process.env): string {

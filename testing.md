@@ -88,6 +88,6 @@ The `windowsFresh` role is not optional. The Windows evaluation ISO cannot be do
 
 ## Test support and residue
 
-Support code used by more than one tier lives at the root of `tests/`, including `proxyStack.ts`, `testEnvRoot.ts`, `rmEnvRoot.ts`, `checkDockerRunning.ts`, `checkNoRunningProxy.ts`, `checkElevated.ts`, `checkHypervAvailable.ts`, `checkDockerComposeAvailable.ts`, `requireWindowsHost.ts`, `checkGatewayPortsFree.ts`, `checkWindowsIso.ts`, `sshAgentIdentity.ts`, `prerequisites.ts`, and `tests/fixtures/`. Tier-specific setup and harness code stays in its tier directory, such as `tests/proxy-stack/globalSetup.ts` and `tests/guest/hyperv/`.
+Support code used by more than one tier lives at the root of `tests/`, including `proxyStack.ts`, `testEnvRoot.ts`, `rmEnvRoot.ts`, `checkDockerRunning.ts`, `checkNoRunningProxy.ts`, `checkElevated.ts`, `checkHypervAvailable.ts`, `checkDockerComposeAvailable.ts`, `requireWindowsHost.ts`, `checkGatewayPortsFree.ts`, `sshAgentIdentity.ts`, `prerequisites.ts`, and `tests/fixtures/`. Tier-specific setup and harness code stays in its tier directory, such as `tests/proxy-stack/globalSetup.ts`, `tests/guest/checkWindowsIso.ts`, and `tests/guest/hyperv/`.
 
 The proxy-stack and guest suites create their throwaway environment under `test-results/.susentorno`. They do not use a repository-root `.susentorno`. A root `.susentorno` may be a manually created, long-running environment and must not be treated as disposable test residue.

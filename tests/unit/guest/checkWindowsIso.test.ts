@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeWindowsIsoImages } from '../checkWindowsIso';
+import { describeWindowsIsoImages } from '../../guest/checkWindowsIso';
 
 const iso = 'C:\\images\\win.iso';
 
@@ -38,5 +38,13 @@ describe('describeWindowsIsoImages', () => {
     const message = describeWindowsIsoImages(iso, 'NO-INSTALL-WIM\n')!;
     expect(message).toContain(iso);
     expect(message).toContain('install.wim');
+  });
+
+  it('says the ISO got no drive letter when the mounted volume has none', () => {
+    const message = describeWindowsIsoImages(iso, 'NO-DRIVE-LETTER\n')!;
+    expect(message).toContain(iso);
+    expect(message).toContain('no drive letter');
+    expect(message).toContain('automount');
+    expect(message).not.toContain('install.wim');
   });
 });

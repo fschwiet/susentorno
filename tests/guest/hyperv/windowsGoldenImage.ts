@@ -165,7 +165,7 @@ async function waitForOff(exec: PowerShellExec): Promise<void> {
 
 /**
  * `isoPath` is the installation ISO already validated by the guest tier's
- * Windows ISO prerequisite (tests/checkWindowsIso.ts).
+ * Windows ISO prerequisite (tests/guest/checkWindowsIso.ts).
  */
 export async function ensureWindowsGoldenImage(
   exec: PowerShellExec,

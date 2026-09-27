@@ -20,13 +20,7 @@ export function parseAgentFingerprints(stdout: string): string[] {
  * first thing a fresh machine trips over.
  */
 export async function ensureSshAgentIdentity(privateKeyPath: string): Promise<void> {
-  const key = await execa('ssh-keygen', ['-lf', `${privateKeyPath}.pub`], { reject: false });
-  const fingerprint = parseFingerprint(key.stdout ?? '');
-  if (!fingerprint)
-    throw new Error(
-      `ssh-agent: could not read a fingerprint from ${privateKeyPath}.pub — ` +
-        `is ssh-keygen on PATH? (\`${key.stdout ?? ''}\`)`,
-    );
+  const fingerprint = await readKeyFingerprint(privateKeyPath);
   const added = await execa('ssh-add', [privateKeyPath], { reject: false, all: true });
   if (added.exitCode !== 0)
     throw new Error(
@@ -50,6 +44,22 @@ export async function ensureSshAgentIdentity(privateKeyPath: string): Promise<vo
         'C:\\Windows\\System32\\OpenSSH ahead of Git\\usr\\bin on PATH and re-run.\n' +
         `\`ssh-add -l\` said: ${agent.all ?? ''}`,
     );
+}
+async function readKeyFingerprint(privateKeyPath: string): Promise<string> {
+  const key = await execa('ssh-keygen', ['-lf', `${privateKeyPath}.pub`], { reject: false });
+  const fingerprint = parseFingerprint(key.stdout ?? '');
+  if (!fingerprint)
+    throw new Error(
+      `ssh-agent: could not read a fingerprint from ${privateKeyPath}.pub — ` +
+        `is ssh-keygen on PATH? (\`${key.stdout ?? ''}\`)`,
+    );
+  return fingerprint;
+}
+/** Whether the agent `ssh-add` (resolved as production's `ssh` is) already lists the key. */
+export async function hasSshAgentIdentity(privateKeyPath: string): Promise<boolean> {
+  const fingerprint = await readKeyFingerprint(privateKeyPath);
+  const agent = await execa('ssh-add', ['-l'], { reject: false });
+  return parseAgentFingerprints(agent.stdout ?? '').includes(fingerprint);
 }
 export async function removeSshAgentIdentity(privateKeyPath: string): Promise<void> {
   await execa('ssh-add', ['-d', privateKeyPath], { reject: false });

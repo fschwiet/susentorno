@@ -4,12 +4,12 @@
  * missing and what is skipped because of it.
  */
 export interface PrerequisiteSkip {
-  skipped: string;
+  reason: string;
 }
 
 /** Signal from a `check` that an optional prerequisite is absent. */
 export function skipPrerequisite(reason: string): PrerequisiteSkip {
-  return { skipped: reason };
+  return { reason };
 }
 
 /**
