@@ -1,4 +1,5 @@
 import { execa } from 'execa';
+import { requireWindowsHost } from './requireWindowsHost';
 
 /** Single-quoted PowerShell string literals escape an embedded quote by doubling it. */
 function escapeForSingleQuotedPowerShellString(value: string): string {
@@ -29,7 +30,7 @@ function buildQueryCommand(execPath: string): string {
  * can go quietly broken is worse than no check, since nothing else would ever surface that.
  */
 export async function checkNodeNotFirewallBlocked(): Promise<void> {
-  if (process.platform !== 'win32') return;
+  requireWindowsHost();
 
   const execPath = process.execPath;
   const result = await execa(

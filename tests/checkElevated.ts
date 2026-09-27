@@ -1,5 +1,6 @@
 import { createRealPowerShellExec } from '../src/guestSetup/powerShellExec';
 import { isElevated } from '../src/guestSetup/elevationCheck';
+import { requireWindowsHost } from './requireWindowsHost';
 
 /**
  * Guard: the host-network and guest tiers both create and delete real Hyper-V
@@ -9,6 +10,7 @@ import { isElevated } from '../src/guestSetup/elevationCheck';
  * the first PowerShell call fail deep inside a test.
  */
 export async function checkElevated(): Promise<void> {
+  requireWindowsHost();
   const exec = createRealPowerShellExec();
   if (!(await isElevated(exec))) {
     throw new Error(

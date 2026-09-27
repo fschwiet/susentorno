@@ -24,7 +24,10 @@ for (const [tier, prerequisites] of Object.entries(tiers)) {
   const group = prerequisites.length === 0 ? describe.skip : describe;
   group(tier, () => {
     for (const { name, check } of prerequisites) {
-      it(name, check);
+      it(name, async (context) => {
+        const outcome = await check();
+        if (outcome) context.skip(outcome.skipped);
+      });
     }
   });
 }

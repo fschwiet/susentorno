@@ -1,5 +1,7 @@
+import { checkDockerComposeAvailable } from '../checkDockerComposeAvailable';
 import { checkDockerRunning } from '../checkDockerRunning';
 import { checkElevated } from '../checkElevated';
+import { checkHypervAvailable } from '../checkHypervAvailable';
 import { checkGatewayPortsFree } from '../checkGatewayPortsFree';
 import type { Prerequisite } from '../prerequisites';
 import { ensureSshAgentIdentity, removeSshAgentIdentity } from '../sshAgentIdentity';
@@ -17,7 +19,9 @@ async function checkSshAgent(): Promise<void> {
 
 export const guestPrerequisites: readonly Prerequisite[] = [
   { name: 'elevated shell', check: checkElevated },
+  { name: 'Hyper-V available', check: checkHypervAvailable },
   { name: 'Docker running', check: checkDockerRunning },
+  { name: 'Docker Compose available', check: checkDockerComposeAvailable },
   { name: 'gateway ports free', check: checkGatewayPortsFree },
   { name: 'ssh-agent', check: checkSshAgent },
 ];

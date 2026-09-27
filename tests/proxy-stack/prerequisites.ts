@@ -1,3 +1,4 @@
+import { checkDockerComposeAvailable } from '../checkDockerComposeAvailable';
 import { checkDockerRunning } from '../checkDockerRunning';
 import { checkNoRunningProxy } from '../checkNoRunningProxy';
 import { checkNodeNotFirewallBlocked } from '../checkNodeNotFirewallBlocked';
@@ -15,6 +16,7 @@ import type { Prerequisite } from '../prerequisites';
 // to be checked proactively rather than surfaced by a failing bind().
 export const proxyStackPrerequisites: readonly Prerequisite[] = [
   { name: 'Docker running', check: checkDockerRunning },
+  { name: 'Docker Compose available', check: checkDockerComposeAvailable },
   { name: 'no running proxy', check: checkNoRunningProxy },
   { name: 'node.exe not blocked by Windows Firewall', check: checkNodeNotFirewallBlocked },
 ];
