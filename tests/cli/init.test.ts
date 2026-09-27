@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { execa } from 'execa';
 import { fileURLToPath } from 'node:url';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -34,6 +34,34 @@ describe('susentorno init', () => {
         ),
       ).toBe(true);
       expect(existsSync(join(dir, '.susentorno', 'pre-scripts', 'README.md'))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('writes the real account id and placeholder tokens into both shared auth.json files', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'susentorno-init-'));
+    try {
+      const { exitCode } = await execa(
+        'node',
+        [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
+        { cwd: dir },
+      );
+      expect(exitCode).toBe(0);
+      for (const folder of ['vm-shared-linux', 'vm-shared-windows']) {
+        const auth = readFileSync(join(dir, '.susentorno', folder, 'auth.json'), 'utf8');
+        const { tokens } = JSON.parse(auth);
+        // The fixture's real account id, not the placeholder id.
+        expect(tokens.account_id, folder).toBe('acct-uuid-1234');
+        expect(tokens.refresh_token, folder).toBe('susentorno-placeholder-codex-refresh-token');
+        for (const secret of [
+          'real.access.token.value',
+          'real.id.token.value',
+          'real-refresh-secret',
+        ]) {
+          expect(auth, `${folder} ${secret}`).not.toContain(secret);
+        }
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

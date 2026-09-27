@@ -6,16 +6,16 @@ The Codex auth sanitizer passes `tokens.account_id` through unchanged. It still 
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** ready-for-review
 
-- [ ] `unit`: the sanitizer test asserts `account_id` is preserved, the three tokens become placeholders, and non-chatgpt-mode input is still refused.
-- [ ] `cli`: the `init` test asserts both shared `auth.json` files (Linux and Windows) contain the fixture's real `tokens.account_id` and placeholder tokens.
-- [ ] `guest`: the Linux e2e test, next to the existing `01-auth-config` symlink assertion, asserts the guest reads the host's real `tokens.account_id` through `~/.codex/auth.json`.
-- [ ] Existing fixtures and tests that assumed the shared `auth.json` carries the placeholder account id are updated. The placeholder account id constant stays, because Pi and the placeholder JWT claims still use it.
-- [ ] The sanitizer's doc comment describes the new behavior.
-- [ ] ADR 0002 has a consequence covering:
+- [x] `unit`: the sanitizer test asserts `account_id` is preserved, the three tokens become placeholders, and non-chatgpt-mode input is still refused.
+- [x] `cli`: the `init` test asserts both shared `auth.json` files (Linux and Windows) contain the fixture's real `tokens.account_id` and placeholder tokens.
+- [x] `guest`: the Linux e2e test, next to the existing `01-auth-config` symlink assertion, asserts the guest reads the host's real `tokens.account_id` through `~/.codex/auth.json`.
+- [x] Existing fixtures and tests that assumed the shared `auth.json` carries the placeholder account id are updated. The placeholder account id constant stays, because Pi and the placeholder JWT claims still use it.
+- [x] The sanitizer's doc comment describes the new behavior.
+- [x] ADR 0002 has a consequence covering:
   - Codex ≥0.156 checks `tokens.account_id` against routing discovery.
   - The account id is an identifier, not a credential, so the guest still holds no usable credential.
   - Pi's mount keeps the placeholder id.
   - Rejected alternatives: rewriting the proxy's `accounts/check` response, pinning Codex below 0.156, and patching the id from a side file in the post-scripts.
-- [ ] No `CONTEXT.md` change.
+- [x] No `CONTEXT.md` change.

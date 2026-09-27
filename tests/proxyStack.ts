@@ -21,6 +21,14 @@ const blockListFixture = join(repoRoot, 'tests', 'proxy-stack', 'fixtures', 'blo
 const credentialsFixture = join(repoRoot, 'tests', 'fixtures', 'credentials.json');
 const authFixture = join(repoRoot, 'tests', 'fixtures', 'auth.json');
 
+/**
+ * The host's real ChatGPT account id. `init` sanitizes the auth fixture (which carries it)
+ * into the shared auth.json, and run-hosting's own codex auth file carries the same id, so
+ * the guest sees one consistent host account id whichever of them last wrote the share.
+ */
+export const HOST_CODEX_ACCOUNT_ID: string = JSON.parse(readFileSync(authFixture, 'utf8')).tokens
+  .account_id;
+
 export interface ProxyStack {
   mockUpstream: MockUpstream;
   caCertPem: string;
@@ -85,7 +93,7 @@ function writeCodexAuthFile(path: string, accessToken: string): void {
         id_token: buildJwt({ exp: Math.floor(Date.now() / 1000) + 86400 }),
         access_token: accessToken,
         refresh_token: 'itest-codex-refresh',
-        account_id: 'acct-itest',
+        account_id: HOST_CODEX_ACCOUNT_ID,
       },
       auth_mode: 'chatgpt',
     }),

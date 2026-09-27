@@ -12,7 +12,12 @@ import { realTcpConnect } from '../../src/guestSetup/tcpConnect';
 import { isolateVmToSwitch, reconcileVmToSwitch } from '../../src/guestSetup/vmReconcile';
 import { GITHUB_PLACEHOLDER_PAT } from '../../src/githubPlaceholder';
 import type { SshTarget } from '../../src/guestSetup/remoteExec';
-import { startProxyStack, stopProxyStack, type ProxyStack } from '../proxyStack';
+import {
+  HOST_CODEX_ACCOUNT_ID,
+  startProxyStack,
+  stopProxyStack,
+  type ProxyStack,
+} from '../proxyStack';
 import { envParent, envRoot, repoRoot } from '../testEnvRoot';
 import { artifactsDir, collectDiagnostics } from './diagnostics';
 import { GUEST_USERNAME } from './autoinstall';
@@ -172,6 +177,15 @@ describe('setup-guest-unix end to end on a bare Ubuntu guest', () => {
   it('01-auth-config symlinked the placeholder codex credential into place', async () => {
     const link = await guestCapture(target, 'readlink "$HOME/.codex/auth.json"');
     expect(link.stdout.trim()).toBe(`/mnt/${share.shareName}/auth.json`);
+  });
+
+  it('01-auth-config exposes the host real codex account id through ~/.codex/auth.json', async () => {
+    const { stdout } = await guestCapture(
+      target,
+      `python3 -c "import json,os;print(json.load(open(os.path.expanduser('~/.codex/auth.json')))['tokens']['account_id'])"`,
+    );
+    expect(stdout.trim()).toBe(HOST_CODEX_ACCOUNT_ID);
+    expect(HOST_CODEX_ACCOUNT_ID).toBe('acct-uuid-1234');
   });
 
   it('01-auth-config set the git identity from github-config.txt', async () => {
