@@ -1,6 +1,7 @@
 # Define the command and prerequisite contract
 
 Type: grilling
+Status: claimed
 
 ## Question
 
