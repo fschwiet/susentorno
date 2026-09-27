@@ -4,11 +4,10 @@ import { createHostNetwork } from '../../src/hostNetwork/createHostNetwork';
 import { deleteHostNetwork } from '../../src/hostNetwork/deleteHostNetwork';
 import { detectTakenRanges, findFreeSubnet } from '../../src/hostNetwork/subnetSelection';
 import { DEFAULT_NAT_ADAPTER } from '../../src/runHosting/forwarder';
-import { checkDockerRunning } from '../checkDockerRunning';
-import { checkElevated } from '../checkElevated';
-import { checkGatewayPortsFree } from '../checkGatewayPortsFree';
+import { runPrerequisites } from '../prerequisites';
 import { ensureSshAgentIdentity, removeSshAgentIdentity } from '../sshAgentIdentity';
 import { ensureHarnessKeys } from './harnessKeys';
+import { guestPrerequisites } from './prerequisites';
 import { ensureGoldenImage } from './hyperv/goldenImage';
 import { harnessKeyPath, ISOLATION_NAME, windowsIsoPath } from './hyperv/imageCache';
 import { sweepIsolationResidue } from './hyperv/sweep';
@@ -18,9 +17,7 @@ import { ensureWindowsGoldenImage } from './hyperv/windowsGoldenImage';
 const exec = createRealPowerShellExec();
 
 export async function setup(): Promise<void> {
-  await checkElevated();
-  await checkDockerRunning();
-  await checkGatewayPortsFree();
+  await runPrerequisites(guestPrerequisites);
 
   const keys = await ensureHarnessKeys();
   await ensureSshAgentIdentity(harnessKeyPath);

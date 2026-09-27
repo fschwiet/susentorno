@@ -1,5 +1,6 @@
 import { describe, it } from 'vitest';
 import { cliPrerequisites } from '../cli/prerequisites';
+import { guestPrerequisites } from '../guest/prerequisites';
 import { hostNetworkPrerequisites } from '../host-network/prerequisites';
 import type { Prerequisite } from '../prerequisites';
 import { proxyStackPrerequisites } from '../proxy-stack/prerequisites';
@@ -14,6 +15,7 @@ const tiers: Record<string, readonly Prerequisite[]> = {
   cli: cliPrerequisites,
   'host-network': hostNetworkPrerequisites,
   'proxy-stack': proxyStackPrerequisites,
+  guest: guestPrerequisites,
 };
 
 for (const [tier, prerequisites] of Object.entries(tiers)) {
