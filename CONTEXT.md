@@ -10,6 +10,8 @@ susentorno creates development environments in which coding agents run inside is
 
 **Guest**: An untrusted Windows or Ubuntu virtual machine in which coding agents and development tools run. _Avoid_: Agent, client, sandbox
 
+**Supported guest platform**: A repository-approved tuple of operating-system product, edition, architecture, and OS release against which guest setup is supported. A monthly patch or build and the language or licensing channel of a test fixture are not part of the tuple. _Avoid_: Supported version, verified image
+
 **Setup phase**: The temporary period in which a guest has general network access so its prerequisites and pre-isolation configuration can be installed. _Avoid_: NAT phase, online phase
 
 **Isolated phase**: The normal operating period in which a guest has no general Internet route and reaches external services only through the proxy stack. _Avoid_: Host-only mode, offline phase

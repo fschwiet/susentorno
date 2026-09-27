@@ -21,6 +21,8 @@ Produce an approved, implementation-ready specification for `setup-guest-windows
 
 ## Decisions so far
 
+- [Define the command and prerequisite contract](issues/01-define-command-and-prerequisite-contract.md): `setup-guest-windows` supports an allowlisted Windows 11 Enterprise x64 25H2 platform, paired credential prompts, strict host/guest preflight, and full-flow replay from the Default Switch without rollback.
+
 ## Not yet specified
 
 - Running the complete shipped pre-isolation sequence through a noninteractive PowerShell Direct session may expose assumptions in the current Windows scripts about interactive logons, PATH refresh, package-manager readiness, or reboots. Revisit the scripts after the execution boundary and script-runner semantics are concrete; graduate each demonstrated gap into its own decision ticket.
