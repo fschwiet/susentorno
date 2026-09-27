@@ -6,7 +6,7 @@ import { resolveHostNetworkNames } from '../../src/hostNetwork/hostNetworkNames'
 import { startProxyStack, stopProxyStack, type ProxyStack } from '../proxyStack';
 import { envRoot } from '../testEnvRoot';
 import { artifactsDir } from './diagnostics';
-import { ISOLATION_NAME, windowsIsoPath, WINDOWS_ISO_ENV_VAR } from './hyperv/imageCache';
+import { ISOLATION_NAME } from './hyperv/imageCache';
 import { ensureWindowsCredential } from './hyperv/windowsCredential';
 import {
   createWindowsTestGuest,
@@ -26,14 +26,6 @@ import {
 const exec = createRealPowerShellExec();
 const sharePath = join(envRoot, 'vm-shared-windows');
 const { switchName: internalSwitchName } = resolveHostNetworkNames(ISOLATION_NAME);
-const isoConfigured = windowsIsoPath() !== null;
-
-if (!isoConfigured) {
-  console.log(
-    `guest: skipping windowsFresh — ${WINDOWS_ISO_ENV_VAR} is not set. Point it at an x64 en-us ` +
-      'Windows 11 Enterprise evaluation ISO to enable this role (see testing.md).',
-  );
-}
 
 let stack: ProxyStack;
 let share: TestShare;
@@ -43,7 +35,7 @@ let internalHostIp: string;
 /** The guest's DHCP interface index; every network assertion is scoped to it. */
 let interfaceIndex: string;
 
-describe.skipIf(!isoConfigured)('a fresh Windows guest starting in the isolated phase', () => {
+describe('a fresh Windows guest starting in the isolated phase', () => {
   beforeAll(async () => {
     stack = await startProxyStack({ forward: { isolationName: ISOLATION_NAME } });
     share = await createTestShare(exec, sharePath);

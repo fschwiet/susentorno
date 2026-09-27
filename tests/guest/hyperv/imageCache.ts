@@ -69,12 +69,20 @@ export const WINDOWS_REBUILD_ENV_VAR = 'SUSENTORNO_WINDOWS_IMAGE_REBUILD';
 /**
  * Unlike the Ubuntu ISO, the Windows evaluation cannot be downloaded
  * unattended — it sits behind a registration form yielding a short-lived
- * signed URL. The path is therefore supplied, and its absence skips the role
- * rather than failing the tier.
+ * signed URL. The path is therefore supplied, and it is required: this is the
+ * input to the guest tier's Windows ISO prerequisite (tests/checkWindowsIso.ts),
+ * so an unset variable fails the tier rather than silently skipping a role.
  */
-export function windowsIsoPath(env: NodeJS.ProcessEnv = process.env): string | null {
+export function windowsIsoPath(env: NodeJS.ProcessEnv = process.env): string {
   const value = env[WINDOWS_ISO_ENV_VAR];
-  return value !== undefined && value.trim() !== '' ? value : null;
+  if (value === undefined || value.trim() === '') {
+    throw new Error(
+      `${WINDOWS_ISO_ENV_VAR} is not set. The guest tier requires it: point it at a local path ` +
+        '(not a mapped drive or network share) to an x64 en-us Windows 11 Enterprise evaluation ' +
+        'ISO. See testing.md.',
+    );
+  }
+  return value;
 }
 
 export const windowsGoldenVhdPath = join(imageCacheDir, `${NAME_PREFIX}-windows-golden.vhdx`);

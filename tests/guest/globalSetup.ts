@@ -24,18 +24,9 @@ export async function setup(): Promise<void> {
   await sweepIsolationResidue(exec);
   await ensureGoldenImage(exec, keys);
 
-  // Optional by design: the Windows evaluation ISO cannot be fetched
-  // unattended, so its absence skips the windowsFresh role rather than
-  // failing the tier. See testing.md.
-  if (windowsIsoPath() !== null) {
-    console.log('guest: building/validating the Windows golden image...');
-    await ensureWindowsGoldenImage(exec, ensureWindowsCredential());
-  } else {
-    console.log(
-      'guest: SUSENTORNO_WINDOWS_ISO is not set — skipping the windowsFresh role. ' +
-        'Set it to an x64 en-us Windows 11 Enterprise evaluation ISO to enable it (see testing.md).',
-    );
-  }
+  // The prerequisite list above has already validated the ISO.
+  console.log('guest: building/validating the Windows golden image...');
+  await ensureWindowsGoldenImage(exec, windowsIsoPath(), ensureWindowsCredential());
 
   await deleteHostNetwork({ exec, isolationName: ISOLATION_NAME, homedir: homedir() });
   const subnet = findFreeSubnet(detectTakenRanges());

@@ -19,11 +19,14 @@ describe('windows image cache', () => {
     expect(roleVmName('windowsFresh')).toBe('susentorno-test-windowsFresh');
   });
 
-  it('resolves the ISO path from the environment, or null when unset', () => {
+  it("reads the ISO path the guest tier's Windows ISO prerequisite validates", () => {
     expect(windowsIsoPath({ [WINDOWS_ISO_ENV_VAR]: 'C:\\images\\win.iso' })).toBe(
       'C:\\images\\win.iso',
     );
-    expect(windowsIsoPath({})).toBeNull();
-    expect(windowsIsoPath({ [WINDOWS_ISO_ENV_VAR]: '   ' })).toBeNull();
+  });
+
+  it('fails naming the variable when it is unset or blank, since the ISO is required', () => {
+    expect(() => windowsIsoPath({})).toThrow(WINDOWS_ISO_ENV_VAR);
+    expect(() => windowsIsoPath({ [WINDOWS_ISO_ENV_VAR]: '   ' })).toThrow(WINDOWS_ISO_ENV_VAR);
   });
 });

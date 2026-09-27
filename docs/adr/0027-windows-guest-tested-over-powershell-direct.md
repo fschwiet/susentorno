@@ -6,13 +6,15 @@ The claim is: **a real Windows guest, on a real Hyper-V Internal switch, served 
 
 The harness reaches the guest over **PowerShell Direct**, not SSH. The Ubuntu roles reach their guests across the network under test, which is survivable only because the serial console keeps logging when that network fails; Windows Setup writes nothing to serial, so an in-band transport would make a DHCP failure a black box. PowerShell Direct runs over the VMBus and is unaffected. It also deletes the OpenSSH server, harness keypair, `known_hosts`, and reachability-probe machinery the Ubuntu path needs, and there is no fidelity argument for SSH here because no automated Windows setup path exists to mirror.
 
-Unlike the Ubuntu pipeline, this one is **not bootstrappable from clean**. The Windows Enterprise evaluation sits behind a registration form yielding a short-lived signed URL, so `SUSENTORNO_WINDOWS_ISO` names a locally-supplied ISO and the role self-skips when it is unset. Windows Update runs during the build, which means the image is a function of the calendar and no rebuild is byte-reproducible — a patched baseline was judged worth more than a reproducible one for a guest whose job is to reach the network. The stamp therefore records per-input digests plus a build date, and refuses an image older than 60 days so a time-limited evaluation cannot stay stamp-valid past expiry.
+Unlike the Ubuntu pipeline, this one is **not bootstrappable from clean**. The Windows Enterprise evaluation sits behind a registration form yielding a short-lived signed URL, so `SUSENTORNO_WINDOWS_ISO` names a locally-supplied ISO. It is a required prerequisite of the `guest` tier: when it is unset or not a valid x64 `en-us` image, the tier fails rather than skipping the role. Windows Update runs during the build, which means the image is a function of the calendar and no rebuild is byte-reproducible — a patched baseline was judged worth more than a reproducible one for a guest whose job is to reach the network. The stamp therefore records per-input digests plus a build date, and refuses an image older than 60 days so a time-limited evaluation cannot stay stamp-valid past expiry.
 
 The build ships **no vTPM**. Automatic device encryption requires a TPM; with none present it cannot engage, so it cannot seal the golden volume to the build VM's protector and strand every differencing child behind a recovery prompt. Secure Boot is independent and stays on for role VMs with the `MicrosoftWindows` template. This diverges from `setup-guest.md`, which has real users enable a vTPM; the divergence is accepted because nothing in this role's test surface is TPM-dependent.
 
 ## Status
 
 accepted (2026-08-18)
+
+2026-09-27: the ISO is now required; a skipped `windowsFresh` role went unnoticed in an agentic run.
 
 ## Considered Options
 

@@ -3,6 +3,7 @@ import { checkDockerRunning } from '../checkDockerRunning';
 import { checkElevated } from '../checkElevated';
 import { checkHypervAvailable } from '../checkHypervAvailable';
 import { checkGatewayPortsFree } from '../checkGatewayPortsFree';
+import { checkWindowsIso } from '../checkWindowsIso';
 import type { Prerequisite } from '../prerequisites';
 import { ensureSshAgentIdentity, removeSshAgentIdentity } from '../sshAgentIdentity';
 import { ensureHarnessKeys } from './harnessKeys';
@@ -24,4 +25,5 @@ export const guestPrerequisites: readonly Prerequisite[] = [
   { name: 'Docker Compose available', check: checkDockerComposeAvailable },
   { name: 'gateway ports free', check: checkGatewayPortsFree },
   { name: 'ssh-agent', check: checkSshAgent },
+  { name: 'Windows ISO valid', check: checkWindowsIso },
 ];

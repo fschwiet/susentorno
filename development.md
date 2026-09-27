@@ -14,7 +14,8 @@ Requirements and setup for running susentorno's own test suite. See [testing.md]
   Start-Service ssh-agent
   ```
   Run `pnpm test` from **PowerShell**, not Git Bash: Git Bash resolves `ssh-add`/`ssh` to Git for Windows' OpenSSH, which wants `SSH_AUTH_SOCK` and cannot see the service's agent at all. If you develop susentorno from inside a Windows guest, note that `templates/vm-shared-windows/` no longer enables this service for you — it was removed as a preference under [ADR-0024](docs/adr/0024-shipped-guest-templates-carry-only-requirements.md). Run the two commands above manually, or add them to your own `.susentorno/pre-scripts/`.
-- **~10 GB free disk**. The guest tier caches an Ubuntu ISO and a golden VM image in `.image-cache/`, and builds it on the first run (~20–30 minutes). Both are gitignored; delete the directory to force a rebuild.
+- **`SUSENTORNO_WINDOWS_ISO`** set to a local path (not a mapped drive or network share) of an x64 `en-us` Windows 11 Enterprise evaluation ISO. The guest tier's `windowsFresh` role requires it; see [testing.md](testing.md).
+- **~60–70 GB free disk**. The guest tier caches an Ubuntu ISO and golden Ubuntu and Windows VM images in `.image-cache/`, and builds them on the first run (~20–30 minutes for Ubuntu, 60–120 minutes for Windows). All are gitignored; delete the directory to force a rebuild.
 - No WSL2, KVM, or nested virtualization is required. Test startup gates verify each prerequisite and name the fix for whatever is missing.
 
 ## Verification pipeline

@@ -21,8 +21,6 @@ import {
   windowsBuildScreenshotDir,
   windowsGoldenStampPath,
   windowsGoldenVhdPath,
-  windowsIsoPath,
-  WINDOWS_ISO_ENV_VAR,
   WINDOWS_REBUILD_ENV_VAR,
 } from './imageCache';
 import {
@@ -165,24 +163,16 @@ async function waitForOff(exec: PowerShellExec): Promise<void> {
   );
 }
 
+/**
+ * `isoPath` is the installation ISO already validated by the guest tier's
+ * Windows ISO prerequisite (tests/checkWindowsIso.ts).
+ */
 export async function ensureWindowsGoldenImage(
   exec: PowerShellExec,
+  isoPath: string,
   credential: { username: string; password: string },
   opts: { force?: boolean } = {},
 ): Promise<string> {
-  const isoPath = windowsIsoPath();
-  if (isoPath === null) {
-    throw new WindowsImageError(
-      `windowsGoldenImage: ${WINDOWS_ISO_ENV_VAR} is not set. Point it at an x64 en-us Windows 11 ` +
-        'Enterprise evaluation ISO (see testing.md).',
-    );
-  }
-  if (!existsSync(isoPath)) {
-    throw new WindowsImageError(
-      `windowsGoldenImage: ${WINDOWS_ISO_ENV_VAR} points at '${isoPath}', which does not exist.`,
-    );
-  }
-
   const provisioningScript = buildProvisioningScript();
   const answerXml = buildAutounattendXml({ password: credential.password });
   const isoSha256 = await fileSha256(isoPath);

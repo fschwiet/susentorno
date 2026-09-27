@@ -1,6 +1,6 @@
 /**
  * Guard for the Windows-only prerequisites (elevation, Hyper-V, Windows
- * Firewall). On any other platform, such as inside a susentorno Linux guest,
+ * Firewall, the Windows ISO). On any other platform, such as inside a susentorno Linux guest,
  * they cannot be met, so they fail with this message rather than with an opaque
  * PowerShell error, and never pass or skip: the preflight answers "can every
  * tier run here?", and here the answer is no.
