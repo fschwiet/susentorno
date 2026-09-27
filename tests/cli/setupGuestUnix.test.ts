@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { checkElevated } from '../checkElevated';
 
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
+const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
+const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
 
 // setup-guest-unix itself requires elevated permissions
 beforeAll(checkElevated);
@@ -14,7 +16,11 @@ beforeAll(checkElevated);
 let dir: string;
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'susentorno-setup-guest-unix-'));
-  await execa('node', [cliPath, 'init'], { cwd: dir });
+  await execa(
+    'node',
+    [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
+    { cwd: dir },
+  );
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
