@@ -1,6 +1,7 @@
 # Prototype the secure PowerShell Direct boundary
 
 Type: prototype
+Status: claimed
 Blocked by: 01
 
 ## Question
