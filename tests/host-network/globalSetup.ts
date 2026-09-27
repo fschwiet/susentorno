@@ -1,5 +1,6 @@
-import { checkElevated } from '../checkElevated';
+import { runPrerequisites } from '../prerequisites';
+import { hostNetworkPrerequisites } from './prerequisites';
 
 export default async function setup() {
-  await checkElevated();
+  await runPrerequisites(hostNetworkPrerequisites);
 }

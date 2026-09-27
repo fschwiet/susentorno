@@ -1,6 +1,6 @@
 # Test tiers
 
-susentorno's automated tests are divided into four tiers: `unit`, `cli`, `proxy-stack`, and `guest`. Each tier is named for the **highest observable interface it crosses**—its test surface—not for its size or importance. This makes both test placement and runtime prerequisites predictable.
+susentorno's automated tests are divided into five tiers: `unit`, `cli`, `host-network`, `proxy-stack`, and `guest`. Each tier is named for the **highest observable interface it crosses**—its test surface—not for its size or importance. This makes both test placement and runtime prerequisites predictable.
 
 The tier names use the project's domain vocabulary (see [CONTEXT.md](CONTEXT.md)). In particular, `guest` names the domain actor whose behavior is observed, not the virtualization mechanism used by the harness.
 
@@ -53,7 +53,15 @@ Install the project's Node dependencies before running any tier.
 
 See [development.md](development.md) for the guest-tier prerequisites. The guest tier creates and refreshes its cached golden image automatically at `.image-cache/`; the first run takes longer. It is gitignored and repo-local because live tiers act on one shared host network adapter and cannot safely run from parallel worktrees.
 
-A missing live-tier prerequisite is an environmental failure, not a product failure. Both live tiers fail fast when Docker is unavailable or `run-hosting` would conflict with their shared proxy stack. The guest tier also checks for an elevated shell, free gateway ports, and an `ssh-agent` that the SSH it will actually invoke can see before building an image or booting anything.
+A missing live-tier prerequisite is an environmental failure, not a product failure. Run `pnpm test:preflight` to see every missing prerequisite at once (see [The preflight suite](#the-preflight-suite)). Both live tiers fail fast when Docker is unavailable or `run-hosting` would conflict with their shared proxy stack. The guest tier also checks for an elevated shell, free gateway ports, and an `ssh-agent` that the SSH it will actually invoke can see before building an image or booting anything.
+
+## The preflight suite
+
+The preflight is a **preflight suite, not a tier**. It exercises no product surface; it checks whether this host can run each tier. `pnpm test:preflight` runs every tier's prerequisites in a few seconds and reports one test per prerequisite, grouped by tier. Unlike a tier, it does not stop at the first failure, so one run lists everything to fix. A tier with no prerequisites appears as an empty, skipped group.
+
+Each tier's prerequisites are an ordered list of `{ name, check }` entries (see `tests/prerequisites.ts`), exported from that tier's `prerequisites.ts`, such as `tests/proxy-stack/prerequisites.ts`. `check` is an async function that resolves when the prerequisite is met and throws an error whose message names the fix when it is not. The tier's `globalSetup` runs the same list in order and stops at the first failure, so the preflight passing means the tier will get past its own checks.
+
+To add a prerequisite, add an entry to the tier's list. Both the tier's `globalSetup` and the preflight pick it up with no other edit, and removing an entry removes its preflight test. A prerequisite shared by several tiers is listed in each tier that needs it. The tier → list map in `tests/preflight/preflight.test.ts` changes only when a tier is added. The suite's config is `vitest.preflight.config.ts`, and its tests run serially because several checks touch shared host state.
 
 ## Running an individual test file
 
@@ -80,6 +88,6 @@ The `windowsFresh` role is the one part of the tier that is opt-in. The Windows 
 
 ## Test support and residue
 
-Support code used by more than one tier lives at the root of `tests/`, including `proxyStack.ts`, `testEnvRoot.ts`, `rmEnvRoot.ts`, `checkDockerRunning.ts`, `checkNoRunningProxy.ts`, `checkElevated.ts`, `checkGatewayPortsFree.ts`, `sshAgentIdentity.ts`, and `tests/fixtures/`. Tier-specific setup and harness code stays in its tier directory, such as `tests/proxy-stack/globalSetup.ts` and `tests/guest/hyperv/`.
+Support code used by more than one tier lives at the root of `tests/`, including `proxyStack.ts`, `testEnvRoot.ts`, `rmEnvRoot.ts`, `checkDockerRunning.ts`, `checkNoRunningProxy.ts`, `checkElevated.ts`, `checkGatewayPortsFree.ts`, `sshAgentIdentity.ts`, `prerequisites.ts`, and `tests/fixtures/`. Tier-specific setup and harness code stays in its tier directory, such as `tests/proxy-stack/globalSetup.ts` and `tests/guest/hyperv/`.
 
 The proxy-stack and guest suites create their throwaway environment under `test-results/.susentorno`. They do not use a repository-root `.susentorno`. A root `.susentorno` may be a manually created, long-running environment and must not be treated as disposable test residue.
