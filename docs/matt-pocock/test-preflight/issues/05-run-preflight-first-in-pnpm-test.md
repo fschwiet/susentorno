@@ -6,7 +6,7 @@ Parent: [spec](../spec.md)
 
 **Blocked by:** 01
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] `pnpm test` runs the preflight before format, lint, typecheck, and the tiers, and stops if it fails.
 - [x] The Verification Pipeline section of `development.md` (the source of truth for step order) lists the preflight first, and `testing.md`'s "Default verification pipeline" section agrees.

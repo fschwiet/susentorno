@@ -14,7 +14,7 @@ The preflight is a suite, not a tier. Document it that way.
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] A `test:preflight` package script runs a dedicated preflight Vitest config, with test files running serially.
 - [x] The preflight reports `unit`, `cli`, `host-network`, and `proxy-stack` groups. `unit` and `cli` have no tests yet; `host-network` and `proxy-stack` have one test per existing check, named after the entry.

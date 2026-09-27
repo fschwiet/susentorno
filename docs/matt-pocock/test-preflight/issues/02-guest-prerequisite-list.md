@@ -8,7 +8,7 @@ The `ssh-agent` entry reuses existing harness code, with no new ssh code. It ens
 
 **Blocked by:** 01
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] The preflight reports a `guest` group with entries for elevated shell, Docker running, gateway ports free, and `ssh-agent`.
 - [x] After `pnpm test:preflight`, `ssh-add -l` lists the same identities it listed beforehand. The harness key file may now exist on disk.

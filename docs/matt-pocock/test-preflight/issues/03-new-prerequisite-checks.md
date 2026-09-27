@@ -12,7 +12,7 @@ Also, Windows-only checks (elevation, Hyper-V, node firewall) fail on a non-`win
 
 **Blocked by:** 02
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] The preflight shows a Hyper-V entry under `host-network` and `guest`, and a Docker Compose entry under `proxy-stack` and `guest`.
 - [x] With `vmms` stopped or absent, the Hyper-V entry fails with a message naming the fix.

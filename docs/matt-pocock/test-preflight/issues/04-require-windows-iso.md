@@ -20,7 +20,7 @@ Once the prerequisite exists, remove the optional behavior:
 
 **Blocked by:** 02
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] Unit tests cover the metadata interpretation: pass for an x64 `en-us` image, and a failure naming the actual architecture and language otherwise (for example, arm64, or an `en-gb` language).
 - [x] The existing unit test for the helper that reads `SUSENTORNO_WINDOWS_ISO` is updated for its new role as the prerequisite's input rather than an on/off switch.
