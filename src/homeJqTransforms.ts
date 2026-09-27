@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { parse } from 'yaml';
+import { writeFileAtomic } from './writeFileAtomic';
 
 export interface TransformEntry {
   transform: string;
@@ -149,12 +150,9 @@ export function applyTransforms(opts: {
       continue;
     }
     mkdirSync(dirname(target), { recursive: true });
-    const tmp = `${target}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     try {
-      writeFileSync(tmp, r.stdout);
-      renameSync(tmp, target);
+      writeFileAtomic(target, r.stdout);
     } catch (writeError) {
-      rmSync(tmp, { force: true });
       results.push({
         transform: entry.transform,
         target,

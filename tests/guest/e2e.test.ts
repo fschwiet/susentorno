@@ -185,7 +185,6 @@ describe('setup-guest-unix end to end on a bare Ubuntu guest', () => {
       `python3 -c "import json,os;print(json.load(open(os.path.expanduser('~/.codex/auth.json')))['tokens']['account_id'])"`,
     );
     expect(stdout.trim()).toBe(HOST_CODEX_ACCOUNT_ID);
-    expect(HOST_CODEX_ACCOUNT_ID).toBe('acct-uuid-1234');
   });
 
   it('01-auth-config set the git identity from github-config.txt', async () => {

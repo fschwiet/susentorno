@@ -13,11 +13,13 @@ export interface CredentialChannelConfig {
   maxAttempts: number;
   refreshEnabled: boolean;
   /**
-   * Fires once on the startup read, and again whenever a later read sees an account id
-   * different from the last one this hook was given. Never fires on a token/expiry-only
-   * change or a failed read. The codex channel uses it to rewrite the shared auth.json.
+   * Brings anything outside the proxy that carries the account id in line with the host.
+   * Called on the startup read, and again whenever a later read sees an account id
+   * different from the last one synced successfully. Never called on a token/expiry-only
+   * change or a failed read. Returns false on failure so the next read retries. The codex
+   * channel uses it to rewrite the Codex CLI's placeholder mounts.
    */
-  onAccountIdChanged?: (accountId: string | undefined) => void;
+  syncAccountId?: () => boolean;
 }
 
 export interface CredentialChannelDeps {
@@ -49,7 +51,7 @@ export class CredentialChannel {
 
   private lastAppliedToken: string | null = null;
   private lastAppliedAccountId: string | undefined;
-  private lastNotifiedAccountId: string | undefined;
+  private lastSyncedAccountId: string | undefined;
   private lastSeenExpiresAt: number | null = null;
   private lastReadCreds: Credentials | null = null;
   private pendingToken: string | null = null;
@@ -75,7 +77,7 @@ export class CredentialChannel {
     this.pendingAccountId = creds.accountId;
     this.lastReadCreds = creds;
     this.lastSeenExpiresAt = creds.expiresAt;
-    this.notifyAccountId(creds.accountId);
+    this.syncAccountId(creds.accountId);
     return creds;
   }
 
@@ -100,10 +102,10 @@ export class CredentialChannel {
       this.pendingAccountId = creds.accountId;
       restartNeeded = true;
     }
-    // Compared against what the hook last received rather than what the proxy last
-    // committed: the shared auth.json rewrite doesn't wait on a successful proxy swap,
-    // so a failed swap doesn't cause repeated identical rewrites.
-    if (creds.accountId !== this.lastNotifiedAccountId) this.notifyAccountId(creds.accountId);
+    // Compared against the last successful sync rather than what the proxy last
+    // committed: the sync doesn't wait on a proxy swap, so a failed swap doesn't cause
+    // repeated identical syncs, while a failed sync is retried on the next read.
+    if (creds.accountId !== this.lastSyncedAccountId) this.syncAccountId(creds.accountId);
     if (advanced) {
       // Refresh landed: reset failure tracking and stop awaiting an outcome.
       this.consecutiveFailures = 0;
@@ -142,9 +144,8 @@ export class CredentialChannel {
     }
   }
 
-  private notifyAccountId(accountId: string | undefined): void {
-    this.lastNotifiedAccountId = accountId;
-    this.config.onAccountIdChanged?.(accountId);
+  private syncAccountId(accountId: string | undefined): void {
+    if (this.config.syncAccountId?.() === true) this.lastSyncedAccountId = accountId;
   }
 
   private planConfig() {

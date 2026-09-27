@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { rewriteSharedCodexAuth } from '../../src/runHosting/rewriteSharedCodexAuth';
+import { rewriteCodexPlaceholderMounts } from '../../src/runHosting/rewriteCodexPlaceholderMounts';
 import { sanitizeCodexCredentials } from '../../src/sanitizeCodexCredentials';
 
 const fixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
@@ -24,9 +24,9 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe('rewriteSharedCodexAuth', () => {
-  it('writes what init writes to every shared target, leaving no temp file behind', () => {
-    rewriteSharedCodexAuth(fixture, targets);
+describe('rewriteCodexPlaceholderMounts', () => {
+  it('writes what init writes to every mount, leaving no temp file behind', () => {
+    rewriteCodexPlaceholderMounts(fixture, targets);
     const expected = sanitizeCodexCredentials(readFileSync(fixture, 'utf8'));
     for (const target of targets) {
       expect(readFileSync(target, 'utf8')).toBe(expected);
@@ -36,10 +36,10 @@ describe('rewriteSharedCodexAuth', () => {
     expect(readdirSync(join(dir, 'windows'))).toEqual(['auth.json']);
   });
 
-  it('throws and leaves the shared files untouched when the host file cannot be sanitized', () => {
+  it('throws and leaves the mounts untouched when the host file cannot be sanitized', () => {
     const apiKeyMode = join(dir, 'host-auth.json');
     writeFileSync(apiKeyMode, JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'sk-real' }));
-    expect(() => rewriteSharedCodexAuth(apiKeyMode, targets)).toThrow(/chatgpt-mode/);
+    expect(() => rewriteCodexPlaceholderMounts(apiKeyMode, targets)).toThrow(/chatgpt-mode/);
     for (const target of targets) expect(readFileSync(target, 'utf8')).toBe('previous contents\n');
   });
 });
