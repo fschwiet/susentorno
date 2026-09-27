@@ -11,7 +11,7 @@ The proxy stack's `chatgpt.com` gate is unchanged.
 
 **Blocked by:** 01 (`init` writes the real ChatGPT account id into the Codex placeholder mount)
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] `unit`: the credential channel test asserts the hook fires on the startup read; fires when a later read has a different account id; does not fire when only the token or expiry changes; does not fire when a read fails.
 - [x] `proxy-stack`: the stack lifecycle test asserts that starting run-hosting against an environment whose shared `auth.json` holds the placeholder account id rewrites both shared copies with the host's account id.

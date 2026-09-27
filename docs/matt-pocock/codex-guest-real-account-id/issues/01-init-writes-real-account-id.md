@@ -6,7 +6,7 @@ The Codex auth sanitizer passes `tokens.account_id` through unchanged. It still 
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] `unit`: the sanitizer test asserts `account_id` is preserved, the three tokens become placeholders, and non-chatgpt-mode input is still refused.
 - [x] `cli`: the `init` test asserts both shared `auth.json` files (Linux and Windows) contain the fixture's real `tokens.account_id` and placeholder tokens.
