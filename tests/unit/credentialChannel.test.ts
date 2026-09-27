@@ -120,6 +120,72 @@ describe('credential channel lifecycle', () => {
     });
   });
 
+  describe('account-id-changed hook', () => {
+    it('fires once on the startup read with the host account id', () => {
+      const onAccountIdChanged = vi.fn();
+      const { channel } = makeChannel(
+        { accessToken: 'A', expiresAt: 60 * MIN, accountId: 'acct-1' },
+        { onAccountIdChanged },
+      );
+      channel.startupRead();
+      expect(onAccountIdChanged).toHaveBeenCalledTimes(1);
+      expect(onAccountIdChanged).toHaveBeenCalledWith('acct-1');
+    });
+
+    it('fires again when a later read has a different account id', () => {
+      const onAccountIdChanged = vi.fn();
+      const { channel, creds } = makeChannel(
+        { accessToken: 'A', expiresAt: 60 * MIN, accountId: 'acct-1' },
+        { onAccountIdChanged },
+      );
+      channel.startupRead();
+      channel.commit();
+      onAccountIdChanged.mockClear();
+
+      creds.value = { accessToken: 'A', expiresAt: 60 * MIN, accountId: 'acct-2' };
+      channel.prepareRestart();
+      expect(onAccountIdChanged).toHaveBeenCalledTimes(1);
+      expect(onAccountIdChanged).toHaveBeenCalledWith('acct-2');
+    });
+
+    it('does not fire when only the token or expiry changes', () => {
+      const onAccountIdChanged = vi.fn();
+      const { channel, creds } = makeChannel(
+        { accessToken: 'A', expiresAt: 60 * MIN, accountId: 'acct-1' },
+        { onAccountIdChanged },
+      );
+      channel.startupRead();
+      channel.commit();
+      onAccountIdChanged.mockClear();
+
+      creds.value = { accessToken: 'B', expiresAt: 60 * MIN, accountId: 'acct-1' };
+      channel.prepareRestart();
+      channel.commit();
+      creds.value = { accessToken: 'B', expiresAt: 90 * MIN, accountId: 'acct-1' };
+      channel.prepareRestart();
+      expect(onAccountIdChanged).not.toHaveBeenCalled();
+    });
+
+    it('does not fire when a read fails', () => {
+      const onAccountIdChanged = vi.fn();
+      const { channel, creds } = makeChannel(
+        { accessToken: 'A', expiresAt: 60 * MIN, accountId: 'acct-1' },
+        { onAccountIdChanged },
+      );
+      creds.value = null;
+      channel.startupRead();
+      expect(onAccountIdChanged).not.toHaveBeenCalled();
+
+      creds.value = { accessToken: 'A', expiresAt: 60 * MIN, accountId: 'acct-1' };
+      channel.startupRead();
+      channel.commit();
+      onAccountIdChanged.mockClear();
+      creds.value = null;
+      channel.prepareRestart();
+      expect(onAccountIdChanged).not.toHaveBeenCalled();
+    });
+  });
+
   describe('refresh nudging', () => {
     it('exits via onExhausted after maxAttempts consecutive no-advance nudges', async () => {
       const { channel, mocks } = makeChannel({ accessToken: 'A', expiresAt: 1 * MIN });

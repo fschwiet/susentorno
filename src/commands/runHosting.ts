@@ -7,6 +7,7 @@ import { readCodexCredentials } from '../runHosting/readCodexCredentials';
 import { writePlainSecret, writeSecret } from '../runHosting/writeSecret';
 import { nudgeRefresh } from '../runHosting/nudgeRefresh';
 import { nudgeCodexRefresh } from '../runHosting/nudgeCodexRefresh';
+import { rewriteSharedCodexAuth } from '../runHosting/rewriteSharedCodexAuth';
 import { watchFile } from '../runHosting/watchFile';
 import { runHostingLoop, type RunHostingDeps } from '../runHosting/runHostingLoop';
 import type { CredentialChannelConfig } from '../runHosting/credentialChannel';
@@ -466,6 +467,24 @@ export function registerRunHosting(program: Command): void {
           retryIntervalMs,
           maxAttempts,
           refreshEnabled: options.refresh,
+          // Keep the guest's tokens.account_id (checked by Codex >=0.156 against routing
+          // discovery) matching the host's. A failed rewrite is reported but never blocks
+          // header injection: the proxy stays authoritative for chatgpt-account-id.
+          onAccountIdChanged: () => {
+            try {
+              rewriteSharedCodexAuth(
+                options.codexCredentials,
+                paths.vmSharedTargets.map((target) => target.authJson),
+              );
+              console.log(
+                "run-hosting: updated the shared codex auth.json with the host's account id",
+              );
+            } catch (err) {
+              console.error(
+                `run-hosting: could not rewrite the shared codex auth.json: ${String(err)}`,
+              );
+            }
+          },
         };
 
         try {

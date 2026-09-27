@@ -10,6 +10,12 @@ import { join } from 'node:path';
 import { startMockUpstream, stopMockUpstream, type MockUpstream } from './mockUpstream';
 import { envParent, envRoot } from '../testEnvRoot';
 import { buildJwt } from '../../src/jwt';
+import { envPaths } from '../../src/envPaths';
+import { sanitizeCodexCredentials } from '../../src/sanitizeCodexCredentials';
+import {
+  CODEX_PLACEHOLDER_ACCESS_TOKEN,
+  CODEX_PLACEHOLDER_ACCOUNT_ID,
+} from '../../src/codexPlaceholder';
 
 const cliPath = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
 const allowListFixture = fileURLToPath(new URL('./fixtures/allow-list.txt', import.meta.url));
@@ -18,6 +24,8 @@ const blockListFixture = fileURLToPath(new URL('./fixtures/block-list.txt', impo
 const credentialsFixture = fileURLToPath(new URL('../fixtures/credentials.json', import.meta.url));
 const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.url));
 const proxyDir = join(envRoot, 'proxy');
+
+const sharedAuthJsonPaths = envPaths(envParent).vmSharedTargets.map((t) => t.authJson);
 
 const HTTPS_PORT = 18543;
 const HTTP_PORT = 18180;
@@ -43,7 +51,7 @@ function writeCredentials(token: string): void {
   );
 }
 
-function writeCodexAuthFile(path: string, accessToken: string): void {
+function writeCodexAuthFile(path: string, accessToken: string, accountId = 'acct-itest'): void {
   writeFileSync(
     path,
     JSON.stringify({
@@ -52,11 +60,46 @@ function writeCodexAuthFile(path: string, accessToken: string): void {
         id_token: buildJwt({ exp: Math.floor(Date.now() / 1000) + 86400 }),
         access_token: accessToken,
         refresh_token: 'itest-codex-refresh',
-        account_id: 'acct-itest',
+        account_id: accountId,
       },
       auth_mode: 'chatgpt',
     }),
   );
+}
+
+/** Poll until every shared auth.json carries `accountId`, or fail with their contents. */
+async function waitForSharedAccountId(accountId: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const ids = sharedAuthJsonPaths.map((p) => {
+      try {
+        return (JSON.parse(readFileSync(p, 'utf8')) as { tokens: { account_id: string } }).tokens
+          .account_id;
+      } catch {
+        return undefined; // mid-write or unreadable: keep polling
+      }
+    });
+    if (ids.every((id) => id === accountId)) return;
+    if (Date.now() > deadline) {
+      throw new Error(
+        `timed out waiting for shared auth.json account id '${accountId}' (saw ${JSON.stringify(ids)})\n` +
+          `--- run-hosting output ---\n${stdoutLines.join('\n')}`,
+      );
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
+
+/** Both shared copies must be exactly what `init` would write for the host's auth.json. */
+function expectSharedAuthJsonMatchesHost(accountId: string): void {
+  const expected = sanitizeCodexCredentials(readFileSync(codexCredentialsPath, 'utf8'));
+  for (const p of sharedAuthJsonPaths) {
+    const shared = readFileSync(p, 'utf8');
+    const tokens = (JSON.parse(shared) as { tokens: Record<string, string> }).tokens;
+    expect(tokens.account_id).toBe(accountId);
+    expect(tokens.access_token).toBe(CODEX_PLACEHOLDER_ACCESS_TOKEN);
+    expect(shared).toBe(expected);
+  }
 }
 
 async function waitForLine(needle: string, timeoutMs: number, fromIndex = 0): Promise<number> {
@@ -97,6 +140,14 @@ beforeAll(async () => {
   copyFileSync(authListFixture, join(proxyDir, 'auth-list.txt'));
   copyFileSync(blockListFixture, join(proxyDir, 'block-list.txt'));
   await execa('node', [cliPath, 'generate-ca'], { cwd: envParent });
+
+  // Put the shares back in the state an environment created before init kept the real
+  // account id was left in: the placeholder id. run-hosting's startup must migrate it.
+  for (const p of sharedAuthJsonPaths) {
+    const parsed = JSON.parse(readFileSync(p, 'utf8')) as { tokens: { account_id: string } };
+    parsed.tokens.account_id = CODEX_PLACEHOLDER_ACCOUNT_ID;
+    writeFileSync(p, JSON.stringify(parsed, null, 2) + '\n');
+  }
 
   proxyProc = execa(
     'node',
@@ -155,4 +206,18 @@ describe('proxy stack lifecycle & replacement', () => {
       'Bearer token-again',
     );
   }, 200000);
+
+  it("rewrites both shared auth.json copies with the host's account id at startup", () => {
+    expectSharedAuthJsonMatchesHost('acct-itest');
+  });
+
+  it("rewrites both shared auth.json copies when the host's account id changes", async () => {
+    writeCodexAuthFile(
+      codexCredentialsPath,
+      buildJwt({ exp: Math.floor(Date.now() / 1000) + 86400 }),
+      'acct-itest-switched',
+    );
+    await waitForSharedAccountId('acct-itest-switched', 90000);
+    expectSharedAuthJsonMatchesHost('acct-itest-switched');
+  }, 120000);
 });

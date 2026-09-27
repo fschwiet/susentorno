@@ -34,6 +34,9 @@ ln -sfn "${dir}/credentials.json" "$HOME/.claude/.credentials.json"
 
 ## --- Codex placeholder credential ---
 
+# Placeholder tokens plus the host's real ChatGPT account id (Codex >=0.156 needs it).
+# run-hosting rewrites the shared auth.json when the host's account id changes, and
+# this symlink tracks the share automatically: no re-run needed after a workspace switch.
 mkdir -p "$HOME/.codex"
 ln -sfn "${dir}/auth.json" "$HOME/.codex/auth.json"
 

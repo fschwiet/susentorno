@@ -36,6 +36,9 @@ Copy-Item -Force (Join-Path $shareRoot 'credentials.json') (Join-Path $claudeDir
 
 # --- Codex placeholder credential ---
 
+# Placeholder tokens plus the host's real ChatGPT account id (Codex >=0.156 needs it).
+# run-hosting rewrites the shared auth.json when the host's account id changes, but this
+# is a copy: re-run this script after a host workspace switch to refresh the account id.
 $codexDir = Join-Path $env:USERPROFILE '.codex'
 New-Item -ItemType Directory -Force -Path $codexDir | Out-Null
 Copy-Item -Force (Join-Path $shareRoot 'auth.json') (Join-Path $codexDir 'auth.json')

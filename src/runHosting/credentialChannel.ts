@@ -12,6 +12,12 @@ export interface CredentialChannelConfig {
   retryIntervalMs: number;
   maxAttempts: number;
   refreshEnabled: boolean;
+  /**
+   * Fires once on the startup read, and again whenever a later read sees an account id
+   * different from the last one this hook was given. Never fires on a token/expiry-only
+   * change or a failed read. The codex channel uses it to rewrite the shared auth.json.
+   */
+  onAccountIdChanged?: (accountId: string | undefined) => void;
 }
 
 export interface CredentialChannelDeps {
@@ -43,6 +49,7 @@ export class CredentialChannel {
 
   private lastAppliedToken: string | null = null;
   private lastAppliedAccountId: string | undefined;
+  private lastNotifiedAccountId: string | undefined;
   private lastSeenExpiresAt: number | null = null;
   private lastReadCreds: Credentials | null = null;
   private pendingToken: string | null = null;
@@ -68,6 +75,7 @@ export class CredentialChannel {
     this.pendingAccountId = creds.accountId;
     this.lastReadCreds = creds;
     this.lastSeenExpiresAt = creds.expiresAt;
+    this.notifyAccountId(creds.accountId);
     return creds;
   }
 
@@ -92,6 +100,10 @@ export class CredentialChannel {
       this.pendingAccountId = creds.accountId;
       restartNeeded = true;
     }
+    // Compared against what the hook last received rather than what the proxy last
+    // committed: the shared auth.json rewrite doesn't wait on a successful proxy swap,
+    // so a failed swap doesn't cause repeated identical rewrites.
+    if (creds.accountId !== this.lastNotifiedAccountId) this.notifyAccountId(creds.accountId);
     if (advanced) {
       // Refresh landed: reset failure tracking and stop awaiting an outcome.
       this.consecutiveFailures = 0;
@@ -128,6 +140,11 @@ export class CredentialChannel {
       clearTimeout(this.timer);
       this.timer = null;
     }
+  }
+
+  private notifyAccountId(accountId: string | undefined): void {
+    this.lastNotifiedAccountId = accountId;
+    this.config.onAccountIdChanged?.(accountId);
   }
 
   private planConfig() {

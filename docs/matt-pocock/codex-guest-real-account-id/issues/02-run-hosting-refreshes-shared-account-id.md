@@ -11,10 +11,10 @@ The proxy stack's `chatgpt.com` gate is unchanged.
 
 **Blocked by:** 01 (`init` writes the real ChatGPT account id into the Codex placeholder mount)
 
-**Status:** ready-for-agent
+**Status:** ready-for-review
 
-- [ ] `unit`: the credential channel test asserts the hook fires on the startup read; fires when a later read has a different account id; does not fire when only the token or expiry changes; does not fire when a read fails.
-- [ ] `proxy-stack`: the stack lifecycle test asserts that starting run-hosting against an environment whose shared `auth.json` holds the placeholder account id rewrites both shared copies with the host's account id.
-- [ ] `proxy-stack`: the stack lifecycle test asserts that after the host `auth.json`'s `account_id` changes, both shared copies are rewritten with the new id.
-- [ ] The shared-file rewrite is atomic, and a rewrite failure doesn't stop credential injection.
-- [ ] The Codex sections of the guest `01-auth-config` post-scripts get a comment saying that re-running the script refreshes the account id after a host workspace switch (Windows) or that it tracks the share automatically (Linux).
+- [x] `unit`: the credential channel test asserts the hook fires on the startup read; fires when a later read has a different account id; does not fire when only the token or expiry changes; does not fire when a read fails.
+- [x] `proxy-stack`: the stack lifecycle test asserts that starting run-hosting against an environment whose shared `auth.json` holds the placeholder account id rewrites both shared copies with the host's account id.
+- [x] `proxy-stack`: the stack lifecycle test asserts that after the host `auth.json`'s `account_id` changes, both shared copies are rewritten with the new id.
+- [x] The shared-file rewrite is atomic, and a rewrite failure doesn't stop credential injection.
+- [x] The Codex sections of the guest `01-auth-config` post-scripts get a comment saying that re-running the script refreshes the account id after a host workspace switch (Windows) or that it tracks the share automatically (Linux).
