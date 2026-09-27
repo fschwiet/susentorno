@@ -80,7 +80,7 @@ Never use `npx` or `pnpx` to invoke `vitest` or other project tooling. `npx` hap
 
 ## Default verification pipeline
 
-`pnpm test` runs formatting, linting, type checking, the `unit` tier, a production build, the `cli` tier, the `proxy-stack` tier, and the `guest` tier, in fail-fast order. The Verification Pipeline section of [development.md](development.md) is the source of truth for the exact step order.
+`pnpm test` runs the preflight suite first, then formatting, linting, type checking, the `unit` tier, a production build, the `cli` tier, the `host-network` tier, the `proxy-stack` tier, and the `guest` tier, in fail-fast order. An unready host therefore fails in seconds, with every missing prerequisite listed, before any other step runs. The Verification Pipeline section of [development.md](development.md) is the source of truth for the exact step order.
 
 The `guest` tier's prerequisites (an elevated shell, Hyper-V, Docker, `ssh-agent`, and the Windows ISO — see [development.md](development.md)) are therefore required for any full `pnpm test` run, not just for working on `templates/vm-shared-linux/` directly. Guest boots, a reboot through isolation, and the e2e file's real package installs take minutes each — expect `pnpm test` to be slow.
 
