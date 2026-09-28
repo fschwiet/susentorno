@@ -24,7 +24,7 @@ Parse the slug from the portion between `NN-` and `.ps1`. Before starting the pr
 
 ### Per-step process contract
 
-Invoke each step through one fresh `WindowsGuestExecutor` request. The executor's already-settled guest child process supplies Windows PowerShell 5.1 with `-NoProfile -NonInteractive -ExecutionPolicy Bypass`; no persistent execution-policy setting is changed. PowerShell Direct must provide the development user's elevated administrative token, including for steps without `#Requires -RunAsAdministrator`.
+Invoke each step through one fresh `WindowsGuestExecutor` request. The executor's already-settled guest child process supplies Windows PowerShell 5.1 with `-NoProfile -NonInteractive -ExecutionPolicy Bypass`; no persistent execution-policy setting is changed. PowerShell Direct must provide the guest user account's elevated administrative token, including for steps without `#Requires -RunAsAdministrator`.
 
 The fixed invocation wrapper must:
 

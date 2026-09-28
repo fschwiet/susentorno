@@ -14,7 +14,7 @@ The answer must preserve the separate `--share-account` identity and masked SMB 
 
 ## Answer
 
-Persist two **VM share credentials** in the guest development user's Windows Credential Manager: one keyed by the Default-Switch host IPv4 address and one keyed by the Internal-switch host IPv4 address. Both contain the distinct host-local `--share-account` identity and the same prompted VM-share password. They authorize read-only SMB access; they are not guest logon credentials and do not let guest code change the Hyper-V switch. Retaining both is intentional so the VM share remains available when a host operator later moves the VM to either expected switch.
+Persist two **VM share credentials** in the guest user account's Windows Credential Manager: one keyed by the Default-Switch host IPv4 address and one keyed by the Internal-switch host IPv4 address. Both contain the distinct host-local `--share-account` identity and the same prompted VM-share password. They authorize read-only SMB access; they are not guest logon credentials and do not let guest code change the Hyper-V switch. Retaining both is intentional so the VM share remains available when a host operator later moves the VM to either expected switch.
 
 Use UNC paths (`\\<host-ip>\<share-name>`) throughout. Do not allocate a drive letter or create a persistent or temporary drive mapping. Credential Manager entries, rather than a live SMB connection, are the durable access mechanism.
 

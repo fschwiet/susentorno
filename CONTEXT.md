@@ -12,6 +12,10 @@ susentorno creates development environments in which coding agents run inside is
 
 **Supported guest platform**: A repository-approved tuple of operating-system product, edition, architecture, and OS release against which guest setup is supported. A monthly patch or build and the language or licensing channel of a test fixture are not part of the tuple. _Avoid_: Supported version, verified image
 
+**Guest user account**: The single existing account in a guest through which guest setup acts and the human then develops; guest setup never creates it. On Windows it must be a local administrator. _Avoid_: Guest user, development account, guest admin, VM user
+
+**VM share account**: The restricted host-local account a guest authenticates as to read its VM share; never a guest logon. _Avoid_: Share user, SMB user, susentorno account
+
 **Setup phase**: The temporary period in which a guest has general network access so its prerequisites and pre-isolation configuration can be installed. _Avoid_: NAT phase, online phase
 
 **Isolated phase**: The normal operating period in which a guest has no general Internet route and reaches external services only through the proxy stack. _Avoid_: Host-only mode, offline phase

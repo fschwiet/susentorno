@@ -22,7 +22,7 @@ A run is one linear **phase machine**. It never detects or resumes a prior run's
 | --- | --- | --- |
 | H1 | Host prerequisites from ticket 01: elevation, environment and Windows VM share, isolation name, NAT adapter alias, both switches and host IPv4 addresses. Prompt for a missing VM name and share name. | – |
 | H2 | Host checks: VM exists, is `Running` or `Off` with exactly one adapter on an expected switch; the SMB share resolves to this environment's Windows VM share; `run-hosting` DHCP and DNS listeners are bound. Discover and validate both phase plans (ticket 04): filenames, ordering, exactly one `configure-network`. | – |
-| H3 | Prompt `Windows development user` and masked `Guest password`. | – |
+| H3 | Prompt `Guest username` and masked `Guest password`. | – |
 | G1 | Reconcile to the Default Switch and start (see below). | power, switch |
 | G2 | PowerShell Direct readiness and authentication through a new credential-scoped executor. Authentication rejection disposes it and returns to H3 (paired re-prompt, EOF exits cleanly). | – |
 | G3 | Guest structural checks: supported guest platform, enabled local Administrators member, elevated token, no pending-reboot marker, and a discoverable, usable WinGet at the supported version with a usable source. | – |

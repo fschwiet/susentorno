@@ -34,11 +34,11 @@ It exposes these non-secret options:
 | `--isolation-name <name>` | Select the same named host network as `create-host-network` and `run-hosting`; omission selects the unnamed default, `susentorno-internal`. |
 | `--nat-adapter-alias <name>` | Select the setup-phase Hyper-V adapter alias; default `vEthernet (Default Switch)`. |
 | `--vm-name <name>` | Hyper-V VM name; otherwise prompt `Hyper-V VM name`. |
-| `--guest-username <user>` | Simple, unqualified local account name for the guest development account; otherwise prompt `Windows development user`. |
+| `--guest-username <user>` | Simple, unqualified local account name for the guest user account; otherwise prompt `Guest username`. |
 | `--share-name <name>` | Host SMB share exposing this environment's Windows VM share; otherwise prompt `SMB share name` with default `vm-shared-windows`. |
 | `--share-account <name>` | Distinct host-local account authorized to read the VM share; otherwise prompt `VM share account` with default `susentorno`. |
 
-There is no guest-address option because PowerShell Direct does not use the guest network. The **guest development account** is both the existing local administrator used by PowerShell Direct and the account through which the human uses the guest. The **VM share account** is a separate, restricted host account and is never treated as a guest logon.
+There is no guest-address option because PowerShell Direct does not use the guest network. The **guest user account** is both the existing local administrator used by PowerShell Direct and the account through which the human uses the guest. The **VM share account** is a separate, restricted host account and is never treated as a guest logon.
 
 Neither password has a flag, file, or environment-variable input. Both use masked prompts and are excluded from command output and diagnostics. Any persistence needed for continuing guest access to the VM share is left to [Define the Windows share credential lifecycle](03-define-windows-share-credential-lifecycle.md).
 
@@ -49,7 +49,7 @@ Each non-secret flag suppresses only its corresponding initial prompt. The inter
 1. Before prompting, require an elevated host process and an initialized environment containing the generated Windows VM share. Resolve and validate the isolation name, Default-Switch adapter alias, selected Internal switch, and their host IPv4 addresses.
 2. Ask for any missing `Hyper-V VM name` and `SMB share name` answers.
 3. Run all host checks possible without account names: the exact VM exists; its state is `Running` or `Off`; it has exactly one network adapter; that adapter is attached to either the derived Default Switch or selected Internal switch; both switches exist; the named SMB share exists and resolves exactly to this environment's generated Windows VM-share directory; and matching `run-hosting` DHCP and DNS listeners are bound on the selected host network.
-4. Ask for the `Windows development user` immediately followed by masked `Guest password`.
+4. Ask for the `Guest username` immediately followed by masked `Guest password`.
 5. Reconcile and start the VM on the Default Switch, wait boundedly for PowerShell Direct, and authenticate. An authentication failure repeats both guest-account prompts, including the username even when its first value came from `--guest-username`. EOF or cancellation exits cleanly instead of looping.
 6. After authentication, require the initial supported guest platform, an enabled local account, local Administrators membership, an elevated PowerShell Direct token, and no standard pending-reboot marker. These are structural failures with remediation, not credential failures, so they do not re-prompt.
 7. Ask for `VM share account` immediately followed by masked `VM share password`.

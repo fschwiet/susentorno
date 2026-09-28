@@ -9,8 +9,8 @@ Produce an approved, implementation-ready specification for `setup-guest-windows
 - Match the automation boundary of `setup-guest-unix`; VM creation, Windows installation, and Windows Update remain prerequisites.
 - Start from one DHCP network adapter attached to the Default Switch and end on the selected susentorno Internal switch with the Windows VM share available and all pre-isolation and post-isolation steps complete.
 - Control the guest through PowerShell Direct, not SSH, WinRM, or the network under configuration.
-- Support an existing local administrator account that is also the intended development user. The command does not create an account.
-- Keep the guest administrator account distinct from the host-side SMB share account.
+- Support an existing guest user account that is a local administrator. The command does not create an account.
+- Keep the guest user account distinct from the host-side VM share account.
 - Prompt separately and with masking for the guest password and SMB share password. Neither secret is accepted as a command-line flag or persisted by the command except where persistent guest access to the VM share is an explicit decision.
 - Offer flags for every non-secret answer; an omitted answer prompts independently.
 - A retry returns the guest to the Default Switch and replays the complete flow. Shipped and customized provisioning steps must therefore be idempotent.
@@ -29,14 +29,15 @@ Produce an approved, implementation-ready specification for `setup-guest-windows
 - [Define shipped Windows step compatibility changes](issues/09-define-shipped-windows-step-compatibility.md): make every shipped step noninteractive, replay-safe, read-only-share compatible, and explicit about native status; narrow package installs, turn `configure-network` into trust verification plus Git setup, and reject pending reboots unless guest testing proves a controlled full replay is necessary.
 - [Define end-to-end orchestration and recovery](issues/06-define-orchestration-and-recovery.md): a linear phase machine that asks every prompt before any mutation. It writes the Internal-switch share credential just before isolation, gates isolation on no pending reboot and a live `run-hosting`, and proves lease, DNS, and proxy reachability afterward. Deadlines are fixed. A failure never rolls back and prints a residual-state footer, and every residual state replays cleanly from the Default Switch.
 - [Choose the production module boundaries](issues/07-choose-production-module-boundaries.md): split `src/guestSetup/` into a shared top level plus `unix/` and `windows/` directories. The Windows flow is one deep phase-machine module behind a thin command. The move and extraction refactor lands first with no Windows code, and the guest harness later adopts the production PowerShell Direct executor.
+- [Define the verification and acceptance plan](issues/08-define-verification-and-acceptance-plan.md): unit tests own every failure state and residual-state row through fakes, and the CLI tier owns help, flags, and no-VM preflight. A new `windowsE2e` guest role replaces `windowsFresh`: a planted post-isolation failure checks the real footer, and a replay then succeeds and is verified in the isolated guest. It shims `gh`, and the golden image drops Git for a WinGet-ready stage. A 37-row checklist maps each promise to one tier.
 
 ## Not yet specified
 
 
 ## Out of scope
 
-- Creating the Hyper-V VM, acquiring installation media, installing Windows, running Windows Update, or creating the guest development account.
-- Supporting Windows 10, Windows Server, Microsoft accounts, domain accounts, or non-administrator development accounts in the first version.
+- Creating the Hyper-V VM, acquiring installation media, installing Windows, running Windows Update, or creating the guest user account.
+- Supporting Windows 10, Windows Server, Microsoft accounts, domain accounts, or non-administrator guest user accounts in the first version.
 - Adding SSH or WinRM to a Windows guest.
 - Changing `setup-guest-unix` except for a clearly justified shared-module extraction that preserves its behavior.
 - Implementing `setup-guest-windows` as part of this wayfinding map.
