@@ -1,6 +1,7 @@
 # Define shipped Windows step compatibility changes
 
 Type: grilling
+Status: claimed
 Blocked by: 04, 05
 
 ## Question
