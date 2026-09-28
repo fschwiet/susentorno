@@ -24,10 +24,10 @@ Produce an approved, implementation-ready specification for `setup-guest-windows
 - [Define the command and prerequisite contract](issues/01-define-command-and-prerequisite-contract.md): `setup-guest-windows` supports an allowlisted Windows 11 Enterprise x64 25H2 platform, paired credential prompts, strict host/guest preflight, and full-flow replay from the Default Switch without rollback.
 - [Prototype the secure PowerShell Direct boundary](issues/02-prototype-secure-powershell-direct-boundary.md): use a credential-scoped executor that sends each request to a short-lived PowerShell Direct bridge over stdin and returns UTF-8 stdout, stderr, and child-process status under explicit deadlines.
 - [Define the Windows share credential lifecycle](issues/03-define-windows-share-credential-lifecycle.md): retain verified address-keyed credentials for both expected networks, use UNC paths without mappings, and securely replace, verify, and clean up each entry on replay.
+- [Define Windows script-runner semantics](issues/04-define-windows-script-runner-semantics.md): discover deterministic numbered PowerShell steps, run each in a fresh bounded process from the phase UNC directory, and fail fast under an explicit native-command and replay contract.
 
 ## Not yet specified
 
-- Running the complete shipped pre-isolation sequence through a noninteractive PowerShell Direct session may expose assumptions in the current Windows scripts about interactive logons, PATH refresh, package-manager readiness, or reboots. Revisit the scripts after the execution boundary and script-runner semantics are concrete; graduate each demonstrated gap into its own decision ticket.
 - The exact diagnostic artifacts available after failures may depend on what the production PowerShell Direct boundary can capture without retaining credentials or temporary guest files.
 
 ## Out of scope
