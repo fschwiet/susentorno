@@ -1,6 +1,7 @@
 # Define Windows ambient-trust propagation
 
 Type: grilling
+Status: claimed
 Blocked by: 02
 
 ## Question
