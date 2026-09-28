@@ -8,6 +8,7 @@ import { registerWriteGithubConfig } from './commands/writeGithubConfig';
 import { registerRunHosting } from './commands/runHosting';
 import { registerUpdateShares } from './commands/updateShares';
 import { registerSetupGuestUnix } from './commands/setupGuestUnix';
+import { registerSetupGuestWindows } from './commands/setupGuestWindows';
 import { registerCreateHostNetwork } from './commands/createHostNetwork';
 import { registerDeleteHostNetwork } from './commands/deleteHostNetwork';
 
@@ -25,6 +26,7 @@ registerWriteGithubConfig(program);
 registerRunHosting(program);
 registerUpdateShares(program);
 registerSetupGuestUnix(program);
+registerSetupGuestWindows(program);
 registerCreateHostNetwork(program);
 registerDeleteHostNetwork(program);
 
