@@ -1,6 +1,7 @@
 # Define the Windows share credential lifecycle
 
 Type: grilling
+Status: claimed
 Blocked by: 01
 
 ## Question
