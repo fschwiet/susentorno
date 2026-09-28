@@ -19,6 +19,7 @@ import {
   scriptedPrompts,
   shareGuest,
   structuralChecksBehavior,
+  readProxyCaPem,
 } from '../guestSetup/windows/flowFakes';
 
 function commandOf(): Command {
@@ -140,6 +141,7 @@ function environment(
   const err: string[] = [];
   const exits: number[] = [];
   const interrupts = new EventEmitter();
+  const reads: string[] = [];
   const existing = overrides.existing ?? ['C:\\work\\project\\.susentorno', SHARE];
   const env: SetupGuestWindowsEnvironment = {
     exec,
@@ -152,12 +154,16 @@ function environment(
     interrupts,
     exit: (code) => exits.push(code),
     exists: (path) => existing.includes(path),
+    readFile: (path) => {
+      reads.push(path);
+      return readProxyCaPem();
+    },
     interfaces: {
       'vEthernet (susentorno-internal)': [v4('192.168.67.1')],
       'vEthernet (Default Switch)': [v4('172.29.240.1')],
     },
   };
-  return { env, out, err, exits, interrupts, executors, hyperV };
+  return { env, out, err, exits, interrupts, executors, hyperV, reads };
 }
 
 const defaultOptions = { natAdapterAlias: 'vEthernet (Default Switch)' };
@@ -191,12 +197,18 @@ describe('executeSetupGuestWindows', () => {
     expect(code).toBe(1);
     const text = err.join('\n');
     expect(text).toContain(
-      'setup-guest-windows: failed in phase G5 guest trust reconciliation [not-implemented]',
+      'setup-guest-windows: failed in phase G6 pre-isolation steps [not-implemented]',
     );
     expect(text).toContain('setup-guest-windows: residual state');
     expect(text).toContain("VM 'win-dev': Running, attached to 'Default Switch'");
     expect(text).toContain("Rerun 'susentorno setup-guest-windows'");
     expect(text).not.toContain('pw');
+  });
+
+  it("reconciles trust from the Windows VM share's cert.pem", async () => {
+    const { env, reads } = environment({ hyperV: fakeHyperV({ vmState: 'Running' }) });
+    await executeSetupGuestWindows(defaultOptions, env);
+    expect(reads).toEqual([`${SHARE}\\cert.pem`]);
   });
 
   it('shows in the footer which VM share credentials this run kept verified and which it removed', async () => {
@@ -292,6 +304,7 @@ describe('executeSetupGuestWindows', () => {
   });
 
   it('re-asks the guest credential as a pair and then continues', async () => {
+    const inner = structuralChecksBehavior();
     const { env, executors } = environment({
       answers: {
         'Hyper-V VM name': ['win-dev'],
@@ -302,12 +315,10 @@ describe('executeSetupGuestWindows', () => {
         'VM share password': ['share-pw'],
       },
       guest: (script, credential) =>
-        credential.password === 'bad'
-          ? authRejection()
-          : structuralChecksBehavior()(script, credential),
+        credential.password === 'bad' ? authRejection() : inner(script, credential),
     });
     const code = await executeSetupGuestWindows(defaultOptions, env);
-    expect(code).toBe(1); // stops at the not-yet-implemented G5
+    expect(code).toBe(1); // stops at the not-yet-implemented G6
     expect(executors.created).toHaveLength(2);
   });
 });

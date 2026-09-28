@@ -67,7 +67,7 @@ interface RawTrustedRoot {
   RawDataBase64?: unknown;
 }
 
-function pemFromDer(der: Buffer): string {
+export function pemFromDer(der: Buffer): string {
   const base64 = der.toString('base64');
   const lines = base64.match(/.{1,64}/g) ?? [];
   return `-----BEGIN CERTIFICATE-----\n${lines.join('\n')}\n-----END CERTIFICATE-----\n`;

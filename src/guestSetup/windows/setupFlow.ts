@@ -24,6 +24,7 @@ import {
   resolveHostAnswers,
   type WindowsSetupAnswerFlags,
 } from './setupAnswers';
+import { reconcileWindowsGuestTrust, WindowsTrustReconciliationError } from './trustReconciler';
 
 /** PowerShell Direct readiness after a start: 5 minutes, probing about every 5 seconds. */
 export const POWERSHELL_DIRECT_READY_DEADLINE_MS = 5 * 60_000;
@@ -89,6 +90,7 @@ export type WindowsSetupFailureKind =
   | 'guest-check'
   | 'share-account'
   | 'share-credential'
+  | 'guest-trust'
   | 'not-implemented'
   | 'unexpected';
 
@@ -138,11 +140,13 @@ export interface WindowsSetupDeps {
   clock: WindowsSetupClock;
   /** What phase H1's checks resolved before any prompt. */
   context: WindowsHostContext;
+  /** The environment's `cert.pem` (the proxy CA), read on demand at G5. */
+  readProxyCaPem: () => string;
 }
 
 export type WindowsSetupFlags = WindowsSetupAnswerFlags;
 
-const NOT_IMPLEMENTED_PHASES = 'G5 through G14';
+const NOT_IMPLEMENTED_PHASES = 'G6 through G14';
 
 class Interrupted extends Error {}
 
@@ -152,10 +156,10 @@ class Interrupted extends Error {}
  * detects or resumes a prior run: each run starts by putting the VM on the
  * Default Switch, and each failure stops in place without rollback.
  *
- * So far it implements H1 through G4 (host checks, all guest prompts, VM
- * reconciliation, PowerShell Direct readiness, the guest structural checks, and
- * the Default-Switch VM share credential), then stops with a plain "not
- * implemented" failure at G5.
+ * So far it implements H1 through G5 (host checks, all guest prompts, VM
+ * reconciliation, PowerShell Direct readiness, the guest structural checks, the
+ * Default-Switch VM share credential, and guest trust reconciliation), then
+ * stops with a plain "not implemented" failure at G6.
  *
  * On any failure or cancellation, cleanup closes the selected-share connection
  * and removes only the share credentials this run wrote but did not verify,
@@ -348,13 +352,36 @@ export async function runWindowsSetup(
       }
     }
 
-    phase = 'G5';
+    // G5: the only owner of guest trust. It runs before any step can reach the
+    // network, and a failure here means no step runs.
+    announce('G5');
+    let proxyCaPem: string;
+    try {
+      proxyCaPem = deps.readProxyCaPem();
+    } catch (error) {
+      throw new WindowsTrustReconciliationError(
+        'host enumeration',
+        'proxy',
+        `could not read the environment's cert.pem: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    await guard(
+      reconcileWindowsGuestTrust({
+        hostExec: exec,
+        executor: executor!,
+        proxyCaPem,
+        signal,
+        onProgress: (line) => out(`setup-guest-windows: G5 ${line}`),
+      }),
+    );
+
+    phase = 'G6';
     return fail({
       kind: 'not-implemented',
       message:
-        `Guest '${vmName}' passed every prerequisite check and its VM share credential for ${defaultTarget.hostIp} is verified ` +
-        `(H1 through G4), but the remaining phases (${NOT_IMPLEMENTED_PHASES}: trust, provisioning, and isolation) ` +
-        `are not implemented yet, so setup stops here. Nothing has been provisioned on the guest.`,
+        `Guest '${vmName}' passed every prerequisite check, its VM share credential for ${defaultTarget.hostIp} is verified, ` +
+        `and its trust is reconciled (H1 through G5), but the remaining phases (${NOT_IMPLEMENTED_PHASES}: provisioning and isolation) ` +
+        `are not implemented yet, so setup stops here. No provisioning step has run on the guest.`,
     });
   };
 
@@ -401,6 +428,12 @@ function classify(
   if (error instanceof GuestCheckError) return { kind: 'guest-check', message: error.message };
   if (error instanceof ShareCredentialError) {
     return { kind: 'share-credential', message: error.message };
+  }
+  if (error instanceof WindowsTrustReconciliationError) {
+    return {
+      kind: 'guest-trust',
+      message: `${error.message} Trust is left in a safe state; rerun to converge.`,
+    };
   }
   if (error instanceof WindowsGuestError) {
     switch (error.kind) {

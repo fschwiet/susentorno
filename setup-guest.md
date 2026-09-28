@@ -217,7 +217,7 @@ cd "\\<default-switch-host-ip>\vm-shared-windows\"
 Set-ExecutionPolicy Bypass
 ```
 
-1. `cd .\pre-scripts` and run every script in order. With no custom steps, the last is `.\04-configure-network.ps1 -HostIp <internal-switch-host-ip>`.
+1. `cd .\pre-scripts` and run every script in order. With no custom steps, the last is `.\04-configure-network.ps1 -HostIp <internal-switch-host-ip>`. That step no longer installs the proxy CA itself: it only verifies the trust that `susentorno setup-guest-windows` reconciles (phase G5), and fails when that trust is missing. Run it as part of that command rather than by hand.
 2. Isolate the VM — reassign its single adapter to `susentorno-internal` (see "Isolate" below), with `run-hosting` already running.
 3. Use the `cmdkey` entry for `<internal-switch-host-ip>`, then run every post-script in order from `\\<internal-switch-host-ip>\vm-shared-windows\post-scripts`: normally `.\01-auth-config.ps1`, then `.\02-apply-home-jq-transforms.ps1`.
 4. Restore the normal execution policy with `Set-ExecutionPolicy RemoteSigned`.

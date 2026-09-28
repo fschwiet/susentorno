@@ -161,14 +161,19 @@ describe('generated provisioning inventory', () => {
       expect(script).toMatch(/gh auth setup-git\r?\n\s*if \(\$LASTEXITCODE -ne 0\)/);
     });
 
-    it('windows 05-configure-network covers CA trust surfaces; 01-auth-config installs the placeholder', () => {
+    it('windows configure-network only verifies reconciled trust; 01-auth-config installs the placeholder', () => {
       const net = readFileSync(
         join(templatesDir(), 'vm-shared-windows', 'pre-scripts', 'nn-configure-network.ps1'),
         'utf8',
       );
-      expect(net).toContain('certutil');
+      // Trust has one owner (the host-driven reconciliation): this step never installs or repairs it.
+      expect(net).not.toMatch(/certutil|CertPath|Copy-Item|SetEnvironmentVariable|New-Item/);
+      expect(net).not.toContain('proxy-ca.pem');
       expect(net).toContain('NODE_EXTRA_CA_CERTS');
+      expect(net).toContain('manifest.json');
+      expect(net).toContain('node-extra-ca-bundle.pem');
       expect(net).toContain('http.sslBackend schannel');
+      expect(net).toMatch(/http\.sslBackend schannel\r?\n\s*if \(\$LASTEXITCODE -ne 0\)/);
       const auth = readFileSync(
         join(templatesDir(), 'vm-shared-windows', 'post-scripts', '01-auth-config.ps1'),
         'utf8',
@@ -184,6 +189,10 @@ describe('generated provisioning inventory', () => {
       expect(v).toContain('sk-ant-oat-susentorno-PLACEHOLDER'); // no real token may live in the guest
       expect(v).toContain('api.anthropic.com'); // credential-gate check
       expect(v).toContain('curl.exe'); // live egress via bundled curl
+      // trust is checked by DER SHA-256 against the reconciled manifest and bundle, not by subject
+      expect(v).not.toContain('susentorno-proxy-certificate-authority');
+      expect(v).toContain('manifest.json');
+      expect(v).toContain('node-extra-ca-bundle.pem');
     });
 
     it('windows 01-install-packages ships only the packages a susentorno guest requires', () => {

@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { X509Certificate, createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRealPowerShellExec } from '../../src/guestSetup/powerShellExec';
 import { resolveIsolationNetwork } from '../../src/runHosting/isolationNetwork';
@@ -20,7 +22,11 @@ import {
   type WindowsGuestExecutor,
 } from '../../src/guestSetup/windows/guestExecutor';
 import { collectWindowsDiagnostics } from './windowsDiagnostics';
-import { propagateAmbientTrustToWindows } from './windowsAmbientTrust';
+import {
+  GUEST_TRUST_BUNDLE_PATH,
+  GUEST_TRUST_DIR,
+  reconcileWindowsGuestTrust,
+} from '../../src/guestSetup/windows/trustReconciler';
 import {
   assertGuestElevated,
   createWindowsGuestExec,
@@ -38,6 +44,8 @@ let guest: WindowsTestGuest;
 let executor: WindowsGuestExecutor;
 let session: WindowsGuestExec;
 let internalHostIp: string;
+/** DER SHA-256 of the environment proxy CA the share carries. */
+let proxyFingerprint: string;
 /** The guest's DHCP interface index; every network assertion is scoped to it. */
 let interfaceIndex: string;
 
@@ -69,10 +77,18 @@ describe('a fresh Windows guest starting in the isolated phase', () => {
     expect(interfaceIndex, 'the guest must have a default route').toMatch(/^\d+$/);
 
     // Before any TLS assertion: on a host that is itself behind a terminating
-    // proxy, a passthrough destination here is terminated upstream.
-    await propagateAmbientTrustToWindows(exec, session, (message) =>
-      console.log(`windowsFresh: ambientTrust — ${message}`),
-    );
+    // proxy, a passthrough destination here is terminated upstream. This is the
+    // production reconciler (phase G5 of setup-guest-windows), not a test helper.
+    const proxyCaPem = readFileSync(join(sharePath, 'cert.pem'), 'utf8');
+    proxyFingerprint = createHash('sha256')
+      .update(new X509Certificate(proxyCaPem).raw)
+      .digest('hex');
+    await reconcileWindowsGuestTrust({
+      hostExec: exec,
+      executor,
+      proxyCaPem,
+      onProgress: (message) => console.log(`windowsFresh: trust — ${message}`),
+    });
 
     // cmdkey entries are per-address; the share is reached by UNC with no drive letter.
     const mounted = await session.capture(
@@ -86,13 +102,17 @@ describe('a fresh Windows guest starting in the isolated phase', () => {
     // -ExecutionPolicy per invocation rather than mutating machine policy: a
     // .ps1 fetched over UNC lands in the Internet zone, but the test should
     // leave behind no state the manual flow would not.
+    // The step's own exit status is read back explicitly: the outer script's
+    // status would only reflect the pipeline that captured its output.
     const configured = await session.capture(
-      `powershell.exe -ExecutionPolicy Bypass -File ` +
+      `$output = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ` +
         `'\\\\${internalHostIp}\\${share.shareName}\\pre-scripts\\04-configure-network.ps1' ` +
-        `-HostIp ${internalHostIp} 2>&1 | Out-String`,
+        `-HostIp ${internalHostIp} 2>&1 | Out-String; $stepExit = $LASTEXITCODE; ` +
+        `$output; "stepExit=$stepExit"`,
     );
     console.log(`windowsFresh: 04-configure-network |\n${configured.stdout}`);
     expect(configured.exitCode, configured.stdout).toBe(0);
+    expect(configured.stdout, 'configure-network must exit 0').toContain('stepExit=0');
   }, 1_800_000);
 
   afterAll(async () => {
@@ -204,23 +224,30 @@ describe('a fresh Windows guest starting in the isolated phase', () => {
     });
   });
 
-  describe('the shipped configure-network script did its job', () => {
-    it('imported the proxy CA into the machine root store', async () => {
+  describe('trust was reconciled by the production reconciler and verified by configure-network', () => {
+    it('has the proxy CA fingerprint in the machine root store', async () => {
       const { stdout } = await session.capture(
         "$s = [System.Security.Cryptography.X509Certificates.X509Store]::new('Root','LocalMachine'); " +
-          "$s.Open('ReadOnly'); " +
-          "$found = @($s.Certificates | Where-Object { $_.Subject -like '*susentorno-proxy-certificate-authority*' }).Count; " +
-          '$s.Close(); $found',
+          "$s.Open('ReadOnly'); $sha = [System.Security.Cryptography.SHA256]::Create(); " +
+          '$s.Certificates | ForEach-Object { ($sha.ComputeHash($_.RawData) | ForEach-Object { $_.ToString("x2") }) -join "" }; ' +
+          '$s.Close()',
       );
-      expect(Number(stdout.trim())).toBeGreaterThan(0);
+      expect(stdout.split(/\r?\n/).map((line) => line.trim())).toContain(proxyFingerprint);
     });
 
-    it('pointed NODE_EXTRA_CA_CERTS at a file that exists', async () => {
+    it('records the proxy CA fingerprint in the manifest', async () => {
+      const { stdout } = await session.capture(
+        `(Get-Content -Raw -LiteralPath '${GUEST_TRUST_DIR}\\manifest.json' | ConvertFrom-Json).proxy`,
+      );
+      expect(stdout.trim()).toBe(proxyFingerprint);
+    });
+
+    it('points machine NODE_EXTRA_CA_CERTS at the combined bundle, which exists', async () => {
       const { stdout } = await session.capture(
         "$p = [Environment]::GetEnvironmentVariable('NODE_EXTRA_CA_CERTS','Machine'); " +
-          'if ($p -and (Test-Path $p)) { "ok $p" } else { "missing $p" }',
+          'if ($p -and (Test-Path -LiteralPath $p)) { "ok $p" } else { "missing $p" }',
       );
-      expect(stdout.trim()).toMatch(/^ok /);
+      expect(stdout.trim()).toBe(`ok ${GUEST_TRUST_BUNDLE_PATH}`);
     });
 
     it('set git to validate through schannel', async () => {

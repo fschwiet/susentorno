@@ -17,12 +17,17 @@ import {
   fakeHyperV,
   guestOk,
   scriptedPrompts,
+  readProxyCaPem,
   shareGuest,
   structuralChecksBehavior,
+  trustGuest,
+  FLOW_AMBIENT_ROOT,
+  FLOW_PROXY_CA,
   type EventLog,
   type FakeHyperV,
   type GuestBehavior,
   type ShareGuest,
+  type TrustGuest,
 } from './flowFakes';
 
 const GUEST_PASSWORD = 'guest-pw-Zx81';
@@ -40,6 +45,7 @@ interface Harness {
   out: string[];
   events: EventLog;
   hyperV: FakeHyperV;
+  trust: TrustGuest;
   asked: ReturnType<typeof scriptedPrompts>['asked'];
   executors: ReturnType<typeof fakeExecutors>;
   clock: ReturnType<typeof fakeClock>;
@@ -53,6 +59,8 @@ async function run(
     hyperV?: Parameters<typeof fakeHyperV>[1];
     guest?: GuestBehavior;
     share?: ShareGuest;
+    trust?: TrustGuest;
+    readProxyCaPem?: () => string;
     signal?: AbortSignal;
   } = {},
 ): Promise<Harness> {
@@ -70,7 +78,8 @@ async function run(
     },
     events,
   );
-  const behavior = options.guest ?? structuralChecksBehavior({}, options.share);
+  const trust = options.trust ?? trustGuest();
+  const behavior = options.guest ?? structuralChecksBehavior({}, options.share, trust);
   const executors = fakeExecutors((script, credential) => {
     const operation = /^# susentorno share credential: (\w+)/.exec(script)?.[1];
     if (operation) events.push(`guest:${operation}`);
@@ -88,13 +97,14 @@ async function run(
     },
     clock,
     context: HOST_CONTEXT,
+    readProxyCaPem: options.readProxyCaPem ?? readProxyCaPem,
   };
   const outcome = await runWindowsSetup(
     deps,
     options.flags ?? {},
     options.signal ?? new AbortController().signal,
   );
-  return { outcome, out, events, hyperV, asked, executors, clock };
+  return { outcome, out, events, hyperV, trust, asked, executors, clock };
 }
 
 const announcements = (out: string[]): string[] =>
@@ -108,16 +118,16 @@ function expectFailure(outcome: WindowsSetupOutcome) {
   return outcome;
 }
 
-describe('runWindowsSetup: the happy path through G4', () => {
+describe('runWindowsSetup: the happy path through G5', () => {
   it('runs the phases in order and then fails plainly because later phases are not implemented', async () => {
     const { outcome, out } = await run();
     const failure = expectFailure(outcome);
-    expect(failure.phase).toBe('G5');
+    expect(failure.phase).toBe('G6');
     expect(failure.error.kind).toBe('not-implemented');
     expect(failure.error.message).toContain('not implemented');
     expect(failure.error.message).toContain("'win-dev'");
     expect(failure.vmName).toBe('win-dev');
-    expect(announcements(out)).toEqual(['H1', 'H2', 'H3', 'G1', 'G2', 'G3', 'G4']);
+    expect(announcements(out)).toEqual(['H1', 'H2', 'H3', 'G1', 'G2', 'G3', 'G4', 'G5']);
   });
 
   it('announces each phase as `setup-guest-windows: <phase>...`', async () => {
@@ -129,6 +139,7 @@ describe('runWindowsSetup: the happy path through G4', () => {
     expect(out).toContain("setup-guest-windows: G2 waiting for PowerShell Direct on 'win-dev'...");
     expect(out).toContain('setup-guest-windows: G3 guest structural checks...');
     expect(out).toContain('setup-guest-windows: G4 VM share credentials...');
+    expect(out).toContain('setup-guest-windows: G5 guest trust reconciliation...');
   });
 
   it('prompts in the documented order, with the share name defaulting to vm-shared-windows', async () => {
@@ -192,7 +203,7 @@ describe('flag suppression', () => {
       answers: { 'Guest password': [GUEST_PASSWORD] },
     });
     expect(asked.map((a) => a.question)).toEqual(['Guest password', 'VM share password']);
-    expect(expectFailure(outcome).phase).toBe('G5');
+    expect(expectFailure(outcome).phase).toBe('G6');
   });
 
   it('each flag suppresses only its own prompt', async () => {
@@ -272,7 +283,7 @@ describe('G1 accepted starting states', () => {
   it('starts an Off VM that is already on the Default Switch', async () => {
     const { hyperV, outcome } = await run({ vm: { vmState: 'Off', switchName: 'Default Switch' } });
     expect(mutations(hyperV)).toEqual(["Start-VM -Name 'win-dev'"]);
-    expect(expectFailure(outcome).phase).toBe('G5');
+    expect(expectFailure(outcome).phase).toBe('G6');
   });
 
   it('connects an Off VM on the Internal switch to the Default Switch, then starts it', async () => {
@@ -288,7 +299,7 @@ describe('G1 accepted starting states', () => {
       vm: { vmState: 'Running', switchName: 'Default Switch' },
     });
     expect(mutations(hyperV)).toEqual([]);
-    expect(expectFailure(outcome).phase).toBe('G5');
+    expect(expectFailure(outcome).phase).toBe('G6');
     expect(out.join('\n')).toContain('reusing');
   });
 
@@ -327,10 +338,9 @@ describe('G1 accepted starting states', () => {
 
 describe('H3 and G2: the guest credential loop', () => {
   it('asks for the username and password again as a pair when the guest rejects the credential', async () => {
+    const inner = structuralChecksBehavior();
     const behavior: GuestBehavior = (script, credential) =>
-      credential.password === 'wrong'
-        ? authRejection()
-        : structuralChecksBehavior()(script, credential);
+      credential.password === 'wrong' ? authRejection() : inner(script, credential);
     const { outcome, executors, asked, hyperV } = await run({
       flags: { guestUsername: 'Administrator' },
       answers: {
@@ -359,10 +369,11 @@ describe('H3 and G2: the guest credential loop', () => {
     expect(executors.created.map((e) => e.disposed)).toEqual([true, true]);
     // The VM was reconciled once, not once per attempt.
     expect(hyperV.commands.filter((c) => c.startsWith('Start-VM'))).toHaveLength(1);
-    expect(expectFailure(outcome).phase).toBe('G5');
+    expect(expectFailure(outcome).phase).toBe('G6');
   });
 
   it('tells the user the credential was rejected without echoing it', async () => {
+    const inner = structuralChecksBehavior();
     const { out } = await run({
       answers: {
         'Hyper-V VM name': ['win-dev'],
@@ -371,9 +382,7 @@ describe('H3 and G2: the guest credential loop', () => {
         'Guest password': [OTHER_PASSWORD, GUEST_PASSWORD],
       },
       guest: (script, credential) =>
-        credential.password === OTHER_PASSWORD
-          ? authRejection()
-          : structuralChecksBehavior()(script, credential),
+        credential.password === OTHER_PASSWORD ? authRejection() : inner(script, credential),
     });
     const rejected = out.filter((line) => line.includes('rejected'));
     expect(rejected).toHaveLength(1);
@@ -528,7 +537,7 @@ describe('G4: VM share credentials', () => {
       password: SHARE_PASSWORD,
     });
     const failure = expectFailure(outcome);
-    expect(failure.phase).toBe('G5');
+    expect(failure.phase).toBe('G6');
     expect(failure.error.message).toContain(HOST_CONTEXT.defaultSwitchHostIp);
     expect(out.join('\n')).not.toContain(SHARE_PASSWORD);
   });
@@ -612,7 +621,7 @@ describe('G4: VM share credentials', () => {
       expect(rejected).toHaveLength(1);
       expect(rejected[0]).toContain("'susentorno'");
       expect(JSON.stringify({ out, outcome })).not.toContain(WRONG_SHARE_PASSWORD);
-      expect(expectFailure(outcome).phase).toBe('G5');
+      expect(expectFailure(outcome).phase).toBe('G6');
       expect(expectFailure(outcome).credentials).toEqual([
         { role: 'default', hostIp: HOST_CONTEXT.defaultSwitchHostIp, status: 'verified' },
       ]);
@@ -747,11 +756,12 @@ describe('G4: VM share credentials', () => {
 
   describe('cleanup after a handled failure or cancellation', () => {
     it('records a removal that could not be done, and still disposes the executor', async () => {
+      const inner = structuralChecksBehavior();
       const { outcome, executors } = await run({
         guest: (script, credential) =>
           /^# susentorno share credential: (verify|cleanup)/.test(script)
             ? new WindowsGuestError('transport', 'the guest went away')
-            : structuralChecksBehavior()(script, credential),
+            : inner(script, credential),
       });
       const failure = expectFailure(outcome);
       expect(failure.error.kind).toBe('guest-transport');
@@ -763,11 +773,12 @@ describe('G4: VM share credentials', () => {
 
     it('removes the unverified entry when the run is cancelled mid-verification', async () => {
       const share = shareGuest();
+      const inner = structuralChecksBehavior({}, share);
       const { outcome, executors } = await run({
         guest: (script, credential) =>
           script.startsWith('# susentorno share credential: verify')
             ? new WindowsGuestError('cancelled', 'The invocation was cancelled.')
-            : structuralChecksBehavior({}, share)(script, credential),
+            : inner(script, credential),
       });
       expect(outcome).toMatchObject({
         kind: 'cancelled',
@@ -802,6 +813,7 @@ describe('G4: VM share credentials', () => {
           out: () => {},
           clock: fakeClock(),
           context: HOST_CONTEXT,
+          readProxyCaPem,
           createExecutor: ({ vmName, credential }) => ({
             vmName,
             async invoke(script, options) {
@@ -883,6 +895,7 @@ describe('cancellation', () => {
         out: () => {},
         clock: fakeClock(),
         context: HOST_CONTEXT,
+        readProxyCaPem,
         createExecutor: ({ vmName }) => {
           const record = { disposed: false };
           created.push(record);
@@ -966,5 +979,116 @@ describe('unexpected errors', () => {
     expect(failure.error.kind).toBe('unexpected');
     expect(failure.error.message).toContain('kaboom');
     expect(executors.created[0].disposed).toBe(true);
+  });
+});
+
+describe('G5 guest trust reconciliation', () => {
+  const trustOperations = (executors: ReturnType<typeof fakeExecutors>): string[] =>
+    executors.created
+      .flatMap((e) => e.scripts)
+      .map((script) => /^# susentorno trust: ([\w-]+)/.exec(script)?.[1])
+      .filter((operation): operation is string => operation !== undefined);
+
+  it('runs its scripts through the credential-scoped executor after the share verification', async () => {
+    const { executors } = await run();
+    const scripts = executors.created[0].scripts;
+    const verifyAt = scripts.findIndex((s) =>
+      s.startsWith('# susentorno share credential: verify'),
+    );
+    const inspectAt = scripts.findIndex((s) => s.startsWith('# susentorno trust: inspect'));
+    expect(verifyAt).toBeGreaterThanOrEqual(0);
+    expect(inspectAt).toBeGreaterThan(verifyAt);
+    expect(executors.created[0].credential.password).toBe(GUEST_PASSWORD);
+  });
+
+  it('propagates the host roots and the environment proxy CA into the guest store', async () => {
+    const { trust } = await run();
+    expect(trust.roots).toEqual(
+      expect.arrayContaining([FLOW_AMBIENT_ROOT.sha256, FLOW_PROXY_CA.sha256]),
+    );
+  });
+
+  it('reports progress as G5 lines with counts and abbreviated fingerprints only', async () => {
+    const { out } = await run();
+    const lines = out.filter((line) => line.startsWith('setup-guest-windows: G5 '));
+    expect(lines.length).toBeGreaterThan(1);
+    const text = lines.join('\n');
+    expect(text).toContain(FLOW_PROXY_CA.sha256.slice(0, 12));
+    expect(text).not.toContain(FLOW_PROXY_CA.sha256);
+    expect(text).not.toContain('BEGIN CERTIFICATE');
+    expect(text).not.toContain('flow-proxy-ca');
+  });
+
+  it('a G5 failure stops the run before every step, keeps the verified credential, and names the operation', async () => {
+    const { outcome, out, executors } = await run({
+      trust: trustGuest({
+        override: {
+          'import-proxy': guestOk(
+            JSON.stringify({
+              Outcome: 'error',
+              Fingerprint: FLOW_PROXY_CA.sha256,
+              Message: 'Access denied',
+            }),
+          ),
+        },
+      }),
+    });
+    const failure = expectFailure(outcome);
+    expect(failure.phase).toBe('G5');
+    expect(failure.error.kind).toBe('guest-trust');
+    expect(failure.error.message).toContain('proxy import');
+    expect(failure.error.message).toContain(FLOW_PROXY_CA.sha256.slice(0, 12));
+    expect(failure.error.message).not.toContain(FLOW_PROXY_CA.sha256);
+    // no later phase started: G6 (the pre-isolation steps) never ran
+    expect(announcements(out)).toEqual(['H1', 'H2', 'H3', 'G1', 'G2', 'G3', 'G4', 'G5']);
+    // the trust operations stopped at the failure
+    expect(trustOperations(executors)).toEqual([
+      'inspect',
+      'write-ambient-pems',
+      'import-ambient',
+      'import-proxy',
+    ]);
+    expect(failure.credentials).toEqual([
+      { role: 'default', hostIp: HOST_CONTEXT.defaultSwitchHostIp, status: 'verified' },
+    ]);
+    expect(executors.created[0].disposed).toBe(true);
+  });
+
+  it('fails at G5 when the host cannot enumerate its roots', async () => {
+    const { outcome, executors } = await run({ hyperV: { hostRootsFail: true } });
+    const failure = expectFailure(outcome);
+    expect(failure.phase).toBe('G5');
+    expect(failure.error.kind).toBe('guest-trust');
+    expect(failure.error.message).toContain('host enumeration');
+    expect(trustOperations(executors)).toEqual([]);
+  });
+
+  it('fails at G5 when the environment cert.pem cannot be read', async () => {
+    const { outcome, executors } = await run({
+      readProxyCaPem: () => {
+        throw new Error("ENOENT: no such file or directory, open 'cert.pem'");
+      },
+    });
+    const failure = expectFailure(outcome);
+    expect(failure.phase).toBe('G5');
+    expect(failure.error.kind).toBe('guest-trust');
+    expect(failure.error.message).toContain('cert.pem');
+    expect(trustOperations(executors)).toEqual([]);
+  });
+
+  it('reports a Ctrl+C during trust reconciliation as a cancellation in G5', async () => {
+    const inner = structuralChecksBehavior();
+    const controller = new AbortController();
+    const { outcome } = await run({
+      signal: controller.signal,
+      guest: (script, credential) => {
+        if (script.startsWith('# susentorno trust: inspect')) {
+          controller.abort();
+          return new WindowsGuestError('cancelled', 'cancelled');
+        }
+        return inner(script, credential);
+      },
+    });
+    expect(outcome).toMatchObject({ kind: 'cancelled', phase: 'G5', reason: 'interrupt' });
   });
 });

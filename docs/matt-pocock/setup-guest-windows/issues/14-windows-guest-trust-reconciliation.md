@@ -26,9 +26,9 @@
 
 **Blocked by:** 12
 
-**Status:** ready-for-agent
+**Status:** ready-for-review
 
-- [ ] Planner unit tests cover:
+- [x] Planner unit tests cover:
   - a first run;
   - a replay with no change;
   - a new ambient root;
@@ -38,7 +38,7 @@
   - a proxy CA that is also an ambient root, which is deduplicated and not removed;
   - missing managed state, which is rebuilt;
   - malformed PEMs, which fail.
-- [ ] Applier unit tests cover the typed failure for each operation and the redaction rules.
-- [ ] Unit tests of `runWindowsSetup` show that G5 runs after G4, and that a G5 failure prevents every step.
-- [ ] The existing Windows guest role passes with the production reconciler and the adapted `configure-network` step, including the network-boundary and schannel assertions.
-- [ ] The unit, CLI, and guest tiers pass.
+- [x] Applier unit tests cover the typed failure for each operation and the redaction rules.
+- [x] Unit tests of `runWindowsSetup` show that G5 runs after G4, and that a G5 failure prevents every step.
+- [x] The existing Windows guest role passes with the production reconciler and the adapted `configure-network` step, including the network-boundary and schannel assertions.
+- [x] The unit, CLI, and guest tiers pass.

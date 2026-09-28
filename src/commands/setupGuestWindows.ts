@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import type { NetworkInterfaceInfo } from 'node:os';
+import { join } from 'node:path';
 import type { Command } from 'commander';
 import { promptText, promptMasked, type SetupAnswerPrompts } from '../cliPrompt';
 import { sleep as abortableSleep } from '../runHosting/abortableSleep';
@@ -60,6 +62,8 @@ export interface SetupGuestWindowsEnvironment {
   interrupts: InterruptSource;
   exit: (code: number) => void;
   exists?: (path: string) => boolean;
+  /** Reads the environment's `cert.pem` (utf8) at G5. */
+  readFile?: (path: string) => string;
   interfaces?: NodeJS.Dict<NetworkInterfaceInfo[]>;
 }
 
@@ -110,6 +114,10 @@ export async function executeSetupGuestWindows(
         out: env.out,
         clock: env.clock,
         context: host.context,
+        readProxyCaPem: () =>
+          (env.readFile ?? ((path) => readFileSync(path, 'utf8')))(
+            join(host.context.vmSharedWindowsPath, 'cert.pem'),
+          ),
       },
       {
         vmName: options.vmName,

@@ -1,3 +1,4 @@
+import { X509Certificate } from 'node:crypto';
 import { PromptEndedError, type SetupAnswerPrompts } from '../../../../src/cliPrompt';
 import type { PowerShellExec } from '../../../../src/guestSetup/powerShellExec';
 import {
@@ -15,6 +16,12 @@ import {
 } from '../../../../src/guestSetup/windows/guestChecks';
 import type { WindowsHostContext } from '../../../../src/guestSetup/windows/hostPrerequisites';
 import type { WindowsSetupClock } from '../../../../src/guestSetup/windows/setupFlow';
+import { makeCertificate } from './testCerts';
+
+/** The environment proxy CA the fake share carries, and one ambient root the fake host selects. */
+export const FLOW_PROXY_CA = makeCertificate('flow-proxy-ca');
+export const FLOW_AMBIENT_ROOT = makeCertificate('flow-ambient-root');
+export const readProxyCaPem = (): string => FLOW_PROXY_CA.pem;
 
 export const SHARE_DIR = 'C:\\work\\project\\.susentorno\\vm-shared-windows';
 
@@ -90,6 +97,8 @@ export function fakeHyperV(
     localAccounts?: string[];
     /** Whether the SMB share grants those accounts read access (default true). */
     shareGrantsRead?: boolean;
+    /** Make the host root enumeration fail (phase G5's host enumeration). */
+    hostRootsFail?: boolean;
   } = {},
 ): FakeHyperV {
   const state = {
@@ -114,6 +123,20 @@ export function fakeHyperV(
         return ok(JSON.stringify(state.adapters === 1 ? entry : Array(state.adapters).fill(entry)));
       }
       if (command.startsWith('Get-VMSwitch')) return ok('{"Name":"x"}');
+      if (command.includes('$disallowed')) {
+        if (options.hostRootsFail) return { exitCode: 1, stdout: 'Access is denied' };
+        return ok(
+          JSON.stringify({
+            Roots: [
+              {
+                Thumbprint: 'AA',
+                RawDataBase64: new X509Certificate(FLOW_AMBIENT_ROOT.pem).raw.toString('base64'),
+              },
+            ],
+            Disallowed: [],
+          }),
+        );
+      }
       if (command.startsWith('Get-NetUDPEndpoint')) {
         return options.listeners === false ? ok('') : ok('bound');
       }
@@ -244,6 +267,51 @@ function shareAnswer(script: string, guest: ShareGuest): WindowsGuestResult | Er
   return guestOk(JSON.stringify({ Outcome: 'ok' }));
 }
 
+/** The guest's root store and managed trust state, stateful across a run. */
+export interface TrustGuest {
+  roots: string[];
+  /** Replaces the answer to one trust operation (by script header) outright. */
+  override?: Record<string, WindowsGuestResult | Error>;
+}
+
+export const trustGuest = (options: Partial<TrustGuest> = {}): TrustGuest => ({
+  roots: [],
+  ...options,
+});
+
+const trustOperation = (script: string): string | undefined =>
+  /^# susentorno trust: ([\w-]+)/.exec(script)?.[1];
+
+function trustAnswer(script: string, guest: TrustGuest): WindowsGuestResult | Error {
+  const operation = trustOperation(script)!;
+  const override = guest.override?.[operation];
+  if (override) return override;
+  const shas = [...script.matchAll(/'([0-9a-f]{64})'/g)].map((m) => m[1]);
+  switch (operation) {
+    case 'inspect':
+      return guestOk(
+        JSON.stringify({
+          Outcome: 'ok',
+          Roots: guest.roots,
+          Manifest: null,
+          ProxyFile: null,
+          Files: [],
+        }),
+      );
+    case 'roots':
+      return guestOk(JSON.stringify({ Outcome: 'ok', Roots: guest.roots }));
+    case 'import-ambient':
+    case 'import-proxy':
+      guest.roots.push(...shas);
+      return guestOk(JSON.stringify({ Outcome: 'ok' }));
+    case 'remove-proxy':
+      guest.roots = guest.roots.filter((root) => root !== shas[0]);
+      return guestOk(JSON.stringify({ Outcome: 'ok' }));
+    default:
+      return guestOk(JSON.stringify({ Outcome: 'ok' }));
+  }
+}
+
 export type GuestBehavior = (
   script: string,
   credential: WindowsGuestCredential,
@@ -253,9 +321,11 @@ export type GuestBehavior = (
 export function structuralChecksBehavior(
   overrides: Partial<Record<string, WindowsGuestResult | Error>> = {},
   share: ShareGuest = shareGuest(),
+  trust: TrustGuest = trustGuest(),
 ): GuestBehavior {
   return (script) => {
     if (shareOperation(script)) return shareAnswer(script, share);
+    if (trustOperation(script)) return trustAnswer(script, trust);
     const key =
       script === PLATFORM_SCRIPT
         ? 'platform'
