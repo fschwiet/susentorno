@@ -1,6 +1,7 @@
 # Define the verification and acceptance plan
 
 Type: grilling
+Status: claimed
 Blocked by: 06, 07
 
 ## Question
