@@ -25,10 +25,10 @@ Produce an approved, implementation-ready specification for `setup-guest-windows
 - [Prototype the secure PowerShell Direct boundary](issues/02-prototype-secure-powershell-direct-boundary.md): use a credential-scoped executor that sends each request to a short-lived PowerShell Direct bridge over stdin and returns UTF-8 stdout, stderr, and child-process status under explicit deadlines.
 - [Define the Windows share credential lifecycle](issues/03-define-windows-share-credential-lifecycle.md): retain verified address-keyed credentials for both expected networks, use UNC paths without mappings, and securely replace, verify, and clean up each entry on replay.
 - [Define Windows script-runner semantics](issues/04-define-windows-script-runner-semantics.md): discover deterministic numbered PowerShell steps, run each in a fresh bounded process from the phase UNC directory, and fail fast under an explicit native-command and replay contract.
+- [Define Windows ambient-trust propagation](issues/05-define-windows-ambient-trust-propagation.md): reconcile host ambient roots and the environment proxy CA once before provisioning, retain additive ambient trust, rotate only provably managed proxy trust, and publish one atomic Node supplemental bundle.
 
 ## Not yet specified
 
-- The exact diagnostic artifacts available after failures may depend on what the production PowerShell Direct boundary can capture without retaining credentials or temporary guest files.
 
 ## Out of scope
 
