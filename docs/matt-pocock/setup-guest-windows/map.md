@@ -26,6 +26,7 @@ Produce an approved, implementation-ready specification for `setup-guest-windows
 - [Define the Windows share credential lifecycle](issues/03-define-windows-share-credential-lifecycle.md): retain verified address-keyed credentials for both expected networks, use UNC paths without mappings, and securely replace, verify, and clean up each entry on replay.
 - [Define Windows script-runner semantics](issues/04-define-windows-script-runner-semantics.md): discover deterministic numbered PowerShell steps, run each in a fresh bounded process from the phase UNC directory, and fail fast under an explicit native-command and replay contract.
 - [Define Windows ambient-trust propagation](issues/05-define-windows-ambient-trust-propagation.md): reconcile host ambient roots and the environment proxy CA once before provisioning, retain additive ambient trust, rotate only provably managed proxy trust, and publish one atomic Node supplemental bundle.
+- [Define shipped Windows step compatibility changes](issues/09-define-shipped-windows-step-compatibility.md): make every shipped step noninteractive, replay-safe, read-only-share compatible, and explicit about native status; narrow package installs, turn `configure-network` into trust verification plus Git setup, and reject pending reboots unless guest testing proves a controlled full replay is necessary.
 
 ## Not yet specified
 
