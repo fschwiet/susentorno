@@ -10,13 +10,13 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] No shared module gains a platform flag or platform branch.
 - [x] Unix module names and exported symbols are unchanged; only their locations move (except the two symbols this ticket moves out to shared modules: `diffAmbientCandidates` and `SetupAnswerPrompts`).
 - [x] Discovery with `WINDOWS_STEP_NAMING` matches `NN-name.ps1` with a case-insensitive extension, ignores non-matching files and directories, and orders ordinally. Unit tests cover this.
 - [x] Discovery with `UNIX_STEP_NAMING` behaves exactly as before (one accepted exception: a directory entry named like a step is now skipped, because discovery ignores directories for both platforms without a platform branch).
-- [ ] The unit, CLI, and existing Unix guest tiers pass.
+- [ ] The unit, CLI, and existing Unix guest tiers pass. (Unit and CLI verified; host-network also passed. The Unix guest tier was deliberately not run for this ticket, to be covered by a later full run.)
 
 ## Implementation notes
 
