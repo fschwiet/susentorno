@@ -34,7 +34,7 @@ The automated checks use `-Local` because no Hyper-V VM is required. Remove `loc
 - No host or guest temporary file is created. The checked-in bridge contains no secret.
 - The PowerShell 5.1 module-path repair occurs before credential construction.
 
-The local checks cannot prove live PowerShell Direct behavior because this checkout had no VM. The repository's existing Windows guest harness is evidence that `Invoke-Command -VMName`, UTF-8/base64 decoding, and the module-path repair work against the supported guest. A production guest-tier acceptance test must exercise this selected shape live.
+A live run against `sus-test` (Windows 11 Enterprise Evaluation x64) authenticated through PowerShell Direct with an elevated token and demonstrated UTF-8 round-tripping, separate stdout/stderr, exit code 23, and guest-child termination at the internal deadline. The live run exposed PowerShell module-loading progress records polluting redirected stderr as CLIXML; setting `$ProgressPreference = 'SilentlyContinue'` in the fixed loader removed that pollution. A production guest-tier acceptance test must preserve this coverage.
 
 ## Boundary consequences to validate with the human
 
@@ -58,4 +58,4 @@ interface WindowsGuestExecutor {
 
 `createWindowsGuestExecutor` copies the prompted password into private executor state; the command disposes the executor in `finally` immediately after its last guest operation. Each `invoke` starts a fresh bridge process and writes the credential request to stdin. Readiness is the same operation with a tiny constant script, retried under an overall deadline. Transport/unavailable, authentication, cancellation, timeout, and completed nonzero exit are distinct outcomes.
 
-The prototype supports a strong cleanup guarantee for normal completion and internal timeout: pipes and processes are closed, memory references are dropped, and there are no temporary files. Caller cancellation should first allow the bridge a short grace period to terminate its guest child, then kill the host bridge; abrupt host termination cannot guarantee that a guest child is reaped, so production should keep guest scripts short and make cancellation cleanup best-effort rather than claim transactional cleanup.
+The prototype supports a strong cleanup guarantee for normal completion and internal timeout: pipes and processes are closed, memory references are dropped, and there are no temporary files. On caller cancellation, production should return a cancelled outcome promptly but leave the supervised bridge alive until its already-bounded internal deadline reaps the guest child; `dispose()` waits for that cleanup. It may force-kill the bridge only after that deadline. Abrupt host termination still cannot guarantee that a guest child is reaped, so cancellation cleanup is bounded and supervised, not transactional.

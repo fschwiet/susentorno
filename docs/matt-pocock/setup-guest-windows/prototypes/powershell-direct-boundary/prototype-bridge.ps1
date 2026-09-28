@@ -19,6 +19,7 @@ function Invoke-ScriptProcess {
     $loader = @'
 $utf8 = [Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = $utf8
+$ProgressPreference = 'SilentlyContinue'
 [Console]::Error.Write('')
 $encoded = [Console]::In.ReadToEnd()
 $script = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($encoded))
@@ -100,6 +101,7 @@ try {
             $loader = @'
 $utf8 = [Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = $utf8
+$ProgressPreference = 'SilentlyContinue'
 [Console]::Error.Write('')
 $encoded = [Console]::In.ReadToEnd()
 $script = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($encoded))
