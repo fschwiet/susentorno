@@ -15,7 +15,9 @@ import {
   fakeClock,
   fakeExecutors,
   fakeHyperV,
+  guestOk,
   scriptedPrompts,
+  shareGuest,
   structuralChecksBehavior,
 } from '../guestSetup/windows/flowFakes';
 
@@ -129,6 +131,8 @@ function environment(
       'SMB share name': [''],
       'Guest username': ['Administrator'],
       'Guest password': ['pw'],
+      'VM share account': ['susentorno'],
+      'VM share password': ['share-pw'],
     },
   );
   const executors = fakeExecutors(overrides.guest ?? structuralChecksBehavior());
@@ -187,12 +191,42 @@ describe('executeSetupGuestWindows', () => {
     expect(code).toBe(1);
     const text = err.join('\n');
     expect(text).toContain(
-      'setup-guest-windows: failed in phase G4 VM share credentials [not-implemented]',
+      'setup-guest-windows: failed in phase G5 guest trust reconciliation [not-implemented]',
     );
     expect(text).toContain('setup-guest-windows: residual state');
     expect(text).toContain("VM 'win-dev': Running, attached to 'Default Switch'");
     expect(text).toContain("Rerun 'susentorno setup-guest-windows'");
     expect(text).not.toContain('pw');
+  });
+
+  it('shows in the footer which VM share credentials this run kept verified and which it removed', async () => {
+    const kept = environment({ hyperV: fakeHyperV({ vmState: 'Running' }) });
+    await executeSetupGuestWindows(defaultOptions, kept.env);
+    expect(kept.err).toContain(
+      '  VM share credential for Default Switch host address 172.29.240.1: verified, kept',
+    );
+
+    const removed = environment({
+      hyperV: fakeHyperV({ vmState: 'Running' }),
+      guest: structuralChecksBehavior(
+        {},
+        shareGuest({
+          override: {
+            verify: guestOk(
+              JSON.stringify({ Outcome: 'writable', Stage: 'probe', ProbeRemoved: true }),
+            ),
+          },
+        }),
+      ),
+    });
+    const code = await executeSetupGuestWindows(defaultOptions, removed.env);
+    expect(code).toBe(1);
+    const text = removed.err.join('\n');
+    expect(text).toContain('failed in phase G4 VM share credentials [share-credential]');
+    expect(text).toContain(
+      '  VM share credential for Default Switch host address 172.29.240.1: removed (written by this run but never verified)',
+    );
+    expect(text).not.toContain('share-pw');
   });
 
   it('queries Hyper-V for the footer after the failure rather than inferring the state', async () => {
@@ -264,6 +298,8 @@ describe('executeSetupGuestWindows', () => {
         'SMB share name': [''],
         'Guest username': ['Administrator', 'Administrator'],
         'Guest password': ['bad', 'good'],
+        'VM share account': ['susentorno'],
+        'VM share password': ['share-pw'],
       },
       guest: (script, credential) =>
         credential.password === 'bad'
@@ -271,7 +307,7 @@ describe('executeSetupGuestWindows', () => {
           : structuralChecksBehavior()(script, credential),
     });
     const code = await executeSetupGuestWindows(defaultOptions, env);
-    expect(code).toBe(1); // stops at the not-yet-implemented G4
+    expect(code).toBe(1); // stops at the not-yet-implemented G5
     expect(executors.created).toHaveLength(2);
   });
 });

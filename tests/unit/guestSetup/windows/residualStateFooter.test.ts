@@ -134,3 +134,45 @@ describe('formatResidualStateFooter', () => {
     expect(lines).toContain("  VM 'win-dev': its state could not be queried (no such VM)");
   });
 });
+
+describe('formatResidualStateFooter: VM share credentials', () => {
+  const base = {
+    outcome: 'failure' as const,
+    phase: 'G4 VM share credentials',
+    vmName: 'win-dev',
+    vm: { known: true as const, powerState: 'Running', switchName: 'Default Switch' },
+  };
+
+  it('reports which credentials were kept verified and which were removed, before the rerun instruction', () => {
+    const lines = formatResidualStateFooter({
+      ...base,
+      credentials: [
+        { role: 'default', hostIp: '172.29.240.1', status: 'verified' },
+        { role: 'internal', hostIp: '192.168.67.1', status: 'removed' },
+      ],
+    });
+    expect(lines).toEqual([
+      'setup-guest-windows: residual state',
+      '  Failed in phase: G4 VM share credentials',
+      "  VM 'win-dev': Running, attached to 'Default Switch'",
+      '  VM share credential for Default Switch host address 172.29.240.1: verified, kept',
+      '  VM share credential for Internal switch host address 192.168.67.1: removed (written by this run but never verified)',
+      '  Nothing was rolled back.',
+      "  Rerun 'susentorno setup-guest-windows' to replay the whole flow from the Default Switch.",
+    ]);
+  });
+
+  it('says so when a removal failed, so the user knows to delete the entry', () => {
+    const lines = formatResidualStateFooter({
+      ...base,
+      credentials: [{ role: 'default', hostIp: '172.29.240.1', status: 'removal-failed' }],
+    });
+    expect(lines.join('\n')).toContain('could not be removed');
+    expect(lines.join('\n')).toContain('cmdkey /delete');
+  });
+
+  it('adds nothing when the run wrote no credential', () => {
+    const lines = formatResidualStateFooter({ ...base, credentials: [] });
+    expect(lines.join('\n')).not.toContain('host address');
+  });
+});

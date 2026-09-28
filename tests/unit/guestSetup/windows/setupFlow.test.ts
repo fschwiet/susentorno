@@ -17,14 +17,23 @@ import {
   fakeHyperV,
   guestOk,
   scriptedPrompts,
+  shareGuest,
   structuralChecksBehavior,
   type EventLog,
   type FakeHyperV,
   type GuestBehavior,
+  type ShareGuest,
 } from './flowFakes';
 
 const GUEST_PASSWORD = 'guest-pw-Zx81';
 const OTHER_PASSWORD = 'other-pw-Qq42';
+const SHARE_PASSWORD = 'share-pw-Lm93';
+const WRONG_SHARE_PASSWORD = 'wrong-share-pw-Nn07';
+/** The VM share prompts every run that reaches G4 answers, unless a test says otherwise. */
+const shareAnswers = (): Record<string, string[]> => ({
+  'VM share account': [''],
+  'VM share password': [SHARE_PASSWORD],
+});
 
 interface Harness {
   outcome: WindowsSetupOutcome;
@@ -43,21 +52,30 @@ async function run(
     vm?: Partial<FakeHyperV['state']>;
     hyperV?: Parameters<typeof fakeHyperV>[1];
     guest?: GuestBehavior;
+    share?: ShareGuest;
     signal?: AbortSignal;
   } = {},
 ): Promise<Harness> {
   const events: EventLog = [];
   const hyperV = fakeHyperV(options.vm, { events, ...options.hyperV });
   const { prompts, asked } = scriptedPrompts(
-    options.answers ?? {
-      'Hyper-V VM name': ['win-dev'],
-      'SMB share name': [''],
-      'Guest username': ['Administrator'],
-      'Guest password': [GUEST_PASSWORD],
+    {
+      ...shareAnswers(),
+      ...(options.answers ?? {
+        'Hyper-V VM name': ['win-dev'],
+        'SMB share name': [''],
+        'Guest username': ['Administrator'],
+        'Guest password': [GUEST_PASSWORD],
+      }),
     },
     events,
   );
-  const executors = fakeExecutors(options.guest ?? structuralChecksBehavior());
+  const behavior = options.guest ?? structuralChecksBehavior({}, options.share);
+  const executors = fakeExecutors((script, credential) => {
+    const operation = /^# susentorno share credential: (\w+)/.exec(script)?.[1];
+    if (operation) events.push(`guest:${operation}`);
+    return behavior(script, credential);
+  });
   const clock = fakeClock();
   const out: string[] = [];
   const deps: WindowsSetupDeps = {
@@ -90,16 +108,16 @@ function expectFailure(outcome: WindowsSetupOutcome) {
   return outcome;
 }
 
-describe('runWindowsSetup: the happy path through G3', () => {
+describe('runWindowsSetup: the happy path through G4', () => {
   it('runs the phases in order and then fails plainly because later phases are not implemented', async () => {
     const { outcome, out } = await run();
     const failure = expectFailure(outcome);
-    expect(failure.phase).toBe('G4');
+    expect(failure.phase).toBe('G5');
     expect(failure.error.kind).toBe('not-implemented');
     expect(failure.error.message).toContain('not implemented');
     expect(failure.error.message).toContain("'win-dev'");
     expect(failure.vmName).toBe('win-dev');
-    expect(announcements(out)).toEqual(['H1', 'H2', 'H3', 'G1', 'G2', 'G3']);
+    expect(announcements(out)).toEqual(['H1', 'H2', 'H3', 'G1', 'G2', 'G3', 'G4']);
   });
 
   it('announces each phase as `setup-guest-windows: <phase>...`', async () => {
@@ -110,6 +128,7 @@ describe('runWindowsSetup: the happy path through G3', () => {
     expect(out).toContain("setup-guest-windows: G1 reconciling 'win-dev' to 'Default Switch'...");
     expect(out).toContain("setup-guest-windows: G2 waiting for PowerShell Direct on 'win-dev'...");
     expect(out).toContain('setup-guest-windows: G3 guest structural checks...');
+    expect(out).toContain('setup-guest-windows: G4 VM share credentials...');
   });
 
   it('prompts in the documented order, with the share name defaulting to vm-shared-windows', async () => {
@@ -119,8 +138,11 @@ describe('runWindowsSetup: the happy path through G3', () => {
       'text:SMB share name',
       'text:Guest username',
       'masked:Guest password',
+      'text:VM share account',
+      'masked:VM share password',
     ]);
     expect(asked[1].defaultValue).toBe('vm-shared-windows');
+    expect(asked[4].defaultValue).toBe('susentorno');
   });
 
   it('asks every prompt before the first change to the VM', async () => {
@@ -136,8 +158,8 @@ describe('runWindowsSetup: the happy path through G3', () => {
   it('runs every structural check with a 2 minute deadline', async () => {
     const { executors } = await run();
     const timeouts = executors.created[0].timeouts;
-    // The readiness probe, then the five structural checks.
-    expect(timeouts.slice(1)).toEqual([120_000, 120_000, 120_000, 120_000, 120_000]);
+    // The readiness probe, then the five structural checks, then the share operations.
+    expect(timeouts.slice(1, 6)).toEqual([120_000, 120_000, 120_000, 120_000, 120_000]);
   });
 
   it('creates the executor with the guest credential and disposes it on the way out', async () => {
@@ -169,8 +191,8 @@ describe('flag suppression', () => {
       },
       answers: { 'Guest password': [GUEST_PASSWORD] },
     });
-    expect(asked.map((a) => a.question)).toEqual(['Guest password']);
-    expect(expectFailure(outcome).phase).toBe('G4');
+    expect(asked.map((a) => a.question)).toEqual(['Guest password', 'VM share password']);
+    expect(expectFailure(outcome).phase).toBe('G5');
   });
 
   it('each flag suppresses only its own prompt', async () => {
@@ -186,6 +208,8 @@ describe('flag suppression', () => {
       'SMB share name',
       'Guest username',
       'Guest password',
+      'VM share account',
+      'VM share password',
     ]);
   });
 
@@ -248,7 +272,7 @@ describe('G1 accepted starting states', () => {
   it('starts an Off VM that is already on the Default Switch', async () => {
     const { hyperV, outcome } = await run({ vm: { vmState: 'Off', switchName: 'Default Switch' } });
     expect(mutations(hyperV)).toEqual(["Start-VM -Name 'win-dev'"]);
-    expect(expectFailure(outcome).phase).toBe('G4');
+    expect(expectFailure(outcome).phase).toBe('G5');
   });
 
   it('connects an Off VM on the Internal switch to the Default Switch, then starts it', async () => {
@@ -264,7 +288,7 @@ describe('G1 accepted starting states', () => {
       vm: { vmState: 'Running', switchName: 'Default Switch' },
     });
     expect(mutations(hyperV)).toEqual([]);
-    expect(expectFailure(outcome).phase).toBe('G4');
+    expect(expectFailure(outcome).phase).toBe('G5');
     expect(out.join('\n')).toContain('reusing');
   });
 
@@ -325,6 +349,8 @@ describe('H3 and G2: the guest credential loop', () => {
       'masked:Guest password',
       'text:Guest username',
       'masked:Guest password',
+      'text:VM share account',
+      'masked:VM share password',
     ]);
     expect(executors.created.map((e) => e.credential)).toEqual([
       { username: 'Administrator', password: 'wrong' },
@@ -333,7 +359,7 @@ describe('H3 and G2: the guest credential loop', () => {
     expect(executors.created.map((e) => e.disposed)).toEqual([true, true]);
     // The VM was reconciled once, not once per attempt.
     expect(hyperV.commands.filter((c) => c.startsWith('Start-VM'))).toHaveLength(1);
-    expect(expectFailure(outcome).phase).toBe('G4');
+    expect(expectFailure(outcome).phase).toBe('G5');
   });
 
   it('tells the user the credential was rejected without echoing it', async () => {
@@ -476,6 +502,330 @@ describe('G2 readiness deadline and heartbeat', () => {
     expect(failure.error.kind).toBe('guest-protocol');
     expect(failure.phase).toBe('G2');
     expect(executors.created[0].disposed).toBe(true);
+  });
+});
+
+describe('G4: VM share credentials', () => {
+  const shareScripts = (executors: ReturnType<typeof fakeExecutors>, operation: string): string[] =>
+    executors.created[0].scripts.filter((script) =>
+      script.startsWith(`# susentorno share credential: ${operation}`),
+    );
+  const allowOnly =
+    (password: string): NonNullable<ShareGuest['accepts']> =>
+    (credential) =>
+      credential.password === password;
+
+  it('replaces and verifies the Default-Switch credential with the prompted account, once, over the guest executor', async () => {
+    const share = shareGuest();
+    const { outcome, executors, out } = await run({ share });
+    expect(executors.created).toHaveLength(1);
+    expect(shareScripts(executors, 'replace')).toHaveLength(1);
+    expect(shareScripts(executors, 'verify')).toHaveLength(1);
+    // Keyed by the Default-Switch host address; the Internal-switch entry is a later phase.
+    expect([...share.stored.keys()]).toEqual([HOST_CONTEXT.defaultSwitchHostIp]);
+    expect(share.stored.get(HOST_CONTEXT.defaultSwitchHostIp)).toEqual({
+      account: 'susentorno',
+      password: SHARE_PASSWORD,
+    });
+    const failure = expectFailure(outcome);
+    expect(failure.phase).toBe('G5');
+    expect(failure.error.message).toContain(HOST_CONTEXT.defaultSwitchHostIp);
+    expect(out.join('\n')).not.toContain(SHARE_PASSWORD);
+  });
+
+  it('gives each share operation its 1 minute deadline', async () => {
+    const { executors } = await run();
+    // The probe, five checks, then replace and verify.
+    expect(executors.created[0].timeouts.slice(6, 8)).toEqual([60_000, 60_000]);
+  });
+
+  it('never sends the share password or a cmdkey/net use command to the guest in plain text', async () => {
+    const { executors } = await run();
+    for (const script of executors.created[0].scripts) {
+      expect(script).not.toContain(SHARE_PASSWORD);
+      expect(script).not.toMatch(/cmdkey|\/pass:|\bnet use\b/i);
+    }
+  });
+
+  it('asks every prompt, including the VM share pair, before the first credential is written', async () => {
+    const { events } = await run();
+    const lastPrompt = events.lastIndexOf('prompt:VM share password');
+    const firstWrite = events.indexOf('guest:replace');
+    expect(lastPrompt).toBeGreaterThanOrEqual(0);
+    expect(firstWrite).toBeGreaterThan(lastPrompt);
+    // No prompt is ever asked after a credential has been written.
+    expect(events.slice(firstWrite).filter((e) => e.startsWith('prompt:'))).toEqual([]);
+  });
+
+  it('checks the host account and its share access on the host before writing anything to the guest', async () => {
+    const { events, hyperV } = await run();
+    expect(hyperV.commands.some((c) => c.startsWith("Get-LocalUser -Name 'susentorno'"))).toBe(
+      true,
+    );
+    expect(
+      hyperV.commands.some((c) => c.startsWith("Get-SmbShareAccess -Name 'vm-shared-windows'")),
+    ).toBe(true);
+    expect(events.indexOf('host:Get-SmbShareAccess')).toBeLessThan(events.indexOf('guest:replace'));
+  });
+
+  it('keeps the verified credential and closes the open connection when a later phase fails', async () => {
+    const share = shareGuest();
+    const { outcome, executors } = await run({ share });
+    const cleanup = shareScripts(executors, 'cleanup');
+    expect(cleanup).toHaveLength(1);
+    expect(cleanup[0]).toContain('Delete = $false');
+    expect(cleanup[0]).not.toContain('Delete = $true');
+    expect(share.stored.has(HOST_CONTEXT.defaultSwitchHostIp)).toBe(true);
+    expect(expectFailure(outcome).credentials).toEqual([
+      { role: 'default', hostIp: HOST_CONTEXT.defaultSwitchHostIp, status: 'verified' },
+    ]);
+    expect(executors.created[0].disposed).toBe(true);
+  });
+
+  describe('paired re-prompt on an SMB authentication failure', () => {
+    it('asks for the account and password again as a pair, even when the account came from a flag', async () => {
+      const share = shareGuest({ accepts: allowOnly(SHARE_PASSWORD) });
+      const { outcome, asked, out, executors } = await run({
+        share,
+        flags: { shareAccount: 'susentorno' },
+        hyperV: { localAccounts: ['susentorno', 'susentorno2'] },
+        answers: {
+          'Hyper-V VM name': ['win-dev'],
+          'SMB share name': [''],
+          'Guest username': ['Administrator'],
+          'Guest password': [GUEST_PASSWORD],
+          'VM share account': ['susentorno2'],
+          'VM share password': [WRONG_SHARE_PASSWORD, SHARE_PASSWORD],
+        },
+      });
+      expect(asked.map((a) => `${a.kind}:${a.question}`).slice(4)).toEqual([
+        'masked:VM share password',
+        'text:VM share account',
+        'masked:VM share password',
+      ]);
+      expect(shareScripts(executors, 'replace')).toHaveLength(2);
+      expect(share.stored.get(HOST_CONTEXT.defaultSwitchHostIp)).toEqual({
+        account: 'susentorno2',
+        password: SHARE_PASSWORD,
+      });
+      const rejected = out.filter((line) => line.includes('could not authenticate'));
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0]).toContain("'susentorno'");
+      expect(JSON.stringify({ out, outcome })).not.toContain(WRONG_SHARE_PASSWORD);
+      expect(expectFailure(outcome).phase).toBe('G5');
+      expect(expectFailure(outcome).credentials).toEqual([
+        { role: 'default', hostIp: HOST_CONTEXT.defaultSwitchHostIp, status: 'verified' },
+      ]);
+    });
+
+    it('does not prompt for the guest credential again', async () => {
+      const share = shareGuest({ accepts: allowOnly(SHARE_PASSWORD) });
+      const { asked, executors } = await run({
+        share,
+        answers: {
+          'Hyper-V VM name': ['win-dev'],
+          'SMB share name': [''],
+          'Guest username': ['Administrator'],
+          'Guest password': [GUEST_PASSWORD],
+          'VM share account': ['susentorno', 'susentorno'],
+          'VM share password': [WRONG_SHARE_PASSWORD, SHARE_PASSWORD],
+        },
+      });
+      expect(asked.filter((a) => a.question === 'Guest password')).toHaveLength(1);
+      expect(executors.created).toHaveLength(1);
+    });
+
+    it('ends cleanly as a cancellation on EOF at the re-asked prompt and removes the unverified entry', async () => {
+      const share = shareGuest({ accepts: allowOnly(SHARE_PASSWORD) });
+      const { outcome, executors } = await run({
+        share,
+        answers: {
+          'Hyper-V VM name': ['win-dev'],
+          'SMB share name': [''],
+          'Guest username': ['Administrator'],
+          'Guest password': [GUEST_PASSWORD],
+          'VM share account': ['susentorno'],
+          'VM share password': [WRONG_SHARE_PASSWORD],
+        },
+      });
+      expect(outcome).toMatchObject({
+        kind: 'cancelled',
+        reason: 'input-ended',
+        phase: 'G4',
+        vmName: 'win-dev',
+        credentials: [
+          { role: 'default', hostIp: HOST_CONTEXT.defaultSwitchHostIp, status: 'removed' },
+        ],
+      });
+      expect(share.stored.size).toBe(0);
+      expect(shareScripts(executors, 'cleanup')[0]).toContain('Delete = $true');
+      expect(executors.created[0].disposed).toBe(true);
+    });
+
+    it('treats Ctrl+C at the share password prompt as an interrupt', async () => {
+      const { outcome } = await run({
+        answers: {
+          'Hyper-V VM name': ['win-dev'],
+          'SMB share name': [''],
+          'Guest username': ['Administrator'],
+          'Guest password': [GUEST_PASSWORD],
+          'VM share account': ['susentorno'],
+          'VM share password': 'cancel',
+        },
+      });
+      expect(outcome).toMatchObject({ kind: 'cancelled', reason: 'interrupt', phase: 'G4' });
+    });
+  });
+
+  describe('structural failures never re-prompt', () => {
+    it.each([
+      [
+        'a writable share',
+        { Outcome: 'writable', Stage: 'probe', ProbeRemoved: true },
+        /can write/,
+      ],
+      [
+        'missing generated content',
+        { Outcome: 'error', Stage: 'read', Win32: 2, Message: 'not found' },
+        /missing or empty/,
+      ],
+      [
+        'a wrong share path',
+        { Outcome: 'error', Stage: 'read', Win32: 67, Message: 'name not found' },
+        /could not reach/,
+      ],
+      [
+        'a denied share permission',
+        { Outcome: 'error', Stage: 'list-pre-scripts', Win32: 5, Message: 'denied' },
+        /denied read access/,
+      ],
+      [
+        'an SMB identity conflict on the same address',
+        { Outcome: 'error', Stage: 'read', Win32: 1219, Message: 'multiple connections' },
+        /only one identity per server address/,
+      ],
+    ])(
+      'fails %s at G4 with a remediation, one password prompt, and cleanup',
+      async (_label, verdict, message) => {
+        const share = shareGuest({ override: { verify: guestOk(JSON.stringify(verdict)) } });
+        const { outcome, asked, executors } = await run({ share });
+        const failure = expectFailure(outcome);
+        expect(failure.phase).toBe('G4');
+        expect(failure.error.kind).toBe('share-credential');
+        expect(failure.error.message).toMatch(message);
+        expect(failure.error.message).toContain(HOST_CONTEXT.defaultSwitchHostIp);
+        expect(asked.filter((a) => a.question === 'VM share password')).toHaveLength(1);
+        expect(asked.filter((a) => a.question === 'VM share account')).toHaveLength(1);
+        expect(failure.credentials).toEqual([
+          { role: 'default', hostIp: HOST_CONTEXT.defaultSwitchHostIp, status: 'removed' },
+        ]);
+        expect(share.stored.size).toBe(0);
+        expect(executors.created[0].disposed).toBe(true);
+      },
+    );
+
+    it('fails a missing host account before writing anything to the guest, with the account named', async () => {
+      const { outcome, asked, executors } = await run({ hyperV: { localAccounts: [] } });
+      const failure = expectFailure(outcome);
+      expect(failure.phase).toBe('G4');
+      expect(failure.error.kind).toBe('share-account');
+      expect(failure.error.message).toContain("'susentorno'");
+      expect(failure.error.message).toContain('--share-account');
+      expect(asked.filter((a) => a.question === 'VM share password')).toHaveLength(1);
+      expect(shareScripts(executors, 'replace')).toEqual([]);
+      expect(failure.credentials).toBeUndefined();
+    });
+
+    it('fails a share that does not grant the account read access', async () => {
+      const { outcome, executors } = await run({ hyperV: { shareGrantsRead: false } });
+      const failure = expectFailure(outcome);
+      expect(failure.error.kind).toBe('share-account');
+      expect(failure.error.message).toContain('read access');
+      expect(shareScripts(executors, 'replace')).toEqual([]);
+    });
+  });
+
+  describe('cleanup after a handled failure or cancellation', () => {
+    it('records a removal that could not be done, and still disposes the executor', async () => {
+      const { outcome, executors } = await run({
+        guest: (script, credential) =>
+          /^# susentorno share credential: (verify|cleanup)/.test(script)
+            ? new WindowsGuestError('transport', 'the guest went away')
+            : structuralChecksBehavior()(script, credential),
+      });
+      const failure = expectFailure(outcome);
+      expect(failure.error.kind).toBe('guest-transport');
+      expect(failure.credentials).toEqual([
+        { role: 'default', hostIp: HOST_CONTEXT.defaultSwitchHostIp, status: 'removal-failed' },
+      ]);
+      expect(executors.created[0].disposed).toBe(true);
+    });
+
+    it('removes the unverified entry when the run is cancelled mid-verification', async () => {
+      const share = shareGuest();
+      const { outcome, executors } = await run({
+        guest: (script, credential) =>
+          script.startsWith('# susentorno share credential: verify')
+            ? new WindowsGuestError('cancelled', 'The invocation was cancelled.')
+            : structuralChecksBehavior({}, share)(script, credential),
+      });
+      expect(outcome).toMatchObject({
+        kind: 'cancelled',
+        phase: 'G4',
+        reason: 'interrupt',
+        credentials: [
+          { role: 'default', hostIp: HOST_CONTEXT.defaultSwitchHostIp, status: 'removed' },
+        ],
+      });
+      expect(share.stored.size).toBe(0);
+      expect(executors.created[0].disposed).toBe(true);
+    });
+
+    it('runs cleanup without the flow signal, so an aborted run can still clean up', async () => {
+      const controller = new AbortController();
+      const seen: (AbortSignal | undefined)[] = [];
+      const share = shareGuest();
+      const events: EventLog = [];
+      const hyperV = fakeHyperV({}, { events });
+      const { prompts } = scriptedPrompts({
+        'Hyper-V VM name': ['win-dev'],
+        'SMB share name': [''],
+        'Guest username': ['Administrator'],
+        'Guest password': [GUEST_PASSWORD],
+        ...shareAnswers(),
+      });
+      const behavior = structuralChecksBehavior({}, share);
+      const outcome = await runWindowsSetup(
+        {
+          exec: hyperV.exec,
+          prompts,
+          out: () => {},
+          clock: fakeClock(),
+          context: HOST_CONTEXT,
+          createExecutor: ({ vmName, credential }) => ({
+            vmName,
+            async invoke(script, options) {
+              if (script.startsWith('# susentorno share credential:')) {
+                seen.push(options.signal);
+                // Ctrl+C arrives while the share credential is being replaced.
+                if (script.startsWith('# susentorno share credential: replace')) controller.abort();
+              }
+              const result = behavior(script, credential);
+              if (result instanceof Error) throw result;
+              return result;
+            },
+            async dispose() {},
+          }),
+        },
+        {},
+        controller.signal,
+      );
+      expect(outcome).toMatchObject({ kind: 'cancelled', reason: 'interrupt', phase: 'G4' });
+      expect(seen[0]).toBe(controller.signal);
+      // The cleanup request is the last one, and it carries no signal.
+      expect(seen[seen.length - 1]).toBeUndefined();
+      expect(share.stored.size).toBe(0);
+    });
   });
 });
 

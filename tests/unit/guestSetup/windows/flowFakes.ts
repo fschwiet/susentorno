@@ -86,6 +86,10 @@ export function fakeHyperV(
     stopNeverCompletes?: boolean;
     listeners?: boolean;
     sharePath?: string;
+    /** Host-local accounts that exist (default: the documented `susentorno`). */
+    localAccounts?: string[];
+    /** Whether the SMB share grants those accounts read access (default true). */
+    shareGrantsRead?: boolean;
   } = {},
 ): FakeHyperV {
   const state = {
@@ -113,9 +117,28 @@ export function fakeHyperV(
       if (command.startsWith('Get-NetUDPEndpoint')) {
         return options.listeners === false ? ok('') : ok('bound');
       }
-      if (command.startsWith('Get-SmbShare')) {
+      if (command.startsWith('Get-SmbShare ')) {
         return ok(
           JSON.stringify({ Name: 'vm-shared-windows', Path: options.sharePath ?? SHARE_DIR }),
+        );
+      }
+      if (command.startsWith('Get-LocalUser')) {
+        const name = /-Name '((?:[^']|'')*)'/.exec(command)![1].replace(/''/g, "'");
+        const found = (options.localAccounts ?? ['susentorno']).find(
+          (account) => account.toLowerCase() === name.toLowerCase(),
+        );
+        return ok(found ? JSON.stringify({ Name: found, Enabled: true }) : '');
+      }
+      if (command.startsWith('Get-SmbShareAccess')) {
+        if (options.shareGrantsRead === false) return ok('');
+        return ok(
+          JSON.stringify(
+            (options.localAccounts ?? ['susentorno']).map((account) => ({
+              AccountName: `WIN-HOST\\${account}`,
+              AccessControlType: 'Allow',
+              AccessRight: 'Read',
+            })),
+          ),
         );
       }
       if (command.startsWith('Stop-VM')) {
@@ -168,6 +191,59 @@ export const SUPPORTED_GUEST_RESPONSES: Record<string, WindowsGuestResult> = {
   ),
 };
 
+/** The guest's Credential Manager and SMB behavior, stateful across a run. */
+export interface ShareGuest {
+  /** The credential currently stored per host address (by the replace script). */
+  stored: Map<string, { account: string; password: string }>;
+  /** Whether the stored credential at this address authenticates (default: always). */
+  accepts?: (credential: { account: string; password: string }, hostIp: string) => boolean;
+  /** Replaces the answer to a verify or replace script outright. */
+  override?: Partial<
+    Record<'replace' | 'verify' | 'close' | 'cleanup', WindowsGuestResult | Error>
+  >;
+}
+
+export const shareGuest = (options: Partial<ShareGuest> = {}): ShareGuest => ({
+  stored: new Map(),
+  ...options,
+});
+
+const shareOperation = (script: string): string | undefined =>
+  /^# susentorno share credential: (\w+)/.exec(script)?.[1];
+
+function shareAnswer(script: string, guest: ShareGuest): WindowsGuestResult | Error {
+  const operation = shareOperation(script)! as 'replace' | 'verify' | 'close' | 'cleanup';
+  const override = guest.override?.[operation];
+  if (override) return override;
+  if (operation === 'replace') {
+    const hostIp = /\$target = '([^']+)'/.exec(script)![1];
+    const account = /\$account = '((?:[^']|'')*)'/.exec(script)![1].replace(/''/g, "'");
+    const base64 = /FromBase64String\('([^']+)'\)/.exec(script)![1];
+    guest.stored.set(hostIp, { account, password: Buffer.from(base64, 'base64').toString('utf8') });
+    return guestOk(JSON.stringify({ Outcome: 'ok' }));
+  }
+  if (operation === 'verify') {
+    const hostIp = /\$root = '\\\\' \+ '([^']+)'/.exec(script)![1];
+    const credential = guest.stored.get(hostIp);
+    if (guest.accepts && (!credential || !guest.accepts(credential, hostIp))) {
+      return guestOk(
+        JSON.stringify({ Outcome: 'error', Stage: 'read', Win32: 1326, Message: 'logon failure' }),
+      );
+    }
+    return guestOk(JSON.stringify({ Outcome: 'ok' }));
+  }
+  if (operation === 'cleanup') {
+    const results = [
+      ...script.matchAll(/HostIp = '([^']+)'; Unc = [^@]*?Delete = \$(true|false)/g),
+    ].map((match) => {
+      if (match[2] === 'true') guest.stored.delete(match[1]);
+      return { HostIp: match[1], Outcome: 'ok' };
+    });
+    return guestOk(JSON.stringify({ Results: results }));
+  }
+  return guestOk(JSON.stringify({ Outcome: 'ok' }));
+}
+
 export type GuestBehavior = (
   script: string,
   credential: WindowsGuestCredential,
@@ -176,8 +252,10 @@ export type GuestBehavior = (
 /** Routes a guest script to the canned response for whichever structural check it is. */
 export function structuralChecksBehavior(
   overrides: Partial<Record<string, WindowsGuestResult | Error>> = {},
+  share: ShareGuest = shareGuest(),
 ): GuestBehavior {
   return (script) => {
+    if (shareOperation(script)) return shareAnswer(script, share);
     const key =
       script === PLATFORM_SCRIPT
         ? 'platform'

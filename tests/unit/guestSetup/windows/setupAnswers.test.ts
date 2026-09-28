@@ -134,6 +134,18 @@ describe('pairedCredentialPrompt', () => {
     expect(nameQuestions.map((a) => a.defaultValue)).toEqual([undefined, 'Administrator']);
   });
 
+  it('offers a configured default for the first name question, then the previous name', async () => {
+    const { prompts, asked } = scriptedPrompts({
+      'Guest username': ['', 'Other'],
+      'Guest password': ['bad', 'good'],
+    });
+    const pair = pairedCredentialPrompt(prompts, { ...questions, defaultName: 'susentorno' });
+    expect(await pair.next()).toEqual({ status: 'pair', name: 'susentorno', secret: 'bad' });
+    expect(await pair.next()).toEqual({ status: 'pair', name: 'Other', secret: 'good' });
+    const nameQuestions = asked.filter((a) => a.question === 'Guest username');
+    expect(nameQuestions.map((a) => a.defaultValue)).toEqual(['susentorno', 'susentorno']);
+  });
+
   it('ends with a distinct result on EOF at the name prompt', async () => {
     const { prompts } = scriptedPrompts({});
     const pair = pairedCredentialPrompt(prompts, questions);

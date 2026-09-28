@@ -35,6 +35,8 @@ export interface PairedCredentialQuestions {
   secretQuestion: string;
   /** A name that came from a flag: used for the first pair only, without prompting for it. */
   initialName?: string;
+  /** The prompt default for the first name question, when it is asked. */
+  defaultName?: string;
 }
 
 export type PairedCredentialResult =
@@ -70,7 +72,7 @@ export function pairedCredentialPrompt(
           name = pendingInitialName;
           pendingInitialName = undefined;
         } else {
-          name = await prompts.text(questions.nameQuestion, previousName);
+          name = await prompts.text(questions.nameQuestion, previousName ?? questions.defaultName);
         }
         previousName = name;
         const secret = await prompts.masked(questions.secretQuestion);

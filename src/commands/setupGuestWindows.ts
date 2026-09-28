@@ -134,6 +134,7 @@ export async function executeSetupGuestWindows(
     phase: describePhase(outcome.phase),
     stepFilename: outcome.kind === 'failure' ? outcome.stepFilename : undefined,
     vmName: outcome.vmName,
+    credentials: outcome.credentials,
     vm:
       outcome.vmName === undefined
         ? undefined

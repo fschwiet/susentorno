@@ -1,4 +1,5 @@
 import type { PowerShellExec } from '../powerShellExec';
+import { describeTarget, type ShareCredentialLedgerEntry } from './shareCredential';
 import {
   buildGetVmCommand,
   parseGetVmResult,
@@ -42,7 +43,17 @@ export interface ResidualStateFooterInput {
   /** Absent when the run ended before a VM name existed. */
   vmName?: string;
   vm?: ResidualVmState;
+  /** What this run did to the guest's VM share credentials, after cleanup. */
+  credentials?: ShareCredentialLedgerEntry[];
 }
+
+const CREDENTIAL_STATUS_TEXT: Record<ShareCredentialLedgerEntry['status'], string> = {
+  verified: 'verified, kept',
+  removed: 'removed (written by this run but never verified)',
+  written: 'written but never verified (cleanup did not run)',
+  'removal-failed':
+    'written but never verified, and could not be removed (delete it in the guest with cmdkey /delete)',
+};
 
 export function formatResidualStateFooter(input: ResidualStateFooterInput): string[] {
   const lines = ['setup-guest-windows: residual state'];
@@ -65,6 +76,12 @@ export function formatResidualStateFooter(input: ResidualStateFooterInput): stri
         ? 'not attached to any switch'
         : `attached to '${input.vm.switchName}'`;
     lines.push(`  VM '${input.vmName}': ${input.vm.powerState}, ${where}`);
+  }
+
+  for (const entry of input.credentials ?? []) {
+    lines.push(
+      `  VM share credential for ${describeTarget(entry)}: ${CREDENTIAL_STATUS_TEXT[entry.status]}`,
+    );
   }
 
   if (input.vmName !== undefined) lines.push('  Nothing was rolled back.');
