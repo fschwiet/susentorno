@@ -1,6 +1,7 @@
 # Choose the production module boundaries
 
 Type: grilling
+Status: claimed
 Blocked by: 06
 
 ## Question
