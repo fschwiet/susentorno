@@ -1,6 +1,7 @@
 # Define end-to-end orchestration and recovery
 
 Type: grilling
+Status: claimed
 Blocked by: 03, 04, 05, 09
 
 ## Question
