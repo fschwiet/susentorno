@@ -23,6 +23,9 @@ export interface StepNaming {
 // `${NN}-${remainder}` and always uses '-'). The same rule applies to
 // pre-scripts/ and post-scripts/ directories alike.
 export const UNIX_STEP_NAMING: StepNaming = { extension: '.sh', caseInsensitiveExtension: false };
+
+// PowerShell steps follow the same `NN-name` shape, but Windows treats file
+// extensions case-insensitively.
 export const WINDOWS_STEP_NAMING: StepNaming = {
   extension: '.ps1',
   caseInsensitiveExtension: true,
