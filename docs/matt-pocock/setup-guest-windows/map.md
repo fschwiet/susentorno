@@ -4,6 +4,8 @@
 
 Produce an approved, implementation-ready specification for `setup-guest-windows`: a host-side command that takes an installed and updated Windows 11 Enterprise guest on the Default Switch through the complete setup and isolated phases without further console work.
 
+Reached: [spec.md](spec.md) (`ready-for-agent`).
+
 ## Notes
 
 - Match the automation boundary of `setup-guest-unix`; VM creation, Windows installation, and Windows Update remain prerequisites.
