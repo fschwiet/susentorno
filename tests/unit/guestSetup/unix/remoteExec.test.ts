@@ -3,7 +3,7 @@ import {
   buildSshRunArgv,
   buildSshCaptureArgv,
   buildScpArgv,
-} from '../../../src/guestSetup/remoteExec';
+} from '../../../../src/guestSetup/unix/remoteExec';
 
 describe('buildSshRunArgv', () => {
   it('wraps the command in bash -ic with -t and the quoted command as one argv element', () => {

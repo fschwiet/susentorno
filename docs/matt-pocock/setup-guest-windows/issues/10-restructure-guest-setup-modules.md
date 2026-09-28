@@ -10,10 +10,16 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** ready-for-review
 
-- [ ] No shared module gains a platform flag or platform branch.
-- [ ] Unix module names and exported symbols are unchanged; only their locations move.
-- [ ] Discovery with `WINDOWS_STEP_NAMING` matches `NN-name.ps1` with a case-insensitive extension, ignores non-matching files and directories, and orders ordinally. Unit tests cover this.
-- [ ] Discovery with `UNIX_STEP_NAMING` behaves exactly as before.
+- [x] No shared module gains a platform flag or platform branch.
+- [x] Unix module names and exported symbols are unchanged; only their locations move.
+- [x] Discovery with `WINDOWS_STEP_NAMING` matches `NN-name.ps1` with a case-insensitive extension, ignores non-matching files and directories, and orders ordinally. Unit tests cover this.
+- [x] Discovery with `UNIX_STEP_NAMING` behaves exactly as before.
 - [ ] The unit, CLI, and existing Unix guest tiers pass.
+
+## Implementation notes
+
+- Discovery API: `listScripts(dir, naming: StepNaming)`, where `StepNaming` is `{ extension, caseInsensitiveExtension }` and `UNIX_STEP_NAMING` / `WINDOWS_STEP_NAMING` are the two exported constants. Both platforms now skip directory entries (a directory named like a step was previously listed for Unix; no real share contains one).
+- `tests/unit/guestSetup/windows/` has no files yet: git does not track empty directories, and the only Windows code in this slice (`WINDOWS_STEP_NAMING`) lives in the shared `listScripts` and is tested in `tests/unit/guestSetup/listScripts.test.ts`.
+- Unit tier passes here. The CLI tier's `setupGuestUnix` test and the Unix guest tier need an elevated Hyper-V host and were not run in this session, so the final acceptance box stays unchecked for the orchestrator.

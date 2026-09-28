@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { waitForReachable } from '../../../src/guestSetup/reachabilityWait';
+import { waitForReachable } from '../../../../src/guestSetup/unix/reachabilityWait';
 
 function fakeClock(start = 0) {
   let t = start;

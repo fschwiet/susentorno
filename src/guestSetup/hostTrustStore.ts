@@ -114,6 +114,19 @@ export function dedupeBySha256(roots: HostTrustedRoot[]): HostTrustedRoot[] {
   return [...seen.values()];
 }
 
+/**
+ * The host roots whose DER SHA-256 is not among the guest's fingerprints.
+ * Comparison is case-insensitive, so fingerprints from `sha256sum` (lowercase)
+ * and from Windows tooling (often uppercase) compare equal.
+ */
+export function diffAmbientCandidates(
+  hostRoots: HostTrustedRoot[],
+  guestFingerprints: string[],
+): HostTrustedRoot[] {
+  const known = new Set(guestFingerprints.map((f) => f.toLowerCase()));
+  return hostRoots.filter((root) => !known.has(root.sha256.toLowerCase()));
+}
+
 export class HostTrustStoreError extends Error {}
 
 export async function enumerateHostTrustedRoots(exec: PowerShellExec): Promise<HostTrustSnapshot> {

@@ -1,6 +1,6 @@
-import type { PowerShellExec } from './powerShellExec';
+import type { PowerShellExec } from '../powerShellExec';
 import type { RemoteExecWithCapture } from './remoteExec';
-import { enumerateHostTrustedRoots, type HostTrustedRoot } from './hostTrustStore';
+import { enumerateHostTrustedRoots, diffAmbientCandidates } from '../hostTrustStore';
 
 export class AmbientTrustError extends Error {}
 
@@ -39,14 +39,6 @@ export function parseGuestFingerprints(stdout: string): string[] {
     .split('\n')
     .map((line) => line.trim().toLowerCase())
     .filter((line) => /^[0-9a-f]{64}$/.test(line));
-}
-
-export function diffAmbientCandidates(
-  hostRoots: HostTrustedRoot[],
-  guestFingerprints: string[],
-): HostTrustedRoot[] {
-  const known = new Set(guestFingerprints.map((f) => f.toLowerCase()));
-  return hostRoots.filter((root) => !known.has(root.sha256.toLowerCase()));
 }
 
 export function ambientCaFileName(sha256: string): string {

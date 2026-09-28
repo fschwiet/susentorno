@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import type { RemoteExec, RemoteExecResult } from '../../../src/guestSetup/remoteExec';
-import type { GuestScript } from '../../../src/guestSetup/listScripts';
-import { runPreScripts, RunPreScriptsError } from '../../../src/guestSetup/runPreScripts';
+import type { RemoteExec, RemoteExecResult } from '../../../../src/guestSetup/unix/remoteExec';
+import type { GuestScript } from '../../../../src/guestSetup/listScripts';
+import { runPreScripts, RunPreScriptsError } from '../../../../src/guestSetup/unix/runPreScripts';
 
 function script(filename: string, slug: string): GuestScript {
   return { path: `/local/${filename}`, filename, slug };

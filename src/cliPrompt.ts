@@ -6,6 +6,12 @@ export interface PromptStreams {
   output: NodeJS.WritableStream;
 }
 
+/** The prompt functions a setup command's answer resolution asks its questions through. */
+export interface SetupAnswerPrompts {
+  text: (question: string, defaultValue?: string) => Promise<string>;
+  masked: (question: string) => Promise<string>;
+}
+
 function defaultStreams(): PromptStreams {
   return { input: process.stdin, output: process.stdout };
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
-import type { RemoteExec, RemoteExecResult } from '../../../src/guestSetup/remoteExec';
-import { mountShare, MountShareError } from '../../../src/guestSetup/mountShare';
+import type { RemoteExec, RemoteExecResult } from '../../../../src/guestSetup/unix/remoteExec';
+import { mountShare, MountShareError } from '../../../../src/guestSetup/unix/mountShare';
 
 function fakeRemoteExec(
   overrides: {

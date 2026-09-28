@@ -1,5 +1,5 @@
 import type { RemoteExec } from './remoteExec';
-import type { GuestScript } from './listScripts';
+import type { GuestScript } from '../listScripts';
 import { quoteForRemoteShell } from './quoteForRemoteShell';
 
 export interface RunPostScriptsOptions {

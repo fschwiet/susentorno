@@ -4,14 +4,14 @@ import { createRealPowerShellExec } from '../../src/guestSetup/powerShellExec';
 import { DEFAULT_NAT_ADAPTER, resolveInternalSwitchNetwork } from '../../src/runHosting/forwarder';
 import { resolveIsolationNetwork } from '../../src/runHosting/isolationNetwork';
 import { resolveHostNetworkNames } from '../../src/hostNetwork/hostNetworkNames';
-import { listScripts } from '../../src/guestSetup/listScripts';
-import { mountShare } from '../../src/guestSetup/mountShare';
-import { runPreScripts } from '../../src/guestSetup/runPreScripts';
+import { listScripts, UNIX_STEP_NAMING } from '../../src/guestSetup/listScripts';
+import { mountShare } from '../../src/guestSetup/unix/mountShare';
+import { runPreScripts } from '../../src/guestSetup/unix/runPreScripts';
 import { isolateVmToSwitch } from '../../src/guestSetup/vmReconcile';
 import { getVmIpAddresses } from '../../src/guestSetup/hyperVQueries';
-import { waitForReachable } from '../../src/guestSetup/reachabilityWait';
-import { realTcpConnect } from '../../src/guestSetup/tcpConnect';
-import type { SshTarget } from '../../src/guestSetup/remoteExec';
+import { waitForReachable } from '../../src/guestSetup/unix/reachabilityWait';
+import { realTcpConnect } from '../../src/guestSetup/unix/tcpConnect';
+import type { SshTarget } from '../../src/guestSetup/unix/remoteExec';
 import {
   startProxyStack,
   stopProxyStack,
@@ -91,7 +91,7 @@ beforeAll(async () => {
     hostIp: defaultSwitchHostIp,
     onStep: (message) => console.log(`phases: mountShare — ${message}`),
   });
-  const scripts = listScripts(join(sharePath, 'pre-scripts')).filter(
+  const scripts = listScripts(join(sharePath, 'pre-scripts'), UNIX_STEP_NAMING).filter(
     (script) => script.slug === 'configure-network',
   );
   expect(scripts).toHaveLength(1);

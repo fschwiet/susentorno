@@ -1,27 +1,24 @@
-import { networkInterfaces, type NetworkInterfaceInfo } from 'node:os';
 import { join } from 'node:path';
 import type { Command } from 'commander';
 import { requireEnvPathsOrExit } from '../envPaths';
-import { resolveForwardListenAddress, DEFAULT_NAT_ADAPTER } from '../runHosting/forwarder';
+import { DEFAULT_NAT_ADAPTER } from '../runHosting/forwarder';
+import { HostNetworkError } from '../hostNetwork/hostNetworkNames';
+import { promptText, promptMasked, type SetupAnswerPrompts } from '../cliPrompt';
+import { resolveVmNameAnswer, resolveConnectionAnswers } from '../guestSetup/unix/setupAnswers';
+import { listScripts, UNIX_STEP_NAMING } from '../guestSetup/listScripts';
 import {
-  createHostNetworkHint,
-  resolveHostNetworkNames,
-  HostNetworkError,
-} from '../hostNetwork/hostNetworkNames';
-import { promptText, promptMasked } from '../cliPrompt';
-import {
-  resolveVmNameAnswer,
-  resolveConnectionAnswers,
-  type SetupAnswerPrompts,
-} from '../guestSetup/setupAnswers';
-import { listScripts } from '../guestSetup/listScripts';
-import { createSshRemoteExec } from '../guestSetup/remoteExec';
-import { mountShare, MountShareError } from '../guestSetup/mountShare';
-import { propagateAmbientTrust, AmbientTrustError } from '../guestSetup/ambientTrust';
+  resolveGuestNetwork,
+  isGuestNetworkResolutionFailure,
+  type ResolvedGuestNetwork,
+  type GuestNetworkResolutionFailure,
+} from '../guestSetup/guestNetwork';
+import { createSshRemoteExec } from '../guestSetup/unix/remoteExec';
+import { mountShare, MountShareError } from '../guestSetup/unix/mountShare';
+import { propagateAmbientTrust, AmbientTrustError } from '../guestSetup/unix/ambientTrust';
 import { HostTrustStoreError } from '../guestSetup/hostTrustStore';
-import { runPreScripts, RunPreScriptsError } from '../guestSetup/runPreScripts';
-import { runPostScripts, RunPostScriptsError } from '../guestSetup/runPostScripts';
-import { ensureKvpDaemon, EnsureKvpDaemonError } from '../guestSetup/kvpDaemon';
+import { runPreScripts, RunPreScriptsError } from '../guestSetup/unix/runPreScripts';
+import { runPostScripts, RunPostScriptsError } from '../guestSetup/unix/runPostScripts';
+import { ensureKvpDaemon, EnsureKvpDaemonError } from '../guestSetup/unix/kvpDaemon';
 import { createRealPowerShellExec } from '../guestSetup/powerShellExec';
 import { isElevated } from '../guestSetup/elevationCheck';
 import { runPreflightChecks } from '../guestSetup/preflightChecks';
@@ -33,8 +30,8 @@ import {
   type VmReconcileDeps,
 } from '../guestSetup/vmReconcile';
 import { getVmIpAddresses } from '../guestSetup/hyperVQueries';
-import { waitForReachable } from '../guestSetup/reachabilityWait';
-import { realTcpConnect } from '../guestSetup/tcpConnect';
+import { waitForReachable } from '../guestSetup/unix/reachabilityWait';
+import { realTcpConnect } from '../guestSetup/unix/tcpConnect';
 
 interface SetupGuestUnixOptions {
   isolationName?: string;
@@ -44,49 +41,6 @@ interface SetupGuestUnixOptions {
   guestUsername?: string;
   shareName?: string;
   shareAccount?: string;
-}
-
-export interface ResolvedGuestNetwork {
-  internalAdapterAlias: string;
-  internalSwitchName: string;
-  internalSwitchHostIp: string;
-  defaultSwitchHostIp: string;
-}
-
-export interface GuestNetworkResolutionFailure {
-  adapterAlias: string;
-  hint: string;
-}
-
-export function resolveGuestNetwork(
-  isolationName: string | undefined,
-  natAdapterAlias: string,
-  interfaces: NodeJS.Dict<NetworkInterfaceInfo[]> = networkInterfaces(),
-): ResolvedGuestNetwork | GuestNetworkResolutionFailure {
-  const names = resolveHostNetworkNames(isolationName);
-  const internalSwitchHostIp = resolveForwardListenAddress(names.adapterAlias, interfaces);
-  if (!internalSwitchHostIp) {
-    return { adapterAlias: names.adapterAlias, hint: createHostNetworkHint(isolationName) };
-  }
-  const defaultSwitchHostIp = resolveForwardListenAddress(natAdapterAlias, interfaces);
-  if (!defaultSwitchHostIp) {
-    return {
-      adapterAlias: natAdapterAlias,
-      hint: 'Pass --nat-adapter-alias, or attach the guest to the Default Switch first.',
-    };
-  }
-  return {
-    internalAdapterAlias: names.adapterAlias,
-    internalSwitchName: names.switchName,
-    internalSwitchHostIp,
-    defaultSwitchHostIp,
-  };
-}
-
-function isResolutionFailure(
-  result: ResolvedGuestNetwork | GuestNetworkResolutionFailure,
-): result is GuestNetworkResolutionFailure {
-  return 'hint' in result;
 }
 
 const REACHABILITY_TROUBLESHOOTING_HINT =
@@ -150,7 +104,7 @@ export function registerSetupGuestUnix(program: Command): void {
         }
         throw error;
       }
-      if (isResolutionFailure(resolved)) {
+      if (isGuestNetworkResolutionFailure(resolved)) {
         console.error(
           `setup-guest-unix: could not find an IPv4 address on adapter '${resolved.adapterAlias}'. ${resolved.hint}`,
         );
@@ -186,8 +140,8 @@ export function registerSetupGuestUnix(program: Command): void {
       const { address, username, shareName, accountName, password } =
         await resolveConnectionAnswers(options, prompts);
 
-      const preScripts = listScripts(join(paths.vmShared, 'pre-scripts'));
-      const postScripts = listScripts(join(paths.vmShared, 'post-scripts'));
+      const preScripts = listScripts(join(paths.vmShared, 'pre-scripts'), UNIX_STEP_NAMING);
+      const postScripts = listScripts(join(paths.vmShared, 'post-scripts'), UNIX_STEP_NAMING);
       const onStep = (message: string) => console.log(`\nsetup-guest-unix: ${message}...\n`);
       const onProgress = (elapsedMs: number) =>
         console.log(

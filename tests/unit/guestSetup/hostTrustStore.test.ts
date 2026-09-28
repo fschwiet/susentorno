@@ -6,6 +6,7 @@ import {
   buildEnumerateTrustedRootsCommand,
   parseTrustedRootsResult,
   dedupeBySha256,
+  diffAmbientCandidates,
   enumerateHostTrustedRoots,
   HostTrustStoreError,
   type HostTrustedRoot,
@@ -137,6 +138,19 @@ describe('dedupeBySha256', () => {
 function fakeExec(result: PowerShellExecResult): PowerShellExec {
   return { run: async () => result };
 }
+
+describe('diffAmbientCandidates', () => {
+  const known: HostTrustedRoot = { thumbprint: 'A', sha256: 'aaaa', pem: 'pem-a' };
+  const unknown: HostTrustedRoot = { thumbprint: 'B', sha256: 'bbbb', pem: 'pem-b' };
+
+  it('drops candidates whose sha256 the guest already has, case-insensitively', () => {
+    expect(diffAmbientCandidates([known, unknown], ['AAAA'])).toEqual([unknown]);
+  });
+
+  it('returns everything when the guest has nothing matching', () => {
+    expect(diffAmbientCandidates([known, unknown], [])).toEqual([known, unknown]);
+  });
+});
 
 describe('enumerateHostTrustedRoots', () => {
   it('throws HostTrustStoreError on a non-zero exit', async () => {

@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import type { SetupAnswerPrompts } from '../../../../src/cliPrompt';
 import {
   resolveVmNameAnswer,
   resolveConnectionAnswers,
-  type SetupAnswerPrompts,
-} from '../../../src/guestSetup/setupAnswers';
+} from '../../../../src/guestSetup/unix/setupAnswers';
 
 /**
  * Records every prompt actually shown, so a test can assert that a flag

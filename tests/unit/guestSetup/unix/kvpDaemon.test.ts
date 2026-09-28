@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import type { RemoteExec, RemoteExecResult } from '../../../src/guestSetup/remoteExec';
+import type { RemoteExec, RemoteExecResult } from '../../../../src/guestSetup/unix/remoteExec';
 import {
   ensureKvpDaemon,
   EnsureKvpDaemonError,
   KVP_DAEMON_PACKAGE,
-} from '../../../src/guestSetup/kvpDaemon';
+} from '../../../../src/guestSetup/unix/kvpDaemon';
 
 describe('ensureKvpDaemon', () => {
   it('installs the KVP daemon package', async () => {

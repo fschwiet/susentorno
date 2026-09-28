@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { quoteForRemoteShell } from '../../../src/guestSetup/quoteForRemoteShell';
+import { quoteForRemoteShell } from '../../../../src/guestSetup/unix/quoteForRemoteShell';
 
 describe('quoteForRemoteShell', () => {
   it('wraps a plain value in single quotes', () => {

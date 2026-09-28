@@ -7,7 +7,7 @@ import {
   type RemoteExecResult,
   type RemoteExecWithCapture,
   type SshTarget,
-} from '../../src/guestSetup/remoteExec';
+} from '../../src/guestSetup/unix/remoteExec';
 import { harnessKeyPath, imageCacheDir } from './hyperv/imageCache';
 export const HARNESS_KNOWN_HOSTS_PATH = join(imageCacheDir, 'harness-known-hosts');
 export function buildHarnessSshOptions(): string[] {

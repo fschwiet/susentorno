@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { SshTarget } from '../../src/guestSetup/remoteExec';
+import type { SshTarget } from '../../src/guestSetup/unix/remoteExec';
 import { repoRoot } from '../testEnvRoot';
 import { guestCapture } from './guestExec';
 import type { GuestRole } from './hyperv/imageCache';

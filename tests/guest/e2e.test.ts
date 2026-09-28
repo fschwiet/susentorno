@@ -7,11 +7,11 @@ import { DEFAULT_NAT_ADAPTER, resolveInternalSwitchNetwork } from '../../src/run
 import { resolveIsolationNetwork } from '../../src/runHosting/isolationNetwork';
 import { resolveHostNetworkNames } from '../../src/hostNetwork/hostNetworkNames';
 import { getVmIpAddresses } from '../../src/guestSetup/hyperVQueries';
-import { waitForReachable } from '../../src/guestSetup/reachabilityWait';
-import { realTcpConnect } from '../../src/guestSetup/tcpConnect';
+import { waitForReachable } from '../../src/guestSetup/unix/reachabilityWait';
+import { realTcpConnect } from '../../src/guestSetup/unix/tcpConnect';
 import { isolateVmToSwitch, reconcileVmToSwitch } from '../../src/guestSetup/vmReconcile';
 import { GITHUB_PLACEHOLDER_PAT } from '../../src/githubPlaceholder';
-import type { SshTarget } from '../../src/guestSetup/remoteExec';
+import type { SshTarget } from '../../src/guestSetup/unix/remoteExec';
 import {
   HOST_CODEX_ACCOUNT_ID,
   startProxyStack,

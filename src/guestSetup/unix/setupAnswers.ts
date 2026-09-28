@@ -1,7 +1,4 @@
-export interface SetupAnswerPrompts {
-  text: (question: string, defaultValue?: string) => Promise<string>;
-  masked: (question: string) => Promise<string>;
-}
+import type { SetupAnswerPrompts } from '../../cliPrompt';
 
 /** The five answers that have a flag. The SMB share password never does. */
 export interface SetupAnswerFlags {

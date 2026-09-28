@@ -181,7 +181,7 @@ The share then lives at `/mnt/vm-shared-linux`. `cd` into `pre-scripts/` and run
 
 **Post-scripts** — `cd` into `post-scripts/` and run every script in order: normally `01-auth-config.sh`, then `02-apply-home-jq-transforms.sh`.
 
-Before installing anything else, the automated command also installs a Hyper-V KVP/Data Exchange daemon package (`linux-cloud-tools-virtual` at the time of writing — see `src/guestSetup/kvpDaemon.ts`) so `Get-VMNetworkAdapter`'s reported IP addresses work; if reproducing this by hand for diagnosis, `sudo apt-get install -y linux-cloud-tools-virtual` is that step. Its `hv-kvp-daemon.service` only comes up once the guest has rebooted since install — not an issue in the automated flow, since isolation reboots the guest before anything depends on the daemon, but if you install it by hand without a reboot the service will sit `inactive` until one happens (or until `sudo udevadm trigger && sudo udevadm settle` re-registers its vmbus device).
+Before installing anything else, the automated command also installs a Hyper-V KVP/Data Exchange daemon package (`linux-cloud-tools-virtual` at the time of writing — see `src/guestSetup/unix/kvpDaemon.ts`) so `Get-VMNetworkAdapter`'s reported IP addresses work; if reproducing this by hand for diagnosis, `sudo apt-get install -y linux-cloud-tools-virtual` is that step. Its `hv-kvp-daemon.service` only comes up once the guest has rebooted since install — not an issue in the automated flow, since isolation reboots the guest before anything depends on the daemon, but if you install it by hand without a reboot the service will sit `inactive` until one happens (or until `sudo udevadm trigger && sudo udevadm settle` re-registers its vmbus device).
 
 </details>
 

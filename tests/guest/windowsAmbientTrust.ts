@@ -1,5 +1,7 @@
-import { diffAmbientCandidates } from '../../src/guestSetup/ambientTrust';
-import { enumerateHostTrustedRoots } from '../../src/guestSetup/hostTrustStore';
+import {
+  diffAmbientCandidates,
+  enumerateHostTrustedRoots,
+} from '../../src/guestSetup/hostTrustStore';
 import type { PowerShellExec } from '../../src/guestSetup/powerShellExec';
 import type { WindowsGuestExec } from './windowsGuestExec';
 

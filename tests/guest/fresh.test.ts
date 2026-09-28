@@ -3,10 +3,10 @@ import { join } from 'node:path';
 import { createRealPowerShellExec } from '../../src/guestSetup/powerShellExec';
 import { resolveIsolationNetwork } from '../../src/runHosting/isolationNetwork';
 import { resolveHostNetworkNames } from '../../src/hostNetwork/hostNetworkNames';
-import { listScripts } from '../../src/guestSetup/listScripts';
-import { mountShare } from '../../src/guestSetup/mountShare';
-import { runPreScripts } from '../../src/guestSetup/runPreScripts';
-import type { SshTarget } from '../../src/guestSetup/remoteExec';
+import { listScripts, UNIX_STEP_NAMING } from '../../src/guestSetup/listScripts';
+import { mountShare } from '../../src/guestSetup/unix/mountShare';
+import { runPreScripts } from '../../src/guestSetup/unix/runPreScripts';
+import type { SshTarget } from '../../src/guestSetup/unix/remoteExec';
 import { startProxyStack, stopProxyStack, type ProxyStack } from '../proxyStack';
 import { envRoot } from '../testEnvRoot';
 import { artifactsDir, collectDiagnostics } from './diagnostics';
@@ -92,7 +92,7 @@ describe('a fresh guest starting in the isolated phase', () => {
   }, 900_000);
 
   it('configure-network leaves the DHCP-supplied networking untouched', async () => {
-    const scripts = listScripts(join(sharePath, 'pre-scripts')).filter(
+    const scripts = listScripts(join(sharePath, 'pre-scripts'), UNIX_STEP_NAMING).filter(
       (script) => script.slug === 'configure-network',
     );
     expect(scripts).toHaveLength(1);

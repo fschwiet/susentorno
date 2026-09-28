@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildFstabReplaceCommand } from '../../../src/guestSetup/fstabLine';
+import { buildFstabReplaceCommand } from '../../../../src/guestSetup/unix/fstabLine';
 
 describe('buildFstabReplaceCommand', () => {
   it('deletes any existing line for the mount point, then appends the correct one', () => {

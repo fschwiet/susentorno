@@ -1,21 +1,22 @@
 import { describe, it, expect } from 'vitest';
-import type { PowerShellExec, PowerShellExecResult } from '../../../src/guestSetup/powerShellExec';
+import type {
+  PowerShellExec,
+  PowerShellExecResult,
+} from '../../../../src/guestSetup/powerShellExec';
 import type {
   RemoteExecWithCapture,
   RemoteExecResult,
   RemoteExecCaptureResult,
-} from '../../../src/guestSetup/remoteExec';
-import type { HostTrustedRoot } from '../../../src/guestSetup/hostTrustStore';
+} from '../../../../src/guestSetup/unix/remoteExec';
 import {
   AmbientTrustError,
   buildSetNodeExtraCaCertsCommand,
   buildListGuestFingerprintsCommand,
   parseGuestFingerprints,
-  diffAmbientCandidates,
   ambientCaFileName,
   buildInstallAmbientCaCommand,
   propagateAmbientTrust,
-} from '../../../src/guestSetup/ambientTrust';
+} from '../../../../src/guestSetup/unix/ambientTrust';
 
 describe('buildSetNodeExtraCaCertsCommand', () => {
   const command = buildSetNodeExtraCaCertsCommand();
@@ -47,19 +48,6 @@ describe('parseGuestFingerprints', () => {
 
   it('returns an empty array for empty stdout', () => {
     expect(parseGuestFingerprints('')).toEqual([]);
-  });
-});
-
-describe('diffAmbientCandidates', () => {
-  const known: HostTrustedRoot = { thumbprint: 'A', sha256: 'aaaa', pem: 'pem-a' };
-  const unknown: HostTrustedRoot = { thumbprint: 'B', sha256: 'bbbb', pem: 'pem-b' };
-
-  it('drops candidates whose sha256 the guest already has, case-insensitively', () => {
-    expect(diffAmbientCandidates([known, unknown], ['AAAA'])).toEqual([unknown]);
-  });
-
-  it('returns everything when the guest has nothing matching', () => {
-    expect(diffAmbientCandidates([known, unknown], [])).toEqual([known, unknown]);
   });
 });
 
