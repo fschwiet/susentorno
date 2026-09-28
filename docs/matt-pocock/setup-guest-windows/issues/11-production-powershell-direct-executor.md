@@ -22,10 +22,21 @@ interface WindowsGuestExecutor {
 
 **Blocked by:** 10
 
-**Status:** ready-for-agent
+**Status:** ready-for-review
 
-- [ ] Unit tests cover the bridge request protocol, result parsing, the classification of each typed failure, deadline and timeout handling, cancellation, and redaction. No test output or error contains the credential.
-- [ ] Readiness polling tells retryable not-ready apart from auth rejection, which is never retried into a timeout.
-- [ ] A packaged build includes the bridge, and `update-shares` does not copy it into any VM share.
-- [ ] The existing Windows guest-tier role passes using the production executor, and the harness no longer builds a `-Command` string containing the password.
-- [ ] The unit, CLI, and guest tiers pass.
+- [x] Unit tests cover the bridge request protocol, result parsing, the classification of each typed failure, deadline and timeout handling, cancellation, and redaction. No test output or error contains the credential.
+- [x] Readiness polling tells retryable not-ready apart from auth rejection, which is never retried into a timeout.
+- [x] A packaged build includes the bridge, and `update-shares` does not copy it into any VM share.
+- [x] The existing Windows guest-tier role passes using the production executor, and the harness no longer builds a `-Command` string containing the password.
+- [x] The unit, CLI, and guest tiers pass.
+
+## Implementation notes
+
+- Production code: `src/guestSetup/windows/guestExecutor.ts` (`createWindowsGuestExecutor`, `waitForPowerShellDirect`, and a typed `WindowsGuestError` whose `kind` is `transport`, `authentication`, `protocol`, `deadline`, `cancelled`, or `timeout`) and the shipped bridge `templates/powershell/windowsGuestBridge.ps1`, resolved by `windowsGuestBridgePath()` in `src/templates.ts`.
+- Bridge protocol: one JSON request on stdin (non-ASCII characters are written as unicode escapes); one JSON line back, either `{kind:'result',...}` or `{kind:'error', category, message}`. The bridge classifies a rejected credential from PowerShell Direct's "credential is invalid" error. A remote terminating error is `protocol`. Every other connection failure is retryable `transport`. Anything else the bridge prints, or a nonzero exit without an envelope, is `protocol`.
+- Host supervision: a wedged bridge is force-killed after the invocation deadline plus a 30-second margin (a `deadline` failure). An `AbortSignal` returns `cancelled` at once and leaves the bridge running. `dispose()` waits up to 30 seconds for such bridges, then force-kills them, and drops the credential.
+- Redaction: every thrown message has the password, username, script and base64 script replaced with `[redacted]`, and is truncated to 2000 characters. Guest stdout and stderr in a completed result are returned as-is.
+- `waitForPowerShellDirect` returns `auth-rejected` on the first authentication rejection and retries `transport` and `deadline` failures until its deadline (`timeout`).
+- Harness: `tests/guest/windowsGuestExec.ts` is now a thin adapter (stdout and stderr merged into `stdout`, as the old execa-based exec did) plus the 20-minute OOBE wait and screenshot hint. `windowsFresh` gained live coverage of the executor: UTF-8 round trip, distinct streams, exit code, no CLIXML progress on stderr, guest-child kill at the deadline, and wrong-password `auth-rejected`.
+- Packaging: `tests/cli/windowsGuestBridge.test.ts` checks that `pnpm pack --dry-run` lists the bridge and that `init` and `update-shares` never copy it into a share.
+- Verification: format, lint, typecheck, unit (843 tests), CLI (38 passed, 1 skipped) and the `windowsFresh` guest role (18 tests) pass. A full guest-tier run passed 50 of 51 tests. The one failure was the Ubuntu `ambientTrust` test (openssl "certificate signature failure" in the guest). It passed when rerun alone, and it does not touch code changed here.

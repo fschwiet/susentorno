@@ -25,3 +25,11 @@ export function packagedAuthList(): string {
 export function packagedBlockList(): string {
   return join(packageRoot(), 'current-block-list.txt');
 }
+
+/**
+ * The PowerShell Direct bridge lives under templates/ but outside every
+ * vm-shared-* directory, so update-shares never weaves it into a guest share.
+ */
+export function windowsGuestBridgePath(): string {
+  return join(templatesDir(), 'powershell', 'windowsGuestBridge.ps1');
+}

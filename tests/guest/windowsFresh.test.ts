@@ -14,6 +14,11 @@ import {
   type WindowsTestGuest,
 } from './hyperv/windowsTestGuest';
 import { createTestShare, removeTestShare, type TestShare } from './testShare';
+import {
+  createWindowsGuestExecutor,
+  waitForPowerShellDirect as waitForProductionPowerShellDirect,
+  type WindowsGuestExecutor,
+} from '../../src/guestSetup/windows/guestExecutor';
 import { collectWindowsDiagnostics } from './windowsDiagnostics';
 import { propagateAmbientTrustToWindows } from './windowsAmbientTrust';
 import {
@@ -30,6 +35,7 @@ const { switchName: internalSwitchName } = resolveHostNetworkNames(ISOLATION_NAM
 let stack: ProxyStack;
 let share: TestShare;
 let guest: WindowsTestGuest;
+let executor: WindowsGuestExecutor;
 let session: WindowsGuestExec;
 let internalHostIp: string;
 /** The guest's DHCP interface index; every network assertion is scoped to it. */
@@ -45,8 +51,10 @@ describe('a fresh Windows guest starting in the isolated phase', () => {
     internalHostIp = internal.address;
 
     guest = await createWindowsTestGuest(exec, 'windowsFresh', internalSwitchName, artifactsDir);
-    session = createWindowsGuestExec(exec, guest.vmName, ensureWindowsCredential());
-    await waitForPowerShellDirect(session, {
+    const credential = ensureWindowsCredential();
+    executor = createWindowsGuestExecutor({ vmName: guest.vmName, credential });
+    session = createWindowsGuestExec(executor);
+    await waitForPowerShellDirect(executor, {
       onProgress: (ms) =>
         console.log(`windowsFresh: waiting for PowerShell Direct... (${Math.round(ms / 1000)}s)`),
     });
@@ -89,10 +97,68 @@ describe('a fresh Windows guest starting in the isolated phase', () => {
 
   afterAll(async () => {
     if (session) await collectWindowsDiagnostics(session, 'windowsFresh').catch(() => {});
+    if (executor) await executor.dispose().catch(() => {});
     if (guest) await destroyWindowsTestGuest(exec, guest).catch(() => {});
     if (share) await removeTestShare(exec, sharePath).catch(() => {});
     if (stack) await stopProxyStack(stack).catch(() => {});
   }, 600_000);
+
+  describe('the production PowerShell Direct executor', () => {
+    it('round-trips awkward UTF-8 with distinct streams and the guest exit code', async () => {
+      const script = [
+        "[Console]::Out.Write('single '' quote; double \" quote; dollar $; backtick `; snowman ☃; 𠜎')",
+        "[Console]::Error.Write('separate-error-☃')",
+        'exit 23',
+      ].join('\n');
+      const result = await executor.invoke(script, { timeoutMs: 60_000 });
+      expect(result.exitCode).toBe(23);
+      expect(result.timedOut).toBe(false);
+      expect(result.stdout).toBe(
+        'single \' quote; double " quote; dollar $; backtick `; snowman ☃; 𠜎',
+      );
+      expect(result.stderr).toBe('separate-error-☃');
+    });
+
+    it('does not let module-loading progress pollute stderr as CLIXML', async () => {
+      const result = await executor.invoke('Get-NetIPAddress | Out-Null; Get-NetRoute | Out-Null', {
+        timeoutMs: 60_000,
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe('');
+    });
+
+    it('kills the guest child at the deadline and reports exit 124', async () => {
+      const result = await executor.invoke(
+        '[Console]::Out.WriteLine($PID); [Console]::Out.Flush(); Start-Sleep -Seconds 120',
+        { timeoutMs: 5000 },
+      );
+      expect(result).toMatchObject({ exitCode: 124, timedOut: true });
+      const childPid = result.stdout.trim();
+      expect(childPid).toMatch(/^\d+$/);
+      const check = await executor.invoke(
+        `if (Get-Process -Id ${childPid} -ErrorAction SilentlyContinue) { 'alive' } else { 'gone' }`,
+        { timeoutMs: 30_000 },
+      );
+      expect(check.stdout.trim()).toBe('gone');
+    });
+
+    it('reports a wrong password as auth-rejected rather than timing out', async () => {
+      const wrong = createWindowsGuestExecutor({
+        vmName: guest.vmName,
+        credential: {
+          username: ensureWindowsCredential().username,
+          password: 'Definitely-Wrong-1!',
+        },
+      });
+      try {
+        await expect(
+          waitForProductionPowerShellDirect(wrong, { deadlineMs: 120_000 }),
+        ).resolves.toBe('auth-rejected');
+      } finally {
+        await wrong.dispose();
+      }
+    }, 180_000);
+  });
 
   describe('configuration arrived entirely from the host', () => {
     it('took its address from the real DHCP server', async () => {

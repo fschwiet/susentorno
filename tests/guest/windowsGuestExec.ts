@@ -1,6 +1,8 @@
-import type { PowerShellExec } from '../../src/guestSetup/powerShellExec';
-import { quoteForPowerShell } from '../../src/guestSetup/quoteForPowerShell';
-import type { WindowsCredential } from './hyperv/windowsCredential';
+import {
+  waitForPowerShellDirect as waitForProductionPowerShellDirect,
+  WindowsGuestError,
+  type WindowsGuestExecutor,
+} from '../../src/guestSetup/windows/guestExecutor';
 
 export class WindowsGuestExecError extends Error {}
 
@@ -9,9 +11,12 @@ export interface WindowsGuestExecResult {
   stdout: string;
 }
 
+/** Long enough for a heavy assertion script; short enough to fail a hung guest. */
+export const HARNESS_INVOCATION_TIMEOUT_MS = 5 * 60_000;
+
 /**
  * The Windows sibling of guestExec.ts, sharing nothing with it deliberately: a
- * common abstraction over `bash -ic` and `Invoke-Command -VMName` would be a
+ * common abstraction over `bash -ic` and PowerShell Direct would be a
  * worse module than two honest ones.
  *
  * PowerShell Direct runs over the Hyper-V VMBus with no network involvement,
@@ -19,6 +24,11 @@ export interface WindowsGuestExecResult {
  * network under test, survivable only because the serial console keeps
  * logging. Windows writes nothing to serial, so an in-band transport would
  * make a DHCP failure a black box.
+ *
+ * This is only a thin adapter over the production WindowsGuestExecutor, so the
+ * harness exercises the real transport and the guest password never appears in
+ * a process argument. The credential, the PSModulePath repair, and script
+ * transport all live behind that executor.
  */
 export interface WindowsGuestExec {
   vmName: string;
@@ -27,68 +37,52 @@ export interface WindowsGuestExec {
 }
 
 /**
- * The guest script crosses as base64 rather than as a quoted literal. It is a
- * PowerShell string inside a PowerShell -Command string inside an argv entry;
- * quoteForPowerShell handles one level of that, not three, and a guest script
- * containing quotes, backticks, `$`, and newlines defeats the nesting outright.
+ * `stdout` carries the guest's stdout followed by its stderr, the merged view
+ * the previous execa-based exec gave, so an assertion message shows both.
  */
-export function buildInvokeDirectCommand(
-  vmName: string,
-  credential: WindowsCredential,
-  script: string,
-): string {
-  const encoded = Buffer.from(script, 'utf8').toString('base64');
-  return [
-    // Confirmed live and 100% reproducible: when this host process's own
-    // $env:PSModulePath has PowerShell 7's module paths mixed in (true
-    // whenever pwsh.exe sits anywhere in the process's ancestry), Windows
-    // PowerShell 5.1 resolves Microsoft.PowerShell.Security to an
-    // incompatible PS7 build and ConvertTo-SecureString fails to load its
-    // module on every single invocation — which waitForPowerShellDirect saw
-    // as 80 identical failures over 20 minutes, despite the guest itself
-    // answering fine outside the harness. Prepending the real WinPS5.1
-    // system32 module path fixes it regardless of what was inherited.
-    '$env:PSModulePath = "$env:SystemRoot\\System32\\WindowsPowerShell\\v1.0\\Modules;" + $env:PSModulePath',
-    "$ErrorActionPreference = 'Stop'",
-    `$secure = ConvertTo-SecureString ${quoteForPowerShell(credential.password)} -AsPlainText -Force`,
-    `$credential = New-Object System.Management.Automation.PSCredential(${quoteForPowerShell(credential.username)}, $secure)`,
-    `$decoded = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(${quoteForPowerShell(encoded)}))`,
-    '$block = [ScriptBlock]::Create($decoded)',
-    `Invoke-Command -VMName ${quoteForPowerShell(vmName)} -Credential $credential -ScriptBlock $block`,
-  ].join('; ');
-}
-
 export function createWindowsGuestExec(
-  exec: PowerShellExec,
-  vmName: string,
-  credential: WindowsCredential,
+  executor: WindowsGuestExecutor,
+  timeoutMs: number = HARNESS_INVOCATION_TIMEOUT_MS,
 ): WindowsGuestExec {
-  const invoke = (script: string): Promise<WindowsGuestExecResult> =>
-    exec.run(buildInvokeDirectCommand(vmName, credential, script));
-  return { vmName, run: invoke, capture: invoke };
+  const invoke = async (script: string): Promise<WindowsGuestExecResult> => {
+    const result = await executor.invoke(script, { timeoutMs });
+    return { exitCode: result.exitCode, stdout: `${result.stdout}${result.stderr}` };
+  };
+  return { vmName: executor.vmName, run: invoke, capture: invoke };
 }
 
 /**
- * Replaces the reachability probe the Ubuntu roles need. The guest's address
- * is something this role asks about, not a precondition for asking anything.
+ * Test policy layered on the production readiness wait: a 20-minute OOBE
+ * allowance and the screenshot hint an OOBE-stuck guest needs. A guest booted
+ * from a differencing disk can take that long to reach its first logon.
  */
 export async function waitForPowerShellDirect(
-  guest: WindowsGuestExec,
+  executor: WindowsGuestExecutor,
   opts: { timeoutMs?: number; onProgress?: (elapsedMs: number) => void } = {},
 ): Promise<void> {
   const timeoutMs = opts.timeoutMs ?? 20 * 60_000;
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    const { exitCode, stdout } = await guest.capture('"ready"');
-    if (exitCode === 0 && stdout.includes('ready')) return;
-    opts.onProgress?.(Date.now() - started);
-    await new Promise((resolve) => setTimeout(resolve, 15_000));
+  try {
+    const readiness = await waitForProductionPowerShellDirect(executor, {
+      deadlineMs: timeoutMs,
+      onHeartbeat: opts.onProgress,
+    });
+    if (readiness === 'auth-rejected') {
+      throw new WindowsGuestExecError(
+        `windowsGuestExec: '${executor.vmName}' rejected the harness credential over PowerShell Direct. ` +
+          'The golden image and the persisted windows credential are out of sync; rebuild the ' +
+          'Windows golden image (SUSENTORNO_WINDOWS_IMAGE_REBUILD=1).',
+      );
+    }
+  } catch (error) {
+    if (error instanceof WindowsGuestError && error.kind === 'timeout') {
+      throw new WindowsGuestExecError(
+        `windowsGuestExec: '${executor.vmName}' never answered PowerShell Direct within ` +
+          `${Math.round(timeoutMs / 60_000)} minutes. This is the OOBE-failed signature — check the ` +
+          `screenshots for the screen it is stuck on. ${error.message}`,
+      );
+    }
+    throw error;
   }
-  throw new WindowsGuestExecError(
-    `windowsGuestExec: '${guest.vmName}' never answered PowerShell Direct within ` +
-      `${Math.round(timeoutMs / 60_000)} minutes. This is the OOBE-failed signature — check the ` +
-      'screenshots for the screen it is stuck on.',
-  );
 }
 
 /**

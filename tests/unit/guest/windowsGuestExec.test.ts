@@ -1,77 +1,90 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertGuestElevated,
-  buildInvokeDirectCommand,
   createWindowsGuestExec,
+  waitForPowerShellDirect,
   WindowsGuestExecError,
 } from '../../guest/windowsGuestExec';
-import type { PowerShellExec } from '../../../src/guestSetup/powerShellExec';
+import {
+  WindowsGuestError,
+  type WindowsGuestExecutor,
+  type WindowsGuestResult,
+} from '../../../src/guestSetup/windows/guestExecutor';
 
-const credential = { username: 'Administrator', password: "p'w" };
+function executorReturning(
+  outcome: WindowsGuestResult | WindowsGuestError,
+  seen: { script: string; timeoutMs: number }[] = [],
+): WindowsGuestExecutor {
+  return {
+    vmName: 'vm',
+    async invoke(script, options) {
+      seen.push({ script, timeoutMs: options.timeoutMs });
+      if (outcome instanceof WindowsGuestError) throw outcome;
+      return outcome;
+    },
+    async dispose() {},
+  };
+}
 
-describe('buildInvokeDirectCommand', () => {
-  const command = buildInvokeDirectCommand('vm-1', credential, "Write-Host 'hi'");
-
-  it('addresses the VM by name over the VMBus, never by network address', () => {
-    expect(command).toContain('Invoke-Command -VMName');
-    expect(command).toContain("'vm-1'");
-    expect(command).not.toContain('-ComputerName');
-  });
-
-  it('carries the guest script as base64 so nested quoting cannot corrupt it', () => {
-    expect(command).toContain(Buffer.from("Write-Host 'hi'", 'utf8').toString('base64'));
-    expect(command).not.toContain("Write-Host 'hi'");
-    expect(command).toContain('ScriptBlock');
-  });
-
-  it('escapes the credential for a PowerShell single-quoted string', () => {
-    expect(command).toContain("'p''w'");
-  });
-
-  it('round-trips a script containing every awkward metacharacter', () => {
-    const nasty = '$x = "a\'b`;\n Write-Host `"$x`" | Out-Null';
-    const encoded = Buffer.from(nasty, 'utf8').toString('base64');
-    expect(buildInvokeDirectCommand('vm', credential, nasty)).toContain(encoded);
-  });
-
-  it('resets PSModulePath before touching ConvertTo-SecureString', () => {
-    // Confirmed live and 100% reproducible: when the *host* process's own
-    // $env:PSModulePath has been prepended with PowerShell 7's module paths
-    // (which happens whenever pwsh.exe sits anywhere in this process's
-    // ancestry — e.g. a session launched via pwsh rather than cmd/bash),
-    // Windows PowerShell 5.1 resolves Microsoft.PowerShell.Security to an
-    // incompatible PS7 build and ConvertTo-SecureString fails with
-    // "the module could not be loaded" — silently, every single retry,
-    // which is exactly what waitForPowerShellDirect saw: 80 attempts over
-    // 20 minutes, all failing the same way, despite the guest itself
-    // answering fine outside the harness. Prepending the real WinPS5.1
-    // system32 module path before anything else runs fixes it regardless
-    // of what the parent process inherited.
-    expect(command.indexOf('PSModulePath')).toBeLessThan(command.indexOf('ConvertTo-SecureString'));
-    expect(command).toContain('System32\\WindowsPowerShell\\v1.0\\Modules');
-  });
+const done = (stdout: string, stderr = '', exitCode = 0): WindowsGuestResult => ({
+  exitCode,
+  stdout,
+  stderr,
+  timedOut: false,
 });
 
 describe('createWindowsGuestExec', () => {
-  it('returns the guest exit code and stdout', async () => {
-    const exec: PowerShellExec = { run: async () => ({ exitCode: 0, stdout: 'ok\n' }) };
-    const guest = createWindowsGuestExec(exec, 'vm', credential);
+  it('runs scripts through the production executor with a bounded timeout', async () => {
+    const seen: { script: string; timeoutMs: number }[] = [];
+    const guest = createWindowsGuestExec(executorReturning(done('ok\n'), seen), 1234);
+    expect(guest.vmName).toBe('vm');
     expect(await guest.capture('whoami')).toEqual({ exitCode: 0, stdout: 'ok\n' });
+    expect(seen).toEqual([{ script: 'whoami', timeoutMs: 1234 }]);
+  });
+
+  it('shows stderr after stdout so a failure message keeps both', async () => {
+    const guest = createWindowsGuestExec(executorReturning(done('out\n', 'err\n', 3)));
+    expect(await guest.run('x')).toEqual({ exitCode: 3, stdout: 'out\nerr\n' });
+  });
+});
+
+describe('waitForPowerShellDirect (harness policy)', () => {
+  it('resolves once the guest answers', async () => {
+    await expect(
+      waitForPowerShellDirect(executorReturning(done('ready'))),
+    ).resolves.toBeUndefined();
+  });
+
+  it('fails clearly, without retrying, when the guest rejects the credential', async () => {
+    const rejected = new WindowsGuestError('authentication', 'The credential is invalid.');
+    await expect(waitForPowerShellDirect(executorReturning(rejected))).rejects.toThrow(
+      /rejected the harness credential/,
+    );
+  });
+
+  it('keeps the OOBE-failed hint when the guest never answers', async () => {
+    const notReady = new WindowsGuestError('transport', 'The virtual machine is not running.');
+    await expect(
+      waitForPowerShellDirect(executorReturning(notReady), { timeoutMs: 1 }),
+    ).rejects.toThrow(/OOBE-failed signature/);
+  });
+
+  it('lets a bridge protocol failure through untouched', async () => {
+    const broken = new WindowsGuestError('protocol', 'bridge exploded');
+    await expect(waitForPowerShellDirect(executorReturning(broken))).rejects.toBe(broken);
   });
 });
 
 describe('assertGuestElevated', () => {
   it('passes when the guest reports an administrative token', async () => {
-    const exec: PowerShellExec = { run: async () => ({ exitCode: 0, stdout: 'True' }) };
     await expect(
-      assertGuestElevated(createWindowsGuestExec(exec, 'vm', credential)),
+      assertGuestElevated(createWindowsGuestExec(executorReturning(done('True')))),
     ).resolves.toBeUndefined();
   });
 
   it('throws when the token came back filtered', async () => {
-    const exec: PowerShellExec = { run: async () => ({ exitCode: 0, stdout: 'False' }) };
     await expect(
-      assertGuestElevated(createWindowsGuestExec(exec, 'vm', credential)),
+      assertGuestElevated(createWindowsGuestExec(executorReturning(done('False')))),
     ).rejects.toThrow(WindowsGuestExecError);
   });
 });
