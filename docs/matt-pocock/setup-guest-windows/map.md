@@ -23,6 +23,7 @@ Produce an approved, implementation-ready specification for `setup-guest-windows
 
 - [Define the command and prerequisite contract](issues/01-define-command-and-prerequisite-contract.md): `setup-guest-windows` supports an allowlisted Windows 11 Enterprise x64 25H2 platform, paired credential prompts, strict host/guest preflight, and full-flow replay from the Default Switch without rollback.
 - [Prototype the secure PowerShell Direct boundary](issues/02-prototype-secure-powershell-direct-boundary.md): use a credential-scoped executor that sends each request to a short-lived PowerShell Direct bridge over stdin and returns UTF-8 stdout, stderr, and child-process status under explicit deadlines.
+- [Define the Windows share credential lifecycle](issues/03-define-windows-share-credential-lifecycle.md): retain verified address-keyed credentials for both expected networks, use UNC paths without mappings, and securely replace, verify, and clean up each entry on replay.
 
 ## Not yet specified
 
