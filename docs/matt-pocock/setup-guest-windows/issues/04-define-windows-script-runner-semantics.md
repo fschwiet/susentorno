@@ -1,6 +1,7 @@
 # Define Windows script-runner semantics
 
 Type: grilling
+Status: claimed
 Blocked by: 02, 03
 
 ## Question
