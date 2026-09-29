@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   WindowsGuestError,
+  type WindowsGuestCredential,
   type WindowsGuestResult,
 } from '../../../../src/guestSetup/windows/guestExecutor';
 import { PENDING_REBOOT_SCRIPT } from '../../../../src/guestSetup/windows/guestChecks';
@@ -379,6 +380,29 @@ describe('G1 accepted starting states', () => {
     expect(clock.time).toBeGreaterThanOrEqual(60_000);
     expect(clock.time).toBeLessThan(65_000);
     expect(hyperV.commands.some((c) => /^Start-VM|-Force|-TurnOff/.test(c))).toBe(false);
+  });
+});
+
+describe('heartbeats during the graceful stop', () => {
+  const heartbeatLines = (out: string[], label: string): string[] =>
+    out.filter((line) => line.includes(`${label} still waiting for 'win-dev' to stop`));
+
+  it('prints an elapsed-time heartbeat about every 15 seconds while G1 confirms Off', async () => {
+    const { out } = await run({
+      vm: { vmState: 'Running', switchName: 'susentorno-internal' },
+      hyperV: { stopNeverCompletes: true },
+    });
+    expect(heartbeatLines(out, 'G1')).toEqual([
+      "setup-guest-windows: G1 still waiting for 'win-dev' to stop... (16s elapsed)",
+      "setup-guest-windows: G1 still waiting for 'win-dev' to stop... (32s elapsed)",
+      "setup-guest-windows: G1 still waiting for 'win-dev' to stop... (48s elapsed)",
+    ]);
+  });
+
+  it('prints the same heartbeat at G9 when isolation waits for the VM to stop', async () => {
+    const { out } = await run({ hyperV: { stopNeverCompletes: true } });
+    expect(heartbeatLines(out, 'G9')).toHaveLength(3);
+    expect(heartbeatLines(out, 'G1')).toEqual([]);
   });
 });
 
@@ -885,6 +909,7 @@ describe('G4: VM share credentials', () => {
               if (result instanceof Error) throw result;
               return result;
             },
+            async drainCancelled() {},
             async dispose() {},
           }),
         },
@@ -897,6 +922,112 @@ describe('G4: VM share credentials', () => {
       expect(seen[seen.length - 1]).toBeUndefined();
       expect(share.stored.size).toBe(0);
     });
+  });
+});
+
+describe('Ctrl+C while a share credential is being replaced', () => {
+  const flowAnswers = () => ({
+    'Hyper-V VM name': ['win-dev'],
+    'SMB share name': [''],
+    'Guest username': ['Administrator'],
+    'Guest password': [GUEST_PASSWORD],
+    ...shareAnswers(),
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Runs the flow with a guest whose replace script outlives the cancelled caller. */
+  function runInterruptedReplace(options: {
+    /** What draining and the cleanup script do; the default answers normally. */
+    hang?: boolean;
+  }) {
+    const controller = new AbortController();
+    const share = shareGuest();
+    const behavior = structuralChecksBehavior({}, share);
+    const events: EventLog = [];
+    const hyperV = fakeHyperV({}, { events });
+    const { prompts } = scriptedPrompts(flowAnswers());
+    let pendingReplace: string | undefined;
+    const disposed: boolean[] = [];
+    const never = new Promise<never>(() => {});
+    const landLateWrite = (credential: WindowsGuestCredential): void => {
+      if (!pendingReplace) return;
+      const late = pendingReplace;
+      pendingReplace = undefined;
+      behavior(late, credential); // the late CredWrite
+    };
+    const pending = runWindowsSetup(
+      {
+        exec: hyperV.exec,
+        prompts,
+        out: () => {},
+        clock: fakeClock(),
+        context: HOST_CONTEXT,
+        readProxyCaPem,
+        discoverStepPlans: discoverFlowStepPlans,
+        createExecutor: ({ vmName, credential }) => ({
+          vmName,
+          async invoke(script, invokeOptions) {
+            if (script.startsWith('# susentorno share credential: replace')) {
+              pendingReplace = script; // the bridge keeps running after the caller is cancelled
+              controller.abort();
+              return new Promise((_resolve, reject) =>
+                invokeOptions.signal?.addEventListener('abort', () =>
+                  reject(new WindowsGuestError('cancelled', 'The invocation was cancelled.')),
+                ),
+              );
+            }
+            if (options.hang && script.startsWith('# susentorno share credential: cleanup')) {
+              return never;
+            }
+            const result = behavior(script, credential);
+            if (result instanceof Error) throw result;
+            return result;
+          },
+          async drainCancelled() {
+            if (options.hang) return never;
+            landLateWrite(credential);
+          },
+          async dispose() {
+            // Disposal also waits for the bridge, so a write not drained earlier lands now.
+            landLateWrite(credential);
+            disposed.push(true);
+          },
+        }),
+      },
+      {},
+      controller.signal,
+    );
+    return { pending, share, disposed };
+  }
+
+  it('lets the abandoned replace finish before the cleanup delete, so no credential survives', async () => {
+    const { pending, share, disposed } = runInterruptedReplace({});
+    const outcome = await pending;
+    expect(outcome).toMatchObject({
+      kind: 'cancelled',
+      phase: 'G4',
+      reason: 'interrupt',
+      credentials: [{ role: 'default', status: 'removed' }],
+    });
+    expect(share.stored.size).toBe(0);
+    expect(disposed).toEqual([true]);
+  });
+
+  it('finishes cleanup inside the 30 second interrupt allowance even if the guest never answers', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { pending, disposed } = runInterruptedReplace({ hang: true });
+    let outcome: WindowsSetupOutcome | undefined;
+    void pending.then((value) => (outcome = value));
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(outcome).toMatchObject({
+      kind: 'cancelled',
+      phase: 'G4',
+      credentials: [{ role: 'default', status: 'removal-failed' }],
+    });
+    expect(disposed).toEqual([true]);
   });
 });
 
@@ -971,6 +1102,7 @@ describe('cancellation', () => {
                 controller.abort();
               });
             },
+            async drainCancelled() {},
             async dispose() {
               record.disposed = true;
             },

@@ -66,6 +66,7 @@ function fakeGuest(routes: {
       if (route instanceof Error) throw route;
       return route;
     },
+    async drainCancelled() {},
     async dispose() {},
   };
   return { executor, invocations };

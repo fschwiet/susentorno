@@ -21,6 +21,13 @@ export interface WindowsGuestExecutor {
     script: string,
     options: { timeoutMs: number; signal?: AbortSignal },
   ): Promise<WindowsGuestResult>;
+  /**
+   * Wait for every bridge still running, including those whose caller already
+   * cancelled, so a guest script that was mid-flight at cancellation has
+   * finished before anything else is sent to the guest. Bounded: a bridge that
+   * outlasts `timeoutMs` is force-killed. The executor stays usable.
+   */
+  drainCancelled(timeoutMs: number): Promise<void>;
   dispose(): Promise<void>;
 }
 
@@ -274,22 +281,27 @@ export function createWindowsGuestExecutor(
     );
   }
 
+  async function drainCancelled(timeoutMs: number): Promise<void> {
+    const running = (): Promise<unknown> => Promise.allSettled([...outstanding.values()]);
+    let timer: NodeJS.Timeout | undefined;
+    const expired = new Promise<'expired'>((resolve) => {
+      timer = setTimeout(() => resolve('expired'), timeoutMs);
+    });
+    const winner = await Promise.race([running().then(() => 'drained' as const), expired]);
+    clearTimeout(timer);
+    if (winner === 'expired') {
+      for (const bridge of outstanding.keys()) bridge.kill();
+      await running();
+    }
+  }
+
   return {
     vmName,
     invoke,
+    drainCancelled,
     async dispose() {
       disposed = true;
-      const running = (): Promise<unknown> => Promise.allSettled([...outstanding.values()]);
-      let timer: NodeJS.Timeout | undefined;
-      const expired = new Promise<'expired'>((resolve) => {
-        timer = setTimeout(() => resolve('expired'), disposeTimeoutMs);
-      });
-      const winner = await Promise.race([running().then(() => 'drained' as const), expired]);
-      clearTimeout(timer);
-      if (winner === 'expired') {
-        for (const bridge of outstanding.keys()) bridge.kill();
-        await running();
-      }
+      await drainCancelled(disposeTimeoutMs);
       credential.username = '';
       credential.password = '';
     },

@@ -21,6 +21,13 @@ export interface VmReconcileDeps {
   stopTimeoutMs?: number;
   offConfirmTimeoutMs?: number;
   offPollIntervalMs?: number;
+  /**
+   * Called about every `heartbeatIntervalMs` while a graceful stop is still
+   * waiting (the Stop-VM call and the confirmation that follows), with the time
+   * elapsed since the stop began. Absent, nothing is reported.
+   */
+  onHeartbeat?: (elapsedMs: number) => void;
+  heartbeatIntervalMs?: number;
 }
 
 export interface VmReconcileOutcome {
@@ -68,6 +75,41 @@ async function queryVmStateAndSwitch(
  */
 async function gracefulStopAndConfirmOff(deps: VmReconcileDeps): Promise<void> {
   const now = deps.now ?? Date.now;
+  const heartbeat = startHeartbeat(deps, now);
+  try {
+    await stopAndConfirmOff(deps, heartbeat.tick);
+  } finally {
+    heartbeat.stop();
+  }
+}
+
+/**
+ * Heartbeats for a stop that can take minutes. The blocking Stop-VM call can
+ * only be reported on by a timer; the confirmation loop reports through the same
+ * `tick` on its own clock, which never emits twice inside one interval.
+ */
+function startHeartbeat(
+  deps: VmReconcileDeps,
+  now: () => number,
+): { tick: () => void; stop: () => void } {
+  if (!deps.onHeartbeat) return { tick: () => {}, stop: () => {} };
+  const onHeartbeat = deps.onHeartbeat;
+  const interval = deps.heartbeatIntervalMs ?? 15_000;
+  const started = now();
+  let lastEmitted = started;
+  const tick = (): void => {
+    const current = now();
+    if (current - lastEmitted < interval) return;
+    lastEmitted = current;
+    onHeartbeat(current - started);
+  };
+  const timer = setInterval(tick, interval);
+  timer.unref?.();
+  return { tick, stop: () => clearInterval(timer) };
+}
+
+async function stopAndConfirmOff(deps: VmReconcileDeps, tick: () => void): Promise<void> {
+  const now = deps.now ?? Date.now;
   const sleep = deps.sleep ?? defaultSleep;
   const stopTimeoutMs = deps.stopTimeoutMs ?? 60_000;
   const offConfirmTimeoutMs = deps.offConfirmTimeoutMs ?? 30_000;
@@ -87,6 +129,7 @@ async function gracefulStopAndConfirmOff(deps: VmReconcileDeps): Promise<void> {
       );
     }
     await sleep(offPollIntervalMs);
+    tick();
   }
 }
 

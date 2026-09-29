@@ -14,6 +14,7 @@ import { createWindowsGuestExecutor } from '../guestSetup/windows/guestExecutor'
 import { resolveHostPrerequisites } from '../guestSetup/windows/hostPrerequisites';
 import {
   CANCELLED_EXIT_CODE,
+  EXECUTOR_DISPOSE_TIMEOUT_MS,
   watchForInterrupt,
   type InterruptSource,
 } from '../guestSetup/windows/interruptHandler';
@@ -210,7 +211,11 @@ export function registerSetupGuestWindows(program: Command): void {
           text: (question, defaultValue) => promptText(question, defaultValue),
           masked: (question) => promptMasked(question),
         },
-        createExecutor: createWindowsGuestExecutor,
+        createExecutor: (executorOptions) =>
+          createWindowsGuestExecutor({
+            ...executorOptions,
+            disposeTimeoutMs: EXECUTOR_DISPOSE_TIMEOUT_MS,
+          }),
         clock,
         out: (line) => console.log(line),
         err: (line) => console.error(line),

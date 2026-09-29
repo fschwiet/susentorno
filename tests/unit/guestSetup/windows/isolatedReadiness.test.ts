@@ -43,6 +43,7 @@ function scriptedExecutor(answer: (attempt: number) => WindowsGuestResult | Erro
         if (result instanceof Error) throw result;
         return result;
       },
+      async drainCancelled() {},
       async dispose() {},
     },
   };

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import type { PowerShellExec, PowerShellExecResult } from '../../../src/guestSetup/powerShellExec';
 import {
   reconcileVmToSwitch,
@@ -228,5 +228,90 @@ describe('isolateVmToSwitch', () => {
     await expect(
       isolateVmToSwitch({ exec, vmName: 'my-vm' }, 'susentorno-internal'),
     ).rejects.toThrow(VmReconcileError);
+  });
+});
+
+describe('the optional stop heartbeat', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A host whose Stop-VM call blocks for `stopMs` of (fake) real time, as a slow Windows shutdown does. */
+  function slowStopExec(stopMs: number): PowerShellExec {
+    let stopped = false;
+    return {
+      async run(command: string) {
+        if (command.startsWith('Get-VMNetworkAdapter')) return adapter('Default Switch');
+        if (command.startsWith('Stop-VM')) {
+          await new Promise((resolve) => setTimeout(resolve, stopMs));
+          stopped = true;
+          return ok;
+        }
+        if (command.startsWith('Get-VM ')) return vmState(stopped ? 'Off' : 'Running');
+        return ok;
+      },
+    };
+  }
+
+  it('reports elapsed time about every 15 seconds while the blocking Stop-VM call is running', async () => {
+    vi.useFakeTimers();
+    const beats: number[] = [];
+    const reconciling = reconcileVmToSwitch(
+      { exec: slowStopExec(40_000), vmName: 'my-vm', onHeartbeat: (ms) => beats.push(ms) },
+      'susentorno-internal',
+    );
+    await vi.advanceTimersByTimeAsync(40_000);
+    await reconciling;
+    expect(beats).toEqual([15_000, 30_000]);
+  });
+
+  it('keeps reporting while it confirms the VM reached Off, and never twice inside one interval', async () => {
+    const clock = fakeClock();
+    const beats: number[] = [];
+    const exec: PowerShellExec = {
+      async run(command: string) {
+        if (command.startsWith('Get-VMNetworkAdapter')) return adapter('Default Switch');
+        if (command.startsWith('Get-VM ')) return vmState(clock.now() >= 50_000 ? 'Off' : 'Running');
+        return ok;
+      },
+    };
+    await reconcileVmToSwitch(
+      {
+        exec,
+        vmName: 'my-vm',
+        now: clock.now,
+        sleep: clock.sleep,
+        offPollIntervalMs: 2_000,
+        offConfirmTimeoutMs: 60_000,
+        onHeartbeat: (ms) => beats.push(ms),
+      },
+      'susentorno-internal',
+    );
+    expect(beats).toEqual([16_000, 32_000, 48_000]);
+  });
+
+  it('starts no timer and reports nothing when no hook is supplied, as the Unix flow runs', async () => {
+    vi.useFakeTimers();
+    const reconciling = reconcileVmToSwitch(
+      { exec: slowStopExec(40_000), vmName: 'my-vm' },
+      'susentorno-internal',
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    // the only timer is Stop-VM's own simulated wait
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(40_000);
+    await reconciling;
+  });
+
+  it('applies to isolateVmToSwitch too', async () => {
+    vi.useFakeTimers();
+    const beats: number[] = [];
+    const isolating = isolateVmToSwitch(
+      { exec: slowStopExec(20_000), vmName: 'my-vm', onHeartbeat: (ms) => beats.push(ms) },
+      'susentorno-internal',
+    );
+    await vi.advanceTimersByTimeAsync(20_000);
+    await isolating;
+    expect(beats).toEqual([15_000]);
   });
 });

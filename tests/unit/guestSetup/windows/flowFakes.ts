@@ -173,6 +173,10 @@ export function fakeHyperV(
         );
         return ok(found ? JSON.stringify({ Name: found, Enabled: true }) : '');
       }
+      if (command.includes('Get-LocalGroupMember')) {
+        // The account's token SIDs; the fake's share entries carry no SID, so they match by name.
+        return ok('[]');
+      }
       if (command.startsWith('Get-SmbShareAccess')) {
         if (options.shareGrantsRead === false) return ok('');
         return ok(
@@ -413,6 +417,7 @@ export function fakeExecutors(behavior: GuestBehavior): FakeExecutors {
           if (result instanceof Error) throw result;
           return result;
         },
+        async drainCancelled() {},
         async dispose() {
           record.disposed = true;
         },

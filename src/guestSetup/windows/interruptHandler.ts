@@ -1,6 +1,15 @@
 /** How long cleanup after a first Ctrl+C may take before the process exits anyway. */
 export const CLEANUP_DEADLINE_MS = 30_000;
 
+/**
+ * How long disposing the executor may wait for a bridge that will not finish
+ * before force-killing it. The run's cleanup (bounded by
+ * SHARE_CLEANUP_BUDGET_MS in shareCredential) and this disposal together must
+ * fit inside CLEANUP_DEADLINE_MS, or the process exits before the residual-state
+ * footer prints.
+ */
+export const EXECUTOR_DISPOSE_TIMEOUT_MS = 5_000;
+
 /** The exit code for a cancelled run. */
 export const CANCELLED_EXIT_CODE = 130;
 

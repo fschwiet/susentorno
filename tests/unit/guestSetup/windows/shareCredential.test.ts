@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import type {
   WindowsGuestExecutor,
   WindowsGuestResult,
@@ -11,6 +11,8 @@ import {
   ShareCredentialLedger,
   buildCleanupScript,
   buildCloseScript,
+  buildGetAccountTokenSidsCommand,
+  buildGetSmbShareAccessCommand,
   buildReplaceScript,
   buildVerifyScript,
   checkHostShareAccount,
@@ -60,6 +62,7 @@ function fakeGuest(
         }
         return ok();
       },
+      async drainCancelled() {},
       async dispose() {},
     },
   };
@@ -415,7 +418,7 @@ describe('cleanup (remove unverified)', () => {
 
     const cleanup = calls.find((c) => c.operation === 'cleanup')!;
     expect(cleanup.timeoutMs).toBe(SHARE_CLEANUP_TIMEOUT_MS);
-    expect(SHARE_CLEANUP_TIMEOUT_MS).toBe(30_000);
+    expect(SHARE_CLEANUP_TIMEOUT_MS).toBe(10_000);
     expect(cleanup.script).toContain("HostIp = '192.168.67.1'");
     expect(cleanup.script).toContain('Delete = $true');
     expect(credentials.ledger.entries()).toEqual([{ ...INTERNAL, status: 'removed' }]);
@@ -497,6 +500,105 @@ describe('cleanup (remove unverified)', () => {
   });
 });
 
+describe('cleanup after Ctrl+C aborted an in-flight replace', () => {
+  /**
+   * A guest whose replace script is still running when the caller cancels: the
+   * bridge keeps going and the credential is written late, at drain time. A
+   * cleanup delete that ran before that write would leave the credential behind.
+   */
+  function guestWithLateWrite() {
+    const events: string[] = [];
+    let credentialPresent = false;
+    let pendingWrite = false;
+    const executor: WindowsGuestExecutor = {
+      vmName: 'win-dev',
+      async invoke(script, options) {
+        const operation = operationOf(script);
+        events.push(operation);
+        if (operation === 'replace') {
+          pendingWrite = true; // the bridge outlives the cancelled caller
+          return new Promise((_resolve, reject) => {
+            options.signal?.addEventListener('abort', () =>
+              reject(new Error('The invocation was cancelled.')),
+            );
+          });
+        }
+        if (operation === 'cleanup') {
+          credentialPresent = false; // the delete
+          const hostIps = [...script.matchAll(/HostIp = '([^']+)'/g)].map((m) => m[1]);
+          return ok({ Results: hostIps.map((HostIp) => ({ HostIp, Outcome: 'ok' })) });
+        }
+        return ok();
+      },
+      async drainCancelled() {
+        events.push('drain');
+        if (pendingWrite) {
+          pendingWrite = false;
+          credentialPresent = true; // the late CredWrite lands before the bridge exits
+        }
+      },
+      async dispose() {},
+    };
+    return { executor, events, credentialPresent: () => credentialPresent };
+  }
+
+  it('waits for the cancelled replace bridge to finish before deleting, so no late write survives', async () => {
+    const { executor, events, credentialPresent } = guestWithLateWrite();
+    const controller = new AbortController();
+    const credentials = createVmShareCredentials({
+      executor,
+      shareName: SHARE,
+      signal: controller.signal,
+    });
+    const replacing = credentials.replace(INTERNAL, SECRET).catch(() => {});
+    controller.abort();
+    await replacing;
+
+    await credentials.cleanup();
+
+    expect(events).toEqual(['replace', 'drain', 'cleanup']);
+    expect(credentialPresent()).toBe(false);
+    expect(credentials.ledger.entries()).toEqual([{ ...INTERNAL, status: 'removed' }]);
+  });
+
+  it('does not drain, or touch the guest, when there is nothing to clean up', async () => {
+    const { executor, events } = guestWithLateWrite();
+    const credentials = createVmShareCredentials({ executor, shareName: SHARE });
+    await credentials.cleanup();
+    expect(events).toEqual([]);
+  });
+
+  describe('the interrupt budget', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('gives up at its budget when the guest never answers, and records the removal as failed', async () => {
+      const never = new Promise<never>(() => {});
+      const executor: WindowsGuestExecutor = {
+        vmName: 'win-dev',
+        invoke: () => never,
+        drainCancelled: () => never,
+        dispose: async () => {},
+      };
+      const credentials = createVmShareCredentials({ executor, shareName: SHARE });
+      credentials.ledger.markWritten(INTERNAL);
+
+      let done = false;
+      const cleaning = credentials.cleanup().then(() => (done = true));
+      await vi.advanceTimersByTimeAsync(19_999);
+      expect(done).toBe(false);
+      await vi.advanceTimersByTimeAsync(2);
+      await cleaning;
+      expect(credentials.ledger.entries()).toEqual([{ ...INTERNAL, status: 'removal-failed' }]);
+    });
+
+  });
+});
+
 describe('ShareCredentialLedger', () => {
   it('starts empty', () => {
     const ledger = new ShareCredentialLedger();
@@ -536,9 +638,17 @@ describe('ShareCredentialLedger', () => {
 });
 
 describe('checkHostShareAccount', () => {
+  const USER_SID = 'S-1-5-21-111-222-333-1001';
+  const READERS_GROUP_SID = 'S-1-5-21-111-222-333-1002';
+  const OTHER_GROUP_SID = 'S-1-5-21-111-222-333-1003';
+  /** What every network logon token holds beside the account itself. */
+  const IMPLICIT = ['S-1-1-0', 'S-1-5-2', 'S-1-5-11', 'S-1-5-32-545'];
+
   const hostExec = (responses: {
     user?: string;
     access?: string;
+    /** The SIDs in the account's network-logon token; defaults to the account plus the implicit groups. */
+    tokenSids?: string[];
   }): { exec: PowerShellExec; commands: string[] } => {
     const commands: string[] = [];
     return {
@@ -552,34 +662,54 @@ describe('checkHostShareAccount', () => {
           if (command.startsWith('Get-SmbShareAccess')) {
             return { exitCode: 0, stdout: responses.access ?? '' };
           }
+          if (command.includes('Get-LocalGroupMember')) {
+            return {
+              exitCode: 0,
+              stdout: JSON.stringify(responses.tokenSids ?? [USER_SID, ...IMPLICIT]),
+            };
+          }
           throw new Error(`unexpected host command: ${command}`);
         },
       },
     };
   };
   const user = JSON.stringify({ Name: 'susentorno', Enabled: true });
-  const grant = (AccountName: string, AccessRight = 'Read', AccessControlType = 'Allow') => ({
+  const entry = (
+    AccountName: string,
+    AccessRight = 'Read',
+    AccessControlType = 'Allow',
+    Sid?: string,
+  ) => ({
     AccountName,
     AccessRight,
     AccessControlType,
+    ...(Sid === undefined ? {} : { Sid }),
   });
+  const check = (exec: PowerShellExec) =>
+    checkHostShareAccount(exec, { account: 'susentorno', shareName: SHARE });
 
   it('passes when the local account exists, is enabled, and the share grants it read', async () => {
-    const { exec } = hostExec({ user, access: JSON.stringify(grant('WIN-HOST\\susentorno')) });
-    expect(await checkHostShareAccount(exec, { account: 'susentorno', shareName: SHARE })).toEqual({
-      ok: true,
+    const { exec } = hostExec({
+      user,
+      access: JSON.stringify(entry('WIN-HOST\\susentorno', 'Read', 'Allow', USER_SID)),
     });
+    expect(await check(exec)).toEqual({ ok: true });
   });
 
   it('quotes the account and share in the host commands', async () => {
-    const { exec, commands } = hostExec({ user, access: JSON.stringify(grant("H\\o'b")) });
+    const { exec, commands } = hostExec({
+      user: JSON.stringify({ Name: "o'b", Enabled: true }),
+      access: JSON.stringify(entry("H\\o'b")),
+    });
     await checkHostShareAccount(exec, { account: "o'b", shareName: "s'h" });
     expect(commands[0]).toContain("-Name 'o''b'");
+    expect(commands.find((c) => c.startsWith('Get-SmbShareAccess'))).toContain("-Name 's''h'");
+    expect(commands.find((c) => c.includes('Get-LocalGroupMember'))).toContain("'o''b'");
   });
 
   it('fails a missing account with a remediation, naming the account', async () => {
     const { exec } = hostExec({});
-    const result = await checkHostShareAccount(exec, { account: 'susentorno', shareName: SHARE });
+    const result = await check(exec);
     expect(result).toMatchObject({ ok: false });
     if (!result.ok) {
       expect(result.message).toContain("'susentorno'");
@@ -592,20 +722,22 @@ describe('checkHostShareAccount', () => {
     const { exec } = hostExec({
       user: JSON.stringify({ Name: 'susentorno-other', Enabled: true }),
     });
-    const result = await checkHostShareAccount(exec, { account: 'susentorno', shareName: SHARE });
-    expect(result.ok).toBe(false);
+    expect((await check(exec)).ok).toBe(false);
   });
 
   it('fails a disabled account', async () => {
     const { exec } = hostExec({ user: JSON.stringify({ Name: 'susentorno', Enabled: false }) });
-    const result = await checkHostShareAccount(exec, { account: 'susentorno', shareName: SHARE });
+    const result = await check(exec);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.message).toContain('disabled');
   });
 
-  it('fails when the share does not grant the account access', async () => {
-    const { exec } = hostExec({ user, access: JSON.stringify(grant('WIN-HOST\\someone-else')) });
-    const result = await checkHostShareAccount(exec, { account: 'susentorno', shareName: SHARE });
+  it('fails when the share does not grant the account access, saying how to grant it', async () => {
+    const { exec } = hostExec({
+      user,
+      access: JSON.stringify(entry('WIN-HOST\\someone-else', 'Read', 'Allow', OTHER_GROUP_SID)),
+    });
+    const result = await check(exec);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.message).toContain(`'${SHARE}'`);
@@ -613,22 +745,112 @@ describe('checkHostShareAccount', () => {
     }
   });
 
-  it('does not count a Deny entry or an unknown right as read access', async () => {
+  it('does not count an unknown right as read access', async () => {
     const { exec } = hostExec({
       user,
-      access: JSON.stringify([
-        grant('WIN-HOST\\susentorno', 'Read', 'Deny'),
-        grant('WIN-HOST\\susentorno', 'None'),
-      ]),
+      access: JSON.stringify([entry('WIN-HOST\\susentorno', 'None', 'Allow', USER_SID)]),
     });
-    const result = await checkHostShareAccount(exec, { account: 'susentorno', shareName: SHARE });
-    expect(result.ok).toBe(false);
+    expect((await check(exec)).ok).toBe(false);
   });
 
   it('accepts a grant to Everyone', async () => {
-    const { exec } = hostExec({ user, access: JSON.stringify(grant('Everyone', 'Change')) });
-    expect(await checkHostShareAccount(exec, { account: 'susentorno', shareName: SHARE })).toEqual({
-      ok: true,
+    const { exec } = hostExec({
+      user,
+      access: JSON.stringify(entry('Everyone', 'Change', 'Allow', 'S-1-1-0')),
+    });
+    expect(await check(exec)).toEqual({ ok: true });
+  });
+
+  describe('effective access through groups', () => {
+    it('accepts a grant to a local group the account belongs to', async () => {
+      const { exec } = hostExec({
+        user,
+        tokenSids: [USER_SID, ...IMPLICIT, READERS_GROUP_SID],
+        access: JSON.stringify(
+          entry('WIN-HOST\\vmshare-readers', 'Read', 'Allow', READERS_GROUP_SID),
+        ),
+      });
+      expect(await check(exec)).toEqual({ ok: true });
+    });
+
+    it('accepts BUILTIN\\Users, which every network logon token holds', async () => {
+      const { exec } = hostExec({
+        user,
+        access: JSON.stringify(entry('BUILTIN\\Users', 'Read', 'Allow', 'S-1-5-32-545')),
+      });
+      expect(await check(exec)).toEqual({ ok: true });
+    });
+
+    it('does not count a grant to a group the account is not in', async () => {
+      const { exec } = hostExec({
+        user,
+        access: JSON.stringify(
+          entry('WIN-HOST\\vmshare-readers', 'Read', 'Allow', READERS_GROUP_SID),
+        ),
+      });
+      expect((await check(exec)).ok).toBe(false);
+    });
+
+    it('fails on a Deny for the account, even beside a grant, with the way to remove it', async () => {
+      const { exec } = hostExec({
+        user,
+        access: JSON.stringify([
+          entry('Everyone', 'Read', 'Allow', 'S-1-1-0'),
+          entry('WIN-HOST\\susentorno', 'Read', 'Deny', USER_SID),
+        ]),
+      });
+      const result = await check(exec);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.message).toContain('denies');
+        expect(result.message).toContain("'susentorno'");
+        expect(result.message).toContain('Unblock-SmbShareAccess');
+      }
+    });
+
+    it('fails on a Deny for a group the account belongs to, naming that group', async () => {
+      const { exec } = hostExec({
+        user,
+        tokenSids: [USER_SID, ...IMPLICIT, OTHER_GROUP_SID],
+        access: JSON.stringify([
+          entry('WIN-HOST\\susentorno', 'Read', 'Allow', USER_SID),
+          entry('WIN-HOST\\blocked-users', 'Full', 'Deny', OTHER_GROUP_SID),
+        ]),
+      });
+      const result = await check(exec);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.message).toContain('WIN-HOST\\blocked-users');
+    });
+
+    it('ignores a Deny for a group the account is not in', async () => {
+      const { exec } = hostExec({
+        user,
+        access: JSON.stringify([
+          entry('WIN-HOST\\susentorno', 'Read', 'Allow', USER_SID),
+          entry('WIN-HOST\\blocked-users', 'Full', 'Deny', OTHER_GROUP_SID),
+        ]),
+      });
+      expect(await check(exec)).toEqual({ ok: true });
+    });
+
+    it('still matches the account by name when the host could not resolve an entry to a SID', async () => {
+      const { exec } = hostExec({
+        user,
+        access: JSON.stringify(entry('WIN-HOST\\susentorno', 'Read', 'Allow')),
+      });
+      expect(await check(exec)).toEqual({ ok: true });
+    });
+  });
+
+  describe('the host commands', () => {
+    it('resolve each share entry to a SID, so localized group names still match', () => {
+      expect(buildGetSmbShareAccessCommand(SHARE)).toContain('SecurityIdentifier');
+    });
+
+    it('compute the token by following local group membership, starting from the implicit groups', () => {
+      const command = buildGetAccountTokenSidsCommand('susentorno');
+      expect(command).toContain('Get-LocalGroupMember');
+      for (const sid of IMPLICIT) expect(command).toContain(sid);
     });
   });
 });

@@ -91,6 +91,7 @@ function fakeGuest(state: GuestState) {
           return ok({ Outcome: 'ok' });
       }
     },
+    async drainCancelled() {},
     async dispose() {},
   };
   return { executor, invoked, state };

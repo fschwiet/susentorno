@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { EventEmitter } from 'node:events';
 import {
   CLEANUP_DEADLINE_MS,
+  EXECUTOR_DISPOSE_TIMEOUT_MS,
   watchForInterrupt,
 } from '../../../../src/guestSetup/windows/interruptHandler';
+import { SHARE_CLEANUP_BUDGET_MS } from '../../../../src/guestSetup/windows/shareCredential';
 
 function setup() {
   const source = new EventEmitter();
@@ -72,5 +74,13 @@ describe('watchForInterrupt', () => {
     source.emit('SIGINT');
     expect(exits).toEqual([]);
     expect(controller.signal.aborted).toBe(true);
+  });
+});
+
+describe('the interrupt allowance', () => {
+  it('holds the run cleanup and the executor disposal, so the footer prints before the forced exit', () => {
+    expect(SHARE_CLEANUP_BUDGET_MS + EXECUTOR_DISPOSE_TIMEOUT_MS).toBeLessThan(
+      CLEANUP_DEADLINE_MS,
+    );
   });
 });

@@ -251,6 +251,15 @@ export async function runWindowsSetup(
       sleep: (ms, sleepSignal) => clock.sleep(ms, sleepSignal),
     });
 
+  /** The graceful stop (G1 or G9) can take minutes: a heartbeat says the command is alive. */
+  const stopHeartbeat = (label: 'G1' | 'G9') => ({
+    heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
+    onHeartbeat: (elapsedMs: number) =>
+      out(
+        `setup-guest-windows: ${label} still waiting for '${vmName}' to stop... (${Math.round(elapsedMs / 1000)}s elapsed)`,
+      ),
+  });
+
   const main = async (): Promise<WindowsSetupOutcome> => {
     if (signal.aborted) return cancelled('interrupt');
 
@@ -308,6 +317,7 @@ export async function runWindowsSetup(
               sleep: (ms) => clock.sleep(ms),
               stopTimeoutMs: WINDOWS_STOP_TIMEOUT_MS,
               offConfirmTimeoutMs: WINDOWS_OFF_CONFIRM_TIMEOUT_MS,
+              ...stopHeartbeat('G1'),
             },
             context.defaultSwitchName,
           ),
@@ -472,6 +482,7 @@ export async function runWindowsSetup(
           sleep: (ms) => clock.sleep(ms),
           stopTimeoutMs: WINDOWS_STOP_TIMEOUT_MS,
           offConfirmTimeoutMs: WINDOWS_OFF_CONFIRM_TIMEOUT_MS,
+          ...stopHeartbeat('G9'),
         },
         context.internalSwitchName,
       ),

@@ -22,6 +22,7 @@ function executorReturning(
       if (outcome instanceof WindowsGuestError) throw outcome;
       return outcome;
     },
+    async drainCancelled() {},
     async dispose() {},
   };
 }

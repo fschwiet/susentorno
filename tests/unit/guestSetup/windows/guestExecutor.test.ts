@@ -283,6 +283,55 @@ describe('deadlines, cancellation and disposal', () => {
     expect(calls[0].process.killed).toBe(true);
   });
 
+  it('drainCancelled waits for a cancelled invocation\'s bridge to finish without killing it, and stays usable', async () => {
+    const { executor, calls } = silentBridge();
+    const controller = new AbortController();
+    const outcome = executor
+      .invoke('replace', { timeoutMs: 5000, signal: controller.signal })
+      .catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(10);
+    controller.abort();
+    await outcome;
+
+    let drained = false;
+    const drain = executor.drainCancelled(400).then(() => (drained = true));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(drained).toBe(false); // the guest script may still be running
+    calls[0].process.finish(resultEnvelope());
+    await vi.advanceTimersByTimeAsync(10);
+    await drain;
+    expect(calls[0].process.killed).toBe(false);
+
+    calls.length = 0;
+    const next = executor.invoke('again', { timeoutMs: 1000 });
+    await vi.advanceTimersByTimeAsync(10);
+    calls[0].process.finish(resultEnvelope({ stdout: 'fine' }));
+    await expect(next).resolves.toMatchObject({ stdout: 'fine' });
+  });
+
+  it('drainCancelled is bounded: a bridge that outlasts the bound is force-killed', async () => {
+    const { executor, calls } = silentBridge();
+    const controller = new AbortController();
+    const outcome = executor
+      .invoke('replace', { timeoutMs: 600_000, signal: controller.signal })
+      .catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(10);
+    controller.abort();
+    await outcome;
+
+    const drain = executor.drainCancelled(400);
+    await vi.advanceTimersByTimeAsync(399);
+    expect(calls[0].process.killed).toBe(false);
+    await vi.advanceTimersByTimeAsync(2);
+    await drain;
+    expect(calls[0].process.killed).toBe(true);
+  });
+
+  it('drainCancelled returns at once when nothing is outstanding', async () => {
+    const { executor } = silentBridge();
+    await expect(executor.drainCancelled(400)).resolves.toBeUndefined();
+  });
+
   it('refuses invocations after disposal', async () => {
     const { executor, calls } = silentBridge();
     await executor.dispose();

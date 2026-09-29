@@ -4,8 +4,17 @@ import type { WindowsGuestExecutor } from './guestExecutor';
 
 /** Each share replacement or verification is bounded at 1 minute. */
 export const SHARE_OPERATION_TIMEOUT_MS = 60_000;
-/** Cleanup after a failure or Ctrl+C is bounded at about 30 seconds. */
-export const SHARE_CLEANUP_TIMEOUT_MS = 30_000;
+/**
+ * Cleanup after a failure or Ctrl+C has to fit, together with disposing the
+ * executor, inside the interrupt handler's 30 second allowance so the footer
+ * still prints. First, cancelled bridges are drained (at most
+ * SHARE_DRAIN_TIMEOUT_MS) so a late CredWrite cannot land after the delete;
+ * then the cleanup script runs (at most SHARE_CLEANUP_TIMEOUT_MS); and the
+ * whole is bounded again by SHARE_CLEANUP_BUDGET_MS.
+ */
+export const SHARE_DRAIN_TIMEOUT_MS = 8_000;
+export const SHARE_CLEANUP_TIMEOUT_MS = 10_000;
+export const SHARE_CLEANUP_BUDGET_MS = 20_000;
 
 /**
  * A file every generated Windows VM share carries at its root
@@ -454,7 +463,8 @@ function asText(value: unknown): string {
 }
 
 export interface VmShareCredentialsOptions {
-  executor: Pick<WindowsGuestExecutor, 'vmName' | 'invoke'>;
+  executor: Pick<WindowsGuestExecutor, 'vmName' | 'invoke'> &
+    Partial<Pick<WindowsGuestExecutor, 'drainCancelled'>>;
   shareName: string;
   signal?: AbortSignal;
 }
@@ -480,7 +490,9 @@ export interface VmShareCredentials {
   /**
    * Handled failure or cancellation: close every selected-share connection this
    * run may have left open and remove only the entries it wrote but never
-   * verified. Best-effort, bounded at about 30 seconds, and never throws.
+   * verified. It first waits for any cancelled in-flight bridge, so a replace
+   * aborted by Ctrl+C cannot write its credential after the delete. Best-effort,
+   * bounded at SHARE_CLEANUP_BUDGET_MS, and never throws.
    */
   cleanup(): Promise<void>;
 }
@@ -717,32 +729,50 @@ export function createVmShareCredentials(options: VmShareCredentialsOptions): Vm
       if (items.size === 0) return;
 
       const list = [...items.values()];
+      let expired = false;
       const failAll = (): void => {
         for (const item of list)
           if (item.removeCredential) ledger.markRemovalFailed(item.target.hostIp);
       };
-      try {
-        // Deliberately no signal: cleanup runs after Ctrl+C aborted the flow's own.
-        const verdict = await runScript(
-          buildCleanupScript(list, shareName),
-          list[0].target,
-          'VM share cleanup',
-          [],
-          { timeoutMs: SHARE_CLEANUP_TIMEOUT_MS },
-        );
-        const results = Array.isArray(verdict.Results) ? (verdict.Results as ScriptVerdict[]) : [];
-        for (const item of list) {
-          const result = results.find(
-            (candidate) => (candidate as { HostIp?: unknown }).HostIp === item.target.hostIp,
+      const work = (async (): Promise<void> => {
+        try {
+          // The abandoned guest script may still be running; let it finish first.
+          await executor.drainCancelled?.(SHARE_DRAIN_TIMEOUT_MS);
+          // Deliberately no signal: cleanup runs after Ctrl+C aborted the flow's own.
+          const verdict = await runScript(
+            buildCleanupScript(list, shareName),
+            list[0].target,
+            'VM share cleanup',
+            [],
+            { timeoutMs: SHARE_CLEANUP_TIMEOUT_MS },
           );
-          if (result?.Outcome === 'ok') {
-            ledger.markConnectionClosed(item.target.hostIp);
-            if (item.removeCredential) ledger.markRemoved(item.target.hostIp);
-          } else if (item.removeCredential) {
-            ledger.markRemovalFailed(item.target.hostIp);
+          if (expired) return;
+          const results = Array.isArray(verdict.Results)
+            ? (verdict.Results as ScriptVerdict[])
+            : [];
+          for (const item of list) {
+            const result = results.find(
+              (candidate) => (candidate as { HostIp?: unknown }).HostIp === item.target.hostIp,
+            );
+            if (result?.Outcome === 'ok') {
+              ledger.markConnectionClosed(item.target.hostIp);
+              if (item.removeCredential) ledger.markRemoved(item.target.hostIp);
+            } else if (item.removeCredential) {
+              ledger.markRemovalFailed(item.target.hostIp);
+            }
           }
+        } catch {
+          if (!expired) failAll();
         }
-      } catch {
+      })();
+      let timer: NodeJS.Timeout | undefined;
+      const budget = new Promise<'expired'>((resolve) => {
+        timer = setTimeout(() => resolve('expired'), SHARE_CLEANUP_BUDGET_MS);
+      });
+      const winner = await Promise.race([work.then(() => 'done' as const), budget]);
+      clearTimeout(timer);
+      if (winner === 'expired') {
+        expired = true;
         failAll();
       }
     },
@@ -762,8 +792,40 @@ export function buildGetLocalUserCommand(account: string): string {
 export function buildGetSmbShareAccessCommand(shareName: string): string {
   return (
     `Get-SmbShareAccess -Name ${quoteForPowerShell(shareName)} -ErrorAction SilentlyContinue | ` +
-    `ForEach-Object { [PSCustomObject]@{ AccountName = [string]$_.AccountName; AccessControlType = [string]$_.AccessControlType; AccessRight = [string]$_.AccessRight } } | ConvertTo-Json -Compress`
+    // Each entry is resolved to a SID so a localized group name still matches.
+    `ForEach-Object { $sid = $null; ` +
+    `try { $sid = (New-Object System.Security.Principal.NTAccount([string]$_.AccountName)).Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { }; ` +
+    `[PSCustomObject]@{ AccountName = [string]$_.AccountName; Sid = $sid; AccessControlType = [string]$_.AccessControlType; AccessRight = [string]$_.AccessRight } } | ConvertTo-Json -Compress`
   );
+}
+
+/**
+ * The well-known groups every network logon token holds: Everyone, NETWORK,
+ * Authenticated Users, and BUILTIN\Users (which nests Authenticated Users).
+ */
+const IMPLICIT_TOKEN_SIDS = ['S-1-1-0', 'S-1-5-2', 'S-1-5-11', 'S-1-5-32-545'];
+
+/**
+ * The SIDs the account presents when the guest authenticates to the share: the
+ * account itself, the implicit groups above, and every local group it belongs
+ * to, directly or through another local group (followed to a fixed point).
+ */
+export function buildGetAccountTokenSidsCommand(account: string): string {
+  return [
+    `$sids = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)`,
+    `foreach ($known in ${IMPLICIT_TOKEN_SIDS.map(quoteForPowerShell).join(', ')}) { [void]$sids.Add($known) }`,
+    `[void]$sids.Add((Get-LocalUser -Name ${quoteForPowerShell(account)} -ErrorAction Stop).SID.Value)`,
+    '$groups = @(Get-LocalGroup)',
+    'do {',
+    '  $before = $sids.Count',
+    '  foreach ($group in $groups) {',
+    '    if ($sids.Contains($group.SID.Value)) { continue }',
+    '    $members = @(Get-LocalGroupMember -SID $group.SID -ErrorAction SilentlyContinue)',
+    '    if (@($members | Where-Object { $sids.Contains($_.SID.Value) }).Count -gt 0) { [void]$sids.Add($group.SID.Value) }',
+    '  }',
+    '} while ($sids.Count -ne $before)',
+    'ConvertTo-Json -Compress -InputObject @($sids)',
+  ].join('\n');
 }
 
 function jsonList(stdout: string): Record<string, unknown>[] {
@@ -779,16 +841,49 @@ function jsonList(stdout: string): Record<string, unknown>[] {
   }
 }
 
-/** Principals whose share grant reaches every authenticated local account. */
+function parseStringList(stdout: string): string[] {
+  const trimmed = stdout.trim();
+  if (!trimmed) return [];
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return (Array.isArray(parsed) ? parsed : [parsed]).filter(
+      (value): value is string => typeof value === 'string',
+    );
+  } catch {
+    return [];
+  }
+}
+
+/** Principals (by name) whose share grant reaches every authenticated local account; the fallback when an entry has no SID. */
 const BROAD_PRINCIPALS = new Set(['everyone', 'nt authority\\authenticated users']);
 const READABLE_RIGHTS = new Set(['read', 'change', 'full']);
 
 export type HostShareAccountResult = { ok: true } | { ok: false; message: string };
 
+interface ShareAccessEntry {
+  principal: string;
+  sid: string | undefined;
+  allow: boolean;
+  right: string;
+}
+
+function parseShareAccess(stdout: string): ShareAccessEntry[] {
+  return jsonList(stdout).map((raw) => ({
+    principal: typeof raw.AccountName === 'string' ? raw.AccountName : '',
+    sid: typeof raw.Sid === 'string' && raw.Sid !== '' ? raw.Sid.toLowerCase() : undefined,
+    allow:
+      typeof raw.AccessControlType === 'string' && raw.AccessControlType.toLowerCase() === 'allow',
+    right: typeof raw.AccessRight === 'string' ? raw.AccessRight.toLowerCase() : '',
+  }));
+}
+
 /**
  * The host half of G4, before anything is written to the guest: the VM share
- * account is a host-local account, it is enabled, and the named share grants it
- * at least read access. A password is never involved.
+ * account is a host-local account, it is enabled, and the share's effective
+ * access for it is at least read. Effective means what the account's network
+ * logon token would get: a grant counts when it names the account or any group
+ * it belongs to, and a Deny for any of those blocks it (every share right
+ * includes read, so a Deny of any right does). A password is never involved.
  */
 export async function checkHostShareAccount(
   exec: PowerShellExec,
@@ -816,23 +911,40 @@ export async function checkHostShareAccount(
   }
 
   const accessResult = await exec.run(buildGetSmbShareAccessCommand(shareName));
-  const readable = jsonList(accessResult.stdout).some((entry) => {
-    const principal = typeof entry.AccountName === 'string' ? entry.AccountName.toLowerCase() : '';
-    const right = typeof entry.AccessRight === 'string' ? entry.AccessRight.toLowerCase() : '';
-    const allowed =
-      typeof entry.AccessControlType === 'string' &&
-      entry.AccessControlType.toLowerCase() === 'allow';
-    const matches =
-      principal === account.toLowerCase() ||
-      principal.endsWith(`\\${account.toLowerCase()}`) ||
-      BROAD_PRINCIPALS.has(principal);
-    return allowed && matches && READABLE_RIGHTS.has(right);
-  });
+  const tokenResult = await exec.run(buildGetAccountTokenSidsCommand(account));
+  const entries = parseShareAccess(accessResult.stdout);
+  const tokenSids = new Set(parseStringList(tokenResult.stdout).map((sid) => sid.toLowerCase()));
+  const accountName = account.toLowerCase();
+
+  /** Whether an entry names the account or a group it belongs to. */
+  const applies = (entry: ShareAccessEntry): boolean => {
+    if (entry.sid !== undefined) return tokenSids.has(entry.sid);
+    // The host could not resolve this principal to a SID: fall back to its name.
+    const name = entry.principal.toLowerCase();
+    return (
+      name === accountName || name.endsWith(`\\${accountName}`) || BROAD_PRINCIPALS.has(name)
+    );
+  };
+
+  const denial = entries.find((entry) => !entry.allow && entry.right !== '' && applies(entry));
+  if (denial) {
+    return {
+      ok: false,
+      message:
+        `SMB share '${shareName}' denies VM share account '${account}' access: it has a Deny entry for ` +
+        `'${denial.principal}', which the account holds (directly or through a group). ` +
+        `Remove it (Unblock-SmbShareAccess -Name '${shareName}' -AccountName '${denial.principal}' -Force), ` +
+        `or pass a different --share-account, then rerun.`,
+    };
+  }
+  const readable = entries.some(
+    (entry) => entry.allow && READABLE_RIGHTS.has(entry.right) && applies(entry),
+  );
   if (!readable) {
     return {
       ok: false,
       message:
-        `SMB share '${shareName}' does not grant VM share account '${account}' read access. ` +
+        `SMB share '${shareName}' does not grant VM share account '${account}' read access, directly or through a group it belongs to. ` +
         `Grant it (Grant-SmbShareAccess -Name '${shareName}' -AccountName '${account}' -AccessRight Read -Force), ` +
         `or pass the right --share-account, then rerun.`,
     };
