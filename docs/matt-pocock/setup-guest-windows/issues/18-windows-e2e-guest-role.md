@@ -30,11 +30,12 @@
 
 **Blocked by:** 15, 17
 
-**Status:** ready-for-agent
+**Status:** ready-for-review
 
-- [ ] `windowsFresh` and its test-only substitutions are removed, and no test depends on preinstalled Git.
-- [ ] Run 1 and run 2 behave as specified, and every in-guest assertion above passes.
-- [ ] No password appears in either run's output or in any collected artifact.
-- [ ] `reboot-evidence.txt` is produced on every run.
-- [ ] The guest-tier rows of ticket 08's acceptance checklist (rows 26–37) each map to a passing assertion.
+- [x] `windowsFresh` and its test-only substitutions are removed, and no test depends on preinstalled Git.
+- [x] Run 1 and run 2 behave as specified, and every in-guest assertion above passes.
+- [x] No password appears in either run's output or in any collected artifact.
+- [x] `reboot-evidence.txt` is produced on every run.
+- [x] The guest-tier rows of ticket 08's acceptance checklist (rows 26–37) each map to a passing assertion.
 - [ ] The unit, CLI, and guest tiers pass.
+  - Unit (1307) and CLI (48 passed, 1 skipped) tiers pass. In the guest tier `windowsE2e`, `phases`, `fresh`, and `ambientTrust` pass. The Ubuntu `e2e` role failed in its `beforeAll` in three runs, for environmental reasons that do not touch this ticket: once a graceful `Stop-VM` timeout of the Ubuntu guest, and twice apt in the Ubuntu guest failing to fetch the ~170 MB `linux-modules` package because this host's own egress truncates large downloads (host `curl` of the same URL is cut off at 40-90 MB). Left unchecked until it passes on a healthy network.

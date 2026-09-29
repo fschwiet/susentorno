@@ -9,6 +9,11 @@ $ProgressPreference = 'SilentlyContinue'
 
 function Fail([string]$Message) { throw "03-install-tools: $Message" }
 
+# The runner starts every step in the read-only UNC phase directory, and pnpm 12 panics
+# there ("current dir is an absolute path with drive letter"). Nothing in this step uses a
+# relative path, so run from the local profile directory instead.
+Set-Location -LiteralPath $env:USERPROFILE
+
 # WinGet reports "no installed package matches" as APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND
 # (0x8A150014). This is the only nonzero status accepted, and only from the read-only
 # `winget list` probe. Every install status other than 0 is a failure.

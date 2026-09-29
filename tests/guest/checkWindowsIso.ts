@@ -72,7 +72,7 @@ export function describeWindowsIsoImages(isoPath: string, output: string): strin
 }
 
 /**
- * Guard: the guest tier's windowsFresh role builds a golden image from this
+ * Guard: the guest tier's windowsE2e role builds a golden image from this
  * ISO, a build that takes 60-120 minutes and only then fails on a wrong one.
  * Check the variable, the file, and the image metadata up front instead. The
  * ISO is mounted read-only and dismounted again; an ISO that was already

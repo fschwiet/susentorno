@@ -10,6 +10,11 @@ $ProgressPreference = 'SilentlyContinue'
 
 function Fail([string]$Message) { throw "02-install-pnpm: $Message" }
 
+# The runner starts every step in the read-only UNC phase directory, and pnpm 12 panics
+# there ("current dir is an absolute path with drive letter"). Nothing in this step uses a
+# relative path, so run from the local profile directory instead.
+Set-Location -LiteralPath $env:USERPROFILE
+
 # pnpm.exe (v12 and later) links the Visual C++ runtime dynamically. A clean Windows
 # install lacks it, and then pnpm.exe dies with 0xC0000135 while the official bootstrap
 # still exits 0 (it ignores the failure of its own `pnpm setup`). Install the runtime

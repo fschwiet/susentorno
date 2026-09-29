@@ -64,6 +64,37 @@ export function buildThumbnailCommand(vmName: string, width: number, height: num
   ].join('; ');
 }
 
+/**
+ * One frame, written to `dir` as a timestamped BMP. Best effort: returns false
+ * (never throws) when the VM is mid-reboot, off, or not yet rendering.
+ */
+export async function captureScreenshotFrame(
+  exec: PowerShellExec,
+  vmName: string,
+  dir: string,
+  label = '',
+): Promise<boolean> {
+  try {
+    const { exitCode, stdout } = await exec.run(
+      buildThumbnailCommand(vmName, SCREENSHOT_WIDTH, SCREENSHOT_HEIGHT),
+    );
+    if (exitCode !== 0) return false;
+    const raw = Buffer.from(stdout.trim(), 'base64');
+    // GetVirtualSystemThumbnailImage returns 4 bytes more than
+    // width*height*2 on every call, regardless of resolution (confirmed on
+    // a real host at 80x60, 160x120, and 320x240 alike) — trim to the
+    // trailing pixel payload rgb565ToBmp actually expects.
+    const pixels = raw.subarray(raw.length - SCREENSHOT_WIDTH * SCREENSHOT_HEIGHT * 2);
+    const bmp = rgb565ToBmp(pixels, SCREENSHOT_WIDTH, SCREENSHOT_HEIGHT);
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${label}${stamp}.bmp`), bmp);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export interface ScreenshotHandle {
   stop(): Promise<void>;
 }
@@ -96,24 +127,7 @@ export function startScreenshotCapture(
 
   const capture = async (): Promise<void> => {
     // Best-effort diagnostics: a failed frame must never fail a build.
-    try {
-      const { exitCode, stdout } = await exec.run(
-        buildThumbnailCommand(vmName, SCREENSHOT_WIDTH, SCREENSHOT_HEIGHT),
-      );
-      if (exitCode !== 0) return;
-      const raw = Buffer.from(stdout.trim(), 'base64');
-      // GetVirtualSystemThumbnailImage returns 4 bytes more than
-      // width*height*2 on every call, regardless of resolution (confirmed on
-      // a real host at 80x60, 160x120, and 320x240 alike) — trim to the
-      // trailing pixel payload rgb565ToBmp actually expects.
-      const pixels = raw.subarray(raw.length - SCREENSHOT_WIDTH * SCREENSHOT_HEIGHT * 2);
-      const bmp = rgb565ToBmp(pixels, SCREENSHOT_WIDTH, SCREENSHOT_HEIGHT);
-      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-      writeFileSync(join(dir, `${stamp}.bmp`), bmp);
-      prune();
-    } catch {
-      // Ignore: the VM may be mid-reboot, off, or not yet rendering.
-    }
+    if (await captureScreenshotFrame(exec, vmName, dir)) prune();
   };
 
   const loop = async (): Promise<void> => {

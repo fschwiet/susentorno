@@ -8,6 +8,14 @@ import {
   WINDOWS_GUEST_HOSTNAME,
   WINDOWS_IMAGE_NAME,
 } from '../../guest/windowsAutounattend';
+import { MINIMUM_SUPPORTED_WINGET_VERSION } from '../../../src/guestSetup/windows/guestChecks';
+
+function wingetBlock(script: string): string {
+  return script.slice(
+    script.indexOf('if ($stage -eq "winget-ready")'),
+    script.indexOf('if ($stage -eq "finalize")'),
+  );
+}
 
 const xml = buildAutounattendXml({ password: 'p@ssw0rd-Example' });
 
@@ -121,58 +129,67 @@ describe('buildProvisioningScript', () => {
     expect(rebootBlock![0]).toContain('Restart-Computer');
   });
 
-  it('installs git after servicing', () => {
-    expect(script).toContain('winget install');
-    expect(script).toContain('Git.Git');
+  it('proves WinGet is ready after servicing but installs nothing', () => {
+    // The shipped 01-install-packages step installs Git, jq, and GitHub CLI for
+    // real, so the golden image carries none of them: only proof that
+    // `winget --version` works at the version setup-guest-windows supports.
+    expect(script).toContain('"winget-ready"');
+    expect(script).not.toContain('"git"');
+    expect(script).toContain('--version');
+    expect(script).not.toMatch(/winget[^\r\n]*\binstall\b/);
+    expect(script).not.toContain('Git.Git');
+    expect(script).not.toContain('git.exe');
+    expect(script).toContain(MINIMUM_SUPPORTED_WINGET_VERSION);
   });
 
-  it('retries and checks the git install rather than silently proceeding on failure', () => {
-    // Confirmed live, twice: winget install Git.Git fails on a freshly-
-    // specialized image with OOBE skipped. First fix (checking
-    // $LASTEXITCODE) did not close the gap -- confirmed via a second live
-    // rebuild -- because winget itself is not yet command-resolvable that
-    // early, and an unrecognized command is a terminating PowerShell error
-    // under $ErrorActionPreference = 'Stop', not a native exit code: it
-    // never reached the $LASTEXITCODE check at all (winget's own
-    // DiagOutputDir log directory did not even exist on the built image).
+  it('retries and checks winget rather than silently proceeding on failure', () => {
+    // Confirmed live: winget is not yet command-resolvable right after an
+    // OOBE-skipped first logon, and an unrecognized command is a terminating
+    // PowerShell error under $ErrorActionPreference = 'Stop', not a native exit
+    // code. The block must retry, catch, check the native exit code, and fail
+    // loudly when every attempt is spent.
     expect(script).toContain('LASTEXITCODE');
-    // The git block must contain a retry loop, not a single bare attempt,
-    // and must wrap the winget call so a not-yet-resolvable command is
-    // retried rather than terminating the whole provisioning script.
-    const gitBlock = script.slice(script.indexOf('"git"'), script.indexOf('"finalize"'));
-    expect(gitBlock).toMatch(/for\s*\(|while\s*\(/);
-    expect(gitBlock).toContain('try');
-    expect(gitBlock).toContain('catch');
+    const block = wingetBlock(script);
+    expect(block).toMatch(/for\s*\(|while\s*\(/);
+    expect(block).toContain('try');
+    expect(block).toContain('catch');
+    expect(block).toContain('throw');
   });
 
   it('registers the DesktopAppInstaller package on every attempt before trusting winget', () => {
-    // Confirmed live, a third time, by mounting the built (but git-less)
-    // golden disk offline: Microsoft.DesktopAppInstaller was staged in
-    // WindowsApps and its winget.exe execution alias existed in the
-    // Administrator profile, but the package was never *registered* for
-    // that profile this early after an OOBE-skipped first logon. An
-    // unregistered alias is a phantom stub -- invoking it exits 0 without
-    // doing anything, so $LASTEXITCODE alone cannot tell success from a
-    // no-op (no DiagOutputDir was ever created, and Program Files\Git never
-    // existed, despite the stage marker advancing to "finalize"). Registering
-    // once before the loop was tried and, per a fourth live rebuild, still
-    // did not close the gap -- registration moves inside the retry loop so a
-    // slow-to-propagate registration gets another chance on the next
-    // attempt rather than being tried exactly once.
-    const gitBlock = script.slice(script.indexOf('"git"'), script.indexOf('"finalize"'));
-    expect(gitBlock).toContain('Add-AppxPackage');
-    expect(gitBlock).toContain('DesktopAppInstaller');
-    const loopStart = gitBlock.search(/for\s*\(/);
-    expect(gitBlock.indexOf('Add-AppxPackage')).toBeGreaterThan(loopStart);
+    // Confirmed live: Microsoft.DesktopAppInstaller is staged in WindowsApps
+    // but not yet *registered* for the profile this early after an
+    // OOBE-skipped first logon. An unregistered alias is a phantom stub that
+    // exits 0 without doing anything, so registration sits inside the retry
+    // loop rather than being tried once.
+    const block = wingetBlock(script);
+    expect(block).toContain('Add-AppxPackage');
+    expect(block).toContain('DesktopAppInstaller');
+    const loopStart = block.search(/for\s*\(/);
+    expect(block.indexOf('Add-AppxPackage')).toBeGreaterThan(loopStart);
   });
 
-  it('verifies git.exe actually exists rather than trusting winget exit code alone', () => {
-    // The same phantom-alias failure mode means a bare $LASTEXITCODE check
-    // can never be fully trusted for this package. The loop must confirm
-    // the binary landed on disk before declaring the stage done.
-    const gitBlock = script.slice(script.indexOf('"git"'), script.indexOf('"finalize"'));
-    expect(gitBlock).toContain('git.exe');
-    expect(gitBlock).toMatch(/Test-Path \$gitPath/);
+  it('reads and compares the reported version rather than trusting the exit code alone', () => {
+    // The same phantom-alias failure mode exits 0 with no version output.
+    const block = wingetBlock(script);
+    expect(block).toContain('[version]');
+    expect(block).toMatch(/-ge \$minimumVersion|\$minimumVersion/);
+  });
+
+  it('deploys the WinGet source in the interactive session, still installing no package', () => {
+    // Confirmed live: the winget source is itself a Store package
+    // (Microsoft.Winget.Source) that is deployed per user on first use. A
+    // PowerShell Direct session has no interactive logon, so deploying it there
+    // fails with 0x80073D19 ("a user was logged off"), and the shipped install
+    // step then dies on its first `winget list`. The image therefore deploys
+    // the source here, in the autologon session, exactly as first interactive
+    // use would. That is a source refresh, not a package install.
+    const block = wingetBlock(script);
+    expect(block).toContain('source update');
+    expect(block).toContain('--name winget');
+    expect(block).not.toMatch(/\binstall\b/);
+    const versionCheck = block.indexOf('--version');
+    expect(block.indexOf('source update')).toBeGreaterThan(versionCheck);
   });
 
   it('logs the whole provisioning run to a persistent file', () => {
@@ -208,7 +225,7 @@ describe('buildProvisioningScript', () => {
     // build VM has never seen (confirmed live: WININET_E_CANNOT_CONNECT and
     // "Could not establish trust relationship" respectively). The import
     // must therefore run before the stage dispatch, not gated inside a
-    // single stage, so it also covers a run resumed straight into "git".
+    // single stage, so it also covers a run resumed straight into "winget-ready".
     // Re-importing an already-trusted cert is a silent no-op, not an error
     // (confirmed against a real LocalMachine\Root store), so running it
     // unconditionally on every invocation costs nothing.

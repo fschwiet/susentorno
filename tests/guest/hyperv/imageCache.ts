@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { repoRoot } from '../../testEnvRoot';
 
 /** The five per-test guests. One differencing disk and one VM each. */
-export type GuestRole = 'phases' | 'e2e' | 'fresh' | 'ambientTrust' | 'windowsFresh';
+export type GuestRole = 'phases' | 'e2e' | 'fresh' | 'ambientTrust' | 'windowsE2e';
 
 /**
  * One isolation name derives everything this tier touches on the host — the

@@ -16,7 +16,7 @@ describe('windows image cache', () => {
   });
 
   it('derives the windows role VM name from the isolation prefix', () => {
-    expect(roleVmName('windowsFresh')).toBe('susentorno-test-windowsFresh');
+    expect(roleVmName('windowsE2e')).toBe('susentorno-test-windowsE2e');
   });
 
   it("reads the ISO path the guest tier's Windows ISO prerequisite validates", () => {

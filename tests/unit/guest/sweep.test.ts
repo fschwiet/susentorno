@@ -7,7 +7,7 @@ describe('isSweepableChildVhd', () => {
       'susentorno-test-phases.vhdx',
       'susentorno-test-e2e.vhdx',
       'susentorno-test-fresh.vhdx',
-      'susentorno-test-windowsFresh.vhdx',
+      'susentorno-test-windowsE2e.vhdx',
       'susentorno-test-golden-installer.vhdx',
       'susentorno-test-golden-seed.vhdx',
     ])

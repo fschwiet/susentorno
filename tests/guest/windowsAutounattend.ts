@@ -1,4 +1,5 @@
 import type { HostTrustedRoot } from '../../src/guestSetup/hostTrustStore';
+import { MINIMUM_SUPPORTED_WINGET_VERSION } from '../../src/guestSetup/windows/guestChecks';
 
 /** Windows computer names are NetBIOS names, hard-limited to 15 characters. */
 export const WINDOWS_GUEST_HOSTNAME = 'susentorno-win';
@@ -24,7 +25,7 @@ function escapeXml(value: string): string {
  * Provisioning cannot be a one-shot FirstLogonCommand. Windows Update needs
  * reboots, and a reboot neither resumes an interrupted FirstLogonCommand nor
  * re-runs a consumed RunOnce entry — the process would simply die at the first
- * servicing reboot with Git never installed. Autologon logs the user back in;
+ * servicing reboot with WinGet never proven ready. Autologon logs the user back in;
  * this Run entry is what actually re-invokes the script, and a stage marker on
  * disk is what tells the resumed run where it left off. The entry removes
  * itself only in the final stage.
@@ -83,7 +84,7 @@ export function buildProvisioningScript(): string {
     '  $searcher = $session.CreateUpdateSearcher()',
     '  while ($true) {',
     '    $result = $searcher.Search("IsInstalled=0 and IsHidden=0")',
-    '    if ($result.Updates.Count -eq 0) { Set-Stage "git"; $stage = "git"; break }',
+    '    if ($result.Updates.Count -eq 0) { Set-Stage "winget-ready"; $stage = "winget-ready"; break }',
     '    $toDownload = New-Object -ComObject Microsoft.Update.UpdateColl',
     '    foreach ($u in $result.Updates) {',
     '      if (-not $u.EulaAccepted) { $u.AcceptEula() }',
@@ -94,7 +95,7 @@ export function buildProvisioningScript(): string {
     '    $null = $downloader.Download()',
     '    $toInstall = New-Object -ComObject Microsoft.Update.UpdateColl',
     '    foreach ($u in $result.Updates) { if ($u.IsDownloaded) { $null = $toInstall.Add($u) } }',
-    '    if ($toInstall.Count -eq 0) { Set-Stage "git"; $stage = "git"; break }',
+    '    if ($toInstall.Count -eq 0) { Set-Stage "winget-ready"; $stage = "winget-ready"; break }',
     '    $installer = $session.CreateUpdateInstaller()',
     '    $installer.Updates = $toInstall',
     '    $installResult = $installer.Install()',
@@ -115,24 +116,27 @@ export function buildProvisioningScript(): string {
     '  }',
     '}',
     '',
-    'if ($stage -eq "git") {',
-    // Confirmed live by mounting the built (git-less) golden disk offline:
+    'if ($stage -eq "winget-ready") {',
+    // Confirmed live by mounting a built golden disk offline:
     // Microsoft.DesktopAppInstaller is staged in WindowsApps and its
     // winget.exe execution alias exists in the Administrator profile, but
     // right after an OOBE-skipped first logon the package is not yet
     // *registered* for that profile. An unregistered alias is a phantom
-    // stub: invoking it exits 0 and does nothing (no DiagOutputDir was ever
-    // created, Program Files\\Git never existed) -- so $LASTEXITCODE alone
-    // cannot distinguish success from a no-op. Force registration first.
-    '  $gitPath = "$env:ProgramFiles\\Git\\cmd\\git.exe"',
-    '  $gitInstalled = $false',
+    // stub: invoking it exits 0 and does nothing -- so $LASTEXITCODE alone
+    // cannot distinguish success from a no-op, and the reported version is
+    // parsed and compared too. Force registration first.
+    //
+    // This stage installs nothing: the shipped 01-install-packages step
+    // installs Git, jq, and GitHub CLI for real in the e2e role, so the image
+    // must not carry them. It only proves WinGet works at the version
+    // setup-guest-windows (guestChecks.ts) supports.
+    `  $minimumVersion = [version]'${MINIMUM_SUPPORTED_WINGET_VERSION}'`,
+    '  $wingetReady = $false',
     '  for ($attempt = 1; $attempt -le 10; $attempt++) {',
     '    try {',
-    // Registering once before the loop was tried and, per a fourth live
-    // rebuild (still no Program Files\Git afterward), did not close the
-    // gap either -- registration moves inside the loop so a
-    // slow-to-propagate registration gets another chance on the next
-    // attempt rather than being tried exactly once.
+    // Registering once before the loop was tried and did not close the gap --
+    // registration moves inside the loop so a slow-to-propagate registration
+    // gets another chance on the next attempt rather than exactly one.
     '      try {',
     '        Get-AppxPackage -AllUsers -Name Microsoft.DesktopAppInstaller | ForEach-Object {',
     '          Add-AppxPackage -DisableDevelopmentMode -Register "$($_.InstallLocation)\\AppXManifest.xml"',
@@ -140,32 +144,38 @@ export function buildProvisioningScript(): string {
     '      } catch {',
     '        Write-Host "provision: attempt $attempt Add-AppxPackage DesktopAppInstaller threw: $_"',
     '      }',
-    // winget can still be unrecognized as a command this early (confirmed
-    // live: its own DiagOutputDir log directory did not exist), which is a
+    // winget can still be unrecognized as a command this early, which is a
     // terminating PowerShell error under $ErrorActionPreference = 'Stop' --
     // not a native exit code -- so it must be caught, not just checked via
     // $LASTEXITCODE, or a single early attempt kills the whole script.
     '      $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue',
     '      $wingetPath = if ($wingetCmd) { $wingetCmd.Source } else { "$env:LOCALAPPDATA\\Microsoft\\WindowsApps\\winget.exe" }',
-    '      & $wingetPath install --id Git.Git --exact --silent --accept-source-agreements --accept-package-agreements --source winget',
-    '      Write-Host "provision: winget install Git.Git attempt $attempt exit code $LASTEXITCODE"',
-    // The phantom-alias failure mode returns exit 0 having done nothing, so
-    // exit code alone is untrustworthy for this package: confirm the
-    // binary actually landed before declaring the stage done.
-    '      if ($LASTEXITCODE -eq 0 -and (Test-Path $gitPath)) { $gitInstalled = $true; break }',
+    '      $versionOutput = (& $wingetPath --version 2>&1 | Out-String).Trim()',
+    '      $versionExit = $LASTEXITCODE',
+    '      Write-Host "provision: winget --version attempt $attempt exit code $versionExit output $versionOutput"',
+    '      if ($versionExit -eq 0 -and $versionOutput -match "^v?(\\d+(\\.\\d+)+)$" -and [version]$Matches[1] -ge $minimumVersion) {',
+    // The winget source is itself a Store package (Microsoft.Winget.Source) that
+    // is deployed per user on first use. Deploying it from a PowerShell Direct
+    // session, which has no interactive logon, fails with 0x80073D19 ("a user
+    // was logged off"), so it is deployed here in the autologon session, as first
+    // interactive use would. A source refresh, not a package install.
+    '        $sourceOutput = (& $wingetPath source update --name winget 2>&1 | Out-String).Trim()',
+    '        $sourceExit = $LASTEXITCODE',
+    '        Write-Host "provision: winget source update attempt $attempt exit code $sourceExit output $sourceOutput"',
+    '        if ($sourceExit -eq 0) { $wingetReady = $true; break }',
+    '      }',
     '    } catch {',
-    '      Write-Host "provision: winget install Git.Git attempt $attempt threw: $_"',
+    '      Write-Host "provision: winget --version attempt $attempt threw: $_"',
     '    }',
     '    Start-Sleep -Seconds 30',
     '  }',
-    '  if (-not $gitInstalled) {',
+    '  if (-not $wingetReady) {',
     // Deliberately does not Set-Stage or clean up: the Run key stays
-    // registered and autologon retries the whole "git" stage from scratch on
-    // the next logon (LogonCount=10 gives real headroom), rather than
-    // silently proceeding to finalize with no git installed -- confirmed
-    // live: that is exactly what happened before this check existed.
+    // registered and autologon retries the whole stage from scratch on the
+    // next logon (LogonCount=10 gives real headroom), rather than silently
+    // proceeding to finalize with an unusable WinGet.
     '    Stop-Transcript | Out-Null',
-    '    throw "provision: winget install Git.Git failed after 10 attempts"',
+    '    throw "provision: winget --version did not report $minimumVersion or newer, or winget source update failed, after 10 attempts"',
     '  }',
     '  Set-Stage "finalize"; $stage = "finalize"',
     '}',

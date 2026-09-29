@@ -243,6 +243,26 @@ describe('generated provisioning inventory', () => {
     });
   });
 
+  describe('pnpm-running Windows steps do not run from the UNC share', () => {
+    // Confirmed live: the runner starts every step in the read-only UNC phase
+    // directory, and pnpm 12 panics there ("current dir is an absolute path with
+    // drive letter"), so its bootstrap then persists no PNPM_HOME. Steps that run
+    // pnpm must move to a local directory first.
+    for (const step of ['02-install-pnpm.ps1', '03-install-tools.ps1']) {
+      it(`${step} moves to a local directory before running pnpm`, () => {
+        const script = readFileSync(
+          join(templatesDir(), 'vm-shared-windows', 'pre-scripts', step),
+          'utf8',
+        );
+        const move = script.indexOf('Set-Location -LiteralPath $env:USERPROFILE');
+        expect(move, 'Set-Location to the local profile directory').toBeGreaterThan(-1);
+        const firstPnpm = script.search(/^\s*(& )?pnpm |-File \$bootstrap/m);
+        expect(firstPnpm).toBeGreaterThan(-1);
+        expect(move).toBeLessThan(firstPnpm);
+      });
+    }
+  });
+
   describe('shipped Windows steps meet the step contract', () => {
     const steps = [
       'pre-scripts/01-install-packages.ps1',

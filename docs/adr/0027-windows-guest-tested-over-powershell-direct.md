@@ -1,6 +1,6 @@
 # The Windows guest layer is tested against a real Hyper-V guest over PowerShell Direct
 
-The `guest` tier includes a `windowsFresh` role: a real Windows 11 guest, booted from a differencing disk off a self-built golden image, on the real `susentorno-test-internal` switch, served by the real `run-hosting`.
+The `guest` tier includes a `windowsE2e` role: a real Windows 11 guest, booted from a differencing disk off a self-built golden image, driven through the packaged `setup-guest-windows` onto the real `susentorno-test-internal` switch, served by the real `run-hosting`.
 
 The claim is: **a real Windows guest, on a real Hyper-V Internal switch, served by the real `run-hosting`, takes its entire network configuration from the host and reaches exactly the destinations the network policy permits and nothing else.**
 
@@ -14,7 +14,9 @@ The build ships **no vTPM**. Automatic device encryption requires a TPM; with no
 
 accepted (2026-08-18)
 
-2026-09-27: the ISO is now required; a skipped `windowsFresh` role went unnoticed in an agentic run.
+2026-09-27: the ISO is now required; a skipped Windows role went unnoticed in an agentic run.
+
+2026-09-28 (amended): `windowsE2e` replaces `windowsFresh`. The role no longer hand-drives the guest. It runs the packaged `setup-guest-windows` twice: run 1 fails on purpose at the last post-isolation step and checks the real residual-state footer, and run 2 replays to success. The network-boundary assertions moved into it unchanged in substance. Git is no longer preinstalled: the golden build's `git` stage became a `winget-ready` stage that proves WinGet works and installs nothing, so `01-install-packages.ps1` installs Git, jq, and GitHub.cli for real during the setup phase. The harness's own guest-side ambient-root installer is gone; the production Windows trust reconciler that `setup-guest-windows` runs is the only owner of guest trust. The single remaining substitution is a `gh.cmd` shim (exit `0` for any arguments) at the front of the guest's machine PATH.
 
 ## Considered Options
 
@@ -24,11 +26,11 @@ accepted (2026-08-18)
 - **OpenSSH Server in the guest.** Rejected: in-band with the network under test, with no serial fallback.
 - **Stubbing `git`**, mirroring [[guest-layer-tested-against-real-hyperv]]'s `gh`. Rejected: it buys tidiness by deleting the assertion with the most to say about the network boundary.
 - **A separate `guest-windows` tier.** Rejected by `testing.md`'s placement rule — the observable surface is still behaviour observed inside a disposable guest.
-- **A Windows arm of `propagateAmbientTrust` in `src/`.** Rejected: it would ship a product feature with no caller until a `setup-guest-windows` command exists. The guest-side installer lives in the harness; the host-side enumerator is production code.
+- **A Windows arm of `propagateAmbientTrust` in `src/`.** Rejected at the time: it would ship a product feature with no caller until a `setup-guest-windows` command exists. **Superseded (2026-09-28):** the command now exists, and its Windows guest trust reconciliation in `src/` is the caller this option was waiting for. The harness installer was deleted.
 
 ## Consequences
 
-- Two substitutions, both named: Git is preinstalled in the golden image rather than arriving from `01-install-packages.ps1` (pre-scripts run pre-isolation, so winget has never run through the proxy in production), and the guest-side ambient-root installer is harness code.
+- One substitution, named: `gh` is a stub (`gh.cmd` in a directory at the front of the guest's machine PATH, removed with the disposable disk or by `sweepIsolationResidue` after an aborted run) so `01-auth-config.ps1` needs no real GitHub credential. The real GitHub.cli package is still installed and asserted. Nothing else is preinstalled or substituted: Git arrives from `01-install-packages.ps1`, and guest trust comes from the production reconciler.
 - Ambient trust propagation is **required**, not optional flake-proofing: susentorno is developed from inside a susentorno guest, and `current-auth-list.txt` terminates `github.com:443`, so the `git ls-remote` assertion fails without it.
 - Revocation checking is waived on susentorno-issued leaves — `src/ca.ts` emits no CRL or OCSP endpoint and Schannel fails closed on unknown status. Chain validation stays active.
 - Windows Setup diagnostics are framebuffer thumbnails at roughly 320×240: state classification, not readable text. Offline `Panther\setupact.log` salvage is the named escalation.

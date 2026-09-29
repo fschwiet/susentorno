@@ -71,7 +71,7 @@ const ENSURE_TRUST_DIRECTORY = [
   "  $staging = Join-Path $trustDir ('.staging-' + [guid]::NewGuid().ToString('N'))",
   '  try {',
   '    [System.IO.File]::WriteAllBytes($staging, $Bytes)',
-  '    if (Test-Path -LiteralPath $Path -PathType Leaf) { [System.IO.File]::Replace($staging, $Path, $null) }',
+  '    if (Test-Path -LiteralPath $Path -PathType Leaf) { [System.IO.File]::Replace($staging, $Path, [NullString]::Value) }',
   '    else { [System.IO.File]::Move($staging, $Path) }',
   '  } finally {',
   '    if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Force -ErrorAction SilentlyContinue }',
