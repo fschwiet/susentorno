@@ -86,6 +86,24 @@ describe('environment initialization', () => {
       expect(existsSync(join(root, 'pre-scripts', 'README.md'))).toBe(true);
       expect(existsSync(join(root, 'post-scripts', 'README.md'))).toBe(true);
     });
+
+    it.each(['pre-scripts', 'post-scripts'])(
+      'documents the Windows step contract in the %s README',
+      (folder) => {
+        initEnvironment(options());
+        const readme = readFileSync(join(dir, ENV_DIR_NAME, folder, 'README.md'), 'utf8');
+        expect(readme).toContain('Windows PowerShell 5.1');
+        expect(readme).toContain('-NoProfile -NonInteractive -ExecutionPolicy Bypass');
+        expect(readme).toMatch(/elevated/i);
+        expect(readme).toMatch(/read-only/i);
+        expect(readme).toContain('UNC');
+        expect(readme).toMatch(/must not prompt/i);
+        expect(readme).toMatch(/exit code of every native/i);
+        expect(readme).toMatch(/idempotent/i);
+        expect(readme).toMatch(/replay/i);
+        expect(readme).toContain('30 minutes');
+      },
+    );
   });
 
   describe('sanitized credentials', () => {

@@ -5,19 +5,42 @@ import { sanitizeCredentials } from './sanitizeCredentials';
 import { sanitizeCodexCredentials } from './sanitizeCodexCredentials';
 import { planAllPhases, executePlans } from './weaveShares';
 
+const WINDOWS_STEP_CONTRACT = `
+## Windows steps (\`.ps1\`)
+
+\`susentorno setup-guest-windows\` runs each \`NN-name.ps1\` step, in filename order, in its own
+fresh elevated Windows PowerShell 5.1 process started with
+\`-NoProfile -NonInteractive -ExecutionPolicy Bypass\`, working from the read-only UNC phase
+directory of the VM share. The guest's persistent execution policy is never changed.
+
+- A step must not prompt. There is no console to answer, so a prompt hangs until the time
+  limit below ends the step. Never write to the share, map a drive, or rely on session state
+  left by another step. PATH changes made by an earlier step are visible only because each
+  step is a fresh process that reads the persisted environment.
+- A step must check the exit code of every native command itself. Windows PowerShell 5.1 does
+  not turn a failing native command into an error. Check \`$LASTEXITCODE\` right after each
+  call and throw (or \`exit N\`) on a nonzero status. Exit code \`0\` is the only success, and
+  an uncaught terminating error becomes a nonzero exit.
+- Every step must be idempotent. Recovery from any failure is to rerun the command, which
+  replays the complete flow from the Default Switch, including steps that already succeeded.
+- Each step has a 30 minutes limit. A step still running after that is killed and reported
+  as timed out.
+- The first step that fails, times out, or is cancelled stops the sequence.
+`;
+
 const PRE_SCRIPTS_README = `# pre-scripts
 
 Your own VM setup scripts go here. Name runnable steps \`NN-name.sh\` or
 \`NN-name.ps1\`. They run before network isolation. Reference sibling resources
 relative to the script, then run \`susentorno update-shares\` after editing.
-`;
+${WINDOWS_STEP_CONTRACT}`;
 
 const POST_SCRIPTS_README = `# post-scripts
 
 Your own VM setup scripts go here. Name runnable steps \`NN-name.sh\` or
 \`NN-name.ps1\`. They run after network isolation and reboot. Reference sibling
 resources relative to the script, then run \`susentorno update-shares\` after editing.
-`;
+${WINDOWS_STEP_CONTRACT}`;
 
 export interface InitOptions {
   cwd: string;

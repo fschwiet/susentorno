@@ -157,8 +157,12 @@ describe('generated provisioning inventory', () => {
         join(templatesDir(), 'vm-shared-windows', 'post-scripts', '01-auth-config.ps1'),
         'utf8',
       );
-      expect(script).toMatch(/gh auth login --with-token\r?\n\s*if \(\$LASTEXITCODE -ne 0\)/);
-      expect(script).toMatch(/gh auth setup-git\r?\n\s*if \(\$LASTEXITCODE -ne 0\)/);
+      expect(script).toMatch(
+        /--with-token\r?\n\s*\$status = \$LASTEXITCODE\r?\n\s*if \(\$status -ne 0\)/,
+      );
+      expect(script).toMatch(
+        /gh auth setup-git[^\n]*\r?\n\s*\$status = \$LASTEXITCODE\r?\n\s*if \(\$status -ne 0\)/,
+      );
     });
 
     it('windows configure-network only verifies reconciled trust; 01-auth-config installs the placeholder', () => {
@@ -236,6 +240,213 @@ describe('generated provisioning inventory', () => {
       expect(script).toContain('@openai/codex');
       expect(script).not.toContain('dotnet tool install');
       expect(script).not.toContain('VS Code');
+    });
+  });
+
+  describe('shipped Windows steps meet the step contract', () => {
+    const steps = [
+      'pre-scripts/01-install-packages.ps1',
+      'pre-scripts/02-install-pnpm.ps1',
+      'pre-scripts/03-install-tools.ps1',
+      'pre-scripts/nn-configure-network.ps1',
+      'post-scripts/01-auth-config.ps1',
+      'post-scripts/02-apply-home-jq-transforms.ps1',
+    ];
+    const read = (step: string) =>
+      readFileSync(join(templatesDir(), 'vm-shared-windows', ...step.split('/')), 'utf8');
+    const stepText = (step: string) => read(step).replace(/\r\n/g, '\n');
+
+    /** A statement that starts a native invocation: `& x ...`, or a bare well-known tool. */
+    const nativeStart =
+      /^\s*(\$\w+\s*=\s*)?(("[^"]*"|'[^']*'|\$\w+(\['[^']*'\])?)\s*\|\s*)?(&\s+\S+|(winget|pnpm|git|gh|node|jq|claude|codex|pi|curl\.exe|powershell\.exe)\s)/;
+
+    it.each(steps)('%s checks $LASTEXITCODE right after every native call', (step) => {
+      const lines = stepText(step).split('\n');
+      const unchecked: string[] = [];
+      lines.forEach((line, i) => {
+        if (!nativeStart.test(line) || /^\s*#/.test(line)) return;
+        const following = lines
+          .slice(i + 1)
+          .filter((l) => l.trim() !== '')
+          .slice(0, 1);
+        if (!/\$LASTEXITCODE/.test(line) && !following.some((l) => /\$LASTEXITCODE/.test(l)))
+          unchecked.push(`${i + 1}: ${line.trim()}`);
+      });
+      expect(unchecked).toEqual([]);
+    });
+
+    it.each(steps)('%s never prompts, maps drives, or touches the execution policy', (step) => {
+      const text = stepText(step);
+      expect(text).not.toMatch(/Read-Host|Get-Credential|-Confirm\b|\bpause\b/);
+      expect(text).not.toMatch(/New-PSDrive|net\s+use|subst\s|cmdkey/i);
+      expect(text).not.toMatch(/Set-ExecutionPolicy|-Scope\s+(LocalMachine|CurrentUser)/i);
+    });
+
+    it.each(steps)('%s tells nobody to open a new terminal', (step) => {
+      expect(stepText(step)).not.toMatch(/new terminal/i);
+    });
+
+    it.each(steps)('%s never writes under its read-only UNC directory', (step) => {
+      const writes = stepText(step)
+        .split('\n')
+        .filter((line) => !/^\s*#/.test(line))
+        .filter((line) =>
+          /Set-Content|Add-Content|Out-File|New-Item|Remove-Item|Move-Item|Copy-Item|WriteAll|-OutFile|\[System\.IO\.File\]::(Replace|Move|Copy|Delete)|>>?\s/.test(
+            line,
+          ),
+        )
+        .filter((line) => /\$shareRoot|\$PSScriptRoot|\$scriptDir/.test(line));
+      expect(writes).toEqual([]);
+    });
+
+    describe('01-install-packages', () => {
+      const script = () => stepText('pre-scripts/01-install-packages.ps1');
+
+      it('no longer changes App Installer, winget settings, or unrelated packages', () => {
+        expect(script()).not.toContain('BypassCertificatePinningForMicrosoftStore');
+        expect(script()).not.toContain('Microsoft.AppInstaller');
+        expect(script()).not.toMatch(/^[^\n#]*\bwinget[^\n]*\bupgrade\b/m);
+        expect(script()).not.toContain('winget settings');
+      });
+
+      it('checks exact installed state first with the pinned package-absent result', () => {
+        expect(script()).toMatch(/list --id \$Id --exact --source winget/);
+        expect(script()).toContain('-1978335212');
+        expect(script().indexOf('list --id')).toBeLessThan(script().indexOf('install --id'));
+      });
+
+      it('installs exactly, silently, and noninteractively from the winget source', () => {
+        const install = script()
+          .split('\n')
+          .find((l) => l.includes('install --id')) as string;
+        for (const flag of [
+          '--exact',
+          '--silent',
+          '--accept-source-agreements',
+          '--accept-package-agreements',
+          '--disable-interactivity',
+          '--source winget',
+        ])
+          expect(install, flag).toContain(flag);
+      });
+
+      it('refreshes only the process PATH from persisted values and verifies each tool version', () => {
+        expect(script()).toContain("GetEnvironmentVariable('Path', 'Machine')");
+        expect(script()).toContain("GetEnvironmentVariable('Path', 'User')");
+        expect(script()).not.toContain('SetEnvironmentVariable');
+        for (const tool of ['jq', 'git', 'gh']) expect(script(), tool).toContain(`'${tool}'`);
+        expect(script()).toContain('--version');
+      });
+    });
+
+    describe('02-install-pnpm', () => {
+      const script = () => stepText('pre-scripts/02-install-pnpm.ps1');
+
+      it('stages the official bootstrap in a unique temp file removed in finally', () => {
+        expect(script()).toContain('https://get.pnpm.io/install.ps1');
+        expect(script()).not.toContain('Invoke-Expression');
+        expect(script()).toMatch(/GetTempPath\(\)/);
+        expect(script()).toMatch(/NewGuid\(\)/);
+        expect(script()).toMatch(/finally\s*\{[\s\S]*Remove-Item/);
+      });
+
+      it('installs the Visual C++ runtime pnpm 12 needs, only when it is absent', () => {
+        // Confirmed on the clean golden image: pnpm.exe 12 exits 0xC0000135 (missing
+        // vcruntime140.dll) while the official bootstrap still exits 0.
+        expect(script()).toContain('vcruntime140.dll');
+        expect(script()).toContain('Microsoft.VCRedist.2015+.x64');
+        expect(script().indexOf('vcruntime140.dll')).toBeLessThan(script().indexOf('install --id'));
+        expect(script().indexOf('install --id')).toBeLessThan(
+          script().indexOf('https://get.pnpm.io/install.ps1'),
+        );
+      });
+
+      it('verifies the persisted PNPM_HOME and PATH resolve pnpm with a zero version exit', () => {
+        expect(script()).toContain("GetEnvironmentVariable('PNPM_HOME', 'User')");
+        expect(script()).toContain("GetEnvironmentVariable('Path', 'User')");
+        expect(script()).toContain('pnpm --version');
+      });
+    });
+
+    describe('03-install-tools', () => {
+      const script = () => stepText('pre-scripts/03-install-tools.ps1');
+
+      it('requires pnpm before any install and checks every pnpm result', () => {
+        const firstInstall = script().indexOf('pnpm runtime set');
+        expect(script().indexOf('--version')).toBeGreaterThan(-1);
+        expect(script().indexOf('--version')).toBeLessThan(firstInstall);
+        expect(script()).toContain('pnpm runtime set node latest -g');
+        expect(script()).toContain('pnpm add -g --ignore-scripts @earendil-works/pi-coding-agent');
+        expect(script()).toContain('pnpm add -g @openai/codex');
+      });
+
+      it('installs Claude Code with the exact-state-first winget pattern', () => {
+        expect(script()).toContain('Anthropic.ClaudeCode');
+        expect(script()).toMatch(/list --id \$Id --exact --source winget/);
+        expect(script()).toContain('-1978335212');
+        const install = script()
+          .split('\n')
+          .find((l) => l.includes('install --id')) as string;
+        for (const flag of [
+          '--exact',
+          '--silent',
+          '--accept-source-agreements',
+          '--accept-package-agreements',
+          '--disable-interactivity',
+          '--source winget',
+        ])
+          expect(install, flag).toContain(flag);
+      });
+
+      it('verifies node, pi, claude, and codex resolve and report a version', () => {
+        for (const tool of ['node', 'pi', 'claude', 'codex'])
+          expect(script(), tool).toContain(`'${tool}'`);
+      });
+    });
+
+    describe('01-auth-config', () => {
+      const script = () => stepText('post-scripts/01-auth-config.ps1');
+
+      it('validates all three inputs before any mutation', () => {
+        const firstMutation = script().indexOf('git config --global');
+        expect(firstMutation).toBeGreaterThan(-1);
+        for (const input of ['github-config.txt', 'credentials.json', 'auth.json'])
+          expect(script().indexOf(input), input).toBeLessThan(firstMutation);
+        expect(script().indexOf('ConvertFrom-Json')).toBeLessThan(firstMutation);
+      });
+
+      it('authenticates gh with an explicit hostname and protocol, token on stdin, and setup-git', () => {
+        expect(script()).toContain(
+          'gh auth login --hostname github.com --git-protocol https --with-token',
+        );
+        expect(script()).toContain('gh auth setup-git --hostname github.com');
+        expect(script()).not.toMatch(/gh auth login[^\n]*--token\b/);
+      });
+
+      it('never prints the token', () => {
+        expect(script()).not.toMatch(/Write-(Host|Output|Warning|Error)[^\n]*GITHUB_TOKEN/);
+        expect(script()).not.toMatch(/(throw|Fail)[^\n]*GITHUB_TOKEN']/);
+      });
+
+      it('replaces the Claude and Codex placeholders atomically from a staged file', () => {
+        expect(script()).toContain('[System.IO.File]::Replace');
+        expect(script()).toContain('.credentials.json');
+        expect(script()).toContain("'.codex'");
+        expect(script()).toMatch(/finally\s*\{[\s\S]*Remove-Item/);
+      });
+    });
+
+    describe('02-apply-home-jq-transforms', () => {
+      const script = () => stepText('post-scripts/02-apply-home-jq-transforms.ps1');
+
+      it('requires node and jq before invoking the transformer by its $PSScriptRoot path', () => {
+        const transformer = script().indexOf('apply-home-jq-transforms.mjs');
+        expect(transformer).toBeGreaterThan(-1);
+        expect(script().indexOf('node')).toBeLessThan(transformer);
+        expect(script().indexOf("'jq'")).toBeLessThan(transformer);
+        expect(script()).toContain('$PSScriptRoot');
+        expect(script()).toMatch(/exit \$status/);
+      });
     });
   });
 
