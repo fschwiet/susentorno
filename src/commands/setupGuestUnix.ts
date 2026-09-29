@@ -3,7 +3,7 @@ import type { Command } from 'commander';
 import { requireEnvPathsOrExit } from '../envPaths';
 import { DEFAULT_NAT_ADAPTER } from '../runHosting/forwarder';
 import { HostNetworkError } from '../hostNetwork/hostNetworkNames';
-import { promptText, promptMasked, type SetupAnswerPrompts } from '../cliPrompt';
+import { promptText, promptMasked, PromptEndedError, type SetupAnswerPrompts } from '../cliPrompt';
 import { resolveVmNameAnswer, resolveConnectionAnswers } from '../guestSetup/unix/setupAnswers';
 import { listScripts, UNIX_STEP_NAMING } from '../guestSetup/listScripts';
 import {
@@ -46,6 +46,37 @@ interface SetupGuestUnixOptions {
 const REACHABILITY_TROUBLESHOOTING_HINT =
   'See setup-guest.md\'s troubleshooting section (the host firewall "allow node.exe on public networks?" dialog, etc.).';
 
+/**
+ * A prompt whose input ended (EOF) or was cancelled (Ctrl+C) rejects with a
+ * PromptEndedError. Every prompt precedes the first change to the VM or guest,
+ * so the command reports that on one line and exits 1 rather than letting the
+ * rejection escape as a stack trace. (Before the typed error, EOF at a text
+ * prompt exited silently with Node's "unsettled top-level await" code 13.)
+ */
+export function endOnEndedPrompt<Args extends unknown[]>(
+  action: (...args: Args) => Promise<void>,
+  io: { err: (line: string) => void; setExitCode: (code: number) => void } = {
+    err: (line) => console.error(line),
+    setExitCode: (code) => {
+      process.exitCode = code;
+    },
+  },
+): (...args: Args) => Promise<void> {
+  return async (...args) => {
+    try {
+      await action(...args);
+    } catch (error) {
+      if (!(error instanceof PromptEndedError)) throw error;
+      io.err(
+        error.reason === 'cancelled'
+          ? `setup-guest-unix: cancelled at the '${error.question}' prompt; nothing was changed.`
+          : `setup-guest-unix: input ended before the '${error.question}' prompt was answered; nothing was changed.`,
+      );
+      io.setExitCode(1);
+    }
+  };
+}
+
 export function registerSetupGuestUnix(program: Command): void {
   program
     .command('setup-guest-unix')
@@ -73,184 +104,186 @@ export function registerSetupGuestUnix(program: Command): void {
       '--share-account <name>',
       'Share account name, skipping its prompt (prompt default: susentorno)',
     )
-    .action(async (options: SetupGuestUnixOptions) => {
-      const exec = createRealPowerShellExec();
-      if (!(await isElevated(exec))) {
-        console.error(
-          'setup-guest-unix: this command requires an elevated (Administrator) PowerShell/terminal — re-run it from one.',
-        );
-        process.exitCode = 1;
-        return;
-      }
-
-      const paths = requireEnvPathsOrExit('setup-guest-unix');
-      if (!paths) return;
-
-      const prompts: SetupAnswerPrompts = {
-        text: (question, defaultValue) => promptText(question, defaultValue),
-        masked: (question) => promptMasked(question),
-      };
-
-      let resolved: ResolvedGuestNetwork | GuestNetworkResolutionFailure;
-      try {
-        resolved = resolveGuestNetwork(options.isolationName, options.natAdapterAlias);
-      } catch (error) {
-        // Caught here rather than left to escape: an escaping throw would leave
-        // the action handler entirely and print a stack trace for a typo'd flag.
-        if (error instanceof HostNetworkError) {
-          console.error(`setup-guest-unix: ${error.message}`);
+    .action(
+      endOnEndedPrompt(async (options: SetupGuestUnixOptions) => {
+        const exec = createRealPowerShellExec();
+        if (!(await isElevated(exec))) {
+          console.error(
+            'setup-guest-unix: this command requires an elevated (Administrator) PowerShell/terminal — re-run it from one.',
+          );
           process.exitCode = 1;
           return;
         }
-        throw error;
-      }
-      if (isGuestNetworkResolutionFailure(resolved)) {
-        console.error(
-          `setup-guest-unix: could not find an IPv4 address on adapter '${resolved.adapterAlias}'. ${resolved.hint}`,
-        );
-        process.exitCode = 1;
-        return;
-      }
-      const {
-        internalAdapterAlias,
-        internalSwitchName,
-        internalSwitchHostIp,
-        defaultSwitchHostIp,
-      } = resolved;
 
-      // Two stages either side of preflight, deliberately: a bad VM name or a
-      // missing switch fails before the user types five more answers.
-      const vmName = await resolveVmNameAnswer(options, prompts);
+        const paths = requireEnvPathsOrExit('setup-guest-unix');
+        if (!paths) return;
 
-      const preflight = await runPreflightChecks({
-        exec,
-        vmName,
-        internalAdapterAlias,
-        internalSwitchName,
-        natAdapterAlias: options.natAdapterAlias,
-        internalSwitchHostIp,
-      });
-      if (!preflight.ok) {
-        console.error(`setup-guest-unix: ${preflight.message}`);
-        process.exitCode = 1;
-        return;
-      }
-      const { defaultSwitchName } = preflight;
+        const prompts: SetupAnswerPrompts = {
+          text: (question, defaultValue) => promptText(question, defaultValue),
+          masked: (question) => promptMasked(question),
+        };
 
-      const { address, username, shareName, accountName, password } =
-        await resolveConnectionAnswers(options, prompts);
+        let resolved: ResolvedGuestNetwork | GuestNetworkResolutionFailure;
+        try {
+          resolved = resolveGuestNetwork(options.isolationName, options.natAdapterAlias);
+        } catch (error) {
+          // Caught here rather than left to escape: an escaping throw would leave
+          // the action handler entirely and print a stack trace for a typo'd flag.
+          if (error instanceof HostNetworkError) {
+            console.error(`setup-guest-unix: ${error.message}`);
+            process.exitCode = 1;
+            return;
+          }
+          throw error;
+        }
+        if (isGuestNetworkResolutionFailure(resolved)) {
+          console.error(
+            `setup-guest-unix: could not find an IPv4 address on adapter '${resolved.adapterAlias}'. ${resolved.hint}`,
+          );
+          process.exitCode = 1;
+          return;
+        }
+        const {
+          internalAdapterAlias,
+          internalSwitchName,
+          internalSwitchHostIp,
+          defaultSwitchHostIp,
+        } = resolved;
 
-      const preScripts = listScripts(join(paths.vmShared, 'pre-scripts'), UNIX_STEP_NAMING);
-      const postScripts = listScripts(join(paths.vmShared, 'post-scripts'), UNIX_STEP_NAMING);
-      const onStep = (message: string) => console.log(`\nsetup-guest-unix: ${message}...\n`);
-      const onProgress = (elapsedMs: number) =>
-        console.log(
-          `setup-guest-unix: waiting for guest to become reachable... (${Math.round(elapsedMs / 1000)}s elapsed)`,
-        );
-      const vmReconcileDeps: VmReconcileDeps = { exec, vmName };
+        // Two stages either side of preflight, deliberately: a bad VM name or a
+        // missing switch fails before the user types five more answers.
+        const vmName = await resolveVmNameAnswer(options, prompts);
 
-      try {
-        console.log(`setup-guest-unix: reconciling '${vmName}' to '${defaultSwitchName}'...`);
-        const reconcileOutcome = await reconcileVmToSwitch(vmReconcileDeps, defaultSwitchName);
+        const preflight = await runPreflightChecks({
+          exec,
+          vmName,
+          internalAdapterAlias,
+          internalSwitchName,
+          natAdapterAlias: options.natAdapterAlias,
+          internalSwitchHostIp,
+        });
+        if (!preflight.ok) {
+          console.error(`setup-guest-unix: ${preflight.message}`);
+          process.exitCode = 1;
+          return;
+        }
+        const { defaultSwitchName } = preflight;
 
-        let setupAddress: string;
-        if (reconcileOutcome.started) {
-          const setupReachability = await waitForReachable({
-            getCandidates: async () => [address, ...(await getVmIpAddresses(exec, vmName))],
-            connect: realTcpConnect,
-            onProgress,
+        const { address, username, shareName, accountName, password } =
+          await resolveConnectionAnswers(options, prompts);
+
+        const preScripts = listScripts(join(paths.vmShared, 'pre-scripts'), UNIX_STEP_NAMING);
+        const postScripts = listScripts(join(paths.vmShared, 'post-scripts'), UNIX_STEP_NAMING);
+        const onStep = (message: string) => console.log(`\nsetup-guest-unix: ${message}...\n`);
+        const onProgress = (elapsedMs: number) =>
+          console.log(
+            `setup-guest-unix: waiting for guest to become reachable... (${Math.round(elapsedMs / 1000)}s elapsed)`,
+          );
+        const vmReconcileDeps: VmReconcileDeps = { exec, vmName };
+
+        try {
+          console.log(`setup-guest-unix: reconciling '${vmName}' to '${defaultSwitchName}'...`);
+          const reconcileOutcome = await reconcileVmToSwitch(vmReconcileDeps, defaultSwitchName);
+
+          let setupAddress: string;
+          if (reconcileOutcome.started) {
+            const setupReachability = await waitForReachable({
+              getCandidates: async () => [address, ...(await getVmIpAddresses(exec, vmName))],
+              connect: realTcpConnect,
+              onProgress,
+            });
+            if (!setupReachability.reachable) {
+              console.error(
+                `setup-guest-unix: guest did not become reachable on port 22. ${REACHABILITY_TROUBLESHOOTING_HINT}`,
+              );
+              process.exitCode = 1;
+              return;
+            }
+            setupAddress = setupReachability.address;
+          } else {
+            // No power/network event happened — the guest was already Running
+            // on the target switch, so the address the user just typed is
+            // still assumed valid; no reachability wait is needed.
+            setupAddress = address;
+          }
+
+          const remoteExec = createSshRemoteExec({ address: setupAddress, username });
+
+          await propagateAmbientTrust(exec, remoteExec, onStep);
+
+          await ensureKvpDaemon(remoteExec, onStep);
+
+          await mountShare(remoteExec, {
+            shareName,
+            accountName,
+            password,
+            hostIp: defaultSwitchHostIp,
+            onStep,
           });
-          if (!setupReachability.reachable) {
+          await runPreScripts(remoteExec, {
+            scripts: preScripts,
+            shareName,
+            internalSwitchHostIp,
+            onStep,
+          });
+
+          const readiness = await checkRunHostingReady(exec, internalSwitchHostIp);
+          if (!readiness.dhcpBound || !readiness.dnsBound) {
             console.error(
-              `setup-guest-unix: guest did not become reachable on port 22. ${REACHABILITY_TROUBLESHOOTING_HINT}`,
+              `setup-guest-unix: run-hosting is no longer listening on ${internalSwitchHostIp} — ` +
+                `start 'susentorno run-hosting' and rerun.`,
             );
             process.exitCode = 1;
             return;
           }
-          setupAddress = setupReachability.address;
-        } else {
-          // No power/network event happened — the guest was already Running
-          // on the target switch, so the address the user just typed is
-          // still assumed valid; no reachability wait is needed.
-          setupAddress = address;
+
+          console.log(`setup-guest-unix: isolating '${vmName}' to '${internalSwitchName}'...`);
+          await isolateVmToSwitch(vmReconcileDeps, internalSwitchName);
+
+          const isolatedReachability = await waitForReachable({
+            getCandidates: () => getVmIpAddresses(exec, vmName),
+            connect: realTcpConnect,
+            onProgress,
+          });
+          if (!isolatedReachability.reachable) {
+            console.error(
+              `setup-guest-unix: guest did not become reachable on port 22 after isolation. ${REACHABILITY_TROUBLESHOOTING_HINT}`,
+            );
+            process.exitCode = 1;
+            return;
+          }
+
+          const isolatedRemoteExec = createSshRemoteExec({
+            address: isolatedReachability.address,
+            username,
+          });
+
+          await mountShare(isolatedRemoteExec, {
+            shareName,
+            accountName,
+            password,
+            hostIp: internalSwitchHostIp,
+            onStep,
+          });
+          await runPostScripts(isolatedRemoteExec, { scripts: postScripts, shareName, onStep });
+        } catch (error) {
+          if (
+            error instanceof MountShareError ||
+            error instanceof RunPreScriptsError ||
+            error instanceof RunPostScriptsError ||
+            error instanceof EnsureKvpDaemonError ||
+            error instanceof VmReconcileError ||
+            error instanceof HostTrustStoreError ||
+            error instanceof AmbientTrustError
+          ) {
+            console.error(`setup-guest-unix: ${error.message}`);
+            process.exitCode = 1;
+            return;
+          }
+          throw error;
         }
 
-        const remoteExec = createSshRemoteExec({ address: setupAddress, username });
-
-        await propagateAmbientTrust(exec, remoteExec, onStep);
-
-        await ensureKvpDaemon(remoteExec, onStep);
-
-        await mountShare(remoteExec, {
-          shareName,
-          accountName,
-          password,
-          hostIp: defaultSwitchHostIp,
-          onStep,
-        });
-        await runPreScripts(remoteExec, {
-          scripts: preScripts,
-          shareName,
-          internalSwitchHostIp,
-          onStep,
-        });
-
-        const readiness = await checkRunHostingReady(exec, internalSwitchHostIp);
-        if (!readiness.dhcpBound || !readiness.dnsBound) {
-          console.error(
-            `setup-guest-unix: run-hosting is no longer listening on ${internalSwitchHostIp} — ` +
-              `start 'susentorno run-hosting' and rerun.`,
-          );
-          process.exitCode = 1;
-          return;
-        }
-
-        console.log(`setup-guest-unix: isolating '${vmName}' to '${internalSwitchName}'...`);
-        await isolateVmToSwitch(vmReconcileDeps, internalSwitchName);
-
-        const isolatedReachability = await waitForReachable({
-          getCandidates: () => getVmIpAddresses(exec, vmName),
-          connect: realTcpConnect,
-          onProgress,
-        });
-        if (!isolatedReachability.reachable) {
-          console.error(
-            `setup-guest-unix: guest did not become reachable on port 22 after isolation. ${REACHABILITY_TROUBLESHOOTING_HINT}`,
-          );
-          process.exitCode = 1;
-          return;
-        }
-
-        const isolatedRemoteExec = createSshRemoteExec({
-          address: isolatedReachability.address,
-          username,
-        });
-
-        await mountShare(isolatedRemoteExec, {
-          shareName,
-          accountName,
-          password,
-          hostIp: internalSwitchHostIp,
-          onStep,
-        });
-        await runPostScripts(isolatedRemoteExec, { scripts: postScripts, shareName, onStep });
-      } catch (error) {
-        if (
-          error instanceof MountShareError ||
-          error instanceof RunPreScriptsError ||
-          error instanceof RunPostScriptsError ||
-          error instanceof EnsureKvpDaemonError ||
-          error instanceof VmReconcileError ||
-          error instanceof HostTrustStoreError ||
-          error instanceof AmbientTrustError
-        ) {
-          console.error(`setup-guest-unix: ${error.message}`);
-          process.exitCode = 1;
-          return;
-        }
-        throw error;
-      }
-
-      console.log('setup-guest-unix: isolation and post-scripts/ completed on the guest.');
-    });
+        console.log('setup-guest-unix: isolation and post-scripts/ completed on the guest.');
+      }),
+    );
 }
