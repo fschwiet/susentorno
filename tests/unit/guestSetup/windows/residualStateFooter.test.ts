@@ -105,6 +105,15 @@ describe('formatResidualStateFooter', () => {
     expect(lines).toContain("  VM 'win-dev': Off, attached to 'susentorno-internal'");
   });
 
+  it('names the step that was running when the run was cancelled', () => {
+    const lines = formatResidualStateFooter({
+      outcome: 'cancelled',
+      phase: 'G6 pre-isolation steps',
+      stepFilename: '02-install-pnpm.ps1',
+    });
+    expect(lines).toContain('  Interrupted step: 02-install-pnpm.ps1');
+  });
+
   it('describes a disconnected adapter', () => {
     const lines = formatResidualStateFooter({
       outcome: 'failure',

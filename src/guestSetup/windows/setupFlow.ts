@@ -25,6 +25,8 @@ import {
   type WindowsSetupAnswerFlags,
 } from './setupAnswers';
 import { reconcileWindowsGuestTrust, WindowsTrustReconciliationError } from './trustReconciler';
+import type { WindowsStepPlanResult } from './stepPlan';
+import { runWindowsSteps, WindowsStepError } from './stepRunner';
 
 /** PowerShell Direct readiness after a start: 5 minutes, probing about every 5 seconds. */
 export const POWERSHELL_DIRECT_READY_DEADLINE_MS = 5 * 60_000;
@@ -91,6 +93,10 @@ export type WindowsSetupFailureKind =
   | 'share-account'
   | 'share-credential'
   | 'guest-trust'
+  | 'step-plan'
+  | 'step-exit'
+  | 'step-timeout'
+  | 'step-transport'
   | 'not-implemented'
   | 'unexpected';
 
@@ -104,7 +110,7 @@ export type WindowsSetupOutcome =
   | {
       kind: 'failure';
       phase: WindowsSetupPhase;
-      /** Set once the step runner exists and a step is what failed. */
+      /** Set when a step is what failed. */
       stepFilename?: string;
       error: ClassifiedError;
       vmName?: string;
@@ -118,6 +124,8 @@ export type WindowsSetupOutcome =
       reason: 'interrupt' | 'input-ended';
       /** The prompt whose input ended. */
       question?: string;
+      /** The step that was running when the run was cancelled. */
+      stepFilename?: string;
       vmName?: string;
       /** What this run did to the guest's VM share credentials, after cleanup. */
       credentials?: ShareCredentialLedgerEntry[];
@@ -142,11 +150,16 @@ export interface WindowsSetupDeps {
   context: WindowsHostContext;
   /** The environment's `cert.pem` (the proxy CA), read on demand at G5. */
   readProxyCaPem: () => string;
+  /**
+   * Discovers and validates both phase directories of the generated Windows VM
+   * share. Called in H2, so a malformed plan fails before either password prompt.
+   */
+  discoverStepPlans: () => WindowsStepPlanResult;
 }
 
 export type WindowsSetupFlags = WindowsSetupAnswerFlags;
 
-const NOT_IMPLEMENTED_PHASES = 'G6 through G14';
+const NOT_IMPLEMENTED_PHASES = 'G7 through G14';
 
 class Interrupted extends Error {}
 
@@ -156,10 +169,11 @@ class Interrupted extends Error {}
  * detects or resumes a prior run: each run starts by putting the VM on the
  * Default Switch, and each failure stops in place without rollback.
  *
- * So far it implements H1 through G5 (host checks, all guest prompts, VM
- * reconciliation, PowerShell Direct readiness, the guest structural checks, the
- * Default-Switch VM share credential, and guest trust reconciliation), then
- * stops with a plain "not implemented" failure at G6.
+ * So far it implements H1 through G6 (host checks and step plans, all guest
+ * prompts, VM reconciliation, PowerShell Direct readiness, the guest structural
+ * checks, the Default-Switch VM share credential, guest trust reconciliation,
+ * and the pre-isolation steps), then stops with a plain "not implemented"
+ * failure at G7.
  *
  * On any failure or cancellation, cleanup closes the selected-share connection
  * and removes only the share credentials this run wrote but did not verify,
@@ -175,6 +189,8 @@ export async function runWindowsSetup(
   let vmName: string | undefined;
   let executor: WindowsGuestExecutor | undefined;
   let shareCredentials: VmShareCredentials | undefined;
+  /** The step being run, so an interrupt can still name it. */
+  let currentStep: string | undefined;
 
   const announce = (next: WindowsSetupPhase, detail?: string): void => {
     phase = next;
@@ -201,11 +217,13 @@ export async function runWindowsSetup(
   const cancelled = (
     reason: 'interrupt' | 'input-ended',
     question?: string,
+    stepFilename?: string,
   ): WindowsSetupOutcome => ({
     kind: 'cancelled',
     phase,
     reason,
     ...(question === undefined ? {} : { question }),
+    ...(stepFilename === undefined ? {} : { stepFilename }),
     ...(vmName === undefined ? {} : { vmName }),
   });
 
@@ -231,6 +249,11 @@ export async function runWindowsSetup(
       }),
     );
     if (!preflight.ok) return fail({ kind: 'host-preflight', message: preflight.message });
+
+    // The generated step plans are structural: a malformed share fails here,
+    // before either password is asked for.
+    const plans = deps.discoverStepPlans();
+    if (!plans.ok) return fail({ kind: 'step-plan', message: plans.message });
 
     // H3, G1, G2: the guest credential is asked for as a pair, and asked for
     // again as a pair whenever the guest rejects it. The VM is reconciled once.
@@ -375,18 +398,44 @@ export async function runWindowsSetup(
       }),
     );
 
-    phase = 'G6';
+    // G6: every pre-isolation step, from the Default Switch address. The
+    // selected-share connection is closed afterwards and the credential kept.
+    announce('G6');
+    await guard(
+      runWindowsSteps({
+        executor: executor!,
+        scripts: plans.plans.pre,
+        directory: 'pre-scripts',
+        shareHostIp: context.defaultSwitchHostIp,
+        shareName: answers.shareName,
+        internalSwitchHostIp: context.internalSwitchHostIp,
+        phaseLabel: 'G6',
+        out,
+        signal,
+        onStep: (filename) => {
+          currentStep = filename;
+        },
+      }),
+    );
+    currentStep = undefined;
+    await guard(sharing.close(defaultTarget));
+
+    phase = 'G7';
     return fail({
       kind: 'not-implemented',
       message:
         `Guest '${vmName}' passed every prerequisite check, its VM share credential for ${defaultTarget.hostIp} is verified, ` +
-        `and its trust is reconciled (H1 through G5), but the remaining phases (${NOT_IMPLEMENTED_PHASES}: provisioning and isolation) ` +
-        `are not implemented yet, so setup stops here. No provisioning step has run on the guest.`,
+        `its trust is reconciled, and every pre-isolation step succeeded (H1 through G6), but the remaining phases (${NOT_IMPLEMENTED_PHASES}: isolation and post-isolation steps) ` +
+        `are not implemented yet, so setup stops here. The guest is provisioned on the Default Switch and is not isolated.`,
     });
   };
 
   const toOutcome = (error: unknown): WindowsSetupOutcome => {
-    if (error instanceof Interrupted) return cancelled('interrupt');
+    if (error instanceof Interrupted) return cancelled('interrupt', undefined, currentStep);
+    if (error instanceof WindowsStepError) {
+      if (error.kind === 'cancelled') return cancelled('interrupt', undefined, error.filename);
+      return fail(classifyStep(error), { stepFilename: error.filename });
+    }
     if (error instanceof PromptEndedError) {
       return cancelled(error.reason === 'cancelled' ? 'interrupt' : 'input-ended', error.question);
     }
@@ -417,6 +466,17 @@ export async function runWindowsSetup(
   return outcome.kind !== 'success' && credentials.length > 0
     ? { ...outcome, credentials }
     : outcome;
+}
+
+function classifyStep(error: WindowsStepError): ClassifiedError {
+  switch (error.kind) {
+    case 'exit':
+      return { kind: 'step-exit', message: error.message };
+    case 'timeout':
+      return { kind: 'step-timeout', message: error.message };
+    default:
+      return { kind: 'step-transport', message: error.message };
+  }
 }
 
 function classify(

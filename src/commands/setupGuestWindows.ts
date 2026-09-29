@@ -6,6 +6,10 @@ import { promptText, promptMasked, type SetupAnswerPrompts } from '../cliPrompt'
 import { sleep as abortableSleep } from '../runHosting/abortableSleep';
 import { DEFAULT_NAT_ADAPTER } from '../runHosting/forwarder';
 import { createRealPowerShellExec, type PowerShellExec } from '../guestSetup/powerShellExec';
+import {
+  discoverWindowsStepPlans,
+  type WindowsStepPlanResult,
+} from '../guestSetup/windows/stepPlan';
 import { createWindowsGuestExecutor } from '../guestSetup/windows/guestExecutor';
 import { resolveHostPrerequisites } from '../guestSetup/windows/hostPrerequisites';
 import {
@@ -64,6 +68,8 @@ export interface SetupGuestWindowsEnvironment {
   exists?: (path: string) => boolean;
   /** Reads the environment's `cert.pem` (utf8) at G5. */
   readFile?: (path: string) => string;
+  /** Discovers the generated share's step plans. Defaults to reading the real directories. */
+  discoverStepPlans?: (vmSharedWindowsPath: string) => WindowsStepPlanResult;
   interfaces?: NodeJS.Dict<NetworkInterfaceInfo[]>;
 }
 
@@ -71,6 +77,9 @@ function describeOutcome(outcome: Exclude<WindowsSetupOutcome, { kind: 'success'
   if (outcome.kind === 'failure') {
     const step = outcome.stepFilename ? ` at step ${outcome.stepFilename}` : '';
     return `${COMMAND}: failed in phase ${describePhase(outcome.phase)}${step} [${outcome.error.kind}]: ${outcome.error.message}`;
+  }
+  if (outcome.reason === 'interrupt' && outcome.stepFilename) {
+    return `${COMMAND}: cancelled during phase ${describePhase(outcome.phase)} at step ${outcome.stepFilename}.`;
   }
   if (outcome.reason === 'input-ended') {
     return `${COMMAND}: input ended at ${outcome.question ? `the '${outcome.question}' prompt` : 'a prompt'} (phase ${describePhase(outcome.phase)}); cancelled.`;
@@ -114,6 +123,8 @@ export async function executeSetupGuestWindows(
         out: env.out,
         clock: env.clock,
         context: host.context,
+        discoverStepPlans: () =>
+          (env.discoverStepPlans ?? discoverWindowsStepPlans)(host.context.vmSharedWindowsPath),
         readProxyCaPem: () =>
           (env.readFile ?? ((path) => readFileSync(path, 'utf8')))(
             join(host.context.vmSharedWindowsPath, 'cert.pem'),
@@ -140,7 +151,7 @@ export async function executeSetupGuestWindows(
   const footer = formatResidualStateFooter({
     outcome: outcome.kind,
     phase: describePhase(outcome.phase),
-    stepFilename: outcome.kind === 'failure' ? outcome.stepFilename : undefined,
+    stepFilename: outcome.stepFilename,
     vmName: outcome.vmName,
     credentials: outcome.credentials,
     vm:

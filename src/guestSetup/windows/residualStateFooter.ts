@@ -62,7 +62,11 @@ export function formatResidualStateFooter(input: ResidualStateFooterInput): stri
       ? `  Cancelled during phase: ${input.phase}`
       : `  Failed in phase: ${input.phase}`,
   );
-  if (input.stepFilename) lines.push(`  Failed step: ${input.stepFilename}`);
+  if (input.stepFilename) {
+    lines.push(
+      `  ${input.outcome === 'cancelled' ? 'Interrupted step' : 'Failed step'}: ${input.stepFilename}`,
+    );
+  }
 
   if (input.vmName === undefined) {
     lines.push('  No VM was chosen, so nothing was changed.');

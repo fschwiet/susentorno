@@ -20,6 +20,8 @@ import {
   shareGuest,
   structuralChecksBehavior,
   readProxyCaPem,
+  discoverFlowStepPlans,
+  stepFilenameOf,
 } from '../guestSetup/windows/flowFakes';
 
 function commandOf(): Command {
@@ -114,6 +116,7 @@ function environment(
     existing?: string[];
     guest?: Parameters<typeof fakeExecutors>[0];
     hyperV?: ReturnType<typeof fakeHyperV>;
+    plans?: () => ReturnType<typeof discoverFlowStepPlans>;
   } = {},
 ) {
   const hyperV = overrides.hyperV ?? fakeHyperV();
@@ -154,6 +157,7 @@ function environment(
     interrupts,
     exit: (code) => exits.push(code),
     exists: (path) => existing.includes(path),
+    discoverStepPlans: () => (overrides.plans ?? discoverFlowStepPlans)(),
     readFile: (path) => {
       reads.push(path);
       return readProxyCaPem();
@@ -197,7 +201,7 @@ describe('executeSetupGuestWindows', () => {
     expect(code).toBe(1);
     const text = err.join('\n');
     expect(text).toContain(
-      'setup-guest-windows: failed in phase G6 pre-isolation steps [not-implemented]',
+      'setup-guest-windows: failed in phase G7 isolation gate [not-implemented]',
     );
     expect(text).toContain('setup-guest-windows: residual state');
     expect(text).toContain("VM 'win-dev': Running, attached to 'Default Switch'");
@@ -250,6 +254,38 @@ describe('executeSetupGuestWindows', () => {
     const lastQueries = hyperV.commands.slice(-2);
     expect(lastQueries[0]).toMatch(/^Get-VM -Name/);
     expect(lastQueries[1]).toMatch(/^Get-VMNetworkAdapter/);
+  });
+
+  it('prints a failed step by phase and filename with its captured output, then the footer, and exits 1', async () => {
+    const inner = structuralChecksBehavior();
+    const { env, err, out } = environment({
+      hyperV: fakeHyperV({ vmState: 'Running' }),
+      guest: (script, credential) =>
+        stepFilenameOf(script) === '02-install-pnpm.ps1'
+          ? { exitCode: 3, stdout: '', stderr: 'pnpm failed loudly', timedOut: false }
+          : inner(script, credential),
+    });
+    const code = await executeSetupGuestWindows(defaultOptions, env);
+    expect(code).toBe(1);
+    const text = err.join('\n');
+    expect(text).toContain(
+      'setup-guest-windows: failed in phase G6 pre-isolation steps at step 02-install-pnpm.ps1 [step-exit]',
+    );
+    expect(text).toContain('  Failed step: 02-install-pnpm.ps1');
+    expect(text).toContain(
+      '  VM share credential for Default Switch host address 172.29.240.1: verified, kept',
+    );
+    expect(out).toContain('  pnpm failed loudly');
+  });
+
+  it('fails a malformed step plan before any password prompt, exits 1, and never touches the VM', async () => {
+    const { env, err, hyperV } = environment({
+      plans: () => ({ ok: false, message: "exactly one 'configure-network' step" }),
+    });
+    const code = await executeSetupGuestWindows(defaultOptions, env);
+    expect(code).toBe(1);
+    expect(err.join('\n')).toContain('failed in phase H2 host checks [step-plan]');
+    expect(hyperV.commands.some((c) => /^(Start|Stop)-VM/.test(c))).toBe(false);
   });
 
   it('exits 130 with the footer on a cancellation', async () => {
@@ -318,7 +354,7 @@ describe('executeSetupGuestWindows', () => {
         credential.password === 'bad' ? authRejection() : inner(script, credential),
     });
     const code = await executeSetupGuestWindows(defaultOptions, env);
-    expect(code).toBe(1); // stops at the not-yet-implemented G6
+    expect(code).toBe(1); // stops at the not-yet-implemented G7
     expect(executors.created).toHaveLength(2);
   });
 });

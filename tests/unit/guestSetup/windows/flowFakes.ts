@@ -16,6 +16,11 @@ import {
 } from '../../../../src/guestSetup/windows/guestChecks';
 import type { WindowsHostContext } from '../../../../src/guestSetup/windows/hostPrerequisites';
 import type { WindowsSetupClock } from '../../../../src/guestSetup/windows/setupFlow';
+import type { GuestScript } from '../../../../src/guestSetup/listScripts';
+import type {
+  WindowsStepPlanResult,
+  WindowsStepPlans,
+} from '../../../../src/guestSetup/windows/stepPlan';
 import { makeCertificate } from './testCerts';
 
 /** The environment proxy CA the fake share carries, and one ambient root the fake host selects. */
@@ -398,4 +403,46 @@ export function fakeClock(): WindowsSetupClock & { time: number } {
     },
   };
   return clock;
+}
+
+const flowStep = (directory: string, filename: string): GuestScript => ({
+  path: `${SHARE_DIR}\\${directory}\\${filename}`,
+  filename,
+  slug: /^\d{2}-(.+)\.ps1$/i.exec(filename)![1],
+});
+
+/** The generated share's step plans the fake host discovers by default. */
+export const FLOW_STEP_PLANS: WindowsStepPlans = {
+  pre: [
+    flowStep('pre-scripts', '01-install-packages.ps1'),
+    flowStep('pre-scripts', '02-install-pnpm.ps1'),
+    flowStep('pre-scripts', '03-configure-network.ps1'),
+  ],
+  post: [flowStep('post-scripts', '01-auth-config.ps1')],
+};
+
+export const discoverFlowStepPlans = (): WindowsStepPlanResult => ({
+  ok: true,
+  plans: FLOW_STEP_PLANS,
+});
+
+/** The step filename a step-runner wrapper script was built for, or undefined for any other script. */
+export function stepFilenameOf(script: string): string | undefined {
+  const path =
+    /\$stepPath = \[Text\.Encoding\]::UTF8\.GetString\(\[Convert\]::FromBase64String\('([^']+)'\)\)/.exec(
+      script,
+    )?.[1];
+  if (!path) return undefined;
+  return Buffer.from(path, 'base64').toString('utf8').split('\\').pop();
+}
+
+/** The directory (`pre-scripts` or `post-scripts`) and host address a wrapper was built for. */
+export function stepLocationOf(script: string): { hostIp: string; directory: string } | undefined {
+  const dir =
+    /\$phaseDirectory = \[Text\.Encoding\]::UTF8\.GetString\(\[Convert\]::FromBase64String\('([^']+)'\)\)/.exec(
+      script,
+    )?.[1];
+  if (!dir) return undefined;
+  const parts = Buffer.from(dir, 'base64').toString('utf8').split('\\').filter(Boolean);
+  return { hostIp: parts[0], directory: parts[2] };
 }

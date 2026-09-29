@@ -9,9 +9,11 @@ import {
   type WindowsSetupFlags,
   type WindowsSetupOutcome,
 } from '../../../../src/guestSetup/windows/setupFlow';
+import type { WindowsStepPlanResult } from '../../../../src/guestSetup/windows/stepPlan';
 import {
   HOST_CONTEXT,
   authRejection,
+  discoverFlowStepPlans,
   fakeClock,
   fakeExecutors,
   fakeHyperV,
@@ -23,6 +25,9 @@ import {
   trustGuest,
   FLOW_AMBIENT_ROOT,
   FLOW_PROXY_CA,
+  FLOW_STEP_PLANS,
+  stepFilenameOf,
+  stepLocationOf,
   type EventLog,
   type FakeHyperV,
   type GuestBehavior,
@@ -61,6 +66,7 @@ async function run(
     share?: ShareGuest;
     trust?: TrustGuest;
     readProxyCaPem?: () => string;
+    stepPlans?: WindowsStepPlanResult;
     signal?: AbortSignal;
   } = {},
 ): Promise<Harness> {
@@ -98,6 +104,10 @@ async function run(
     clock,
     context: HOST_CONTEXT,
     readProxyCaPem: options.readProxyCaPem ?? readProxyCaPem,
+    discoverStepPlans: () => {
+      events.push('host:discover-step-plans');
+      return options.stepPlans ?? discoverFlowStepPlans();
+    },
   };
   const outcome = await runWindowsSetup(
     deps,
@@ -122,12 +132,12 @@ describe('runWindowsSetup: the happy path through G5', () => {
   it('runs the phases in order and then fails plainly because later phases are not implemented', async () => {
     const { outcome, out } = await run();
     const failure = expectFailure(outcome);
-    expect(failure.phase).toBe('G6');
+    expect(failure.phase).toBe('G7');
     expect(failure.error.kind).toBe('not-implemented');
     expect(failure.error.message).toContain('not implemented');
     expect(failure.error.message).toContain("'win-dev'");
     expect(failure.vmName).toBe('win-dev');
-    expect(announcements(out)).toEqual(['H1', 'H2', 'H3', 'G1', 'G2', 'G3', 'G4', 'G5']);
+    expect(announcements(out)).toEqual(['H1', 'H2', 'H3', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6']);
   });
 
   it('announces each phase as `setup-guest-windows: <phase>...`', async () => {
@@ -203,7 +213,7 @@ describe('flag suppression', () => {
       answers: { 'Guest password': [GUEST_PASSWORD] },
     });
     expect(asked.map((a) => a.question)).toEqual(['Guest password', 'VM share password']);
-    expect(expectFailure(outcome).phase).toBe('G6');
+    expect(expectFailure(outcome).phase).toBe('G7');
   });
 
   it('each flag suppresses only its own prompt', async () => {
@@ -283,7 +293,7 @@ describe('G1 accepted starting states', () => {
   it('starts an Off VM that is already on the Default Switch', async () => {
     const { hyperV, outcome } = await run({ vm: { vmState: 'Off', switchName: 'Default Switch' } });
     expect(mutations(hyperV)).toEqual(["Start-VM -Name 'win-dev'"]);
-    expect(expectFailure(outcome).phase).toBe('G6');
+    expect(expectFailure(outcome).phase).toBe('G7');
   });
 
   it('connects an Off VM on the Internal switch to the Default Switch, then starts it', async () => {
@@ -299,7 +309,7 @@ describe('G1 accepted starting states', () => {
       vm: { vmState: 'Running', switchName: 'Default Switch' },
     });
     expect(mutations(hyperV)).toEqual([]);
-    expect(expectFailure(outcome).phase).toBe('G6');
+    expect(expectFailure(outcome).phase).toBe('G7');
     expect(out.join('\n')).toContain('reusing');
   });
 
@@ -369,7 +379,7 @@ describe('H3 and G2: the guest credential loop', () => {
     expect(executors.created.map((e) => e.disposed)).toEqual([true, true]);
     // The VM was reconciled once, not once per attempt.
     expect(hyperV.commands.filter((c) => c.startsWith('Start-VM'))).toHaveLength(1);
-    expect(expectFailure(outcome).phase).toBe('G6');
+    expect(expectFailure(outcome).phase).toBe('G7');
   });
 
   it('tells the user the credential was rejected without echoing it', async () => {
@@ -537,7 +547,7 @@ describe('G4: VM share credentials', () => {
       password: SHARE_PASSWORD,
     });
     const failure = expectFailure(outcome);
-    expect(failure.phase).toBe('G6');
+    expect(failure.phase).toBe('G7');
     expect(failure.error.message).toContain(HOST_CONTEXT.defaultSwitchHostIp);
     expect(out.join('\n')).not.toContain(SHARE_PASSWORD);
   });
@@ -579,7 +589,14 @@ describe('G4: VM share credentials', () => {
 
   it('keeps the verified credential and closes the open connection when a later phase fails', async () => {
     const share = shareGuest();
-    const { outcome, executors } = await run({ share });
+    const inner = structuralChecksBehavior({}, share);
+    const { outcome, executors } = await run({
+      share,
+      guest: (script, credential) =>
+        stepFilenameOf(script) === '02-install-pnpm.ps1'
+          ? { exitCode: 1, stdout: '', stderr: '', timedOut: false }
+          : inner(script, credential),
+    });
     const cleanup = shareScripts(executors, 'cleanup');
     expect(cleanup).toHaveLength(1);
     expect(cleanup[0]).toContain('Delete = $false');
@@ -621,7 +638,7 @@ describe('G4: VM share credentials', () => {
       expect(rejected).toHaveLength(1);
       expect(rejected[0]).toContain("'susentorno'");
       expect(JSON.stringify({ out, outcome })).not.toContain(WRONG_SHARE_PASSWORD);
-      expect(expectFailure(outcome).phase).toBe('G6');
+      expect(expectFailure(outcome).phase).toBe('G7');
       expect(expectFailure(outcome).credentials).toEqual([
         { role: 'default', hostIp: HOST_CONTEXT.defaultSwitchHostIp, status: 'verified' },
       ]);
@@ -814,6 +831,7 @@ describe('G4: VM share credentials', () => {
           clock: fakeClock(),
           context: HOST_CONTEXT,
           readProxyCaPem,
+          discoverStepPlans: discoverFlowStepPlans,
           createExecutor: ({ vmName, credential }) => ({
             vmName,
             async invoke(script, options) {
@@ -896,6 +914,7 @@ describe('cancellation', () => {
         clock: fakeClock(),
         context: HOST_CONTEXT,
         readProxyCaPem,
+        discoverStepPlans: discoverFlowStepPlans,
         createExecutor: ({ vmName }) => {
           const record = { disposed: false };
           created.push(record);
@@ -1090,5 +1109,199 @@ describe('G5 guest trust reconciliation', () => {
       },
     });
     expect(outcome).toMatchObject({ kind: 'cancelled', phase: 'G5', reason: 'interrupt' });
+  });
+});
+
+describe('H2 step plans', () => {
+  it('fails a malformed generated plan before either password prompt, with no VM or guest change', async () => {
+    const { outcome, asked, executors, hyperV } = await run({
+      stepPlans: {
+        ok: false,
+        message: "The generated pre-scripts must contain exactly one 'configure-network' step",
+      },
+    });
+    const failure = expectFailure(outcome);
+    expect(failure.phase).toBe('H2');
+    expect(failure.error.kind).toBe('step-plan');
+    expect(failure.error.message).toContain('configure-network');
+    expect(asked.map((a) => a.question)).toEqual(['Hyper-V VM name', 'SMB share name']);
+    expect(executors.created).toEqual([]);
+    expect(hyperV.commands.some((c) => /^(Stop|Start)-VM|^Connect-VMNetworkAdapter/.test(c))).toBe(
+      false,
+    );
+  });
+
+  it('discovers the plans in H2, after the host checks and before the guest prompts', async () => {
+    const { events } = await run();
+    const discovered = events.indexOf('host:discover-step-plans');
+    expect(discovered).toBeGreaterThan(
+      events.indexOf('out:setup-guest-windows: H2 host checks...'),
+    );
+    expect(discovered).toBeLessThan(events.indexOf('prompt:Guest username'));
+  });
+});
+
+describe('G6 pre-isolation steps', () => {
+  const stepsRun = (executors: ReturnType<typeof fakeExecutors>): string[] =>
+    executors.created
+      .flatMap((e) => e.scripts)
+      .map(stepFilenameOf)
+      .filter((name): name is string => name !== undefined);
+
+  const failingStep =
+    (
+      filename: string,
+      result: ReturnType<typeof guestOk> | Error,
+      inner: GuestBehavior = structuralChecksBehavior(),
+    ): GuestBehavior =>
+    (script, credential) =>
+      stepFilenameOf(script) === filename ? result : inner(script, credential);
+
+  it('runs every pre-isolation step, in order, after trust reconciliation and from the Default Switch share', async () => {
+    const { executors } = await run();
+    const scripts = executors.created[0].scripts;
+    expect(stepsRun(executors)).toEqual(FLOW_STEP_PLANS.pre.map((s) => s.filename));
+    const lastTrust = scripts.map((s) => /^# susentorno trust:/.test(s)).lastIndexOf(true);
+    const firstStep = scripts.findIndex((s) => stepFilenameOf(s) !== undefined);
+    expect(firstStep).toBeGreaterThan(lastTrust);
+    for (const script of scripts.filter((s) => stepFilenameOf(s) !== undefined)) {
+      expect(stepLocationOf(script)).toEqual({
+        hostIp: HOST_CONTEXT.defaultSwitchHostIp,
+        directory: 'pre-scripts',
+      });
+    }
+  });
+
+  it('gives configure-network the Internal-switch host IP and no other step any argument', async () => {
+    const { executors } = await run();
+    const withIp = executors.created[0].scripts.filter((s) => s.includes('-HostIp'));
+    expect(withIp.map(stepFilenameOf)).toEqual(['03-configure-network.ps1']);
+    expect(withIp[0]).toContain(Buffer.from(HOST_CONTEXT.internalSwitchHostIp).toString('base64'));
+  });
+
+  it('announces G6 and each step by phase and filename', async () => {
+    const { out } = await run();
+    expect(out).toContain('setup-guest-windows: G6 pre-isolation steps...');
+    expect(out).toContain(
+      'setup-guest-windows: G6 running step pre-scripts/01-install-packages.ps1 (1 of 3)',
+    );
+  });
+
+  it('gives every step the 30 minute deadline', async () => {
+    const { executors } = await run();
+    const { scripts, timeouts } = executors.created[0];
+    const stepTimeouts = scripts
+      .map((s, i) => (stepFilenameOf(s) ? timeouts[i] : undefined))
+      .filter((t) => t !== undefined);
+    expect(stepTimeouts).toEqual([1_800_000, 1_800_000, 1_800_000]);
+  });
+
+  it('closes the selected-share connection after the phase and keeps the credential', async () => {
+    const { events, outcome } = await run();
+    const closeAt = events.lastIndexOf('guest:close');
+    const lastStepAt = events.reduce(
+      (acc, e, i) => (e.includes('running step pre-scripts/') ? i : acc),
+      -1,
+    );
+    expect(closeAt).toBeGreaterThan(lastStepAt);
+    expect(events).not.toContain('guest:cleanup');
+    const failure = expectFailure(outcome);
+    expect(failure.credentials).toEqual([
+      { role: 'default', hostIp: HOST_CONTEXT.defaultSwitchHostIp, status: 'verified' },
+    ]);
+  });
+
+  describe('a failed step', () => {
+    it('fails at G6 naming the step, stops the sequence, and leaves the residual state of the G6 row', async () => {
+      const share = shareGuest();
+      const { outcome, executors, out } = await run({
+        share,
+        guest: failingStep(
+          '02-install-pnpm.ps1',
+          { exitCode: 5, stdout: 'partial', stderr: 'pnpm exploded', timedOut: false },
+          structuralChecksBehavior({}, share),
+        ),
+      });
+      const failure = expectFailure(outcome);
+      expect(failure.phase).toBe('G6');
+      expect(failure.stepFilename).toBe('02-install-pnpm.ps1');
+      expect(failure.error.kind).toBe('step-exit');
+      expect(failure.error.message).toContain('code 5');
+      expect(failure.error.message).toContain('pnpm exploded');
+      // Fail-fast: the third step never started, and nothing was retried.
+      expect(stepsRun(executors)).toEqual(['01-install-packages.ps1', '02-install-pnpm.ps1']);
+      // The failed step's captured output was emitted.
+      expect(out).toContain('  pnpm exploded');
+      // Row G6: partial provisioning, the verified credential kept, no rollback, executor disposed.
+      expect(failure.credentials).toEqual([
+        { role: 'default', hostIp: HOST_CONTEXT.defaultSwitchHostIp, status: 'verified' },
+      ]);
+      expect(share.stored.has(HOST_CONTEXT.defaultSwitchHostIp)).toBe(true);
+      expect(executors.created[0].disposed).toBe(true);
+    });
+
+    it('closes the open selected-share connection on the way out', async () => {
+      const { events } = await run({
+        guest: failingStep('01-install-packages.ps1', {
+          exitCode: 1,
+          stdout: '',
+          stderr: '',
+          timedOut: false,
+        }),
+      });
+      expect(events).toContain('guest:cleanup');
+    });
+
+    it('classifies a timeout separately', async () => {
+      const { outcome } = await run({
+        guest: failingStep('01-install-packages.ps1', {
+          exitCode: 124,
+          stdout: '',
+          stderr: '',
+          timedOut: true,
+        }),
+      });
+      const failure = expectFailure(outcome);
+      expect(failure.phase).toBe('G6');
+      expect(failure.stepFilename).toBe('01-install-packages.ps1');
+      expect(failure.error.kind).toBe('step-timeout');
+      expect(failure.error.message).toContain('30 minutes');
+    });
+
+    it('classifies a transport failure separately, naming the step', async () => {
+      const { outcome } = await run({
+        guest: failingStep(
+          '02-install-pnpm.ps1',
+          new WindowsGuestError('transport', 'the VM went away'),
+        ),
+      });
+      const failure = expectFailure(outcome);
+      expect(failure.error.kind).toBe('step-transport');
+      expect(failure.stepFilename).toBe('02-install-pnpm.ps1');
+      expect(failure.error.message).toContain('the VM went away');
+    });
+
+    it('reports a cancellation during a step as cancelled, naming the step', async () => {
+      const controller = new AbortController();
+      const inner = structuralChecksBehavior();
+      const { outcome, executors } = await run({
+        signal: controller.signal,
+        guest: (script, credential) => {
+          if (stepFilenameOf(script) === '02-install-pnpm.ps1') {
+            controller.abort();
+            return new WindowsGuestError('cancelled', 'cancelled');
+          }
+          return inner(script, credential);
+        },
+      });
+      expect(outcome).toMatchObject({
+        kind: 'cancelled',
+        phase: 'G6',
+        reason: 'interrupt',
+        stepFilename: '02-install-pnpm.ps1',
+      });
+      expect(stepsRun(executors)).toEqual(['01-install-packages.ps1', '02-install-pnpm.ps1']);
+      expect(executors.created[0].disposed).toBe(true);
+    });
   });
 });
