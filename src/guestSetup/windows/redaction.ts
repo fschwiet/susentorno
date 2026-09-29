@@ -23,11 +23,11 @@ export function secretSpellings(secret: string): string[] {
     secret,
     jsonInner,
     // The request as the executor serializes it, and the same with uppercase hex.
-    escapeUnits(jsonInner, /[\u007f-￿]/g, false),
-    escapeUnits(jsonInner, /[\u007f-￿]/g, true),
+    escapeUnits(jsonInner, /[\u007f-\uffff]/g, false),
+    escapeUnits(jsonInner, /[\u007f-\uffff]/g, true),
     // Windows PowerShell's ConvertTo-Json escapes ' < > & as \u00XX.
     escapeUnits(jsonInner, /['<>&]/g, false),
-    escapeUnits(escapeUnits(jsonInner, /[\u007f-￿]/g, false), /['<>&]/g, false),
+    escapeUnits(escapeUnits(jsonInner, /[\u007f-\uffff]/g, false), /['<>&]/g, false),
     // Every UTF-16 unit as \uXXXX.
     escapeUnits(secret, /[\s\S]/g, false),
     escapeUnits(secret, /[\s\S]/g, true),
@@ -43,6 +43,8 @@ export function secretSpellings(secret: string): string[] {
  * spelling that contains another is removed whole, never left as a fragment.
  */
 export function redactSecrets(text: string, secrets: readonly string[]): string {
-  const needles = [...new Set(secrets.flatMap(secretSpellings))].sort((a, b) => b.length - a.length);
+  const needles = [...new Set(secrets.flatMap(secretSpellings))].sort(
+    (a, b) => b.length - a.length,
+  );
   return needles.reduce((redacted, needle) => redacted.split(needle).join(REDACTED), text);
 }

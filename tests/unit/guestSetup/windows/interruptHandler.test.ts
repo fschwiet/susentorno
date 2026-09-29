@@ -79,8 +79,6 @@ describe('watchForInterrupt', () => {
 
 describe('the interrupt allowance', () => {
   it('holds the run cleanup and the executor disposal, so the footer prints before the forced exit', () => {
-    expect(SHARE_CLEANUP_BUDGET_MS + EXECUTOR_DISPOSE_TIMEOUT_MS).toBeLessThan(
-      CLEANUP_DEADLINE_MS,
-    );
+    expect(SHARE_CLEANUP_BUDGET_MS + EXECUTOR_DISPOSE_TIMEOUT_MS).toBeLessThan(CLEANUP_DEADLINE_MS);
   });
 });

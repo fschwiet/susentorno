@@ -106,7 +106,7 @@ function inSameSubnet(address: string, other: string, prefixLength: number): boo
   return Math.floor(a / block) === Math.floor(b / block);
 }
 
-/** A boolean-ish JSON value the script might emit as a scalar instead of an array. */
+/** A JSON value that PowerShell emits as a bare scalar when there is one element and as an array when there are several; absent means none. */
 function list<T>(value: unknown): T[] {
   if (value === undefined || value === null) return [];
   return (Array.isArray(value) ? value : [value]) as T[];

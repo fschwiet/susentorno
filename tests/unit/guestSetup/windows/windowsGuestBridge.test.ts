@@ -55,7 +55,7 @@ describe('the shipped PowerShell Direct bridge template', () => {
     expect(bridge).toContain('System32\\WindowsPowerShell\\v1.0\\Modules');
   });
 
-  it('classifies a rejected credential from PowerShell Direct\'s exception, not from its localized message', () => {
+  it("classifies a rejected credential from PowerShell Direct's exception, not from its localized message", () => {
     const structured = bridge.indexOf("'System.Management.Automation.Remoting.PSDirectException'");
     const callSite = bridge.indexOf('ExchangeCredentialsAndConfiguration');
     const messageFallback = bridge.indexOf("'credential is invalid'");

@@ -23,7 +23,7 @@ export function secretSpellings(secret: string): Record<string, string> {
       .map((unit) => `\\u${hex4(unit, upper)}`)
       .join('');
   const nonAsciiEscaped = (upper: boolean): string =>
-    jsonInner.replace(/[\u007f-￿]/g, (unit) => `\\u${hex4(unit, upper)}`);
+    jsonInner.replace(/[\u007f-\uffff]/g, (unit) => `\\u${hex4(unit, upper)}`);
   const powershellJson = jsonInner.replace(/['<>&]/g, (char) => `\\u${hex4(char, false)}`);
   return {
     'JSON-escaped': jsonInner,

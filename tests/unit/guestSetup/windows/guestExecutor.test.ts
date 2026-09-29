@@ -328,7 +328,7 @@ describe('deadlines, cancellation and disposal', () => {
     expect(calls[0].process.killed).toBe(true);
   });
 
-  it('drainCancelled waits for a cancelled invocation\'s bridge to finish without killing it, and stays usable', async () => {
+  it("drainCancelled waits for a cancelled invocation's bridge to finish without killing it, and stays usable", async () => {
     const { executor, calls } = silentBridge();
     const controller = new AbortController();
     const outcome = executor

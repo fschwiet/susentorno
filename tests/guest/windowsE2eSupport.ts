@@ -118,7 +118,7 @@ export const GH_SHIM_DIRECTORY = 'C:\\susentorno-test-shims';
  * The single remaining test substitution (ADR-0027): a `gh.cmd` that exits 0
  * for any arguments, in a directory at the front of the guest's MACHINE path.
  * The machine path is used deliberately: each step starts in a fresh process
- * that reads persisted environment, and ticket 09 forbids runner-supplied PATH
+ * that reads persisted environment, and the shipped-step contract forbids runner-supplied PATH
  * behavior. The real GitHub.cli package is still installed by step 01; the shim
  * only shadows it. It lives on the disposable differencing disk, and
  * sweepIsolationResidue removes that disk after an aborted run.

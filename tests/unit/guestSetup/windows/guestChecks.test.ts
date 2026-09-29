@@ -120,7 +120,7 @@ async function rejection(promise: Promise<unknown>): Promise<GuestCheckError> {
   throw new Error('expected the check to fail');
 }
 
-describe('the supported guest platform allowlist', () => {
+describe('the supported guest platforms', () => {
   it('holds Windows 11 | Enterprise | x64 | 25H2 as its only initial entry', () => {
     expect(SUPPORTED_GUEST_PLATFORMS).toEqual([
       { product: 'Windows 11', edition: 'Enterprise', architecture: 'x64', release: '25H2' },

@@ -40,7 +40,7 @@ export const HEARTBEAT_INTERVAL_MS = 15_000;
 export const WINDOWS_STOP_TIMEOUT_MS = 3 * 60_000;
 export const WINDOWS_OFF_CONFIRM_TIMEOUT_MS = 60_000;
 
-/** The 14 phases of ticket 06's phase machine. */
+/** The 14 phases of the spec's phase machine: three host phases, then G1 to G14. */
 export type WindowsSetupPhase =
   | 'H1'
   | 'H2'
@@ -166,8 +166,6 @@ export interface WindowsSetupDeps {
   discoverStepPlans: () => WindowsStepPlanResult;
 }
 
-export type WindowsSetupFlags = WindowsSetupAnswerFlags;
-
 class Interrupted extends Error {}
 
 /**
@@ -176,7 +174,7 @@ class Interrupted extends Error {}
  * detects or resumes a prior run: each run starts by putting the VM on the
  * Default Switch, and each failure stops in place without rollback.
  *
- * It runs every phase of ticket 06's machine. H1 through G6: host checks and
+ * It runs every phase of the spec's phase machine. H1 through G6: host checks and
  * step plans, all guest prompts, VM reconciliation, PowerShell Direct
  * readiness, the guest structural checks, the Default-Switch VM share
  * credential, guest trust reconciliation, and the pre-isolation steps. G7
@@ -190,7 +188,7 @@ class Interrupted extends Error {}
  */
 export async function runWindowsSetup(
   deps: WindowsSetupDeps,
-  flags: WindowsSetupFlags,
+  flags: WindowsSetupAnswerFlags,
   signal: AbortSignal,
 ): Promise<WindowsSetupOutcome> {
   const { out, clock, context, prompts, exec } = deps;

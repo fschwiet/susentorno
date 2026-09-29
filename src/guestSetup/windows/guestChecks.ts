@@ -148,7 +148,7 @@ const PROCESSOR_ARCHITECTURES: Record<number, string> = {
   12: 'arm64',
 };
 
-/** Turns the platform script's JSON into the tuple the allowlist is checked against. */
+/** Turns the platform script's JSON into the tuple that is checked against the supported guest platforms. */
 export function parseGuestPlatform(stdout: string): GuestPlatformReport | null {
   let raw: unknown;
   try {
@@ -173,9 +173,9 @@ export function parseGuestPlatform(stdout: string): GuestPlatformReport | null {
 
 export function isSupportedGuestPlatform(
   platform: SupportedGuestPlatform,
-  allowlist: readonly SupportedGuestPlatform[] = SUPPORTED_GUEST_PLATFORMS,
+  supportedPlatforms: readonly SupportedGuestPlatform[] = SUPPORTED_GUEST_PLATFORMS,
 ): boolean {
-  return allowlist.some(
+  return supportedPlatforms.some(
     (entry) =>
       entry.product === platform.product &&
       entry.edition === platform.edition &&
@@ -190,7 +190,7 @@ function formatPlatform(platform: SupportedGuestPlatform): string {
 
 export async function checkSupportedPlatform(
   ctx: GuestCheckContext,
-  allowlist: readonly SupportedGuestPlatform[] = SUPPORTED_GUEST_PLATFORMS,
+  supportedPlatforms: readonly SupportedGuestPlatform[] = SUPPORTED_GUEST_PLATFORMS,
 ): Promise<GuestPlatformReport> {
   const stdout = await runCheckScript(ctx, 'platform', 'guest platform', PLATFORM_SCRIPT);
   const platform = parseGuestPlatform(stdout);
@@ -200,11 +200,11 @@ export async function checkSupportedPlatform(
       `The guest platform check on VM '${ctx.executor.vmName}' returned output setup could not read: ${bounded(stdout)}`,
     );
   }
-  if (!isSupportedGuestPlatform(platform, allowlist)) {
+  if (!isSupportedGuestPlatform(platform, supportedPlatforms)) {
     throw new GuestCheckError(
       'platform',
       `VM '${ctx.executor.vmName}' runs ${formatPlatform(platform)} (build ${platform.build}), which is not a supported guest platform. ` +
-        `Supported: ${allowlist.map(formatPlatform).join('; ')}. ` +
+        `Supported: ${supportedPlatforms.map(formatPlatform).join('; ')}. ` +
         `Install a supported Windows release and complete Windows Update, then rerun.`,
     );
   }

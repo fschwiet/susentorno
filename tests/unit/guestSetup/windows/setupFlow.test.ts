@@ -12,9 +12,9 @@ import {
   WINDOWS_OFF_CONFIRM_TIMEOUT_MS,
   WINDOWS_STOP_TIMEOUT_MS,
   type WindowsSetupDeps,
-  type WindowsSetupFlags,
   type WindowsSetupOutcome,
 } from '../../../../src/guestSetup/windows/setupFlow';
+import type { WindowsSetupAnswerFlags } from '../../../../src/guestSetup/windows/setupAnswers';
 import type { WindowsStepPlanResult } from '../../../../src/guestSetup/windows/stepPlan';
 import {
   HOST_CONTEXT,
@@ -65,7 +65,7 @@ interface Harness {
 
 async function run(
   options: {
-    flags?: WindowsSetupFlags;
+    flags?: WindowsSetupAnswerFlags;
     answers?: Record<string, string[] | 'hang' | 'cancel'>;
     vm?: Partial<FakeHyperV['state']>;
     hyperV?: Parameters<typeof fakeHyperV>[1];

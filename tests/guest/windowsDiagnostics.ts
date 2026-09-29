@@ -5,7 +5,7 @@ import { PENDING_REBOOT_SCRIPT } from '../../src/guestSetup/windows/guestChecks'
 import {
   GUEST_TRUST_BUNDLE_PATH,
   GUEST_TRUST_DIR,
-} from '../../src/guestSetup/windows/trustReconciler';
+} from '../../src/guestSetup/windows/trustScripts';
 import { artifactsDir } from './diagnostics';
 import { captureScreenshotFrame } from './hyperv/vmScreenshot';
 import type { GuestRole } from './hyperv/imageCache';

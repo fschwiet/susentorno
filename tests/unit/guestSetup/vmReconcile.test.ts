@@ -271,7 +271,8 @@ describe('the optional stop heartbeat', () => {
     const exec: PowerShellExec = {
       async run(command: string) {
         if (command.startsWith('Get-VMNetworkAdapter')) return adapter('Default Switch');
-        if (command.startsWith('Get-VM ')) return vmState(clock.now() >= 50_000 ? 'Off' : 'Running');
+        if (command.startsWith('Get-VM '))
+          return vmState(clock.now() >= 50_000 ? 'Off' : 'Running');
         return ok;
       },
     };

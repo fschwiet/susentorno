@@ -921,9 +921,7 @@ export async function checkHostShareAccount(
     if (entry.sid !== undefined) return tokenSids.has(entry.sid);
     // The host could not resolve this principal to a SID: fall back to its name.
     const name = entry.principal.toLowerCase();
-    return (
-      name === accountName || name.endsWith(`\\${accountName}`) || BROAD_PRINCIPALS.has(name)
-    );
+    return name === accountName || name.endsWith(`\\${accountName}`) || BROAD_PRINCIPALS.has(name);
   };
 
   const denial = entries.find((entry) => !entry.allow && entry.right !== '' && applies(entry));

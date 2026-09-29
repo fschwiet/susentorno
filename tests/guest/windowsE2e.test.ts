@@ -26,7 +26,7 @@ import { probePendingReboot } from '../../src/guestSetup/windows/guestChecks';
 import {
   GUEST_TRUST_BUNDLE_PATH,
   GUEST_TRUST_DIR,
-} from '../../src/guestSetup/windows/trustReconciler';
+} from '../../src/guestSetup/windows/trustScripts';
 import {
   HOST_CODEX_ACCOUNT_ID,
   startProxyStack,

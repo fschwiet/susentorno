@@ -20,24 +20,6 @@ import {
   buildWriteAmbientPemsScript,
 } from './trustScripts';
 
-export {
-  planTrustReconciliation,
-  parseCertificatePem,
-  type ManagedTrustState,
-  type PlanOperation,
-  type TrustCategory,
-  type TrustOperationName,
-  type TrustPlan,
-  type TrustSnapshot,
-} from './trustPlanner';
-export {
-  GUEST_TRUST_BUNDLE_FILE,
-  GUEST_TRUST_BUNDLE_PATH,
-  GUEST_TRUST_DIR,
-  GUEST_TRUST_MANIFEST_FILE,
-  GUEST_TRUST_PROXY_FILE,
-} from './trustScripts';
-
 /** Each trust invocation is bounded at 2 minutes. */
 export const TRUST_INVOCATION_TIMEOUT_MS = 120_000;
 

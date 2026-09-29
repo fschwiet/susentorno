@@ -154,7 +154,7 @@ function isBridgeError(
  * short-lived bridge (templates/powershell/windowsGuestBridge.ps1): only the
  * bridge path and VM name go in argv, and the credential and base64 script
  * go over stdin as one JSON request. See the spec's "PowerShell Direct
- * boundary" and ticket 02.
+ * boundary" section.
  */
 export function createWindowsGuestExecutor(
   options: CreateWindowsGuestExecutorOptions,
