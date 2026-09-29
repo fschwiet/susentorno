@@ -21,6 +21,7 @@ import {
   formatResidualStateFooter,
   queryResidualVmState,
 } from '../guestSetup/windows/residualStateFooter';
+import { describeTarget } from '../guestSetup/windows/shareCredential';
 import {
   describePhase,
   runWindowsSetup,
@@ -143,7 +144,14 @@ export async function executeSetupGuestWindows(
   }
 
   if (outcome.kind === 'success') {
-    env.out(`${COMMAND}: the guest is set up and isolated.`);
+    env.out(
+      `${COMMAND}: VM '${outcome.vmName}' is set up and isolated on '${host.context.internalSwitchName}'.`,
+    );
+    for (const entry of outcome.credentials) {
+      env.out(
+        `  VM share credential for ${describeTarget(entry)}: ${entry.status === 'verified' ? 'verified, kept' : entry.status}`,
+      );
+    }
     return exitCodeForOutcome(outcome);
   }
 

@@ -15,6 +15,10 @@ import {
   WINGET_SCRIPT,
 } from '../../../../src/guestSetup/windows/guestChecks';
 import type { WindowsHostContext } from '../../../../src/guestSetup/windows/hostPrerequisites';
+import {
+  ISOLATED_PROBE_HEADER,
+  type IsolatedProbeFacts,
+} from '../../../../src/guestSetup/windows/isolatedReadiness';
 import type { WindowsSetupClock } from '../../../../src/guestSetup/windows/setupFlow';
 import type { GuestScript } from '../../../../src/guestSetup/listScripts';
 import type {
@@ -87,7 +91,17 @@ export interface FakeHyperV {
   exec: PowerShellExec;
   commands: string[];
   timeouts: { command: string; timeoutMs?: number }[];
-  state: { vmState: string; switchName: string | null; adapters: number };
+  state: {
+    vmState: string;
+    switchName: string | null;
+    adapters: number;
+    /** Whether run-hosting's DHCP and DNS listeners are bound; a test may drop them mid-run. */
+    listeners: boolean;
+    /** Stop-VM returns but the VM never reaches Off. */
+    stopStalls: boolean;
+    /** A host command matching this fails with exit 1 (for example the adapter connect). */
+    failing?: RegExp;
+  };
 }
 
 /** A stateful stand-in for the Hyper-V and networking cmdlets the setup flow runs on the host. */
@@ -106,10 +120,12 @@ export function fakeHyperV(
     hostRootsFail?: boolean;
   } = {},
 ): FakeHyperV {
-  const state = {
+  const state: FakeHyperV['state'] = {
     vmState: 'Off',
     switchName: 'Default Switch' as string | null,
     adapters: 1,
+    listeners: options.listeners !== false,
+    stopStalls: options.stopNeverCompletes === true,
     ...initial,
   };
   const commands: string[] = [];
@@ -143,7 +159,7 @@ export function fakeHyperV(
         );
       }
       if (command.startsWith('Get-NetUDPEndpoint')) {
-        return options.listeners === false ? ok('') : ok('bound');
+        return state.listeners ? ok('bound') : ok('');
       }
       if (command.startsWith('Get-SmbShare ')) {
         return ok(
@@ -169,8 +185,9 @@ export function fakeHyperV(
           ),
         );
       }
+      if (state.failing?.test(command)) return { exitCode: 1, stdout: 'The operation failed.' };
       if (command.startsWith('Stop-VM')) {
-        if (!options.stopNeverCompletes) state.vmState = 'Off';
+        if (!state.stopStalls) state.vmState = 'Off';
         return ok();
       }
       if (command.startsWith('Connect-VMNetworkAdapter')) {
@@ -218,6 +235,18 @@ export const SUPPORTED_GUEST_RESPONSES: Record<string, WindowsGuestResult> = {
     }),
   ),
 };
+
+/** What the isolated-readiness probe reports for a guest whose isolated network works. */
+export function isolatedFacts(overrides: Partial<IsolatedProbeFacts> = {}): IsolatedProbeFacts {
+  return {
+    Addresses: [{ InterfaceIndex: 7, Address: '192.168.67.44', PrefixLength: 24, Origin: 'Dhcp' }],
+    Routes: [{ InterfaceIndex: 7, NextHop: HOST_CONTEXT.internalSwitchHostIp }],
+    DnsServers: [{ InterfaceIndex: 7, Servers: [HOST_CONTEXT.internalSwitchHostIp] }],
+    Lookup: { Ok: true, Detail: HOST_CONTEXT.internalSwitchHostIp },
+    Proxy: { Ok: true, Detail: 'connected' },
+    ...overrides,
+  };
+}
 
 /** The guest's Credential Manager and SMB behavior, stateful across a run. */
 export interface ShareGuest {
@@ -331,6 +360,9 @@ export function structuralChecksBehavior(
   return (script) => {
     if (shareOperation(script)) return shareAnswer(script, share);
     if (trustOperation(script)) return trustAnswer(script, trust);
+    if (script.startsWith(ISOLATED_PROBE_HEADER)) {
+      return overrides.isolated ?? guestOk(JSON.stringify(isolatedFacts()));
+    }
     const key =
       script === PLATFORM_SCRIPT
         ? 'platform'

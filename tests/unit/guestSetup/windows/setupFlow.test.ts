@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { WindowsGuestError } from '../../../../src/guestSetup/windows/guestExecutor';
+import {
+  WindowsGuestError,
+  type WindowsGuestResult,
+} from '../../../../src/guestSetup/windows/guestExecutor';
+import { PENDING_REBOOT_SCRIPT } from '../../../../src/guestSetup/windows/guestChecks';
+import { ISOLATED_PROBE_HEADER } from '../../../../src/guestSetup/windows/isolatedReadiness';
 import {
   runWindowsSetup,
   POWERSHELL_DIRECT_READY_DEADLINE_MS,
@@ -18,6 +23,7 @@ import {
   fakeExecutors,
   fakeHyperV,
   guestOk,
+  isolatedFacts,
   scriptedPrompts,
   readProxyCaPem,
   shareGuest,
@@ -62,6 +68,8 @@ async function run(
     answers?: Record<string, string[] | 'hang' | 'cancel'>;
     vm?: Partial<FakeHyperV['state']>;
     hyperV?: Parameters<typeof fakeHyperV>[1];
+    /** A Hyper-V that already exists, so a second run starts from what the first one left. */
+    hyperVInstance?: FakeHyperV;
     guest?: GuestBehavior;
     share?: ShareGuest;
     trust?: TrustGuest;
@@ -71,7 +79,7 @@ async function run(
   } = {},
 ): Promise<Harness> {
   const events: EventLog = [];
-  const hyperV = fakeHyperV(options.vm, { events, ...options.hyperV });
+  const hyperV = options.hyperVInstance ?? fakeHyperV(options.vm, { events, ...options.hyperV });
   const { prompts, asked } = scriptedPrompts(
     {
       ...shareAnswers(),
@@ -128,16 +136,30 @@ function expectFailure(outcome: WindowsSetupOutcome) {
   return outcome;
 }
 
-describe('runWindowsSetup: the happy path through G5', () => {
-  it('runs the phases in order and then fails plainly because later phases are not implemented', async () => {
-    const { outcome, out } = await run();
-    const failure = expectFailure(outcome);
-    expect(failure.phase).toBe('G7');
-    expect(failure.error.kind).toBe('not-implemented');
-    expect(failure.error.message).toContain('not implemented');
-    expect(failure.error.message).toContain("'win-dev'");
-    expect(failure.vmName).toBe('win-dev');
-    expect(announcements(out)).toEqual(['H1', 'H2', 'H3', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6']);
+describe('runWindowsSetup: the happy path', () => {
+  it('runs every phase in order and ends in success, having isolated the VM', async () => {
+    const { outcome, out, hyperV } = await run();
+    expect(outcome.kind).toBe('success');
+    expect(announcements(out)).toEqual([
+      'H1',
+      'H2',
+      'H3',
+      'G1',
+      'G2',
+      'G3',
+      'G4',
+      'G5',
+      'G6',
+      'G7',
+      'G8',
+      'G9',
+      'G10',
+      'G11',
+      'G12',
+      'G13',
+      'G14',
+    ]);
+    expect(hyperV.state).toMatchObject({ vmState: 'Running', switchName: 'susentorno-internal' });
   });
 
   it('announces each phase as `setup-guest-windows: <phase>...`', async () => {
@@ -150,6 +172,19 @@ describe('runWindowsSetup: the happy path through G5', () => {
     expect(out).toContain('setup-guest-windows: G3 guest structural checks...');
     expect(out).toContain('setup-guest-windows: G4 VM share credentials...');
     expect(out).toContain('setup-guest-windows: G5 guest trust reconciliation...');
+    expect(out).toContain('setup-guest-windows: G6 pre-isolation steps...');
+    expect(out).toContain('setup-guest-windows: G7 isolation gate...');
+    expect(out).toContain('setup-guest-windows: G8 Internal-switch share credential...');
+    expect(out).toContain(
+      "setup-guest-windows: G9 isolating 'win-dev' onto 'susentorno-internal'...",
+    );
+    expect(out).toContain(
+      'setup-guest-windows: G10 PowerShell Direct readiness after isolation...',
+    );
+    expect(out).toContain('setup-guest-windows: G11 isolated-network readiness...');
+    expect(out).toContain('setup-guest-windows: G12 Internal-switch share access...');
+    expect(out).toContain('setup-guest-windows: G13 post-isolation steps...');
+    expect(out).toContain('setup-guest-windows: G14 completion...');
   });
 
   it('prompts in the documented order, with the share name defaulting to vm-shared-windows', async () => {
@@ -213,7 +248,7 @@ describe('flag suppression', () => {
       answers: { 'Guest password': [GUEST_PASSWORD] },
     });
     expect(asked.map((a) => a.question)).toEqual(['Guest password', 'VM share password']);
-    expect(expectFailure(outcome).phase).toBe('G7');
+    expect(outcome.kind).toBe('success');
   });
 
   it('each flag suppresses only its own prompt', async () => {
@@ -292,13 +327,13 @@ describe('G1 accepted starting states', () => {
 
   it('starts an Off VM that is already on the Default Switch', async () => {
     const { hyperV, outcome } = await run({ vm: { vmState: 'Off', switchName: 'Default Switch' } });
-    expect(mutations(hyperV)).toEqual(["Start-VM -Name 'win-dev'"]);
-    expect(expectFailure(outcome).phase).toBe('G7');
+    expect(mutations(hyperV).slice(0, 1)).toEqual(["Start-VM -Name 'win-dev'"]);
+    expect(outcome.kind).toBe('success');
   });
 
   it('connects an Off VM on the Internal switch to the Default Switch, then starts it', async () => {
     const { hyperV } = await run({ vm: { vmState: 'Off', switchName: 'susentorno-internal' } });
-    expect(mutations(hyperV)).toEqual([
+    expect(mutations(hyperV).slice(0, 2)).toEqual([
       "Connect-VMNetworkAdapter -VMName 'win-dev' -SwitchName 'Default Switch'",
       "Start-VM -Name 'win-dev'",
     ]);
@@ -308,14 +343,15 @@ describe('G1 accepted starting states', () => {
     const { hyperV, outcome, out } = await run({
       vm: { vmState: 'Running', switchName: 'Default Switch' },
     });
-    expect(mutations(hyperV)).toEqual([]);
-    expect(expectFailure(outcome).phase).toBe('G7');
+    // Reused as it is; only the later isolation touches the VM.
+    expect(mutations(hyperV)[0]).toBe("Stop-VM -Name 'win-dev'");
+    expect(outcome.kind).toBe('success');
     expect(out.join('\n')).toContain('reusing');
   });
 
   it('stops a VM running on the Internal switch, moves it, and starts it', async () => {
     const { hyperV } = await run({ vm: { vmState: 'Running', switchName: 'susentorno-internal' } });
-    expect(mutations(hyperV)).toEqual([
+    expect(mutations(hyperV).slice(0, 3)).toEqual([
       "Stop-VM -Name 'win-dev'",
       "Connect-VMNetworkAdapter -VMName 'win-dev' -SwitchName 'Default Switch'",
       "Start-VM -Name 'win-dev'",
@@ -324,8 +360,8 @@ describe('G1 accepted starting states', () => {
 
   it('gives the graceful stop the Windows deadline and never force-stops', async () => {
     const { hyperV } = await run({ vm: { vmState: 'Running', switchName: 'susentorno-internal' } });
-    const stop = hyperV.timeouts.find((t) => t.command.startsWith('Stop-VM'));
-    expect(stop?.timeoutMs).toBe(180_000);
+    const stops = hyperV.timeouts.filter((t) => t.command.startsWith('Stop-VM'));
+    expect(stops.map((stop) => stop.timeoutMs)).toEqual([180_000, 180_000]);
     expect(WINDOWS_STOP_TIMEOUT_MS).toBe(180_000);
     expect(WINDOWS_OFF_CONFIRM_TIMEOUT_MS).toBe(60_000);
     expect(hyperV.commands.some((c) => /-Force|-TurnOff/.test(c))).toBe(false);
@@ -378,8 +414,9 @@ describe('H3 and G2: the guest credential loop', () => {
     ]);
     expect(executors.created.map((e) => e.disposed)).toEqual([true, true]);
     // The VM was reconciled once, not once per attempt.
-    expect(hyperV.commands.filter((c) => c.startsWith('Start-VM'))).toHaveLength(1);
-    expect(expectFailure(outcome).phase).toBe('G7');
+    // The Start-VM of the first reconcile, and the one that follows isolation.
+    expect(hyperV.commands.filter((c) => c.startsWith('Start-VM'))).toHaveLength(2);
+    expect(outcome.kind).toBe('success');
   });
 
   it('tells the user the credential was rejected without echoing it', async () => {
@@ -538,17 +575,18 @@ describe('G4: VM share credentials', () => {
     const share = shareGuest();
     const { outcome, executors, out } = await run({ share });
     expect(executors.created).toHaveLength(1);
-    expect(shareScripts(executors, 'replace')).toHaveLength(1);
-    expect(shareScripts(executors, 'verify')).toHaveLength(1);
-    // Keyed by the Default-Switch host address; the Internal-switch entry is a later phase.
-    expect([...share.stored.keys()]).toEqual([HOST_CONTEXT.defaultSwitchHostIp]);
+    expect(shareScripts(executors, 'replace')).toHaveLength(2);
+    expect(shareScripts(executors, 'verify')).toHaveLength(2);
+    // One entry per address: the Default Switch at G4, the Internal switch at G8.
+    expect([...share.stored.keys()]).toEqual([
+      HOST_CONTEXT.defaultSwitchHostIp,
+      HOST_CONTEXT.internalSwitchHostIp,
+    ]);
     expect(share.stored.get(HOST_CONTEXT.defaultSwitchHostIp)).toEqual({
       account: 'susentorno',
       password: SHARE_PASSWORD,
     });
-    const failure = expectFailure(outcome);
-    expect(failure.phase).toBe('G7');
-    expect(failure.error.message).toContain(HOST_CONTEXT.defaultSwitchHostIp);
+    expect(outcome.kind).toBe('success');
     expect(out.join('\n')).not.toContain(SHARE_PASSWORD);
   });
 
@@ -629,7 +667,7 @@ describe('G4: VM share credentials', () => {
         'text:VM share account',
         'masked:VM share password',
       ]);
-      expect(shareScripts(executors, 'replace')).toHaveLength(2);
+      expect(shareScripts(executors, 'replace')).toHaveLength(3);
       expect(share.stored.get(HOST_CONTEXT.defaultSwitchHostIp)).toEqual({
         account: 'susentorno2',
         password: SHARE_PASSWORD,
@@ -638,10 +676,13 @@ describe('G4: VM share credentials', () => {
       expect(rejected).toHaveLength(1);
       expect(rejected[0]).toContain("'susentorno'");
       expect(JSON.stringify({ out, outcome })).not.toContain(WRONG_SHARE_PASSWORD);
-      expect(expectFailure(outcome).phase).toBe('G7');
-      expect(expectFailure(outcome).credentials).toEqual([
-        { role: 'default', hostIp: HOST_CONTEXT.defaultSwitchHostIp, status: 'verified' },
-      ]);
+      expect(outcome).toMatchObject({
+        kind: 'success',
+        credentials: [
+          { role: 'default', hostIp: HOST_CONTEXT.defaultSwitchHostIp, status: 'verified' },
+          { role: 'internal', hostIp: HOST_CONTEXT.internalSwitchHostIp, status: 'verified' },
+        ],
+      });
     });
 
     it('does not prompt for the guest credential again', async () => {
@@ -1145,6 +1186,7 @@ describe('G6 pre-isolation steps', () => {
   const stepsRun = (executors: ReturnType<typeof fakeExecutors>): string[] =>
     executors.created
       .flatMap((e) => e.scripts)
+      .filter((script) => stepLocationOf(script)?.directory === 'pre-scripts')
       .map(stepFilenameOf)
       .filter((name): name is string => name !== undefined);
 
@@ -1163,8 +1205,9 @@ describe('G6 pre-isolation steps', () => {
     expect(stepsRun(executors)).toEqual(FLOW_STEP_PLANS.pre.map((s) => s.filename));
     const lastTrust = scripts.map((s) => /^# susentorno trust:/.test(s)).lastIndexOf(true);
     const firstStep = scripts.findIndex((s) => stepFilenameOf(s) !== undefined);
+    expect(firstStep).toBeGreaterThan(-1);
     expect(firstStep).toBeGreaterThan(lastTrust);
-    for (const script of scripts.filter((s) => stepFilenameOf(s) !== undefined)) {
+    for (const script of scripts.filter((s) => stepLocationOf(s)?.directory === 'pre-scripts')) {
       expect(stepLocationOf(script)).toEqual({
         hostIp: HOST_CONTEXT.defaultSwitchHostIp,
         directory: 'pre-scripts',
@@ -1191,7 +1234,7 @@ describe('G6 pre-isolation steps', () => {
     const { executors } = await run();
     const { scripts, timeouts } = executors.created[0];
     const stepTimeouts = scripts
-      .map((s, i) => (stepFilenameOf(s) ? timeouts[i] : undefined))
+      .map((s, i) => (stepLocationOf(s)?.directory === 'pre-scripts' ? timeouts[i] : undefined))
       .filter((t) => t !== undefined);
     expect(stepTimeouts).toEqual([1_800_000, 1_800_000, 1_800_000]);
   });
@@ -1205,10 +1248,7 @@ describe('G6 pre-isolation steps', () => {
     );
     expect(closeAt).toBeGreaterThan(lastStepAt);
     expect(events).not.toContain('guest:cleanup');
-    const failure = expectFailure(outcome);
-    expect(failure.credentials).toEqual([
-      { role: 'default', hostIp: HOST_CONTEXT.defaultSwitchHostIp, status: 'verified' },
-    ]);
+    expect(outcome.kind).toBe('success');
   });
 
   describe('a failed step', () => {
@@ -1303,5 +1343,757 @@ describe('G6 pre-isolation steps', () => {
       expect(stepsRun(executors)).toEqual(['01-install-packages.ps1', '02-install-pnpm.ps1']);
       expect(executors.created[0].disposed).toBe(true);
     });
+  });
+});
+
+const INTERNAL_IP = HOST_CONTEXT.internalSwitchHostIp;
+const DEFAULT_IP = HOST_CONTEXT.defaultSwitchHostIp;
+const INTERNAL_SWITCH = 'susentorno-internal';
+const pendingMarkers = guestOk(JSON.stringify({ Markers: ['Windows Update\\RebootRequired'] }));
+const isPost = (script: string): boolean => stepLocationOf(script)?.directory === 'post-scripts';
+const isPre = (script: string): boolean => stepLocationOf(script)?.directory === 'pre-scripts';
+const isIsolatedProbe = (script: string): boolean => script.startsWith(ISOLATED_PROBE_HEADER);
+const guestScripts = (executors: ReturnType<typeof fakeExecutors>): string[] =>
+  executors.created.flatMap((e) => e.scripts);
+const vmMutations = (hyperV: FakeHyperV, from = 0): string[] =>
+  hyperV.commands.slice(from).filter((c) => /^(Stop-VM|Start-VM|Connect-VMNetworkAdapter)/.test(c));
+
+/** Every guest script that is a share replacement, as the host address it targets. */
+const replaceTargets = (executors: ReturnType<typeof fakeExecutors>): string[] =>
+  guestScripts(executors)
+    .filter((script) => script.startsWith('# susentorno share credential: replace'))
+    .map((script) => /\$target = '([^']+)'/.exec(script)![1]);
+
+describe('G7 isolation gate', () => {
+  /** Answers the pending-reboot probe cleanly for G3 and with markers for every later probe. */
+  const rebootAppearsAfterG3 = (): GuestBehavior => {
+    const inner = structuralChecksBehavior();
+    let probes = 0;
+    return (script, credential) =>
+      script === PENDING_REBOOT_SCRIPT && ++probes > 1 ? pendingMarkers : inner(script, credential);
+  };
+
+  it('runs after every pre-isolation step and before any isolation work', async () => {
+    const { events } = await run();
+    const gate = events.indexOf('out:setup-guest-windows: G7 isolation gate...');
+    const lastPre = events.reduce(
+      (acc, e, i) => (e.includes('running step pre-scripts/') ? i : acc),
+      -1,
+    );
+    expect(gate).toBeGreaterThan(lastPre);
+    expect(gate).toBeLessThan(
+      events.indexOf('out:setup-guest-windows: G8 Internal-switch share credential...'),
+    );
+  });
+
+  it('never isolates a guest with a pending reboot, and says to restart the guest and rerun', async () => {
+    const { outcome, hyperV, executors } = await run({ guest: rebootAppearsAfterG3() });
+    const failure = expectFailure(outcome);
+    expect(failure.phase).toBe('G7');
+    expect(failure.error.kind).toBe('guest-check');
+    expect(failure.error.message).toContain('Restart the guest, then rerun.');
+    expect(failure.error.message).toContain('RebootRequired');
+    // It is provisioned but still on the Default Switch, and no isolation step was taken.
+    expect(hyperV.state).toMatchObject({ vmState: 'Running', switchName: 'Default Switch' });
+    expect(vmMutations(hyperV).filter((c) => c.startsWith('Stop-VM'))).toEqual([]);
+    expect(replaceTargets(executors)).toEqual([DEFAULT_IP]);
+  });
+
+  it('never isolates while run-hosting is gone', async () => {
+    const hyperV = fakeHyperV({ vmState: 'Off' });
+    const inner = structuralChecksBehavior();
+    const { outcome, executors } = await run({
+      hyperVInstance: hyperV,
+      guest: (script, credential) => {
+        // run-hosting stops while the last pre-isolation step is running.
+        if (stepFilenameOf(script) === '03-configure-network.ps1') hyperV.state.listeners = false;
+        return inner(script, credential);
+      },
+    });
+    const failure = expectFailure(outcome);
+    expect(failure.phase).toBe('G7');
+    expect(failure.error.kind).toBe('run-hosting');
+    expect(failure.error.message).toContain('susentorno run-hosting');
+    expect(failure.error.message).toContain(INTERNAL_IP);
+    expect(hyperV.state).toMatchObject({ vmState: 'Running', switchName: 'Default Switch' });
+    expect(vmMutations(hyperV).filter((c) => c.startsWith('Stop-VM'))).toEqual([]);
+    expect(replaceTargets(executors)).toEqual([DEFAULT_IP]);
+  });
+
+  it('leaves the verified Default-Switch credential in place', async () => {
+    const { outcome } = await run({ guest: rebootAppearsAfterG3() });
+    expect(expectFailure(outcome).credentials).toEqual([
+      { role: 'default', hostIp: DEFAULT_IP, status: 'verified' },
+    ]);
+  });
+
+  it('treats a pending-reboot probe that itself fails as a failure, not a pass', async () => {
+    const inner = structuralChecksBehavior();
+    let probes = 0;
+    const { outcome, hyperV } = await run({
+      guest: (script, credential) =>
+        script === PENDING_REBOOT_SCRIPT && ++probes > 1
+          ? { exitCode: 1, stdout: '', stderr: 'access denied', timedOut: false }
+          : inner(script, credential),
+    });
+    expect(expectFailure(outcome).phase).toBe('G7');
+    expect(hyperV.state.switchName).toBe('Default Switch');
+  });
+});
+
+describe('G8 the Internal-switch share credential', () => {
+  it('is written only after the isolation gate, with the same account and password, keyed by the Internal-switch address', async () => {
+    const share = shareGuest();
+    const { events, executors } = await run({ share });
+    expect(replaceTargets(executors)).toEqual([DEFAULT_IP, INTERNAL_IP]);
+    const gate = events.indexOf('out:setup-guest-windows: G7 isolation gate...');
+    const secondReplace = events.indexOf('guest:replace', events.indexOf('guest:replace') + 1);
+    expect(secondReplace).toBeGreaterThan(gate);
+    expect(share.stored.get(INTERNAL_IP)).toEqual({
+      account: 'susentorno',
+      password: SHARE_PASSWORD,
+    });
+  });
+
+  it('is never written when a pre-isolation step fails, so an earlier verified entry survives', async () => {
+    const share = shareGuest();
+    share.stored.set(INTERNAL_IP, { account: 'susentorno', password: 'from-an-earlier-run' });
+    const inner = structuralChecksBehavior({}, share);
+    const { outcome, executors } = await run({
+      share,
+      guest: (script, credential) =>
+        stepFilenameOf(script) === '02-install-pnpm.ps1'
+          ? { exitCode: 1, stdout: '', stderr: '', timedOut: false }
+          : inner(script, credential),
+    });
+    expect(expectFailure(outcome).phase).toBe('G6');
+    expect(replaceTargets(executors)).toEqual([DEFAULT_IP]);
+    expect(share.stored.get(INTERNAL_IP)?.password).toBe('from-an-earlier-run');
+  });
+
+  it('asks for nothing new: every prompt came before the first credential was written', async () => {
+    const { events } = await run();
+    const firstWrite = events.indexOf('guest:replace');
+    expect(events.lastIndexOf('prompt:VM share password')).toBeLessThan(firstWrite);
+    expect(events.slice(firstWrite).filter((e) => e.startsWith('prompt:'))).toEqual([]);
+  });
+
+  it('is recorded as unverified until G12 proves it, then verified', async () => {
+    const { outcome } = await run();
+    expect(outcome).toMatchObject({
+      credentials: [
+        { role: 'default', hostIp: DEFAULT_IP, status: 'verified' },
+        { role: 'internal', hostIp: INTERNAL_IP, status: 'verified' },
+      ],
+    });
+  });
+});
+
+describe('G9 isolation', () => {
+  it('stops gracefully, confirms Off, connects the adapter to the Internal switch, and starts', async () => {
+    const { hyperV } = await run({ vm: { vmState: 'Running', switchName: 'Default Switch' } });
+    expect(vmMutations(hyperV)).toEqual([
+      "Stop-VM -Name 'win-dev'",
+      "Connect-VMNetworkAdapter -VMName 'win-dev' -SwitchName 'susentorno-internal'",
+      "Start-VM -Name 'win-dev'",
+    ]);
+    expect(hyperV.state).toMatchObject({ vmState: 'Running', switchName: INTERNAL_SWITCH });
+  });
+
+  it('gives the stop the Windows deadline and never force-stops', async () => {
+    const { hyperV } = await run();
+    expect(hyperV.timeouts.filter((t) => t.command.startsWith('Stop-VM'))[0].timeoutMs).toBe(
+      WINDOWS_STOP_TIMEOUT_MS,
+    );
+    expect(hyperV.commands.some((c) => /-Force|-TurnOff/.test(c))).toBe(false);
+  });
+
+  it('fails when the VM never reaches Off, leaving it running on the Default Switch, and never forces it', async () => {
+    const { outcome, hyperV, clock } = await run({ hyperV: { stopNeverCompletes: true } });
+    const failure = expectFailure(outcome);
+    expect(failure.phase).toBe('G9');
+    expect(failure.error.kind).toBe('vm-reconcile');
+    expect(failure.error.message).toContain("did not reach 'Off'");
+    expect(clock.time).toBeGreaterThanOrEqual(WINDOWS_OFF_CONFIRM_TIMEOUT_MS);
+    expect(hyperV.state).toMatchObject({ vmState: 'Running', switchName: 'Default Switch' });
+    expect(hyperV.commands.some((c) => /^Connect-|-Force|-TurnOff/.test(c))).toBe(false);
+    // The guest is still reachable, so the unverified Internal-switch entry is removed.
+    expect(failure.credentials).toEqual([
+      { role: 'default', hostIp: DEFAULT_IP, status: 'verified' },
+      { role: 'internal', hostIp: INTERNAL_IP, status: 'removed' },
+    ]);
+  });
+});
+
+describe('G10 PowerShell Direct readiness after isolation', () => {
+  /** The readiness probe of a guest that has just been moved to the Internal switch. */
+  const afterIsolation = (hyperV: FakeHyperV, answer: WindowsGuestError): GuestBehavior => {
+    const inner = structuralChecksBehavior();
+    return (script, credential) =>
+      script === "'ready'" && hyperV.state.switchName === INTERNAL_SWITCH
+        ? answer
+        : inner(script, credential);
+  };
+
+  it('uses the same executor, so the credential is never asked for again', async () => {
+    const { executors, asked } = await run();
+    expect(executors.created).toHaveLength(1);
+    expect(asked.filter((a) => a.question === 'Guest password')).toHaveLength(1);
+  });
+
+  it('treats an authentication rejection as structural: no re-prompt, and a plain failure', async () => {
+    const hyperV = fakeHyperV({ vmState: 'Off' });
+    const { outcome, asked, executors } = await run({
+      hyperVInstance: hyperV,
+      guest: afterIsolation(hyperV, authRejection()),
+    });
+    const failure = expectFailure(outcome);
+    expect(failure.phase).toBe('G10');
+    expect(failure.error.kind).toBe('guest-authentication');
+    expect(asked.filter((a) => a.question === 'Guest password')).toHaveLength(1);
+    expect(asked.filter((a) => a.question === 'Guest username')).toHaveLength(1);
+    expect(executors.created).toHaveLength(1);
+    expect(executors.created[0].disposed).toBe(true);
+    expect(failure.credentials).toEqual([
+      { role: 'default', hostIp: DEFAULT_IP, status: 'verified' },
+      { role: 'internal', hostIp: INTERNAL_IP, status: 'removed' },
+    ]);
+  });
+
+  it('gives up after 5 minutes and prints heartbeats while the guest boots', async () => {
+    const hyperV = fakeHyperV({ vmState: 'Off' });
+    const { outcome, out, clock } = await run({
+      hyperVInstance: hyperV,
+      guest: afterIsolation(hyperV, new WindowsGuestError('transport', 'not ready')),
+    });
+    const failure = expectFailure(outcome);
+    expect(failure.phase).toBe('G10');
+    expect(failure.error.kind).toBe('guest-timeout');
+    expect(clock.time).toBe(POWERSHELL_DIRECT_READY_DEADLINE_MS);
+    expect(
+      out.filter((line) => line.includes('G10 still waiting for PowerShell Direct')).length,
+    ).toBeGreaterThanOrEqual(18);
+  });
+});
+
+describe('G11 isolated-network readiness', () => {
+  const noLease = guestOk(JSON.stringify(isolatedFacts({ Addresses: [] })));
+
+  it('polls the guest through the same executor once PowerShell Direct answers', async () => {
+    const { executors } = await run();
+    const probes = guestScripts(executors).filter(isIsolatedProbe);
+    expect(probes).toHaveLength(1);
+    expect(probes[0]).toContain(`'${INTERNAL_IP}'`);
+  });
+
+  it('waits out a lease that arrives late', async () => {
+    const inner = structuralChecksBehavior();
+    let probes = 0;
+    const { outcome, executors, clock } = await run({
+      guest: (script, credential) =>
+        isIsolatedProbe(script) && ++probes < 4 ? noLease : inner(script, credential),
+    });
+    expect(outcome.kind).toBe('success');
+    expect(guestScripts(executors).filter(isIsolatedProbe)).toHaveLength(4);
+    expect(clock.time).toBeGreaterThan(0);
+  });
+
+  it('fails after 3 minutes, naming the unmet condition and run-hosting, with heartbeats', async () => {
+    const inner = structuralChecksBehavior();
+    const refused = guestOk(
+      JSON.stringify(isolatedFacts({ Proxy: { Ok: false, Detail: 'connection refused' } })),
+    );
+    const { outcome, out, clock, hyperV } = await run({
+      guest: (script, credential) =>
+        isIsolatedProbe(script) ? refused : inner(script, credential),
+    });
+    const failure = expectFailure(outcome);
+    expect(failure.phase).toBe('G11');
+    expect(failure.error.kind).toBe('isolated-network');
+    expect(failure.error.message).toContain('a TCP connection to the proxy stack');
+    expect(failure.error.message).toContain('connection refused');
+    expect(failure.error.message).toContain('susentorno run-hosting');
+    expect(clock.time).toBe(180_000);
+    expect(out.filter((line) => line.includes('G11 still waiting')).length).toBeGreaterThanOrEqual(
+      10,
+    );
+    expect(hyperV.state).toMatchObject({ vmState: 'Running', switchName: INTERNAL_SWITCH });
+    // The Internal-switch entry was never verified, so cleanup removes it.
+    expect(failure.credentials).toEqual([
+      { role: 'default', hostIp: DEFAULT_IP, status: 'verified' },
+      { role: 'internal', hostIp: INTERNAL_IP, status: 'removed' },
+    ]);
+  });
+
+  it('runs before the Internal-switch share is verified', async () => {
+    const { events } = await run();
+    const g11 = events.indexOf('out:setup-guest-windows: G11 isolated-network readiness...');
+    const g12 = events.indexOf('out:setup-guest-windows: G12 Internal-switch share access...');
+    expect(g11).toBeGreaterThan(0);
+    expect(g12).toBeGreaterThan(g11);
+  });
+});
+
+describe('G12 Internal-switch share access', () => {
+  it('verifies the share through the Internal-switch address', async () => {
+    const { executors } = await run();
+    const verifies = guestScripts(executors).filter((s) =>
+      s.startsWith('# susentorno share credential: verify'),
+    );
+    expect(verifies).toHaveLength(2);
+    expect(verifies[0]).toContain(`'${DEFAULT_IP}'`);
+    expect(verifies[1]).toContain(`'${INTERNAL_IP}'`);
+  });
+
+  it('treats an authentication failure unique to this address as structural and removes only the unverified entry', async () => {
+    const share = shareGuest({ accepts: (_credential, hostIp) => hostIp !== INTERNAL_IP });
+    const { outcome, asked, executors } = await run({ share });
+    const failure = expectFailure(outcome);
+    expect(failure.phase).toBe('G12');
+    expect(failure.error.kind).toBe('share-credential');
+    expect(failure.error.message).toContain('rerun the whole command');
+    expect(failure.error.message).toContain(INTERNAL_IP);
+    // Never asked for a different secret mid-flow.
+    expect(asked.filter((a) => a.question === 'VM share password')).toHaveLength(1);
+    expect(failure.credentials).toEqual([
+      { role: 'default', hostIp: DEFAULT_IP, status: 'verified' },
+      { role: 'internal', hostIp: INTERNAL_IP, status: 'removed' },
+    ]);
+    // Cleanup deleted the Internal-switch entry and touched nothing else.
+    expect(share.stored.has(INTERNAL_IP)).toBe(false);
+    expect(share.stored.has(DEFAULT_IP)).toBe(true);
+    const cleanup = guestScripts(executors).filter((s) =>
+      s.startsWith('# susentorno share credential: cleanup'),
+    );
+    expect(cleanup).toHaveLength(1);
+    expect(cleanup[0]).toContain(`HostIp = '${INTERNAL_IP}'`);
+    expect(cleanup[0]).not.toContain(DEFAULT_IP);
+    expect(cleanup[0]).toContain('Delete = $true');
+  });
+
+  it('fails a writable share at the Internal-switch address as a structural error', async () => {
+    const inner = structuralChecksBehavior();
+    let verifies = 0;
+    const { outcome } = await run({
+      guest: (script, credential) =>
+        script.startsWith('# susentorno share credential: verify') && ++verifies === 2
+          ? guestOk(JSON.stringify({ Outcome: 'writable', Stage: 'probe', ProbeRemoved: true }))
+          : inner(script, credential),
+    });
+    const failure = expectFailure(outcome);
+    expect(failure.phase).toBe('G12');
+    expect(failure.error.message).toContain('can write');
+  });
+});
+
+describe('G13 post-isolation steps', () => {
+  it('runs every post-isolation step after G12, from the Internal-switch share', async () => {
+    const { executors, events } = await run();
+    const posts = guestScripts(executors).filter(isPost);
+    expect(posts.map(stepFilenameOf)).toEqual(FLOW_STEP_PLANS.post.map((s) => s.filename));
+    for (const script of posts) {
+      expect(stepLocationOf(script)).toEqual({ hostIp: INTERNAL_IP, directory: 'post-scripts' });
+    }
+    expect(events.indexOf('out:setup-guest-windows: G13 post-isolation steps...')).toBeGreaterThan(
+      events.indexOf('out:setup-guest-windows: G12 Internal-switch share access...'),
+    );
+  });
+
+  it('announces each step by phase and filename and gives it the 30 minute deadline', async () => {
+    const { executors, out } = await run();
+    expect(out).toContain(
+      'setup-guest-windows: G13 running step post-scripts/01-auth-config.ps1 (1 of 1)',
+    );
+    const { scripts, timeouts } = executors.created[0];
+    expect(timeouts[scripts.findIndex(isPost)]).toBe(1_800_000);
+  });
+
+  it('passes no -HostIp to a post-isolation step', async () => {
+    const { executors } = await run();
+    expect(
+      guestScripts(executors)
+        .filter(isPost)
+        .some((s) => s.includes('-HostIp')),
+    ).toBe(false);
+  });
+
+  it('closes the selected-share connection afterwards and keeps both credentials', async () => {
+    const { events, outcome } = await run();
+    const lastStep = events.reduce(
+      (acc, e, i) => (e.includes('running step post-scripts/') ? i : acc),
+      -1,
+    );
+    expect(events.lastIndexOf('guest:close')).toBeGreaterThan(lastStep);
+    expect(events).not.toContain('guest:cleanup');
+    expect(outcome).toMatchObject({
+      kind: 'success',
+      credentials: [
+        { role: 'default', hostIp: DEFAULT_IP, status: 'verified' },
+        { role: 'internal', hostIp: INTERNAL_IP, status: 'verified' },
+      ],
+    });
+  });
+
+  it('a failed post-isolation step names the phase and step, keeps both verified credentials, and closes its connection', async () => {
+    const share = shareGuest();
+    const inner = structuralChecksBehavior({}, share);
+    const { outcome, hyperV, events, executors } = await run({
+      share,
+      guest: (script, credential) =>
+        stepFilenameOf(script) === '01-auth-config.ps1'
+          ? { exitCode: 7, stdout: '', stderr: 'no github token', timedOut: false }
+          : inner(script, credential),
+    });
+    const failure = expectFailure(outcome);
+    expect(failure.phase).toBe('G13');
+    expect(failure.stepFilename).toBe('01-auth-config.ps1');
+    expect(failure.error.kind).toBe('step-exit');
+    expect(failure.error.message).toContain('post-scripts/01-auth-config.ps1');
+    expect(failure.credentials).toEqual([
+      { role: 'default', hostIp: DEFAULT_IP, status: 'verified' },
+      { role: 'internal', hostIp: INTERNAL_IP, status: 'verified' },
+    ]);
+    expect(hyperV.state).toMatchObject({ vmState: 'Running', switchName: INTERNAL_SWITCH });
+    expect(events).toContain('guest:cleanup');
+    const cleanup = guestScripts(executors).find((s) =>
+      s.startsWith('# susentorno share credential: cleanup'),
+    )!;
+    expect(cleanup).toContain('Delete = $false');
+    expect(cleanup).not.toContain('Delete = $true');
+    expect(share.stored.size).toBe(2);
+  });
+
+  it('classifies a timed-out and a transport-failed step separately, and a cancellation as cancelled', async () => {
+    const inner = structuralChecksBehavior();
+    const failWith =
+      (result: ReturnType<typeof guestOk> | Error): GuestBehavior =>
+      (script, credential) =>
+        stepFilenameOf(script) === '01-auth-config.ps1' ? result : inner(script, credential);
+    const timeout = await run({
+      guest: failWith({ exitCode: 124, stdout: '', stderr: '', timedOut: true }),
+    });
+    expect(expectFailure(timeout.outcome).error.kind).toBe('step-timeout');
+    const transport = await run({ guest: failWith(new WindowsGuestError('transport', 'gone')) });
+    expect(expectFailure(transport.outcome).error.kind).toBe('step-transport');
+    const cancelled = await run({ guest: failWith(new WindowsGuestError('cancelled', 'stop')) });
+    expect(cancelled.outcome).toMatchObject({
+      kind: 'cancelled',
+      phase: 'G13',
+      stepFilename: '01-auth-config.ps1',
+    });
+  });
+});
+
+describe('G14 completion', () => {
+  it('disposes the executor and returns a success carrying the VM and the credential ledger', async () => {
+    const { outcome, executors } = await run();
+    expect(outcome).toEqual({
+      kind: 'success',
+      vmName: 'win-dev',
+      credentials: [
+        { role: 'default', hostIp: DEFAULT_IP, status: 'verified' },
+        { role: 'internal', hostIp: INTERNAL_IP, status: 'verified' },
+      ],
+    });
+    expect(executors.created.every((e) => e.disposed)).toBe(true);
+  });
+
+  it('never prints or returns a password', async () => {
+    const { out, outcome } = await run();
+    const text = JSON.stringify({ out, outcome });
+    for (const secret of [GUEST_PASSWORD, SHARE_PASSWORD]) expect(text).not.toContain(secret);
+  });
+
+  it('sends the share password to the guest only inside the credential-replacement scripts, and only as data', async () => {
+    const { executors } = await run();
+    expect(guestScripts(executors).filter((s) => s.includes(SHARE_PASSWORD))).toEqual([]);
+  });
+});
+
+describe('cancellation during isolation', () => {
+  it('reports Ctrl+C during the stop as cancelled in G9 and cleans up the unverified entry', async () => {
+    const controller = new AbortController();
+    const hyperV = fakeHyperV({ vmState: 'Off' });
+    const realRun = hyperV.exec.run.bind(hyperV.exec);
+    hyperV.exec.run = async (command, opts) => {
+      if (command.startsWith('Stop-VM')) {
+        controller.abort();
+        return new Promise(() => {});
+      }
+      return realRun(command, opts);
+    };
+    const { outcome, executors } = await run({ hyperVInstance: hyperV, signal: controller.signal });
+    expect(outcome).toMatchObject({
+      kind: 'cancelled',
+      phase: 'G9',
+      reason: 'interrupt',
+      credentials: [
+        { role: 'default', hostIp: DEFAULT_IP, status: 'verified' },
+        { role: 'internal', hostIp: INTERNAL_IP, status: 'removed' },
+      ],
+    });
+    expect(executors.created[0].disposed).toBe(true);
+  });
+
+  it('reports Ctrl+C during the isolated-network wait as cancelled in G11', async () => {
+    const controller = new AbortController();
+    const inner = structuralChecksBehavior();
+    const { outcome } = await run({
+      signal: controller.signal,
+      guest: (script, credential) => {
+        if (isIsolatedProbe(script)) {
+          controller.abort();
+          return new WindowsGuestError('cancelled', 'cancelled');
+        }
+        return inner(script, credential);
+      },
+    });
+    expect(outcome).toMatchObject({ kind: 'cancelled', phase: 'G11', reason: 'interrupt' });
+  });
+});
+
+describe('residual state and full replay from the Default Switch', () => {
+  /** What a failure injection answers for a script, or undefined to let the healthy guest answer. */
+  type Injection = (script: string) => WindowsGuestResult | Error | undefined;
+
+  /** The world one run leaves behind for the next: the VM, and the guest's credentials and trust. */
+  const world = () => {
+    const hyperV = fakeHyperV({ vmState: 'Off', switchName: 'Default Switch' });
+    const share = shareGuest();
+    const trust = trustGuest();
+    const healthy = structuralChecksBehavior({}, share, trust);
+    const attempt = (inject?: Injection) =>
+      run({
+        hyperVInstance: hyperV,
+        share,
+        trust,
+        // A guest is reachable only while its VM is running, like the real thing.
+        guest: (script, credential) =>
+          hyperV.state.vmState !== 'Running'
+            ? new WindowsGuestError('transport', 'the VM is not running')
+            : (inject?.(script) ?? healthy(script, credential)),
+      });
+    return { hyperV, share, trust, attempt };
+  };
+
+  const failStep =
+    (filename: string): Injection =>
+    (script) =>
+      stepFilenameOf(script) === filename
+        ? { exitCode: 9, stdout: '', stderr: 'failed', timedOut: false }
+        : undefined;
+
+  const answer =
+    (matches: (script: string) => boolean, result: WindowsGuestResult): Injection =>
+    (script) =>
+      matches(script) ? result : undefined;
+
+  /** What every replay does: start over and run every step of both phases again, ending in success. */
+  function expectFullReplay(replay: Harness): void {
+    expect(replay.outcome.kind).toBe('success');
+    const scripts = guestScripts(replay.executors);
+    expect(scripts.filter(isPre).map(stepFilenameOf)).toEqual(
+      FLOW_STEP_PLANS.pre.map((s) => s.filename),
+    );
+    expect(scripts.filter(isPost).map(stepFilenameOf)).toEqual(
+      FLOW_STEP_PLANS.post.map((s) => s.filename),
+    );
+    expect(replay.outcome).toMatchObject({
+      credentials: [
+        { role: 'default', status: 'verified' },
+        { role: 'internal', status: 'verified' },
+      ],
+    });
+  }
+
+  it('H1-G3: a structural failure leaves the VM started on the Default Switch with no credential or trust change', async () => {
+    const w = world();
+    const first = await w.attempt(
+      answer((script) => script === PENDING_REBOOT_SCRIPT, pendingMarkers),
+    );
+    expect(expectFailure(first.outcome).phase).toBe('G3');
+    expect(first.outcome).not.toHaveProperty('credentials');
+    expect(w.hyperV.state).toMatchObject({ vmState: 'Running', switchName: 'Default Switch' });
+    expect(w.share.stored.size).toBe(0);
+    expect(w.trust.roots).toEqual([]);
+
+    const before = w.hyperV.commands.length;
+    expectFullReplay(await w.attempt());
+    // The VM was reused on the Default Switch; only isolation touched it.
+    expect(vmMutations(w.hyperV, before)[0]).toBe("Stop-VM -Name 'win-dev'");
+  });
+
+  it('G4: an unverified Default-Switch credential is removed, and the replay rewrites it', async () => {
+    const w = world();
+    const first = await w.attempt(
+      answer(
+        (script) => script.startsWith('# susentorno share credential: verify'),
+        guestOk(JSON.stringify({ Outcome: 'writable', Stage: 'probe', ProbeRemoved: true })),
+      ),
+    );
+    const failure = expectFailure(first.outcome);
+    expect(failure.phase).toBe('G4');
+    expect(failure.credentials).toEqual([
+      { role: 'default', hostIp: DEFAULT_IP, status: 'removed' },
+    ]);
+    expect(w.share.stored.size).toBe(0);
+    expectFullReplay(await w.attempt());
+    expect(w.share.stored.size).toBe(2);
+  });
+
+  it('G5: imported roots stay, and the replay converges', async () => {
+    const w = world();
+    const first = await w.attempt(
+      answer(
+        (script) => script.startsWith('# susentorno trust: import-proxy'),
+        guestOk(
+          JSON.stringify({
+            Outcome: 'error',
+            Fingerprint: FLOW_PROXY_CA.sha256,
+            Message: 'denied',
+          }),
+        ),
+      ),
+    );
+    const failure = expectFailure(first.outcome);
+    expect(failure.phase).toBe('G5');
+    expect(failure.credentials).toEqual([
+      { role: 'default', hostIp: DEFAULT_IP, status: 'verified' },
+    ]);
+    expect(w.trust.roots).toContain(FLOW_AMBIENT_ROOT.sha256);
+    expect(w.trust.roots).not.toContain(FLOW_PROXY_CA.sha256);
+    expectFullReplay(await w.attempt());
+    expect(w.trust.roots).toEqual(
+      expect.arrayContaining([FLOW_AMBIENT_ROOT.sha256, FLOW_PROXY_CA.sha256]),
+    );
+  });
+
+  it('G6: the verified credential is kept, and the replay reruns every step', async () => {
+    const w = world();
+    const first = await w.attempt(failStep('02-install-pnpm.ps1'));
+    const failure = expectFailure(first.outcome);
+    expect(failure.phase).toBe('G6');
+    expect(failure.credentials).toEqual([
+      { role: 'default', hostIp: DEFAULT_IP, status: 'verified' },
+    ]);
+    expect(w.share.stored.has(DEFAULT_IP)).toBe(true);
+    expectFullReplay(await w.attempt());
+  });
+
+  it('G7: a pending reboot leaves the guest provisioned on the Default Switch, and the replay runs once it is restarted', async () => {
+    const w = world();
+    let probes = 0;
+    const first = await w.attempt(
+      answer((script) => script === PENDING_REBOOT_SCRIPT && ++probes > 1, pendingMarkers),
+    );
+    expect(expectFailure(first.outcome).phase).toBe('G7');
+    expect(w.hyperV.state).toMatchObject({ vmState: 'Running', switchName: 'Default Switch' });
+    expect(w.share.stored.has(INTERNAL_IP)).toBe(false);
+    expectFullReplay(await w.attempt());
+  });
+
+  it('G7: run-hosting gone leaves the same state, and the replay runs once it is back', async () => {
+    const w = world();
+    const first = await w.attempt((script) => {
+      if (stepFilenameOf(script) === '03-configure-network.ps1') w.hyperV.state.listeners = false;
+      return undefined;
+    });
+    expect(expectFailure(first.outcome).error.kind).toBe('run-hosting');
+    expect(w.hyperV.state).toMatchObject({ vmState: 'Running', switchName: 'Default Switch' });
+    w.hyperV.state.listeners = true;
+    expectFullReplay(await w.attempt());
+  });
+
+  it('G8-G9: a VM that never stops stays Running on the Default Switch with the Internal entry removed, and the replay finishes', async () => {
+    const w = world();
+    w.hyperV.state.stopStalls = true;
+    const first = await w.attempt();
+    const failure = expectFailure(first.outcome);
+    expect(failure.phase).toBe('G9');
+    expect(failure.credentials).toEqual([
+      { role: 'default', hostIp: DEFAULT_IP, status: 'verified' },
+      { role: 'internal', hostIp: INTERNAL_IP, status: 'removed' },
+    ]);
+    expect(w.share.stored.has(INTERNAL_IP)).toBe(false);
+    w.hyperV.state.stopStalls = false;
+    expectFullReplay(await w.attempt());
+  });
+
+  it('G8-G9: a failed adapter connect leaves the VM Off, reports the entry a stopped guest cannot remove, and the replay rewrites it', async () => {
+    const w = world();
+    w.hyperV.state.failing = /^Connect-VMNetworkAdapter.*susentorno-internal/;
+    const first = await w.attempt();
+    const failure = expectFailure(first.outcome);
+    expect(failure.phase).toBe('G9');
+    expect(w.hyperV.state.vmState).toBe('Off');
+    expect(failure.credentials).toEqual([
+      { role: 'default', hostIp: DEFAULT_IP, status: 'verified' },
+      { role: 'internal', hostIp: INTERNAL_IP, status: 'removal-failed' },
+    ]);
+    w.hyperV.state.failing = undefined;
+    const before = w.hyperV.commands.length;
+    expectFullReplay(await w.attempt());
+    // An Off VM on the Default Switch is simply started; nothing is stopped to begin with.
+    expect(vmMutations(w.hyperV, before)[0]).toBe("Start-VM -Name 'win-dev'");
+  });
+
+  it('G10-G12: an isolated VM without its network stays on the Internal switch with the unverified entry removed, and the replay returns to the Default Switch', async () => {
+    const w = world();
+    const first = await w.attempt(
+      answer(isIsolatedProbe, guestOk(JSON.stringify(isolatedFacts({ Addresses: [] })))),
+    );
+    const failure = expectFailure(first.outcome);
+    expect(failure.phase).toBe('G11');
+    expect(w.hyperV.state).toMatchObject({ vmState: 'Running', switchName: INTERNAL_SWITCH });
+    expect(failure.credentials).toEqual([
+      { role: 'default', hostIp: DEFAULT_IP, status: 'verified' },
+      { role: 'internal', hostIp: INTERNAL_IP, status: 'removed' },
+    ]);
+    const before = w.hyperV.commands.length;
+    expectFullReplay(await w.attempt());
+    expect(vmMutations(w.hyperV, before).slice(0, 3)).toEqual([
+      "Stop-VM -Name 'win-dev'",
+      "Connect-VMNetworkAdapter -VMName 'win-dev' -SwitchName 'Default Switch'",
+      "Start-VM -Name 'win-dev'",
+    ]);
+  });
+
+  it('G13: an isolated guest with partial post-isolation provisioning keeps both verified entries, and the replay reruns the pre-isolation steps too', async () => {
+    const w = world();
+    const first = await w.attempt(failStep('01-auth-config.ps1'));
+    const failure = expectFailure(first.outcome);
+    expect(failure.phase).toBe('G13');
+    expect(failure.credentials).toEqual([
+      { role: 'default', hostIp: DEFAULT_IP, status: 'verified' },
+      { role: 'internal', hostIp: INTERNAL_IP, status: 'verified' },
+    ]);
+    expect(w.hyperV.state).toMatchObject({ vmState: 'Running', switchName: INTERNAL_SWITCH });
+    const before = w.hyperV.commands.length;
+    expectFullReplay(await w.attempt());
+    expect(vmMutations(w.hyperV, before).slice(0, 3)).toEqual([
+      "Stop-VM -Name 'win-dev'",
+      "Connect-VMNetworkAdapter -VMName 'win-dev' -SwitchName 'Default Switch'",
+      "Start-VM -Name 'win-dev'",
+    ]);
+  });
+
+  it('a completed guest replays through the same path as a failed one', async () => {
+    const w = world();
+    const first = await w.attempt();
+    expect(first.outcome.kind).toBe('success');
+    expect(w.hyperV.state).toMatchObject({ vmState: 'Running', switchName: INTERNAL_SWITCH });
+    const before = w.hyperV.commands.length;
+    const replay = await w.attempt();
+    expectFullReplay(replay);
+    expect(vmMutations(w.hyperV, before)).toEqual([
+      "Stop-VM -Name 'win-dev'",
+      "Connect-VMNetworkAdapter -VMName 'win-dev' -SwitchName 'Default Switch'",
+      "Start-VM -Name 'win-dev'",
+      "Stop-VM -Name 'win-dev'",
+      "Connect-VMNetworkAdapter -VMName 'win-dev' -SwitchName 'susentorno-internal'",
+      "Start-VM -Name 'win-dev'",
+    ]);
+    // Both entries were replaced over the ones that were already verified.
+    expect(replaceTargets(replay.executors)).toEqual([DEFAULT_IP, INTERNAL_IP]);
   });
 });

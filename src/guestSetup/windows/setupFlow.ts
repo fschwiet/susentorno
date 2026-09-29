@@ -1,13 +1,15 @@
 import { PromptEndedError, type SetupAnswerPrompts } from '../../cliPrompt';
 import type { PowerShellExec } from '../powerShellExec';
-import { reconcileVmToSwitch, VmReconcileError } from '../vmReconcile';
+import { checkRunHostingReady } from '../runHostingReadiness';
+import { isolateVmToSwitch, reconcileVmToSwitch, VmReconcileError } from '../vmReconcile';
 import {
   waitForPowerShellDirect,
   WindowsGuestError,
   type WindowsGuestCredential,
   type WindowsGuestExecutor,
 } from './guestExecutor';
-import { GuestCheckError, runGuestStructuralChecks } from './guestChecks';
+import { checkNoPendingReboot, GuestCheckError, runGuestStructuralChecks } from './guestChecks';
+import { IsolatedReadinessError, waitForIsolatedNetwork } from './isolatedReadiness';
 import { runWindowsHostPreflight } from './hostPreflight';
 import type { WindowsHostContext } from './hostPrerequisites';
 import {
@@ -15,6 +17,7 @@ import {
   createVmShareCredentials,
   ShareCredentialError,
   type ShareCredentialLedgerEntry,
+  type ShareCredentialSecret,
   type ShareCredentialTarget,
   type VmShareCredentials,
 } from './shareCredential';
@@ -97,7 +100,8 @@ export type WindowsSetupFailureKind =
   | 'step-exit'
   | 'step-timeout'
   | 'step-transport'
-  | 'not-implemented'
+  | 'run-hosting'
+  | 'isolated-network'
   | 'unexpected';
 
 export interface ClassifiedError {
@@ -106,7 +110,12 @@ export interface ClassifiedError {
 }
 
 export type WindowsSetupOutcome =
-  | { kind: 'success' }
+  | {
+      kind: 'success';
+      vmName: string;
+      /** What this run did to the guest's VM share credentials: both verified and kept. */
+      credentials: ShareCredentialLedgerEntry[];
+    }
   | {
       kind: 'failure';
       phase: WindowsSetupPhase;
@@ -159,8 +168,6 @@ export interface WindowsSetupDeps {
 
 export type WindowsSetupFlags = WindowsSetupAnswerFlags;
 
-const NOT_IMPLEMENTED_PHASES = 'G7 through G14';
-
 class Interrupted extends Error {}
 
 /**
@@ -169,11 +176,13 @@ class Interrupted extends Error {}
  * detects or resumes a prior run: each run starts by putting the VM on the
  * Default Switch, and each failure stops in place without rollback.
  *
- * So far it implements H1 through G6 (host checks and step plans, all guest
- * prompts, VM reconciliation, PowerShell Direct readiness, the guest structural
- * checks, the Default-Switch VM share credential, guest trust reconciliation,
- * and the pre-isolation steps), then stops with a plain "not implemented"
- * failure at G7.
+ * It runs every phase of ticket 06's machine. H1 through G6: host checks and
+ * step plans, all guest prompts, VM reconciliation, PowerShell Direct
+ * readiness, the guest structural checks, the Default-Switch VM share
+ * credential, guest trust reconciliation, and the pre-isolation steps. G7
+ * through G13: the isolation gate, the Internal-switch credential, isolation,
+ * readiness of PowerShell Direct and of the isolated network, Internal-switch
+ * share access, and the post-isolation steps. G14 returns success.
  *
  * On any failure or cancellation, cleanup closes the selected-share connection
  * and removes only the share credentials this run wrote but did not verify,
@@ -226,6 +235,21 @@ export async function runWindowsSetup(
     ...(stepFilename === undefined ? {} : { stepFilename }),
     ...(vmName === undefined ? {} : { vmName }),
   });
+
+  /** PowerShell Direct readiness for either boot: 5 minutes, with a heartbeat. */
+  const waitForGuest = (target: WindowsGuestExecutor, label: 'G2' | 'G10') =>
+    waitForPowerShellDirect(target, {
+      deadlineMs: POWERSHELL_DIRECT_READY_DEADLINE_MS,
+      probeIntervalMs: POWERSHELL_DIRECT_PROBE_INTERVAL_MS,
+      heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
+      onHeartbeat: (elapsedMs) =>
+        out(
+          `setup-guest-windows: ${label} still waiting for PowerShell Direct on '${vmName}'... (${Math.round(elapsedMs / 1000)}s elapsed)`,
+        ),
+      signal,
+      now: () => clock.now(),
+      sleep: (ms, sleepSignal) => clock.sleep(ms, sleepSignal),
+    });
 
   const main = async (): Promise<WindowsSetupOutcome> => {
     if (signal.aborted) return cancelled('interrupt');
@@ -302,18 +326,7 @@ export async function runWindowsSetup(
         credential: { username: pair.name, password: pair.secret },
       });
       executor = attempt;
-      const readiness = await waitForPowerShellDirect(attempt, {
-        deadlineMs: POWERSHELL_DIRECT_READY_DEADLINE_MS,
-        probeIntervalMs: POWERSHELL_DIRECT_PROBE_INTERVAL_MS,
-        heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
-        onHeartbeat: (elapsedMs) =>
-          out(
-            `setup-guest-windows: G2 still waiting for PowerShell Direct on '${vmName}'... (${Math.round(elapsedMs / 1000)}s elapsed)`,
-          ),
-        signal,
-        now: () => clock.now(),
-        sleep: (ms, sleepSignal) => clock.sleep(ms, sleepSignal),
-      });
+      const readiness = await waitForGuest(attempt, 'G2');
       if (readiness === 'ready') break;
 
       out(
@@ -351,6 +364,7 @@ export async function runWindowsSetup(
       initialName: flags.shareAccount,
       defaultName: DEFAULT_WINDOWS_SHARE_ACCOUNT,
     });
+    let shareSecret: ShareCredentialSecret;
     for (;;) {
       const pair = await guard(sharePrompt.next());
       if (pair.status === 'ended') {
@@ -362,9 +376,9 @@ export async function runWindowsSetup(
       if (!hostCheck.ok) return fail({ kind: 'share-account', message: hostCheck.message });
 
       try {
-        await guard(
-          sharing.replaceAndVerify(defaultTarget, { account: pair.name, password: pair.secret }),
-        );
+        const secret = { account: pair.name, password: pair.secret };
+        await guard(sharing.replaceAndVerify(defaultTarget, secret));
+        shareSecret = secret;
         break;
       } catch (error) {
         if (!(error instanceof ShareCredentialError && error.repromptable)) throw error;
@@ -420,14 +434,107 @@ export async function runWindowsSetup(
     currentStep = undefined;
     await guard(sharing.close(defaultTarget));
 
-    phase = 'G7';
-    return fail({
-      kind: 'not-implemented',
-      message:
-        `Guest '${vmName}' passed every prerequisite check, its VM share credential for ${defaultTarget.hostIp} is verified, ` +
-        `its trust is reconciled, and every pre-isolation step succeeded (H1 through G6), but the remaining phases (${NOT_IMPLEMENTED_PHASES}: isolation and post-isolation steps) ` +
-        `are not implemented yet, so setup stops here. The guest is provisioned on the Default Switch and is not isolated.`,
-    });
+    // G7: never isolate a guest that still owes a reboot, or one whose network
+    // services are gone: it would be stranded on the Internal switch.
+    announce('G7');
+    await guard(checkNoPendingReboot({ executor: executor!, guestUsername, signal }));
+    const listeners = await guard(checkRunHostingReady(exec, context.internalSwitchHostIp));
+    if (!listeners.dhcpBound || !listeners.dnsBound) {
+      const missing = [!listeners.dhcpBound && 'DHCP (67)', !listeners.dnsBound && 'DNS (53)']
+        .filter(Boolean)
+        .join(', ');
+      return fail({
+        kind: 'run-hosting',
+        message:
+          `'susentorno run-hosting' is no longer listening on ${context.internalSwitchHostIp} (${missing} not bound), ` +
+          `so isolating '${vmName}' now would leave it without a network. ` +
+          `Start 'susentorno run-hosting' again, then rerun.`,
+      });
+    }
+
+    // G8: after the gate on purpose, so a pre-isolation failure never discards
+    // an earlier verified Internal-switch entry. Unverified until G12.
+    announce('G8');
+    const internalTarget: ShareCredentialTarget = {
+      role: 'internal',
+      hostIp: context.internalSwitchHostIp,
+    };
+    await guard(sharing.replace(internalTarget, shareSecret));
+
+    // G9: graceful stop, confirm Off, move the adapter, start. Never forced.
+    announce('G9', `isolating '${vmName}' onto '${context.internalSwitchName}'`);
+    await guard(
+      isolateVmToSwitch(
+        {
+          exec,
+          vmName,
+          now: () => clock.now(),
+          sleep: (ms) => clock.sleep(ms),
+          stopTimeoutMs: WINDOWS_STOP_TIMEOUT_MS,
+          offConfirmTimeoutMs: WINDOWS_OFF_CONFIRM_TIMEOUT_MS,
+        },
+        context.internalSwitchName,
+      ),
+    );
+
+    // G10: the same executor. A rejection now is structural: the credential
+    // just worked, so asking for another would not be a fix.
+    announce('G10');
+    if ((await waitForGuest(executor!, 'G10')) === 'auth-rejected') {
+      return fail({
+        kind: 'guest-authentication',
+        message:
+          `VM '${vmName}' rejected the credential for guest user account '${guestUsername}' after isolation, ` +
+          `although it accepted it on the Default Switch. Check that the account and its password were not ` +
+          `changed during setup, then rerun the whole command.`,
+      });
+    }
+
+    // G11: the isolated network must work before anything else uses it.
+    announce('G11');
+    await guard(
+      waitForIsolatedNetwork(executor!, {
+        hostIp: context.internalSwitchHostIp,
+        signal,
+        now: () => clock.now(),
+        sleep: (ms, sleepSignal) => clock.sleep(ms, sleepSignal),
+        onHeartbeat: (elapsedMs, unmet) =>
+          out(
+            `setup-guest-windows: G11 still waiting for the isolated network on '${vmName}'... ` +
+              `(${Math.round(elapsedMs / 1000)}s elapsed; unmet: ${unmet.map((entry) => entry.condition).join(', ')})`,
+          ),
+      }),
+    );
+
+    // G12: a bad password cannot be the cause (the same account authenticated
+    // at the Default Switch address), so any failure here is structural.
+    announce('G12');
+    await guard(sharing.verify(internalTarget, shareSecret.account));
+
+    // G13: every post-isolation step, from the Internal-switch address.
+    announce('G13');
+    await guard(
+      runWindowsSteps({
+        executor: executor!,
+        scripts: plans.plans.post,
+        directory: 'post-scripts',
+        shareHostIp: context.internalSwitchHostIp,
+        shareName: answers.shareName,
+        internalSwitchHostIp: context.internalSwitchHostIp,
+        phaseLabel: 'G13',
+        out,
+        signal,
+        onStep: (filename) => {
+          currentStep = filename;
+        },
+      }),
+    );
+    currentStep = undefined;
+    await guard(sharing.close(internalTarget));
+
+    // G14: the executor is disposed below, with every ending's cleanup.
+    announce('G14');
+    return { kind: 'success', vmName, credentials: sharing.ledger.entries() };
   };
 
   const toOutcome = (error: unknown): WindowsSetupOutcome => {
@@ -488,6 +595,9 @@ function classify(
   if (error instanceof GuestCheckError) return { kind: 'guest-check', message: error.message };
   if (error instanceof ShareCredentialError) {
     return { kind: 'share-credential', message: error.message };
+  }
+  if (error instanceof IsolatedReadinessError) {
+    return { kind: 'isolated-network', message: error.message };
   }
   if (error instanceof WindowsTrustReconciliationError) {
     return {

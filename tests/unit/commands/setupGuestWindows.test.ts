@@ -10,6 +10,7 @@ import {
   type SetupGuestWindowsEnvironment,
 } from '../../../src/commands/setupGuestWindows';
 import type { WindowsSetupOutcome } from '../../../src/guestSetup/windows/setupFlow';
+import { PENDING_REBOOT_SCRIPT } from '../../../src/guestSetup/windows/guestChecks';
 import {
   authRejection,
   fakeClock,
@@ -97,7 +98,7 @@ describe('exitCodeForOutcome', () => {
       error: { kind: 'guest-check', message: 'x' },
     };
     const cancelled: WindowsSetupOutcome = { kind: 'cancelled', phase: 'H1', reason: 'interrupt' };
-    expect(exitCodeForOutcome({ kind: 'success' })).toBe(0);
+    expect(exitCodeForOutcome({ kind: 'success', vmName: 'win-dev', credentials: [] })).toBe(0);
     expect(exitCodeForOutcome(failure)).toBe(1);
     expect(exitCodeForOutcome(cancelled)).toBe(130);
   });
@@ -193,16 +194,39 @@ describe('executeSetupGuestWindows', () => {
     expect(out).toEqual([]);
   });
 
+  it('prints a success summary with both kept credentials, exits 0, and prints no footer', async () => {
+    const { env, err, out } = environment({ hyperV: fakeHyperV({ vmState: 'Running' }) });
+    const code = await executeSetupGuestWindows(defaultOptions, env);
+    expect(code).toBe(0);
+    expect(err).toEqual([]);
+    expect(out).toContain(
+      "setup-guest-windows: VM 'win-dev' is set up and isolated on 'susentorno-internal'.",
+    );
+    expect(out).toContain(
+      '  VM share credential for Default Switch host address 172.29.240.1: verified, kept',
+    );
+    expect(out).toContain(
+      '  VM share credential for Internal switch host address 192.168.67.1: verified, kept',
+    );
+    expect(out.join('\n')).not.toContain('residual state');
+    expect(out.join('\n')).not.toContain('share-pw');
+  });
+
   it('prints a failure with its phase, its classification, and the residual-state footer, and exits 1', async () => {
+    const inner = structuralChecksBehavior();
+    let probes = 0;
     const { env, err } = environment({
       hyperV: fakeHyperV({ vmState: 'Running', switchName: 'Default Switch' }),
+      guest: (script, credential) =>
+        script === PENDING_REBOOT_SCRIPT && ++probes > 1
+          ? guestOk(JSON.stringify({ Markers: ['Windows Update\\RebootRequired'] }))
+          : inner(script, credential),
     });
     const code = await executeSetupGuestWindows(defaultOptions, env);
     expect(code).toBe(1);
     const text = err.join('\n');
-    expect(text).toContain(
-      'setup-guest-windows: failed in phase G7 isolation gate [not-implemented]',
-    );
+    expect(text).toContain('setup-guest-windows: failed in phase G7 isolation gate [guest-check]');
+    expect(text).toContain('Restart the guest, then rerun.');
     expect(text).toContain('setup-guest-windows: residual state');
     expect(text).toContain("VM 'win-dev': Running, attached to 'Default Switch'");
     expect(text).toContain("Rerun 'susentorno setup-guest-windows'");
@@ -216,11 +240,23 @@ describe('executeSetupGuestWindows', () => {
   });
 
   it('shows in the footer which VM share credentials this run kept verified and which it removed', async () => {
-    const kept = environment({ hyperV: fakeHyperV({ vmState: 'Running' }) });
+    const keptInner = structuralChecksBehavior();
+    const kept = environment({
+      hyperV: fakeHyperV({ vmState: 'Running' }),
+      guest: (script, credential) =>
+        stepFilenameOf(script) === '01-auth-config.ps1'
+          ? { exitCode: 1, stdout: '', stderr: 'failed', timedOut: false }
+          : keptInner(script, credential),
+    });
     await executeSetupGuestWindows(defaultOptions, kept.env);
+    expect(kept.err).toContain('  Failed step: 01-auth-config.ps1');
     expect(kept.err).toContain(
       '  VM share credential for Default Switch host address 172.29.240.1: verified, kept',
     );
+    expect(kept.err).toContain(
+      '  VM share credential for Internal switch host address 192.168.67.1: verified, kept',
+    );
+    expect(kept.err).toContain("  VM 'win-dev': Running, attached to 'susentorno-internal'");
 
     const removed = environment({
       hyperV: fakeHyperV({ vmState: 'Running' }),
@@ -247,7 +283,14 @@ describe('executeSetupGuestWindows', () => {
 
   it('queries Hyper-V for the footer after the failure rather than inferring the state', async () => {
     const hyperV = fakeHyperV({ vmState: 'Off', switchName: 'Default Switch' });
-    const { env, err } = environment({ hyperV });
+    const inner = structuralChecksBehavior();
+    const { env, err } = environment({
+      hyperV,
+      guest: (script, credential) =>
+        stepFilenameOf(script) === '02-install-pnpm.ps1'
+          ? { exitCode: 1, stdout: '', stderr: 'failed', timedOut: false }
+          : inner(script, credential),
+    });
     await executeSetupGuestWindows(defaultOptions, env);
     // The run started the VM; the footer reports what Hyper-V says afterwards.
     expect(err.join('\n')).toContain("VM 'win-dev': Running");
@@ -354,7 +397,7 @@ describe('executeSetupGuestWindows', () => {
         credential.password === 'bad' ? authRejection() : inner(script, credential),
     });
     const code = await executeSetupGuestWindows(defaultOptions, env);
-    expect(code).toBe(1); // stops at the not-yet-implemented G7
+    expect(code).toBe(0);
     expect(executors.created).toHaveLength(2);
   });
 });

@@ -13,15 +13,15 @@
 
 **Blocked by:** 16
 
-**Status:** ready-for-agent
+**Status:** ready-for-review
 
-- [ ] Isolated-readiness unit tests name each unmet condition on expiry.
-- [ ] Unit tests of `runWindowsSetup` cover:
+- [x] Isolated-readiness unit tests name each unmet condition on expiry.
+- [x] Unit tests of `runWindowsSetup` cover:
   - that the command never isolates with a pending reboot or with `run-hosting` gone;
   - G8 strictly after G7;
   - G10 auth rejection as structural;
   - the G12 structural failure removing only the unverified Internal-switch entry;
   - every residual-state row in ticket 06's table, each followed by a full replay from the Default Switch, including a replay starting from a completed guest;
   - the footer's credential ledger at each boundary.
-- [ ] The full acceptance checklist rows owned by the unit tier (ticket 08, rows 6–25) each have a passing test.
-- [ ] The unit and CLI tiers pass.
+- [x] The full acceptance checklist rows owned by the unit tier (ticket 08, rows 6–25) each have a passing test.
+- [x] The unit and CLI tiers pass.
