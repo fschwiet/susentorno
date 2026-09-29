@@ -18,8 +18,9 @@ const ambientFile = (cert: { sha256: string; pem: string }) => ({
   fileName: `ambient-${cert.sha256}.pem`,
   text: cert.pem,
 });
-const manifestText = (ambient: string[], proxy: string | null): string =>
-  JSON.stringify({ version: 1, ambient, proxy });
+/** A manifest as a previous run of setup published it. `proxyOwned`: that run installed the proxy CA itself. */
+const manifestText = (ambient: string[], proxy: string | null, proxyOwned = true): string =>
+  JSON.stringify({ version: 1, ambient, proxy, proxyOwned });
 
 const noManagedState: ManagedTrustState = {
   manifestText: null,
@@ -78,6 +79,7 @@ describe('planTrustReconciliation', () => {
       version: 1,
       ambient: sorted(ambientA.sha256, ambientB.sha256),
       proxy: proxyNew.sha256,
+      proxyOwned: true,
     });
     expect(publish.bundlePem.match(/-----BEGIN CERTIFICATE-----/g)).toHaveLength(3);
     expect(find(operations, 'verify-store')).toEqual({
@@ -251,6 +253,144 @@ describe('planTrustReconciliation', () => {
     expect(plan).not.toHaveProperty('operations');
   });
 
+  describe('proxy CA ownership', () => {
+    /** The manifest a run published, as the next run reads it from the guest. */
+    const publishedManifest = (operations: PlanOperation[]): string =>
+      JSON.stringify(find(operations, 'publish').manifest);
+
+    it('does not record a proxy CA it found already installed as owned by setup', () => {
+      // The old configure-network installed the CA; setup only finds it there.
+      const operations = expectOk(
+        planTrustReconciliation(
+          snapshot({ proxy: proxyOld, hostRoots: [], guestRootSha256: [proxyOld.sha256] }),
+        ),
+      );
+      expect(kinds(operations)).not.toContain('import-proxy');
+      expect(find(operations, 'publish').manifest).toMatchObject({
+        proxy: proxyOld.sha256,
+        proxyOwned: false,
+      });
+    });
+
+    it('does not delete a pre-existing proxy CA when the environment later rotates', () => {
+      const firstRun = expectOk(
+        planTrustReconciliation(
+          snapshot({ proxy: proxyOld, hostRoots: [], guestRootSha256: [proxyOld.sha256] }),
+        ),
+      );
+      const rotation = expectOk(
+        planTrustReconciliation(
+          snapshot({
+            proxy: proxyNew,
+            hostRoots: [],
+            guestRootSha256: [proxyOld.sha256],
+            managed: {
+              manifestText: publishedManifest(firstRun),
+              proxyFileText: proxyOld.pem,
+              ambientFiles: [],
+            },
+          }),
+        ),
+      );
+      expect(kinds(rotation)).toContain('import-proxy');
+      expect(kinds(rotation)).not.toContain('remove-proxy');
+      expect(find(rotation, 'verify-store').absent).toEqual([]);
+      expect(find(rotation, 'publish').manifest).toMatchObject({
+        proxy: proxyNew.sha256,
+        proxyOwned: true,
+      });
+    });
+
+    it('does delete a proxy CA that setup itself installed when the environment rotates', () => {
+      const firstRun = expectOk(
+        planTrustReconciliation(snapshot({ proxy: proxyOld, hostRoots: [], guestRootSha256: [] })),
+      );
+      expect(kinds(firstRun)).toContain('import-proxy');
+      const rotation = expectOk(
+        planTrustReconciliation(
+          snapshot({
+            proxy: proxyNew,
+            hostRoots: [],
+            guestRootSha256: [proxyOld.sha256],
+            managed: {
+              manifestText: publishedManifest(firstRun),
+              proxyFileText: proxyOld.pem,
+              ambientFiles: [],
+            },
+          }),
+        ),
+      );
+      expect(find(rotation, 'remove-proxy').sha256).toBe(proxyOld.sha256);
+    });
+
+    it('keeps the ownership proven by an earlier run when it replays with the same proxy CA', () => {
+      const replay = expectOk(
+        planTrustReconciliation(
+          snapshot({
+            proxy: proxyOld,
+            hostRoots: [],
+            guestRootSha256: [proxyOld.sha256],
+            managed: {
+              manifestText: manifestText([], proxyOld.sha256, true),
+              proxyFileText: proxyOld.pem,
+              ambientFiles: [],
+            },
+          }),
+        ),
+      );
+      expect(find(replay, 'publish').manifest.proxyOwned).toBe(true);
+    });
+
+    it('never removes a proxy CA when the manifest that could prove ownership is missing', () => {
+      const operations = expectOk(
+        planTrustReconciliation(
+          snapshot({
+            proxy: proxyNew,
+            hostRoots: [],
+            guestRootSha256: [proxyOld.sha256],
+            managed: { manifestText: null, proxyFileText: proxyOld.pem, ambientFiles: [] },
+          }),
+        ),
+      );
+      expect(kinds(operations)).not.toContain('remove-proxy');
+    });
+
+    it('treats a manifest that never recorded ownership as not proving it', () => {
+      const legacy = JSON.stringify({ version: 1, ambient: [], proxy: proxyOld.sha256 });
+      const operations = expectOk(
+        planTrustReconciliation(
+          snapshot({
+            proxy: proxyNew,
+            hostRoots: [],
+            guestRootSha256: [proxyOld.sha256],
+            managed: { manifestText: legacy, proxyFileText: proxyOld.pem, ambientFiles: [] },
+          }),
+        ),
+      );
+      expect(kinds(operations)).not.toContain('remove-proxy');
+    });
+
+    it('does not claim ownership of a new proxy CA that was already installed when a rotation resumes', () => {
+      // An interrupted rotation: the new PEM is on disk, both CAs are installed, the manifest is old.
+      const operations = expectOk(
+        planTrustReconciliation(
+          snapshot({
+            proxy: proxyNew,
+            hostRoots: [],
+            guestRootSha256: [proxyOld.sha256, proxyNew.sha256],
+            managed: {
+              manifestText: manifestText([], proxyOld.sha256, true),
+              proxyFileText: proxyNew.pem,
+              ambientFiles: [],
+            },
+          }),
+        ),
+      );
+      expect(find(operations, 'remove-proxy').sha256).toBe(proxyOld.sha256);
+      expect(find(operations, 'publish').manifest.proxyOwned).toBe(false);
+    });
+  });
+
   it('deduplicates a proxy CA that is also an ambient root, and never removes it on rotation', () => {
     const first = expectOk(planTrustReconciliation(snapshot({ hostRoots: [ambientA, proxyNew] })));
     expect(find(first, 'import-ambient').roots.map((r) => r.sha256)).toContain(proxyNew.sha256);
@@ -258,6 +398,7 @@ describe('planTrustReconciliation', () => {
     const publish = find(first, 'publish');
     expect(publish.bundlePem.match(/-----BEGIN CERTIFICATE-----/g)).toHaveLength(2);
     expect(publish.manifest.proxy).toBe(proxyNew.sha256);
+    expect(publish.manifest.proxyOwned).toBe(false); // it is retained as an ambient root instead
 
     // Later the environment rotates to another CA; the old one stays because it is ambient too.
     const rotated = expectOk(

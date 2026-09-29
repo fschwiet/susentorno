@@ -27,6 +27,14 @@ export interface TrustManifest {
   ambient: string[];
   /** The current environment proxy CA, or null before one has been published. */
   proxy: string | null;
+  /**
+   * Whether setup itself installed `proxy` into the guest's root store. A CA that
+   * was already there (for example from the old configure-network) is trusted but
+   * not owned, so a later rotation must leave it in place. Ownership is only ever
+   * recorded from an import this tool performed; a manifest that does not say
+   * (an older one) proves nothing.
+   */
+  proxyOwned: boolean;
 }
 
 /** What the guest's managed trust directory held, exactly as read: unparsed text. */
@@ -106,6 +114,7 @@ function parseManifest(text: string): TrustManifest | undefined {
       version: 1,
       ambient: lowered,
       proxy: proxy === null ? null : (proxy as string).toLowerCase(),
+      proxyOwned: parsed.proxyOwned === true,
     };
   } catch {
     return undefined;
@@ -122,7 +131,8 @@ const failed = (failure: TrustPlanFailure): TrustPlan => ({ ok: false, failure }
  * selection names stays retained. The proxy CA is replaceable: it is installed,
  * verified, and published before the previous one is removed, and the previous
  * one is removed only when managed state proves this tool installed it and no
- * ambient role keeps it. Nothing is planned for deletion on any failure.
+ * ambient role keeps it. A proxy CA found already installed is never recorded as
+ * owned, so it is never deleted. Nothing is planned for deletion on any failure.
  */
 export function planTrustReconciliation(snapshot: TrustSnapshot): TrustPlan {
   const { managed, proxy } = snapshot;
@@ -193,8 +203,11 @@ export function planTrustReconciliation(snapshot: TrustSnapshot): TrustPlan {
     retained.push(cert);
   }
 
-  // The superseded proxy: proven by the manifest, or by the managed proxy PEM when there is none.
+  // The superseded proxy, and whether managed state proves setup installed it. Only a
+  // manifest that recorded ownership proves it: a proxy PEM alone, or a manifest
+  // that says nothing, shows setup handled the CA but not that it installed it.
   let previousProxy: string | null;
+  let previousOwned: boolean;
   if (manifest) {
     const claimed = manifest.proxy;
     // A proxy PEM already written for this very rotation is an interrupted publication, not a disagreement.
@@ -209,10 +222,13 @@ export function planTrustReconciliation(snapshot: TrustSnapshot): TrustPlan {
       });
     }
     previousProxy = claimed;
+    previousOwned = manifest.proxyOwned;
   } else {
     previousProxy = proxyFile?.sha256 ?? null;
+    previousOwned = false;
   }
   const supersededProxy =
+    previousOwned &&
     previousProxy !== null &&
     previousProxy !== proxy.sha256 &&
     !retainedShas.has(previousProxy) &&
@@ -231,9 +247,11 @@ export function planTrustReconciliation(snapshot: TrustSnapshot): TrustPlan {
   if (toImport.length > 0) operations.push({ kind: 'import-ambient', roots: toImport });
 
   // A proxy CA that is also retained ambient trust is imported (once) as an ambient root.
-  if (!guest.has(proxy.sha256) && !retainedShas.has(proxy.sha256)) {
-    operations.push({ kind: 'import-proxy', root: proxy });
-  }
+  const importsProxy = !guest.has(proxy.sha256) && !retainedShas.has(proxy.sha256);
+  if (importsProxy) operations.push({ kind: 'import-proxy', root: proxy });
+  // Setup owns the proxy CA only if it installs it now or an earlier run proved it did.
+  const proxyOwned =
+    importsProxy || (manifest?.proxy === proxy.sha256 && manifest.proxyOwned === true);
 
   const required = [...new Set([...retained.map((cert) => cert.sha256), proxy.sha256])].sort();
   operations.push({ kind: 'verify-store', present: required, absent: [] });
@@ -241,7 +259,12 @@ export function planTrustReconciliation(snapshot: TrustSnapshot): TrustPlan {
   const bundleCertificates = [...retained, ...(retainedShas.has(proxy.sha256) ? [] : [proxy])];
   operations.push({
     kind: 'publish',
-    manifest: { version: 1, ambient: retained.map((cert) => cert.sha256), proxy: proxy.sha256 },
+    manifest: {
+      version: 1,
+      ambient: retained.map((cert) => cert.sha256),
+      proxy: proxy.sha256,
+      proxyOwned,
+    },
     bundlePem: bundleCertificates.map((cert) => cert.pem).join(''),
     proxy,
   });

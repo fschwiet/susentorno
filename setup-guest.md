@@ -297,7 +297,7 @@ setup-guest-windows: residual state
 
 - **Failed in phase** (or **Cancelled during phase**) names a phase from the table above. **Failed step** (or **Interrupted step**) appears when a step was the cause. The bracketed word on the first line classifies the failure, for example `step-exit`, `step-timeout`, `guest-check`, `share-credential`, `guest-trust`, or `isolated-network`.
 - The **VM line** is the queried power state and the switch the adapter is attached to. If the query itself fails, the footer says so instead of guessing. If the run ended before a VM was chosen, it says nothing was changed.
-- Each **VM share credential line** is one of `verified, kept` (read access was proven, and it stays), `removed (written by this run but never verified)` (cleanup removed it, so a failure never leaves an unproven credential behind), or `written but never verified` with a note that cleanup did not run or could not remove it. A rerun replaces the entries either way. A verified entry is never removed by a later failure.
+- Each **VM share credential line** is one of `verified, kept` (read access was proven, and it stays), `removed (written by this run but never verified)` (cleanup removed it, so a failure never leaves an unproven credential behind), `written but never verified (cleanup did not run)`, or `written but never verified, and could not be removed; rerunning replaces it`. You never need to delete an entry by hand: a rerun replaces the entries either way. A verified entry is never removed by a later failure.
 
 As a rule of thumb for where the guest is left:
 

@@ -171,13 +171,15 @@ describe('formatResidualStateFooter: VM share credentials', () => {
     ]);
   });
 
-  it('says so when a removal failed, so the user knows to delete the entry', () => {
+  it('says so when a removal failed, and that rerunning replaces the entry instead of asking for manual cleanup', () => {
     const lines = formatResidualStateFooter({
       ...base,
       credentials: [{ role: 'default', hostIp: '172.29.240.1', status: 'removal-failed' }],
     });
-    expect(lines.join('\n')).toContain('could not be removed');
-    expect(lines.join('\n')).toContain('cmdkey /delete');
+    expect(lines).toContain(
+      '  VM share credential for Default Switch host address 172.29.240.1: written but never verified, and could not be removed; rerunning replaces it',
+    );
+    expect(lines.join('\n')).not.toMatch(/cmdkey/i);
   });
 
   it('adds nothing when the run wrote no credential', () => {

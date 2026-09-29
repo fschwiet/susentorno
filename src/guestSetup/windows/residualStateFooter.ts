@@ -51,8 +51,7 @@ const CREDENTIAL_STATUS_TEXT: Record<ShareCredentialLedgerEntry['status'], strin
   verified: 'verified, kept',
   removed: 'removed (written by this run but never verified)',
   written: 'written but never verified (cleanup did not run)',
-  'removal-failed':
-    'written but never verified, and could not be removed (delete it in the guest with cmdkey /delete)',
+  'removal-failed': 'written but never verified, and could not be removed; rerunning replaces it',
 };
 
 export function formatResidualStateFooter(input: ResidualStateFooterInput): string[] {

@@ -144,6 +144,20 @@ describe('setup-guest.md Windows section matches setup-guest-windows', () => {
     for (const line of footer) expect(windowsSection).toContain(line);
   });
 
+  it('documents what the footer says about each state a VM share credential can be left in', () => {
+    for (const status of ['verified', 'removed', 'written', 'removal-failed'] as const) {
+      const footer = formatResidualStateFooter({
+        outcome: 'failure',
+        phase: describePhase('G4'),
+        vmName: 'dev-vm',
+        credentials: [{ role: 'default', hostIp: '172.24.32.1', status }],
+      });
+      const line = footer.find((entry) => entry.includes('VM share credential for'))!;
+      const wording = line.split(': ').slice(1).join(': ');
+      expect(windowsSection, status).toContain(wording);
+    }
+  });
+
   it('gives the pending-reboot remediation the command prints', () => {
     expect(windowsSection.toLowerCase()).toContain(
       PENDING_REBOOT_REMEDIATION.toLowerCase().replace(/\.$/, ''),
