@@ -1,6 +1,7 @@
 import type { PowerShellExec } from '../powerShellExec';
 import { quoteForPowerShell } from '../quoteForPowerShell';
 import type { WindowsGuestExecutor } from './guestExecutor';
+import { redactSecrets } from './redaction';
 
 /** Each share replacement or verification is bounded at 1 minute. */
 export const SHARE_OPERATION_TIMEOUT_MS = 60_000;
@@ -428,11 +429,10 @@ function bounded(text: string): string {
     : trimmed;
 }
 
-function redactor(secrets: string[]): (text: string) => string {
-  const needles = secrets.filter((secret) => secret.length > 0);
-  return (text) =>
-    needles.reduce((redacted, needle) => redacted.split(needle).join('[redacted]'), text);
-}
+const redactor =
+  (secrets: string[]) =>
+  (text: string): string =>
+    redactSecrets(text, secrets);
 
 /** Windows errors meaning the account name or password is wrong. */
 const BAD_CREDENTIAL_ERRORS = new Set([

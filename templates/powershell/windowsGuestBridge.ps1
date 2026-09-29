@@ -21,6 +21,25 @@ function Write-Envelope {
     [Console]::Out.WriteLine(($Envelope | ConvertTo-Json -Compress))
 }
 
+# Whether an Invoke-Command failure is the guest rejecting the credential. The
+# host's message text is localized, so it cannot be the primary signal.
+# PowerShell Direct raises a PSDirectException from its credential exchange
+# (RemoteSessionHyperVSocketClient.ExchangeCredentialsAndConfiguration) when the
+# guest refuses the logon; that exception type and call site do not depend on the
+# host's display language. Every other failure seen while a guest boots
+# (PSRemotingDataStructureException, InvalidVMState, ...) has a different type or
+# never reaches the exchange. The English message is kept only as a fallback
+# when that structured signal is absent.
+function Test-CredentialRejection {
+    param([Parameter(Mandatory = $true)] $Failure)
+    $exception = $Failure.Exception
+    if ($exception.GetType().FullName -eq 'System.Management.Automation.Remoting.PSDirectException' -and
+        ([string]$exception.StackTrace) -match 'ExchangeCredentialsAndConfiguration') {
+        return $true
+    }
+    return ($exception.Message -match 'credential is invalid')
+}
+
 $stage = 'request'
 try {
     $request = ([Console]::In.ReadToEnd()) | ConvertFrom-Json
@@ -138,7 +157,7 @@ catch {
         if ($_.Exception -is [Management.Automation.RemoteException]) {
             $category = 'protocol'
         }
-        elseif ($_.Exception.Message -match 'credential is invalid') {
+        elseif (Test-CredentialRejection $_) {
             $category = 'authentication'
         }
         else {

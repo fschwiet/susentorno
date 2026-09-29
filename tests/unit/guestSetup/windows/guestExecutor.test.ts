@@ -6,6 +6,7 @@ import {
   type WindowsGuestResult,
 } from '../../../../src/guestSetup/windows/guestExecutor';
 import { createFakeBridgeFactory, errorEnvelope, resultEnvelope } from './fakeBridge';
+import { NASTY_PASSWORD, NASTY_SCRIPT, NASTY_USERNAME, secretSpellings } from './secretSpellings';
 
 const credential = { username: 'Guest-Admin', password: "s3cret-'-$-☃" };
 
@@ -149,6 +150,50 @@ describe('failure classification', () => {
     );
     expect(error.kind).toBe('authentication');
     expectRedacted(error);
+  });
+
+  describe('escaped spellings of the secrets', () => {
+    const nasty = { username: NASTY_USERNAME, password: NASTY_PASSWORD };
+
+    async function failureEchoing(echo: (stdin: string) => string): Promise<WindowsGuestError> {
+      const { spawn, calls } = createFakeBridgeFactory((_request, bridge) =>
+        bridge.finish(errorEnvelope('protocol', `could not parse: ${echo(calls[0].stdin)}`), 1),
+      );
+      const executor = createWindowsGuestExecutor({
+        vmName: 'vm-1',
+        credential: nasty,
+        spawnBridge: spawn,
+      });
+      const error = await executor.invoke(NASTY_SCRIPT, { timeoutMs: 5000 }).then(
+        () => {
+          throw new Error('expected the invocation to fail');
+        },
+        (caught: unknown) => caught,
+      );
+      return error as WindowsGuestError;
+    }
+
+    const secrets = { password: NASTY_PASSWORD, username: NASTY_USERNAME, script: NASTY_SCRIPT };
+    for (const [name, secret] of Object.entries(secrets)) {
+      for (const [form, text] of Object.entries(secretSpellings(secret))) {
+        it(`redacts the ${name} spelled ${form}`, async () => {
+          const error = await failureEchoing(() => `before ${text} after`);
+          expect(error.message).not.toContain(text);
+          expect(error.message).toContain('before');
+          expect(error.message).toContain('after');
+        });
+      }
+    }
+
+    it('leaves no spelling of the credential in a request echoed back as it was written to stdin', async () => {
+      const error = await failureEchoing((stdin) => stdin);
+      const everything = JSON.stringify({ message: error.message, stack: error.stack });
+      for (const secret of [NASTY_PASSWORD, NASTY_USERNAME]) {
+        for (const text of Object.values(secretSpellings(secret))) {
+          expect(everything).not.toContain(text);
+        }
+      }
+    });
   });
 
   it('treats output that is not a bridge envelope as a redacted protocol failure', async () => {

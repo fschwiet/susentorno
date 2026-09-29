@@ -20,7 +20,9 @@ import {
   type ShareCredentialTarget,
 } from '../../../../src/guestSetup/windows/shareCredential';
 
-const PASSWORD = 'S3cret pw\'"$x`';
+import { NASTY_PASSWORD, secretSpellings } from './secretSpellings';
+
+const PASSWORD ='S3cret pw\'"$x`';
 const SHARE = 'vm-shared-windows';
 const DEFAULT: ShareCredentialTarget = { role: 'default', hostIp: '172.29.240.1' };
 const INTERNAL: ShareCredentialTarget = { role: 'internal', hostIp: '192.168.67.1' };
@@ -210,6 +212,49 @@ describe('replace', () => {
     expect(error.message).toContain('exit 1');
     expect(error.message).not.toContain(PASSWORD);
     expect(error.message).not.toContain(base64);
+  });
+
+  describe('escaped spellings of the password', () => {
+    const nastySecret = { account: 'susentorno', password: NASTY_PASSWORD };
+    const spellings = Object.entries(secretSpellings(NASTY_PASSWORD));
+
+    it.each(spellings)('never shows the password spelled %s in a script error', async (_form, text) => {
+      const { executor } = fakeGuest({
+        replace: () => ({
+          exitCode: 1,
+          stdout: '',
+          stderr: `At line:9 char:3 ... ${text} ...`,
+          timedOut: false,
+        }),
+      });
+      const error = await failureOf(
+        createVmShareCredentials({ executor, shareName: SHARE }).replace(DEFAULT, nastySecret),
+      );
+      expect(error.message).toContain('exit 1');
+      expect(error.message).not.toContain(text);
+    });
+
+    it.each(spellings)('never shows the password spelled %s in a reported failure', async (_form, text) => {
+      const { executor } = fakeGuest({
+        replace: () =>
+          ok({ Outcome: 'error', Stage: 'write', Win32: 5, Message: `rejected ${text}` }),
+      });
+      const error = await failureOf(
+        createVmShareCredentials({ executor, shareName: SHARE }).replace(DEFAULT, nastySecret),
+      );
+      expect(error.message).toContain('write');
+      expect(error.message).not.toContain(text);
+    });
+
+    it.each(spellings)('never shows the password spelled %s when the output is unreadable', async (_form, text) => {
+      const { executor } = fakeGuest({
+        replace: () => ({ exitCode: 0, stdout: `not json ${text}`, stderr: '', timedOut: false }),
+      });
+      const error = await failureOf(
+        createVmShareCredentials({ executor, shareName: SHARE }).replace(DEFAULT, nastySecret),
+      );
+      expect(error.message).not.toContain(text);
+    });
   });
 
   it('fails plainly when the request times out inside the guest', async () => {

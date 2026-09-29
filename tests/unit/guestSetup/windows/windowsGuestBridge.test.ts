@@ -55,6 +55,18 @@ describe('the shipped PowerShell Direct bridge template', () => {
     expect(bridge).toContain('System32\\WindowsPowerShell\\v1.0\\Modules');
   });
 
+  it('classifies a rejected credential from PowerShell Direct\'s exception, not from its localized message', () => {
+    const structured = bridge.indexOf("'System.Management.Automation.Remoting.PSDirectException'");
+    const callSite = bridge.indexOf('ExchangeCredentialsAndConfiguration');
+    const messageFallback = bridge.indexOf("'credential is invalid'");
+    expect(structured).toBeGreaterThan(-1);
+    expect(callSite).toBeGreaterThan(-1);
+    // The English text is only a fallback, consulted after the structured signal.
+    expect(messageFallback).toBeGreaterThan(callSite);
+    expect(bridge.match(/credential is invalid/g)).toHaveLength(1);
+    expect(bridge).toContain('elseif (Test-CredentialRejection $_)');
+  });
+
   it('runs the guest child with the fixed flags and suppresses progress records', () => {
     expect(bridge).toContain('-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand');
     expect(bridge).toContain("$ProgressPreference = 'SilentlyContinue'");

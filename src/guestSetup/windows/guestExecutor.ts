@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import type { Readable, Writable } from 'node:stream';
 import { sleep as abortableSleep } from '../../runHosting/abortableSleep';
 import { windowsGuestBridgePath } from '../../templates';
+import { redactSecrets } from './redaction';
 
 export interface WindowsGuestCredential {
   username: string;
@@ -105,10 +106,8 @@ function serializeRequest(request: object): string {
 }
 
 function redactor(secrets: string[]): (text: string) => string {
-  const needles = secrets.filter((secret) => secret.length > 0);
   return (text) => {
-    let redacted = text;
-    for (const needle of needles) redacted = redacted.split(needle).join('[redacted]');
+    const redacted = redactSecrets(text, secrets);
     return redacted.length > MAX_MESSAGE_LENGTH
       ? `${redacted.slice(0, MAX_MESSAGE_LENGTH)}... [truncated]`
       : redacted;

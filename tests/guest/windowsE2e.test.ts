@@ -620,5 +620,21 @@ describe('setup-guest-windows against a disposable Windows 11 guest', () => {
       );
       expect(stdout, stdout).toMatch(/True/i);
     }, 1_200_000);
+
+    it('classifies a wrong guest password as an authentication rejection, from the real bridge', async () => {
+      // The bridge decides this from PowerShell Direct's exception, not from its
+      // localized message; the running guest is the only place that can be proven.
+      const wrong = createWindowsGuestExecutor({
+        vmName: guest.vmName,
+        credential: { username: credential.username, password: 'not-the-guest-password-9!' },
+      });
+      try {
+        expect(await waitForProductionPowerShellDirect(wrong, { deadlineMs: 120_000 })).toBe(
+          'auth-rejected',
+        );
+      } finally {
+        await wrong.dispose();
+      }
+    }, 300_000);
   });
 });
