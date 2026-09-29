@@ -8,7 +8,7 @@ Read-only diagnostic scripts report whether the proxy stack and a guest are set 
 
 - **Host (proxy stack):** from the environment directory, with the proxy stack up, run `.susentorno\proxy\verify-proxy.ps1`.
 - **Ubuntu guest:** inside the VM, run `/mnt/vm-shared-linux/verify-config.sh [host-ip]`. Pass `<host-ip>` from `setup-machine.md` to assert the rules point at it; omit it to have the script discover and report the IP from the installed rules.
-- **Windows guest:** from the mounted `vm-shared-windows` share, run `.\verify-config.ps1` to discover the host when exactly one IPv4 DNS server is configured, or `.\verify-config.ps1 -HostIp <host-ip>` to check an explicit address. It checks that the configured resolver is the host and that names resolve to the host.
+- **Windows guest:** inside the VM, run the diagnostic straight from the share: `powershell -NoProfile -ExecutionPolicy Bypass -File \\<internal-switch-host-ip>\vm-shared-windows\verify-config.ps1`. It is a read-only check, not a setup step, and `susentorno setup-guest-windows` has already left the guest a share credential for that address. It discovers the host when exactly one IPv4 DNS server is configured; add `-HostIp <host-ip>` to check an explicit address. It checks that the configured resolver is the host and that names resolve to the host. The `-ExecutionPolicy Bypass` applies to that one process only.
 
 ## Watching proxy traffic
 

@@ -34,7 +34,7 @@ Setup is split across three docs, done in order:
 
 1. [setup-machine.md](setup-machine.md) — one-time per Windows host: the Internal virtual switch and host IP, and the host firewall.
 2. [setup-environment.md](setup-environment.md) — one-time per environment: `susentorno init` and the rest of the proxy setup, plus the environment's share account and SMB shares.
-3. [setup-guest.md](setup-guest.md) — one-time per guest VM: creating the VM under Hyper-V and running its numbered setup scripts, for either an Ubuntu or a Windows guest.
+3. [setup-guest.md](setup-guest.md) — one-time per guest VM: creating the VM under Hyper-V and running its one-command setup (`setup-guest-unix` or `setup-guest-windows`), for either an Ubuntu or a Windows guest.
 
 Once set up, see [diagnostics.md](diagnostics.md) to verify the environment and guest, and to interpret the proxy's live traffic log.
 

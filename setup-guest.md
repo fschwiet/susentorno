@@ -50,6 +50,7 @@ This doc continues as if `192.168.67.x` was chosen as the subnet and the host wa
 - Start the machine and install any pending updates.
   - It can be tricky to initiate booting from CD/DVD before it tries a network install. You need to press a key quickly after starting the VM to catch the "press any key to install from CD or DVD" message before it opts to try the network.
   - Restart the machine and check for updates, repeat until none are found.
+- For a Windows guest, make sure the account you install with is a **local** administrator account (not a Microsoft or domain account). It is the _guest user account_ `setup-guest-windows` acts through and that you develop in afterwards; setup never creates it. See [Windows guest prerequisites](#windows-guest-prerequisites).
 
 ### Nested virtualization
 
@@ -185,13 +186,143 @@ Before installing anything else, the automated command also installs a Hyper-V K
 
 </details>
 
-**Windows guest** — leave the adapter on DHCP. Default Switch uses Hyper-V ICS; `susentorno-internal` uses `run-hosting` with the host as router and DNS. Save credentials with:
+### Windows guest
+
+For a Windows guest, one host-side command does the whole job: `susentorno setup-guest-windows`. It takes an installed and fully updated Windows 11 guest that is still on the Default Switch through the setup phase, moves it onto the Internal switch, and runs the isolated phase, with no console work inside the guest. It reaches the guest only through **PowerShell Direct**, a Hyper-V channel between the host and the VM, and never over the network being configured. So, unlike Ubuntu, the guest needs no SSH server, no WinRM, and no address to type in.
+
+Follow this one path. Do not run the shipped steps yourself: the command supplies the guest trust, the share credentials, the per-step process and the exit-code checking that a hand-run step would skip.
+
+#### Windows guest prerequisites
+
+- **The guest:** Windows 11 Enterprise, x64, release 25H2 (the Enterprise evaluation edition counts), installed and fully updated, with no pending reboot. Any other product, edition, architecture, or release is refused with a message naming what it found. The guest also needs WinGet (App Installer) version 1.6.10121 or newer with a usable `winget` source.
+- **One adapter, on the Default Switch.** A rerun also accepts the adapter on the Internal switch (see [Rerunning is a replay](#rerunning-is-a-replay)). A VM with more than one adapter, a disconnected adapter, or an adapter on any other switch is refused.
+- **An existing guest user account** that is a **local** administrator (enabled, and a member of the local Administrators group). Setup acts through it and never creates it. Microsoft accounts, domain accounts, and non-administrators are not supported. Its PowerShell Direct session must have an elevated token; if it does not, the failure message tells you to use the built-in `Administrator` account or to disable UAC remote token filtering for the account.
+- **The host network** (`susentorno create-host-network`, from [setup-machine.md](setup-machine.md)), the environment with its `vm-shared-windows` folder, the SMB share over that folder, and the **VM share account** (all from [setup-environment.md](setup-environment.md)). The SMB share must grant the VM share account read access only; setup fails if the account can write to it.
+- **An elevated (Administrator) host terminal**, started in the environment directory (the one containing `.susentorno`).
+- **`susentorno run-hosting` running** for the same environment and isolation name, before you start and throughout. It is checked at the start and again immediately before isolation.
+
+The command does not create the VM, the guest user account, the host network, the SMB share, or the VM share account, and it does not start `run-hosting`.
+
+#### Running it
 
 ```powershell
-cmdkey /add:192.168.67.1 /user:susentorno /pass:<the password from setup-environment.md>
+susentorno setup-guest-windows
 ```
 
-`cmdkey` entries are **per-address**, so add one for the Default Switch host IP as well if you mount the share during the NAT phase. The share is then reachable at `\\192.168.67.1\vm-shared-windows` — the numbered scripts run from there. Two host addresses appear across this flow:
+Every non-secret answer can be given as a flag instead of a prompt, and each flag suppresses **only its own** prompt. Anything left off still prompts, in the order below.
+
+| Flag | Answers | Default |
+| --- | --- | --- |
+| `--vm-name <name>` | Hyper-V VM name | none; prompted |
+| `--share-name <name>` | SMB share name | prompt default `vm-shared-windows` |
+| `--guest-username <user>` | Guest user account | none; prompted |
+| `--share-account <name>` | VM share account | prompt default `susentorno` |
+| `--isolation-name <name>` | The host network created by `susentorno create-host-network --isolation-name <name>` (letters, digits, and hyphens only) | omit it for the default `susentorno-internal` network |
+| `--nat-adapter-alias <name>` | The Default-Switch adapter | `vEthernet (Default Switch)` |
+
+There is no guest-address option, because PowerShell Direct does not use one, and there are **no password options**: `--guest-password` and `--share-password` are rejected as unknown options. Both passwords are masked prompts, so they never reach shell history, a process listing, a file, or the command's output. Automation supplies them by piping two lines into the command's stdin, the guest user account's password first and the VM share account's password second, once all four non-secret answers (`--vm-name`, `--share-name`, `--guest-username`, `--share-account`) are given as flags.
+
+Everything that needs no answer is checked before the first prompt: host elevation, the environment and its Windows VM share, the isolation name, the adapter alias, and both switches and their host addresses. A problem there fails immediately without asking anything.
+
+**Prompt order:**
+
+1. `Hyper-V VM name`, then `SMB share name` (default `vm-shared-windows`). The command then checks the VM (it exists, is `Running` or `Off`, and has one adapter on the Default Switch or the Internal switch), that the SMB share points at this environment's Windows VM share, that `run-hosting` is listening for DHCP and DNS, and that the generated steps are well formed. A problem here is reported before either password is asked for.
+2. `Guest username`, then `Guest password` (masked). The command then puts the VM on the Default Switch and starts it, waits for PowerShell Direct, authenticates, and checks the guest.
+3. `VM share account` (default `susentorno`), then `VM share password` (masked). These come only after the guest has authenticated and passed its structural checks. Before it writes anything to the guest, the command also confirms on the host that the account exists, is enabled, and is granted read access by the SMB share.
+
+Once the last password is entered the command runs unattended. Ending the input (EOF) or cancelling at any prompt ends the command as a cancellation (exit code `130`); if that happens before a VM has been chosen, nothing has been changed.
+
+**Re-prompts come in pairs.** If the guest rejects the guest user account's credential, the command asks for the username _and_ the password again, even if the username came from a flag, so a wrong username is as easy to fix as a wrong password. The previous name is offered as the default. In the same way, if the guest cannot authenticate to the SMB share, the command asks for the VM share account _and_ its password again. Problems that a different password could not fix are never re-prompted. They are reported with a remediation instead: the account is not an administrator or its token is not elevated, the platform is unsupported, a reboot is pending, WinGet is missing or too old, the SMB share path is wrong or the share is writable, the VM share account does not exist on the host or lacks read access, or the guest already holds an SMB connection to that host address under a different identity.
+
+#### What the command does
+
+Each phase is announced as `setup-guest-windows: <phase> <description>...`, and a long wait prints a progress line about every 15 seconds. The phases are:
+
+| Phase | What happens |
+| --- | --- |
+| H1 | Host prerequisites, then the VM name and share name prompts |
+| H2 | Host checks (VM, adapter, switches, SMB share, `run-hosting` listeners) and the generated step plans |
+| H3 | Guest username and password prompts |
+| G1 | Reconcile the VM to the Default Switch and start it |
+| G2 | Wait for PowerShell Direct and authenticate |
+| G3 | Guest checks: platform, local administrator, elevated token, no pending reboot, WinGet |
+| G4 | VM share account prompts; write and verify the Default-Switch share credential |
+| G5 | Guest trust reconciliation |
+| G6 | Run every pre-isolation step |
+| G7 | Isolation gate: no pending reboot, and `run-hosting` still listening |
+| G8 | Write the Internal-switch share credential (unverified until G12) |
+| G9 | Stop the VM gracefully, connect its adapter to the Internal switch, start it |
+| G10 | Wait for PowerShell Direct again |
+| G11 | Prove the isolated network: a lease from `run-hosting` with the host as gateway, working DNS through the host, and a TCP connection to the proxy stack |
+| G12 | Verify UNC access to the share at the Internal-switch host address |
+| G13 | Run every post-isolation step |
+| G14 | Success summary |
+
+Fixed limits apply, and none of them has a flag: PowerShell Direct readiness 5 minutes, each share operation 1 minute, each step 30 minutes, isolated-network readiness 3 minutes, and a graceful stop about 3 minutes plus 60 seconds to confirm `Off`. The guest is never force-stopped, and the command never reboots it.
+
+**Trust.** Before any step reaches the network, the command reconciles the guest's certificate trust. It adds the host's ambient trust roots (for example, the CA of a TLS-terminating corporate proxy) and the environment's proxy CA to the guest's `LocalMachine\Root` store, and points `NODE_EXTRA_CA_CERTS` at one combined bundle under `C:\ProgramData\susentorno\trust`, so Windows, Git, and Node trust the same roots. Ambient roots are only ever added. The proxy CA is replaced when the environment's `cert.pem` changes, and the old one is removed only if setup's own records prove it installed it. The shipped `configure-network` step only verifies this trust and sets Git to use `schannel`.
+
+**Steps.** Pre-isolation steps run from `\\<default-switch-host-ip>\<share>\pre-scripts` and post-isolation steps from `\\<internal-switch-host-ip>\<share>\post-scripts`. Steps are the files named `NN-name.ps1` (two digits; the extension is case-insensitive), run in filename order. Other files are ignored, so a step can ship sibling resources. Each step runs in its own fresh, elevated Windows PowerShell 5.1 process started with `-NoProfile -NonInteractive -ExecutionPolicy Bypass`, working from its read-only UNC directory. The bypass applies to that one process only; the guest's persistent execution policy is never changed. Because each step is a new process, an earlier step's PATH change is visible to the next. Exit code `0` is the only success, and the sequence stops at the first step that fails, times out, or is cancelled. Each step's output is shown after it finishes, with stdout and stderr kept separate. Your own steps must check the exit code of every native command themselves, must not prompt, and must be idempotent; the generated `README.md` in your environment's `pre-scripts/` and `post-scripts/` folders spells out this contract.
+
+**Accounts and share credentials.** The **guest user account** is the existing local administrator that the command acts through and that you develop in afterwards. The **VM share account** is a different, restricted account on the _host_ that the guest presents to read its VM share. It is never a guest logon, and the two accounts have unrelated passwords.
+
+The command leaves two retained Credential Manager entries in the guest user account, one keyed by the Default-Switch host address and one by the Internal-switch host address, both holding the VM share account. They keep the share reachable if the VM is later moved to either switch. You can inspect them inside the guest with `cmdkey /list`: the targets show as `target=<host-address>`, and the password is never displayed. The command writes them through the native Credential Manager API, so the password never appears in a guest process argument, and it reaches the share by UNC path (`\\<host-address>\<share>`), taking no drive letter and leaving no mapped drive. A run rewrites each entry when it reaches the phase that writes it (G4 for the Default-Switch entry, G8 for the Internal-switch entry).
+
+#### Rerunning is a replay
+
+If any run fails or is cancelled, the recovery is always the same: fix what the message says, then **run the command again**. A rerun is a **replay from the Default Switch**. It is not a resume and it does not roll back.
+
+- Nothing is rolled back on failure, and the command never detects how far a previous run got.
+- The VM may be `Off` or `Running` on either expected switch. A VM running on the Default Switch is reused without a restart. A VM running on the Internal switch is stopped gracefully, returned to the Default Switch, and started; this is expected even for a guest that was fully set up. Saved, paused, or mid-transition VMs are refused rather than repaired.
+- Every pre-isolation and post-isolation step runs again, including ones that already succeeded. **Customized steps must therefore be idempotent.** The shipped steps are: they skip packages that are already installed, and post-isolation auth configuration is refreshed on every replay, so a change of workspace takes effect when you rerun.
+- Trust reconciliation only adds, so a partial trust failure leaves a safe state that the next replay converges from.
+
+Ctrl+C cancels the in-flight guest operation, cleans up for up to about 30 seconds, prints the footer, and exits with `130`. A second Ctrl+C exits immediately. A failure exits with `1` and success with `0`.
+
+#### Reading the residual-state footer
+
+Every failure and cancellation ends with a footer that says what state the run left behind. The VM's power state and switch are queried from Hyper-V at that moment, not inferred. For example, a run that failed on the last post-isolation step:
+
+```
+setup-guest-windows: failed in phase G13 post-isolation steps at step 99-fail.ps1 [step-exit]: Step post-scripts/99-fail.ps1 exited with code 1. ...
+setup-guest-windows: residual state
+  Failed in phase: G13 post-isolation steps
+  Failed step: 99-fail.ps1
+  VM 'dev-vm': Running, attached to 'susentorno-internal'
+  VM share credential for Default Switch host address 172.24.32.1: verified, kept
+  VM share credential for Internal switch host address 192.168.67.1: verified, kept
+  Nothing was rolled back.
+  Rerun 'susentorno setup-guest-windows' to replay the whole flow from the Default Switch.
+```
+
+- **Failed in phase** (or **Cancelled during phase**) names a phase from the table above. **Failed step** (or **Interrupted step**) appears when a step was the cause. The bracketed word on the first line classifies the failure, for example `step-exit`, `step-timeout`, `guest-check`, `share-credential`, `guest-trust`, or `isolated-network`.
+- The **VM line** is the queried power state and the switch the adapter is attached to. If the query itself fails, the footer says so instead of guessing. If the run ended before a VM was chosen, it says nothing was changed.
+- Each **VM share credential line** is one of `verified, kept` (read access was proven, and it stays), `removed (written by this run but never verified)` (cleanup removed it, so a failure never leaves an unproven credential behind), or `written but never verified` with a note that cleanup did not run or could not remove it. A rerun replaces the entries either way. A verified entry is never removed by a later failure.
+
+As a rule of thumb for where the guest is left:
+
+| Failed in | Typical residual state |
+| --- | --- |
+| H1 to H3 | Nothing changed. |
+| G1 to G3 | VM on the Default Switch (or `Off` if a stop was interrupted); the guest untouched. |
+| G4 | VM on the Default Switch; an unproven Default-Switch credential is removed. |
+| G5 | VM on the Default Switch; trust partly reconciled, in a safe state; the Default-Switch credential is kept. |
+| G6, G7 | VM on the Default Switch; some or all pre-isolation steps have run; the Default-Switch credential is kept. |
+| G8, G9 | VM on the Default Switch, `Off`, or already on the Internal switch; the Internal-switch credential, unproven until G12, is removed. |
+| G10 to G12 | VM `Running` on the Internal switch; the Default-Switch credential is kept, and the Internal-switch credential is removed unless verified. |
+| G13 | VM `Running` on the Internal switch; both credentials kept. |
+
+In every case the fix is the same: correct the reported problem and rerun.
+
+**Pending reboot.** The command checks for a pending reboot at G3 and again at G7, because isolating a guest that still owes a reboot could strand it on the Internal switch. If it finds one, it fails naming the markers it found and saying to **restart the guest, then rerun**. Restart Windows in the guest (or from Hyper-V), let it come back up, and run the command again. The command never reboots the guest itself, and a shipped install step whose package asks for a reboot fails for the same reason.
+
+**Other common failures:**
+
+- PowerShell Direct readiness times out after 5 minutes: check in Hyper-V Manager that the VM booted to Windows with its integration services enabled, then rerun.
+- The isolated network does not come up within 3 minutes: the message lists each unmet condition (`lease`, `gateway`, `dns`, or `proxy`) and points at `run-hosting`. Check that it is still running and that the host firewall allows its ports (see the firewall note below), then rerun. A Windows guest that booted before `run-hosting` was listening can take about five minutes to retry its lease, which is longer than this limit; see the next section.
+- The generated steps are malformed (for example, no `configure-network` step, or several): run `susentorno update-shares` and check your customizations.
+
+### If a guest comes up with no address
 
 **If a guest ever comes up with no address**, `run-hosting` was not running when it booted. Start `run-hosting` and the guest will pick up a lease on its next retry — no action is needed inside the guest, but allow up to ~5 minutes before treating it as a failure. On **Windows** the guest falls back to a `169.254.x.x` self-assigned address and re-attempts on roughly a five-minute cycle (measured: 4m55s). On **Ubuntu** there is **no** APIPA fallback — `eth0` simply has no IPv4 address — and NetworkManager retries every 45s for three minutes, then goes quiet for about five minutes before trying again (measured: 2m53s from starting `run-hosting`, all of it spent inside that quiet gap). Neither wait can be shortened from the host. With `run-hosting` already running before boot, leases bind in well under a second. As a last resort, the Hyper-V console plus a static address (an IP in the Internal-switch subnet, no gateway, `nameserver = <host-ip>`) still works and is a supported fallback.
 
@@ -206,23 +337,11 @@ cmdkey /add:192.168.67.1 /user:susentorno /pass:<the password from setup-environ
 
 ## 3. Run the numbered scripts
 
-Run without `sudo`/outside an elevated shell only where noted; each script elevates internally where needed. The exact count may vary when custom steps are present.
+The exact number of numbered steps may vary when custom steps are present.
 
 **Ubuntu** — the Host-side `susentorno setup-guest-unix` command already did all of this: mounted the share, ran `pre-scripts/`, isolated the guest, re-mounted the share, and ran `post-scripts/`. Nothing further is needed here — see the manual fallback above if you need to reproduce or diagnose any individual step.
 
-**Windows**, in an **elevated (Administrator) PowerShell**:
-
-```powershell
-cd "\\<default-switch-host-ip>\vm-shared-windows\"
-Set-ExecutionPolicy Bypass
-```
-
-1. `cd .\pre-scripts` and run every script in order. With no custom steps, the last is `.\04-configure-network.ps1 -HostIp <internal-switch-host-ip>`. That step no longer installs the proxy CA itself: it only verifies the trust that `susentorno setup-guest-windows` reconciles (phase G5), and fails when that trust is missing. Run it as part of that command rather than by hand.
-2. Isolate the VM — reassign its single adapter to `susentorno-internal` (see "Isolate" below), with `run-hosting` already running.
-3. Use the `cmdkey` entry for `<internal-switch-host-ip>`, then run every post-script in order from `\\<internal-switch-host-ip>\vm-shared-windows\post-scripts`: normally `.\01-auth-config.ps1`, then `.\02-apply-home-jq-transforms.ps1`.
-4. Restore the normal execution policy with `Set-ExecutionPolicy RemoteSigned`.
-
-When a script asks for `<host-ip>` (`04-configure-network.sh` / `04-configure-network.ps1`), it is the Internal-switch host IP from `setup-machine.md` (`192.168.67.1` here).
+**Windows** — the Host-side `susentorno setup-guest-windows` command already did all of this: put the guest on the Default Switch, ran `pre-scripts/`, isolated the guest, and ran `post-scripts/` from the Internal-switch address. Nothing further is needed here. There is no manual per-script procedure for Windows; if a run stops early, read its message and residual-state footer (see [Reading the residual-state footer](#reading-the-residual-state-footer)) and rerun the command.
 
 ## 4. Isolate
 
@@ -233,7 +352,7 @@ susentorno create-host-network
 susentorno run-hosting
 ```
 
-Then isolate the VM by reassigning its single adapter:
+`susentorno setup-guest-unix` and `susentorno setup-guest-windows` do the isolation for you, so this section is for the Ubuntu manual fallback above and for reference. The VM's single adapter is reassigned like this:
 
 ```powershell
 Stop-VM -Name '<VMName>'
@@ -241,7 +360,7 @@ Connect-VMNetworkAdapter -VMName '<VMName>' -SwitchName 'susentorno-internal'
 Start-VM -Name '<VMName>'
 ```
 
-Reassign back to `Default Switch` to reverse isolation; no guest-side change is needed.
+Reassign back to `Default Switch` to reverse isolation; no guest-side change is needed. Rerunning a setup command does the same reversal for you as its first step.
 
 ## Next step
 

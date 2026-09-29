@@ -43,7 +43,7 @@ $pw = Read-Host -AsSecureString "Password for susentorno"
 New-LocalUser -Name "susentorno" -Password $pw -PasswordNeverExpires -UserMayNotChangePassword
 ```
 
-If you run this installation under an isolation name — `susentorno create-host-network --isolation-name <name>` — name the account `susentorno-<name>` instead, and pass it to `setup-guest-unix --share-account`. Windows caps a local account name at 20 characters, so an isolation name has about nine to work with.
+If you run this installation under an isolation name — `susentorno create-host-network --isolation-name <name>` — name the account `susentorno-<name>` instead, and pass it to `setup-guest-unix --share-account` or `setup-guest-windows --share-account`. Windows caps a local account name at 20 characters, so an isolation name has about nine to work with.
 
 ### Set the share account's permissions
 
@@ -55,7 +55,7 @@ Do not enable guest/anonymous SMB access as an alternative — modern Windows bl
 
 ## Share the environment folders (read-only)
 
-Create SMB shares for **both** `vm-shared-linux` and `vm-shared-windows`, each granting only this environment's share account read access. A guest mounts whichever one matches its OS.
+Create SMB shares for **both** `vm-shared-linux` and `vm-shared-windows`, each granting only this environment's share account read access. A guest reads whichever one matches its OS: an Ubuntu guest mounts it, and a Windows guest reaches it by UNC path.
 
 ```powershell
 $env_dir = "E:\repo\.susentorno"   # this environment's .susentorno folder
