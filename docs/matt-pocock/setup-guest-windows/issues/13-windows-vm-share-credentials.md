@@ -16,7 +16,7 @@
 
 **Blocked by:** 12
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] Unit tests of the share-credential module cover replace, verify, close, remove-unverified, and the ledger, with a fake executor. They include the writable-share probe and the identity-conflict classification.
 - [x] Unit tests of `runWindowsSetup` cover:

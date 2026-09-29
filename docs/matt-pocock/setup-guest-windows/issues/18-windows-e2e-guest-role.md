@@ -30,7 +30,7 @@
 
 **Blocked by:** 15, 17
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] `windowsFresh` and its test-only substitutions are removed, and no test depends on preinstalled Git.
 - [x] Run 1 and run 2 behave as specified, and every in-guest assertion above passes.

@@ -13,7 +13,7 @@
 
 **Blocked by:** 16
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] Isolated-readiness unit tests name each unmet condition on expiry.
 - [x] Unit tests of `runWindowsSetup` cover:

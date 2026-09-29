@@ -18,7 +18,7 @@
 
 **Blocked by:** 13, 14
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] Plan unit tests cover a valid plan, no `configure-network`, several `configure-network` steps, a slug that merely contains `configure-network`, repeated numeric prefixes, and ignored non-matching files.
 - [x] Runner unit tests cover the wrapper's construction (the path is never interpolated into source, and only `configure-network` gets `-HostIp`), each result classification, the capture ceiling and truncation metadata, and fail-fast.

@@ -26,7 +26,7 @@
 
 **Blocked by:** 14
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] Every native invocation in the shipped steps is followed immediately by a status check, and no nonzero install or upgrade status is accepted as success.
 - [x] No shipped step writes under its UNC directory or references a persistent execution-policy change.

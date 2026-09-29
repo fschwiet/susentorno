@@ -22,7 +22,7 @@ interface WindowsGuestExecutor {
 
 **Blocked by:** 10
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] Unit tests cover the bridge request protocol, result parsing, the classification of each typed failure, deadline and timeout handling, cancellation, and redaction. No test output or error contains the credential.
 - [x] Readiness polling tells retryable not-ready apart from auth rejection, which is never retried into a timeout.

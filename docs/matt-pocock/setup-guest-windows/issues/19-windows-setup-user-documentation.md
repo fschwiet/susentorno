@@ -17,7 +17,7 @@
 
 **Blocked by:** 17
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] `setup-guest.md` describes only the command-driven Windows path, and every documented flag, default, and prompt matches the command's help and behavior.
 - [x] No remaining documentation tells users to change the guest's persistent execution policy or run shipped Windows steps by hand.

@@ -26,7 +26,7 @@
 
 **Blocked by:** 11
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] A new elevated CLI-tier test covers:
   - the help text (PowerShell Direct, the switch move, both phases, elevation, `run-hosting`);

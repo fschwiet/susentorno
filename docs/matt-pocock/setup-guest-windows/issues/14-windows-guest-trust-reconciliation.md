@@ -26,7 +26,7 @@
 
 **Blocked by:** 12
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] Planner unit tests cover:
   - a first run;
