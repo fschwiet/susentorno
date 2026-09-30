@@ -47,9 +47,6 @@ export interface InitOptions {
   credentialsPath: string;
   codexCredentialsPath: string;
   templatesDir: string;
-  allowListSource: string;
-  authListSource: string;
-  blockListSource: string;
 }
 
 /**
@@ -122,9 +119,6 @@ To preserve configuration changes:
     filter: () => true,
   });
   cpSync(join(options.templatesDir, 'proxy'), paths.proxy, { recursive: true });
-  copyFileSync(options.allowListSource, paths.allowList);
-  copyFileSync(options.authListSource, paths.authList);
-  copyFileSync(options.blockListSource, paths.blockList);
   copyFileSync(join(options.templatesDir, 'mcp-servers.yaml'), paths.mcpServers);
   for (const target of paths.vmSharedTargets) {
     writeFileSync(target.credentials, sanitized);

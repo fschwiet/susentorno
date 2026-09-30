@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { execa } from 'execa';
 import { fileURLToPath } from 'node:url';
-import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -20,9 +20,10 @@ describe('susentorno import-sbx-network-policy', () => {
     );
   });
 
-  it('parses a policy file into current-allow-list.txt and current-auth-list.txt', async () => {
+  it('parses a policy file into the proxy templates', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'susentorno-'));
     const fixturePath = fileURLToPath(new URL('../fixtures/sample-policy.txt', import.meta.url));
+    mkdirSync(join(dir, 'templates', 'proxy'), { recursive: true });
     try {
       const { exitCode } = await execa(
         'node',
@@ -30,10 +31,10 @@ describe('susentorno import-sbx-network-policy', () => {
         { cwd: dir },
       );
       expect(exitCode).toBe(0);
-      expect(readFileSync(join(dir, 'current-allow-list.txt'), 'utf8')).toBe(
+      expect(readFileSync(join(dir, 'templates', 'proxy', 'allow-list.txt'), 'utf8')).toBe(
         ['*.chatgpt.com:443', 'archive.ubuntu.com:80', ''].join('\n'),
       );
-      expect(readFileSync(join(dir, 'current-auth-list.txt'), 'utf8')).toBe(
+      expect(readFileSync(join(dir, 'templates', 'proxy', 'auth-list.txt'), 'utf8')).toBe(
         ['#pragma claude authenticated', 'api.anthropic.com:443', 'claude.com:443', ''].join('\n'),
       );
     } finally {
@@ -44,6 +45,7 @@ describe('susentorno import-sbx-network-policy', () => {
   it('warns and skips unsupported wildcard patterns but still writes both files', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'susentorno-'));
     const fixturePath = fileURLToPath(new URL('../fixtures/sample-policy.txt', import.meta.url));
+    mkdirSync(join(dir, 'templates', 'proxy'), { recursive: true });
     try {
       const { exitCode, stderr } = await execa(
         'node',
@@ -52,9 +54,24 @@ describe('susentorno import-sbx-network-policy', () => {
       );
       expect(exitCode).toBe(0);
       expect(stderr).toContain('foo*.bar.com:443');
-      expect(readFileSync(join(dir, 'current-allow-list.txt'), 'utf8')).toContain(
+      expect(readFileSync(join(dir, 'templates', 'proxy', 'allow-list.txt'), 'utf8')).toContain(
         '*.chatgpt.com:443',
       );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails rather than creating template directories outside a checkout', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'susentorno-'));
+    const fixturePath = fileURLToPath(new URL('../fixtures/sample-policy.txt', import.meta.url));
+    try {
+      const result = await execa('node', [cliPath, 'import-sbx-network-policy', fixturePath], {
+        cwd: dir,
+        reject: false,
+      });
+      expect(result.exitCode).not.toBe(0);
+      expect(existsSync(join(dir, 'templates'))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

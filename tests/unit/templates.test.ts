@@ -1,12 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  packagedAllowList,
-  packagedAuthList,
-  packagedBlockList,
-  templatesDir,
-} from '../../src/templates';
+import { templatesDir } from '../../src/templates';
 import { loadManifest } from '../../src/homeJqTransforms';
 import { parseAllowListFile, parseAuthListFile } from '../../src/allowlist';
 import {
@@ -40,7 +35,7 @@ const expectedTemplateFiles = [
 ];
 
 describe('generated provisioning inventory', () => {
-  describe('packaged template & allowlist inventory', () => {
+  describe('packaged template and network policy inventory', () => {
     it('ships every template file', () => {
       for (const file of expectedTemplateFiles) {
         expect(existsSync(join(templatesDir(), file)), file).toBe(true);
@@ -76,15 +71,19 @@ describe('generated provisioning inventory', () => {
       expect(net).toContain('configure-network:');
     });
 
-    it('ships the packaged allow list, auth list, and block list', () => {
-      expect(existsSync(packagedAllowList())).toBe(true);
-      expect(existsSync(packagedAuthList())).toBe(true);
-      expect(existsSync(packagedBlockList())).toBe(true);
+    it('ships the default network policy with the proxy templates', () => {
+      for (const file of ['allow-list.txt', 'auth-list.txt', 'block-list.txt']) {
+        expect(existsSync(join(templatesDir(), 'proxy', file)), file).toBe(true);
+      }
     });
 
     it('ships chatgpt.com under codex authenticated, not the allow list', () => {
-      const authList = parseAuthListFile(readFileSync(packagedAuthList(), 'utf8'));
-      const allowList = parseAllowListFile(readFileSync(packagedAllowList(), 'utf8'));
+      const authList = parseAuthListFile(
+        readFileSync(join(templatesDir(), 'proxy', 'auth-list.txt'), 'utf8'),
+      );
+      const allowList = parseAllowListFile(
+        readFileSync(join(templatesDir(), 'proxy', 'allow-list.txt'), 'utf8'),
+      );
       expect(authList.codexAuthenticated).toContain('chatgpt.com:443');
       expect(allowList.entries).not.toContain('chatgpt.com:443');
       expect(allowList.entries).toContain('*.chatgpt.com:443');

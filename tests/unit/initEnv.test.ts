@@ -4,12 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initEnvironment } from '../../src/initEnv';
-import {
-  templatesDir,
-  packagedAllowList,
-  packagedAuthList,
-  packagedBlockList,
-} from '../../src/templates';
+import { templatesDir } from '../../src/templates';
 import { ENV_DIR_NAME } from '../../src/envPaths';
 import { CODEX_PLACEHOLDER_ACCESS_TOKEN } from '../../src/codexPlaceholder';
 
@@ -32,16 +27,13 @@ function options(overrides: Partial<Parameters<typeof initEnvironment>[0]> = {})
     credentialsPath: credentialsFixture,
     codexCredentialsPath: authFixture,
     templatesDir: templatesDir(),
-    allowListSource: packagedAllowList(),
-    authListSource: packagedAuthList(),
-    blockListSource: packagedBlockList(),
     ...overrides,
   };
 }
 
 describe('environment initialization', () => {
-  describe('scaffolding VM shares, proxy config, and allowlist', () => {
-    it('copies vm-shared-linux and proxy templates, the allowlist, and sanitized credentials', () => {
+  describe('scaffolding VM shares and proxy config', () => {
+    it('copies VM share and proxy templates, including the network policy, and sanitizes credentials', () => {
       initEnvironment(options());
 
       const root = join(dir, ENV_DIR_NAME);

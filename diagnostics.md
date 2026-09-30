@@ -34,12 +34,12 @@ Two causes are far more likely than the rest:
 
 ## Maintaining the allow list, auth list, and block list
 
-`current-allow-list.txt`, `current-auth-list.txt`, and `current-block-list.txt` (repo root, source controlled) are the default allow list, auth list, and block list that `susentorno init` copies into every new environment. To refresh the allow list and auth list from an upstream network policy file:
+`templates/proxy/allow-list.txt`, `templates/proxy/auth-list.txt`, and `templates/proxy/block-list.txt` are the source-controlled default network policy that `susentorno init` copies into every new environment. To refresh the allow list and auth list from an upstream network policy file:
 
 ```
 susentorno import-sbx-network-policy <policy-file>
 ```
 
-It writes `current-allow-list.txt` and `current-auth-list.txt` in the current directory by default (`--allow-output`/`--auth-output` to override). It never touches `current-block-list.txt` or an environment's own `proxy/{allow-list,auth-list,block-list}.txt`; edit those directly for per-environment changes. A running `susentorno run-hosting` picks up an edit to any of the three live files. Run the import command in a checkout of this repository and commit the result; it is a maintenance command, not part of environment setup.
+It writes `templates/proxy/allow-list.txt` and `templates/proxy/auth-list.txt` relative to the current directory by default (`--allow-output`/`--auth-output` to override). The `templates/proxy/` directory must already exist. It never touches `templates/proxy/block-list.txt` or an environment's own `proxy/{allow-list,auth-list,block-list}.txt`; edit those directly for per-environment changes. A running `susentorno run-hosting` picks up an edit to any of the three live files. Run the import command from the root of this repository and commit the result; it is a maintenance command, not part of environment setup.
 
 To try enabling some new part of the web without editing `allow-list.txt` up front, run `susentorno run-hosting --skip-allow-list`, use whatever you need, and watch for `ALLOW OPEN` lines — each one is a `domain:port` you can add to `allow-list.txt` before turning the flag back off.
