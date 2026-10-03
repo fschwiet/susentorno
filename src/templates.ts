@@ -14,18 +14,6 @@ export function templatesDir(): string {
   return join(packageRoot(), 'templates');
 }
 
-export function packagedAllowList(): string {
-  return join(packageRoot(), 'current-allow-list.txt');
-}
-
-export function packagedAuthList(): string {
-  return join(packageRoot(), 'current-auth-list.txt');
-}
-
-export function packagedBlockList(): string {
-  return join(packageRoot(), 'current-block-list.txt');
-}
-
 /**
  * The PowerShell Direct bridge lives under templates/ but outside every
  * vm-shared-* directory, so update-shares never weaves it into a guest share.

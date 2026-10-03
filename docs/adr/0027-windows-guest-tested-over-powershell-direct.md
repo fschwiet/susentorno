@@ -31,7 +31,7 @@ accepted (2026-08-18)
 ## Consequences
 
 - One substitution, named: `gh` is a stub (`gh.cmd` in a directory at the front of the guest's machine PATH, removed with the disposable disk or by `sweepIsolationResidue` after an aborted run) so `01-auth-config.ps1` needs no real GitHub credential. The real GitHub.cli package is still installed and asserted. Nothing else is preinstalled or substituted: Git arrives from `01-install-packages.ps1`, and guest trust comes from the production reconciler.
-- Ambient trust propagation is **required**, not optional flake-proofing: susentorno is developed from inside a susentorno guest, and `current-auth-list.txt` terminates `github.com:443`, so the `git ls-remote` assertion fails without it.
+- Ambient trust propagation is **required**, not optional flake-proofing: susentorno is developed from inside a susentorno guest, and the shipped `templates/proxy/auth-list.txt` terminates `github.com:443`, so the `git ls-remote` assertion fails without it.
 - Revocation checking is waived on susentorno-issued leaves — `src/ca.ts` emits no CRL or OCSP endpoint and Schannel fails closed on unknown status. Chain validation stays active.
 - Windows Setup diagnostics are framebuffer thumbnails at roughly 320×240: state classification, not readable text. Offline `Panther\setupact.log` salvage is the named escalation.
 - `.image-cache/` grows by roughly 50–60 GB. A cold build takes 60–120 minutes, longer under nested virtualisation.
