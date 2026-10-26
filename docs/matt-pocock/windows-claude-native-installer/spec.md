@@ -1,6 +1,6 @@
 # Windows guest installs Claude Code with the native installer
 
-Status: ready-for-agent
+Status: resolved
 
 ## Problem Statement
 

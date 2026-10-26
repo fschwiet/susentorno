@@ -80,7 +80,7 @@ $status = $LASTEXITCODE
 if ($status -ne 0) { Fail "pnpm add -g @openai/codex exited $status" }
 
 # Rebuild only this process's environment from the persisted values so the checks see what
-# the installers wrote. Nothing is written back.
+# the installers wrote. This rebuild writes nothing back to the persisted environment.
 Update-ProcessPath
 foreach ($tool in 'node', 'pi', 'claude', 'codex') {
   $command = Get-Command $tool -ErrorAction SilentlyContinue
