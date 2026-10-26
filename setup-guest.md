@@ -34,7 +34,8 @@ This doc continues as if `192.168.67.x` was chosen as the subnet and the host wa
   - Hardware -> Security => Secure Boot
     - For Windows:
       - "Enable Secure Boot" should be checked, use the default "Microsoft Windows" template.
-      - "Enable Trusted Platform Module" should be checked if your OS requires it (True for Windows 11 Enterprise). "Encrypt state and virtual machine migration traffic" seems safe to check.
+      - "Enable Trusted Platform Module" should be checked if your OS requires it. "Encrypt state and virtual machine migration traffic" seems safe to check.
+        - You can also disable the Trusted Platform Module check: https://techcommunity.microsoft.com/discussions/windows11/windows-11-upgrade-failed-as-it-says-the-pc-must-support-tpm-2-0/4440927, which may be required when nesting VMs
     - For Ubuntu:
       - Set the Secure Boot template to "Microsoft UEFI Certificate Authority" or disable Secure Boot.
 
