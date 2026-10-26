@@ -70,7 +70,7 @@ These folders are shared live rather than copied over because their contents can
 The environment is active when the 'run-hosting' command is running. This runs the DHCP and DNS servers as well as the http/https proxy.
 
 ```powershell
-susentorno write-github-config
+susentorno run-hosting
 ```
 
 ## Next step
