@@ -20,6 +20,7 @@ export interface SupportedGuestPlatform {
 
 export const SUPPORTED_GUEST_PLATFORMS: readonly SupportedGuestPlatform[] = [
   { product: 'Windows 11', edition: 'Enterprise', architecture: 'x64', release: '25H2' },
+  { product: 'Windows 11', edition: 'Enterprise', architecture: 'x64', release: '26H2' },
 ];
 
 /**

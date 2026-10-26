@@ -136,7 +136,7 @@ Every failure stops where it happened. Nothing is rolled back. The command print
   2. `Guest username` and masked `Guest password`.
   3. `VM share account` and masked `VM share password`, after guest authentication and the structural checks.
   - Each flag suppresses only its own initial prompt. The paired re-prompt loops re-ask both halves, even when one half came from a flag.
-- A **supported guest platform** is an allowlisted tuple of (product, edition, architecture, release). The initial entry is `Windows 11 | Enterprise | x64 | 25H2`. Enterprise Evaluation counts as Enterprise. The build number is reported but not checked.
+- A **supported guest platform** is an allowlisted tuple of (product, edition, architecture, release). The initial entry is `Windows 11 | Enterprise | x64 | 25H2`; `Windows 11 | Enterprise | x64 | 26H2` was added later. Enterprise Evaluation counts as Enterprise. The build number is reported but not checked.
 - The command does not create the VM, the guest user account, the host network, the SMB share, or the VM share account, and it does not start `run-hosting`.
 
 ### Phase machine (ticket 06)

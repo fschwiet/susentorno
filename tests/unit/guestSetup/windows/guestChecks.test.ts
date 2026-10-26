@@ -121,9 +121,10 @@ async function rejection(promise: Promise<unknown>): Promise<GuestCheckError> {
 }
 
 describe('the supported guest platforms', () => {
-  it('holds Windows 11 | Enterprise | x64 | 25H2 as its only initial entry', () => {
+  it('holds Windows 11 | Enterprise | x64 for the 25H2 and 26H2 releases', () => {
     expect(SUPPORTED_GUEST_PLATFORMS).toEqual([
       { product: 'Windows 11', edition: 'Enterprise', architecture: 'x64', release: '25H2' },
+      { product: 'Windows 11', edition: 'Enterprise', architecture: 'x64', release: '26H2' },
     ]);
   });
 
