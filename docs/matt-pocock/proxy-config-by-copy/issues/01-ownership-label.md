@@ -4,13 +4,13 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** ready-for-review
 
-- [ ] The Compose template sets a `susentorno.`-namespaced label on both colors. Its value is the environment directory, filled in from the bring-up environment.
-- [ ] `verify-proxy.ps1` compares the label, after path normalization, with the environment it was invoked for. A missing label, an inspect failure, or a mismatch each fail closed and exit immediately, as the current check does.
-- [ ] `verify-proxy.ps1` no longer reads bind mounts to decide ownership, and its comments no longer describe bind mounts as the ownership signal.
-- [ ] `proxy-stack` test: after `run-hosting` brings up the stack, and again after a policy-reload swap, each running Envoy container's label names this test environment.
-- [ ] `unit` templates test: `verify-proxy.ps1` checks ownership through the label and doesn't look for a bind mount.
+- [x] The Compose template sets a `susentorno.`-namespaced label on both colors. Its value is the environment directory, filled in from the bring-up environment.
+- [x] `verify-proxy.ps1` compares the label, after path normalization, with the environment it was invoked for. A missing label, an inspect failure, or a mismatch each fail closed and exit immediately, as the current check does.
+- [x] `verify-proxy.ps1` no longer reads bind mounts to decide ownership, and its comments no longer describe bind mounts as the ownership signal.
+- [x] `proxy-stack` test: after `run-hosting` brings up the stack, and again after a policy-reload swap, each running Envoy container's label names this test environment.
+- [x] `unit` templates test: `verify-proxy.ps1` checks ownership through the label and doesn't look for a bind mount.
 
 **Verification:** Don't run `pnpm check` or the full `pnpm test`; ticket 05 runs the whole pipeline once at the end. Run these, in this order:
 

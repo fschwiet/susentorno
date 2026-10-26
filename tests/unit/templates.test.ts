@@ -117,6 +117,25 @@ describe('generated provisioning inventory', () => {
     });
   });
 
+  describe('envoy ownership label', () => {
+    it('labels both Envoy colors with the environment directory from the bring-up environment', () => {
+      const compose = readFileSync(join(templatesDir(), 'proxy', 'docker-compose.yml'), 'utf8');
+      // The label lives on the shared x-envoy anchor, which both services merge in.
+      expect(compose).toMatch(
+        /x-envoy: &envoy[\s\S]*labels:\s*\n\s+susentorno\.environment: '\$\{SUSENTORNO_ENVIRONMENT_DIR:-\}'[\s\S]*services:/,
+      );
+      expect((compose.match(/<<: \*envoy/g) ?? []).length).toBe(2);
+    });
+
+    it('verify-proxy checks ownership through the label and does not look for a bind mount', () => {
+      const script = readFileSync(join(templatesDir(), 'proxy', 'verify-proxy.ps1'), 'utf8');
+      expect(script).toContain('susentorno.environment');
+      expect(script).not.toMatch(/\.Mounts/);
+      expect(script).not.toMatch(/bind mount/i);
+      expect(script).not.toContain("Type -eq 'bind'");
+    });
+  });
+
   describe('host firewall templates', () => {
     it('verify-proxy checks the host network model and a stale dedicated-node.exe Query User rule', () => {
       const script = readFileSync(join(templatesDir(), 'proxy', 'verify-proxy.ps1'), 'utf8');

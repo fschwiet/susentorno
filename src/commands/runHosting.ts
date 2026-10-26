@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { Command } from 'commander';
 import { readCredentials } from '../runHosting/readCredentials';
 import { readCodexCredentials } from '../runHosting/readCodexCredentials';
@@ -395,7 +395,7 @@ export function registerRunHosting(program: Command): void {
             ),
           allocatePorts: allocateColorPorts,
           bringUpColor: (color: Color, ports: ColorPorts) =>
-            bringUpColor(color, ports, paths.proxy),
+            bringUpColor(color, ports, paths.proxy, dirname(paths.root)),
           waitColorReady: (
             color: Color,
             ports: ColorPorts,

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startMockUpstream, stopMockUpstream, type MockUpstream } from './mockUpstream';
+import { expectRunningEnvoysOwnedByTestEnvironment } from '../proxyStack';
 import { envParent, envRoot } from '../testEnvRoot';
 import { buildJwt } from '../../src/jwt';
 import { envPaths } from '../../src/envPaths';
@@ -191,6 +192,10 @@ afterAll(async () => {
 }, 60000);
 
 describe('proxy stack lifecycle & replacement', () => {
+  it('labels the running Envoy container with this environment after bring-up', async () => {
+    await expectRunningEnvoysOwnedByTestEnvironment();
+  });
+
   it('swaps blue->green->blue across rotations and serves the new token each time', async () => {
     const mark1 = stdoutLines.length;
     writeCredentials('token-rotated');
@@ -205,6 +210,7 @@ describe('proxy stack lifecycle & replacement', () => {
     expect(readFileSync(join(proxyDir, 'secrets', 'sds-secret.yaml'), 'utf8')).toContain(
       'Bearer token-again',
     );
+    await expectRunningEnvoysOwnedByTestEnvironment();
   }, 200000);
 
   it("rewrites both shared auth.json copies with the host's account id at startup", () => {

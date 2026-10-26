@@ -186,50 +186,50 @@ else { Add-Fail 'envoy container running' "no running susentorno envoy container
 
 # A running envoy container's name is global (Docker doesn't namespace by
 # checkout), so finding one running says nothing about which environment it
-# belongs to. Cross-check by inspecting its bind mounts: envoy.yaml is always
-# mounted from <environment>\.susentorno\proxy\envoy.yaml, so that mount's
-# parent directory identifies the owning environment. Checked for every
-# matching container, since docker-compose.yml defines both a blue and a
-# green envoy service and either or both can be running during a transition.
+# belongs to. Cross-check by reading the susentorno.environment label that
+# run-hosting stamps on every envoy container it brings up, naming the
+# environment directory (the folder that owns .susentorno) it was brought up
+# for. Checked for every matching container, since docker-compose.yml defines
+# both a blue and a green envoy service and either or both can be running
+# during a transition.
 $envoyNames = @($envoy | ForEach-Object { ($_ -split '\s+')[0] } | Where-Object { $_ })
 if ($envoyNames.Count -gt 0) {
-    $resolvedExpected = Resolve-Path -LiteralPath $proxyDir -ErrorAction SilentlyContinue
-    $expectedProxyDir = if ($resolvedExpected) { $resolvedExpected.Path.TrimEnd('\') } else { $proxyDir.TrimEnd('\') }
+    $resolvedExpected = Resolve-Path -LiteralPath $EnvDir -ErrorAction SilentlyContinue
+    $expectedEnvDir = if ($resolvedExpected) { $resolvedExpected.Path.TrimEnd('\') } else { $EnvDir.TrimEnd('\') }
 
     # Every branch below that cannot positively confirm ownership -- an
-    # inspect failure, a missing mount, or an actual mismatch -- FAILs and
+    # inspect failure, a missing label, or an actual mismatch -- FAILs and
     # exits immediately, the same as a confirmed mismatch. "Inconclusive" and
     # "wrong" get the same treatment here: if this check can't prove the
     # running Envoy belongs to $EnvDir, every later section's assumption that
-    # it does is equally unsafe to build on.
+    # it does is equally unsafe to build on. A container without the label was
+    # started by an older susentorno and is never mistaken for this one's.
     foreach ($name in $envoyNames) {
         $inspectError = $null
-        $mountsJson = & docker inspect --format '{{json .Mounts}}' $name 2>&1
-        if ($LASTEXITCODE -ne 0) { $inspectError = ($mountsJson | Out-String).Trim() }
-        if ($inspectError -or -not $mountsJson) {
-            Add-Fail "envoy container '$name' ownership" "docker inspect failed -- could not read its mounted config: $inspectError"
+        $labelValue = & docker inspect --format '{{index .Config.Labels "susentorno.environment"}}' $name 2>&1
+        if ($LASTEXITCODE -ne 0) { $inspectError = ($labelValue | Out-String).Trim() }
+        if ($inspectError) {
+            Add-Fail "envoy container '$name' ownership" "docker inspect failed -- could not read its environment label: $inspectError"
             Write-Host ''
             Write-Host "$($script:pass) passed, $($script:fail) failed, $($script:warn) warnings"
             exit 1
         }
 
-        $mounts = $mountsJson | ConvertFrom-Json
-        $configMount = $mounts | Where-Object { $_.Destination -eq '/etc/envoy/envoy.yaml' -and $_.Type -eq 'bind' } | Select-Object -First 1
-        if (-not $configMount) {
-            Add-Fail "envoy container '$name' ownership" 'no bind mount found at /etc/envoy/envoy.yaml -- cannot verify which environment this container belongs to'
+        $actualEnvDir = ($labelValue | Out-String).Trim()
+        if (-not $actualEnvDir) {
+            Add-Fail "envoy container '$name' ownership" 'no susentorno.environment label found -- cannot verify which environment this container belongs to; restart run-hosting to replace it'
             Write-Host ''
             Write-Host "$($script:pass) passed, $($script:fail) failed, $($script:warn) warnings"
             exit 1
         }
 
-        $actualProxyDir = Split-Path -Parent $configMount.Source
-        $resolvedActual = Resolve-Path -LiteralPath $actualProxyDir -ErrorAction SilentlyContinue
-        $actualProxyDirResolved = if ($resolvedActual) { $resolvedActual.Path.TrimEnd('\') } else { $actualProxyDir.TrimEnd('\') }
+        $resolvedActual = Resolve-Path -LiteralPath $actualEnvDir -ErrorAction SilentlyContinue
+        $actualEnvDirResolved = if ($resolvedActual) { $resolvedActual.Path.TrimEnd('\') } else { $actualEnvDir.TrimEnd('\') }
 
-        if ($actualProxyDirResolved -ieq $expectedProxyDir) {
-            Add-Pass "envoy container '$name' belongs to this environment ($expectedProxyDir)"
+        if ($actualEnvDirResolved -ieq $expectedEnvDir) {
+            Add-Pass "envoy container '$name' belongs to this environment ($expectedEnvDir)"
         } else {
-            Add-Fail "envoy container '$name' belongs to this environment" "its config is mounted from '$actualProxyDirResolved', not '$expectedProxyDir' -- this Envoy belongs to a different environment; run this script from that environment instead"
+            Add-Fail "envoy container '$name' belongs to this environment" "its environment label is '$actualEnvDirResolved', not '$expectedEnvDir' -- this Envoy belongs to a different environment; run this script from that environment instead"
             Write-Host ''
             Write-Host "$($script:pass) passed, $($script:fail) failed, $($script:warn) warnings"
             exit 1

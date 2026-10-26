@@ -1,7 +1,8 @@
 import { execa, type ResultPromise } from 'execa';
 import { createInterface } from 'node:readline';
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { expect } from 'vitest';
 import { startMockUpstream, stopMockUpstream, type MockUpstream } from './proxy-stack/mockUpstream';
 import { killProcessTree } from '../src/runHosting/killProcessTree';
 import { rmEnvRoot } from './rmEnvRoot';
@@ -229,6 +230,42 @@ export async function startProxyStack(options: ProxyStackOptions = {}): Promise<
     blockListPath,
     credentialsPath,
   };
+}
+
+export interface RunningEnvoyContainer {
+  name: string;
+  labels: Record<string, string>;
+}
+
+/** Every running Envoy container of the susentorno compose project, as Docker reports it. */
+export async function inspectRunningEnvoyContainers(): Promise<RunningEnvoyContainer[]> {
+  const { stdout: ids } = await execa('docker', [
+    'ps',
+    '--quiet',
+    '--filter',
+    'label=com.docker.compose.project=susentorno',
+    '--filter',
+    'name=susentorno-envoy',
+  ]);
+  const containerIds = ids.split(/\s+/).filter(Boolean);
+  if (containerIds.length === 0) return [];
+  const { stdout } = await execa('docker', ['inspect', ...containerIds]);
+  return (
+    JSON.parse(stdout) as Array<{ Name: string; Config: { Labels: Record<string, string> } }>
+  ).map((c) => ({ name: c.Name.replace(/^\//, ''), labels: c.Config.Labels ?? {} }));
+}
+
+/** Assert every running Envoy container is labelled as belonging to this test environment. */
+export async function expectRunningEnvoysOwnedByTestEnvironment(): Promise<void> {
+  const containers = await inspectRunningEnvoyContainers();
+  expect(containers.length).toBeGreaterThan(0);
+  for (const { name, labels } of containers) {
+    const label = labels['susentorno.environment'];
+    expect(label, `${name} environment label`).toBeDefined();
+    expect(resolve(label).toLowerCase(), `${name} environment label`).toBe(
+      resolve(envParent).toLowerCase(),
+    );
+  }
 }
 
 export async function stopProxyStack(stack: ProxyStack): Promise<void> {
