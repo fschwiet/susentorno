@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** ready-for-review
 
 - [ ] The step downloads `https://claude.ai/install.ps1` to a uniquely named file in the guest's temporary directory, never in the UNC phase directory. A download failure fails the step with a `03-install-tools:` message.
 - [ ] The bootstrap runs in a child Windows PowerShell process that is noninteractive, uses no profile, and has a per-process execution-policy bypass. A nonzero exit fails the step. The guest's persistent execution policy is untouched.

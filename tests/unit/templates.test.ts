@@ -235,7 +235,6 @@ describe('generated provisioning inventory', () => {
       );
       expect(script).toContain('pnpm runtime set node latest -g');
       expect(script).toContain('@earendil-works/pi-coding-agent');
-      expect(script).toContain('Anthropic.ClaudeCode');
       expect(script).toContain('@openai/codex');
       expect(script).not.toContain('dotnet tool install');
       expect(script).not.toContain('VS Code');
@@ -397,24 +396,6 @@ describe('generated provisioning inventory', () => {
         expect(script()).toContain('pnpm runtime set node latest -g');
         expect(script()).toContain('pnpm add -g --ignore-scripts @earendil-works/pi-coding-agent');
         expect(script()).toContain('pnpm add -g @openai/codex');
-      });
-
-      it('installs Claude Code with the exact-state-first winget pattern', () => {
-        expect(script()).toContain('Anthropic.ClaudeCode');
-        expect(script()).toMatch(/list --id \$Id --exact --source winget/);
-        expect(script()).toContain('-1978335212');
-        const install = script()
-          .split('\n')
-          .find((l) => l.includes('install --id')) as string;
-        for (const flag of [
-          '--exact',
-          '--silent',
-          '--accept-source-agreements',
-          '--accept-package-agreements',
-          '--disable-interactivity',
-          '--source winget',
-        ])
-          expect(install, flag).toContain(flag);
       });
 
       it('verifies node, pi, claude, and codex resolve and report a version', () => {

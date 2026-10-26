@@ -14,11 +14,6 @@ function Fail([string]$Message) { throw "03-install-tools: $Message" }
 # relative path, so run from the local profile directory instead.
 Set-Location -LiteralPath $env:USERPROFILE
 
-# WinGet reports "no installed package matches" as APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND
-# (0x8A150014). This is the only nonzero status accepted, and only from the read-only
-# `winget list` probe. Every install status other than 0 is a failure.
-$WingetPackageAbsent = -1978335212
-
 function Update-ProcessPath {
   $pnpmHome = [Environment]::GetEnvironmentVariable('PNPM_HOME', 'User')
   if ($pnpmHome) { $env:PNPM_HOME = $pnpmHome }
@@ -36,31 +31,6 @@ $status = $LASTEXITCODE
 if ($status -ne 0) { Fail "pnpm --version exited $status" }
 Write-Host "03-install-tools: pnpm $(@($pnpmVersion)[0])"
 
-$winget = (Get-Command winget -ErrorAction SilentlyContinue).Source
-if (-not $winget) { $winget = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\winget.exe' }
-if (-not (Test-Path -LiteralPath $winget -PathType Leaf)) {
-  Fail 'winget was not found; the guest needs a usable App Installer before setup'
-}
-
-function Test-WingetPackageInstalled([string]$Id) {
-  $output = & $winget list --id $Id --exact --source winget --accept-source-agreements --disable-interactivity | Out-String
-  $status = $LASTEXITCODE
-  if ($status -eq 0) { return $true }
-  if ($status -eq $WingetPackageAbsent) { return $false }
-  Fail "winget list --id $Id exited ${status}: $($output.Trim())"
-}
-
-function Install-WingetPackage([string]$Id) {
-  if (Test-WingetPackageInstalled $Id) {
-    Write-Host "03-install-tools: $Id is already installed"
-    return
-  }
-  Write-Host "03-install-tools: installing $Id"
-  & $winget install --id $Id --exact --silent --accept-source-agreements --accept-package-agreements --disable-interactivity --source winget
-  $status = $LASTEXITCODE
-  if ($status -ne 0) { Fail "winget install --id $Id exited $status" }
-}
-
 # Node runtime managed by pnpm
 pnpm runtime set node latest -g
 $status = $LASTEXITCODE
@@ -71,8 +41,38 @@ pnpm add -g --ignore-scripts @earendil-works/pi-coding-agent
 $status = $LASTEXITCODE
 if ($status -ne 0) { Fail "pnpm add -g @earendil-works/pi-coding-agent exited $status" }
 
-# Claude Code CLI: native Windows installer.
-Install-WingetPackage 'Anthropic.ClaudeCode'
+# Claude Code CLI: Anthropic's official native installer bootstrap. Staged in a unique temp
+# file (never the UNC phase directory), run in its own noninteractive process, and always
+# removed. It runs on every setup so the guest follows the current release.
+$claudeBootstrap = Join-Path ([System.IO.Path]::GetTempPath()) ("susentorno-claude-install-{0}.ps1" -f [guid]::NewGuid().ToString('N'))
+$cleanupFailure = $null
+try {
+  try { Invoke-WebRequest -Uri 'https://claude.ai/install.ps1' -UseBasicParsing -OutFile $claudeBootstrap }
+  catch { Fail "downloading the Claude Code bootstrap failed: $($_.Exception.Message)" }
+
+  & (Join-Path $PSHOME 'powershell.exe') -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $claudeBootstrap
+  $status = $LASTEXITCODE
+  if ($status -ne 0) { Fail "the Claude Code bootstrap exited $status" }
+} finally {
+  if (Test-Path -LiteralPath $claudeBootstrap) {
+    try { Remove-Item -LiteralPath $claudeBootstrap -Force -ErrorAction Stop }
+    catch {
+      $cleanupFailure = "could not remove the temporary bootstrap ${claudeBootstrap}: $($_.Exception.Message)"
+      Write-Warning "03-install-tools: $cleanupFailure"
+    }
+  }
+}
+if ($cleanupFailure) { Fail $cleanupFailure }
+
+# Make sure the native install directory is on the persisted user PATH (added once).
+$claudeBin = Join-Path $env:USERPROFILE '.local\bin'
+$persistedUserPath = [string][Environment]::GetEnvironmentVariable('Path', 'User')
+$persistedEntries = @($persistedUserPath -split ';' | Where-Object { $_ } | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') })
+if (-not ($persistedEntries | Where-Object { $_ -ieq $claudeBin.TrimEnd('\') })) {
+  $newUserPath = (@($persistedUserPath.TrimEnd(';'), $claudeBin) | Where-Object { $_ }) -join ';'
+  [Environment]::SetEnvironmentVariable('Path', $newUserPath, 'User')
+  Write-Host "03-install-tools: added $claudeBin to the persisted user PATH"
+}
 
 # Codex CLI: cross-platform npm package via pnpm.
 pnpm add -g @openai/codex
