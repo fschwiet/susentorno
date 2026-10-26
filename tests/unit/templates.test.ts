@@ -117,6 +117,14 @@ describe('generated provisioning inventory', () => {
     });
   });
 
+  describe('envoy configuration by copy', () => {
+    it('declares no volumes, so nothing is bind-mounted from the host', () => {
+      const compose = readFileSync(join(templatesDir(), 'proxy', 'docker-compose.yml'), 'utf8');
+      expect(compose).not.toMatch(/^\s*volumes:/m);
+      expect(compose).not.toContain('/etc/envoy/ca');
+    });
+  });
+
   describe('envoy ownership label', () => {
     it('labels both Envoy colors with the environment directory from the bring-up environment', () => {
       const compose = readFileSync(join(templatesDir(), 'proxy', 'docker-compose.yml'), 'utf8');

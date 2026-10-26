@@ -3,17 +3,14 @@ name: susentorno
 x-envoy: &envoy
   image: envoyproxy/envoy:v1.31-latest
   restart: unless-stopped
+  # No volumes: run-hosting copies the proxy configuration into each container
+  # with `docker cp` between create and start (ADR 0029).
   # Names the environment directory this container was brought up for;
   # run-hosting fills it in. verify-proxy.ps1 reads it to prove ownership.
   labels:
     susentorno.environment: '${SUSENTORNO_ENVIRONMENT_DIR:-}'
   extra_hosts:
     - 'host.docker.internal:host-gateway'
-  volumes:
-    - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
-    - ./gate.lua:/etc/envoy/gate.lua:ro
-    - ./ca:/etc/envoy/ca:ro
-    - ./secrets:/etc/envoy/secrets:ro
   command: ['-c', '/etc/envoy/envoy.yaml', '--log-level', 'info']
 
 services:

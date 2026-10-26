@@ -3,6 +3,7 @@ import { request as httpsRequest } from 'node:https';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   countProxyLines,
+  expectRunningEnvoysConfiguredByCopy,
   expectRunningEnvoysOwnedByTestEnvironment,
   HTTPS_PORT,
   PLACEHOLDER_AUTH,
@@ -95,6 +96,7 @@ describe('proxy stack policy reload & log follow', () => {
 
     // The swapped-in color carries the ownership label too.
     await expectRunningEnvoysOwnedByTestEnvironment();
+    await expectRunningEnvoysConfiguredByCopy();
 
     await passthroughProbe();
 

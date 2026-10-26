@@ -4,14 +4,14 @@
 
 **Blocked by:** 01 (ownership label), because removing the bind mounts would otherwise break `verify-proxy.ps1`'s ownership check.
 
-**Status:** ready-for-agent
+**Status:** ready-for-review
 
-- [ ] The Compose template declares no volumes for the Envoy services. The image, restart policy, host-gateway mapping, command, published ports, and the ownership label from 01 are unchanged.
-- [ ] Color bring-up keeps its contract with the run-hosting loop: it resolves once the color is started and rejects on any failure, including a failed copy, so the current color keeps serving.
-- [ ] A file removed from the environment's proxy directory is absent from the next color.
-- [ ] The root CA private key is never copied into a container. The leaf certificate and key and the upstream trust bundle are.
-- [ ] `proxy-stack` test: after the first bring-up, and again after a policy-reload swap, each running Envoy container has no bind mounts and no root CA private key at its CA path.
-- [ ] The existing `proxy-stack` tests (lifecycle, policy reload, injection, allow-list enforcement, upstream validation, MCP server, robustness) pass unchanged.
+- [x] The Compose template declares no volumes for the Envoy services. The image, restart policy, host-gateway mapping, command, published ports, and the ownership label from 01 are unchanged.
+- [x] Color bring-up keeps its contract with the run-hosting loop: it resolves once the color is started and rejects on any failure, including a failed copy, so the current color keeps serving.
+- [x] A file removed from the environment's proxy directory is absent from the next color.
+- [x] The root CA private key is never copied into a container. The leaf certificate and key and the upstream trust bundle are.
+- [x] `proxy-stack` test: after the first bring-up, and again after a policy-reload swap, each running Envoy container has no bind mounts and no root CA private key at its CA path.
+- [x] The existing `proxy-stack` tests (lifecycle, policy reload, injection, allow-list enforcement, upstream validation, MCP server, robustness) pass unchanged.
 
 **Verification:** Don't run `pnpm check` or the full `pnpm test`; ticket 05 runs the whole pipeline once at the end. Run these, in this order:
 

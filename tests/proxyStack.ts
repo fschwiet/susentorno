@@ -235,6 +235,8 @@ export async function startProxyStack(options: ProxyStackOptions = {}): Promise<
 export interface RunningEnvoyContainer {
   name: string;
   labels: Record<string, string>;
+  /** Mounts Docker reports for the container; a copy-configured container has none. */
+  mounts: Array<{ Type: string; Source?: string; Destination: string }>;
 }
 
 /** Every running Envoy container of the susentorno compose project, as Docker reports it. */
@@ -251,8 +253,16 @@ export async function inspectRunningEnvoyContainers(): Promise<RunningEnvoyConta
   if (containerIds.length === 0) return [];
   const { stdout } = await execa('docker', ['inspect', ...containerIds]);
   return (
-    JSON.parse(stdout) as Array<{ Name: string; Config: { Labels: Record<string, string> } }>
-  ).map((c) => ({ name: c.Name.replace(/^\//, ''), labels: c.Config.Labels ?? {} }));
+    JSON.parse(stdout) as Array<{
+      Name: string;
+      Config: { Labels: Record<string, string> };
+      Mounts: RunningEnvoyContainer['mounts'] | null;
+    }>
+  ).map((c) => ({
+    name: c.Name.replace(/^\//, ''),
+    labels: c.Config.Labels ?? {},
+    mounts: c.Mounts ?? [],
+  }));
 }
 
 /** Assert every running Envoy container is labelled as belonging to this test environment. */
@@ -265,6 +275,25 @@ export async function expectRunningEnvoysOwnedByTestEnvironment(): Promise<void>
     expect(resolve(label).toLowerCase(), `${name} environment label`).toBe(
       resolve(envParent).toLowerCase(),
     );
+  }
+}
+
+/**
+ * Assert every running Envoy container received its configuration by copy: no
+ * bind mounts, the leaf key and upstream trust bundle present at the CA path,
+ * and the root CA private key absent from it.
+ */
+export async function expectRunningEnvoysConfiguredByCopy(): Promise<void> {
+  const containers = await inspectRunningEnvoyContainers();
+  expect(containers.length).toBeGreaterThan(0);
+  for (const { name, mounts } of containers) {
+    expect(mounts, `${name} mounts`).toEqual([]);
+    const { stdout } = await execa('docker', ['exec', name, 'ls', '/etc/envoy/ca']);
+    const caFiles = stdout.split(/\s+/).filter(Boolean);
+    expect(caFiles, `${name} CA directory`).toEqual(
+      expect.arrayContaining(['leaf-cert.pem', 'leaf-key.pem', 'upstream-trust.pem']),
+    );
+    expect(caFiles, `${name} CA directory`).not.toContain('key.pem');
   }
 }
 

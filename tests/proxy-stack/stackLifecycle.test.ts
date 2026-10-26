@@ -8,7 +8,10 @@ import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startMockUpstream, stopMockUpstream, type MockUpstream } from './mockUpstream';
-import { expectRunningEnvoysOwnedByTestEnvironment } from '../proxyStack';
+import {
+  expectRunningEnvoysConfiguredByCopy,
+  expectRunningEnvoysOwnedByTestEnvironment,
+} from '../proxyStack';
 import { envParent, envRoot } from '../testEnvRoot';
 import { buildJwt } from '../../src/jwt';
 import { envPaths } from '../../src/envPaths';
@@ -194,6 +197,10 @@ afterAll(async () => {
 describe('proxy stack lifecycle & replacement', () => {
   it('labels the running Envoy container with this environment after bring-up', async () => {
     await expectRunningEnvoysOwnedByTestEnvironment();
+  });
+
+  it('configures the running Envoy container by copy, without the root CA key', async () => {
+    await expectRunningEnvoysConfiguredByCopy();
   });
 
   it('swaps blue->green->blue across rotations and serves the new token each time', async () => {
