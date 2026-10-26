@@ -4,11 +4,11 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** ready-for-review
 
-- [ ] No rendered SDS source declares a watched directory. Each one still names its secret file.
-- [ ] `unit` proxy config tests assert the SDS file paths and the absence of a watched directory.
-- [ ] The existing `proxy-stack` injection tests (Anthropic, Codex, GitHub) pass unchanged.
+- [x] No rendered SDS source declares a watched directory. Each one still names its secret file.
+- [x] `unit` proxy config tests assert the SDS file paths and the absence of a watched directory.
+- [x] The existing `proxy-stack` injection tests (Anthropic, Codex, GitHub) pass unchanged.
 
 **Verification:** Don't run `pnpm check` or the full `pnpm test`; ticket 05 runs the whole pipeline once at the end. Run these, in this order:
 

@@ -60,6 +60,12 @@ describe('proxy configuration generation', () => {
         '/etc/envoy/gate.lua',
       );
       expect(hcm.http_filters[1].typed_config.overwrite).toBe(false);
+      // The SDS source names its secret file and declares no watched directory: secrets
+      // never change inside a running container (ADR 0012, ADR 0029).
+      expect(
+        hcm.http_filters[1].typed_config.credential.typed_config.credential.sds_config
+          .path_config_source,
+      ).toEqual({ path: '/etc/envoy/secrets/sds-secret.yaml' });
       expect(hcm.http_filters[2].typed_config.default_source_code.inline_string).toBe(
         AUTH_POST_FILTER_LUA,
       );
@@ -445,10 +451,9 @@ describe('proxy configuration generation', () => {
       expect(injector.overwrite).toBe(false);
       const cred = injector.credential.typed_config.credential;
       expect(cred.name).toBe('github_basic_auth');
-      expect(cred.sds_config.path_config_source.path).toBe(
-        '/etc/envoy/secrets/github-basic-secret.yaml',
-      );
-      expect(cred.sds_config.path_config_source.watched_directory.path).toBe('/etc/envoy/secrets');
+      expect(cred.sds_config.path_config_source).toEqual({
+        path: '/etc/envoy/secrets/github-basic-secret.yaml',
+      });
       expect(hcm.route_config.virtual_hosts[0].routes[0].route.cluster).toBe(
         'cluster_github_github_com',
       );
@@ -477,9 +482,9 @@ describe('proxy configuration generation', () => {
       expect(injector.overwrite).toBe(false);
       const cred = injector.credential.typed_config.credential;
       expect(cred.name).toBe('github_api_token');
-      expect(cred.sds_config.path_config_source.path).toBe(
-        '/etc/envoy/secrets/github-api-token-secret.yaml',
-      );
+      expect(cred.sds_config.path_config_source).toEqual({
+        path: '/etc/envoy/secrets/github-api-token-secret.yaml',
+      });
     });
 
     it('serves the leaf cert and builds override-aware github clusters', () => {
@@ -555,17 +560,17 @@ describe('proxy configuration generation', () => {
       expect(injector.overwrite).toBe(false);
       expect(injector.credential.typed_config.header).toBe('Authorization');
       expect(injector.credential.typed_config.credential.name).toBe('codex_bearer_token');
-      expect(injector.credential.typed_config.credential.sds_config.path_config_source.path).toBe(
-        '/etc/envoy/secrets/codex-secret.yaml',
-      );
+      expect(injector.credential.typed_config.credential.sds_config.path_config_source).toEqual({
+        path: '/etc/envoy/secrets/codex-secret.yaml',
+      });
 
       const accountIdInjector = hcm.http_filters[2].typed_config;
       expect(accountIdInjector.overwrite).toBe(false);
       expect(accountIdInjector.credential.typed_config.header).toBe('chatgpt-account-id');
       expect(accountIdInjector.credential.typed_config.credential.name).toBe('codex_account_id');
       expect(
-        accountIdInjector.credential.typed_config.credential.sds_config.path_config_source.path,
-      ).toBe('/etc/envoy/secrets/codex-account-id-secret.yaml');
+        accountIdInjector.credential.typed_config.credential.sds_config.path_config_source,
+      ).toEqual({ path: '/etc/envoy/secrets/codex-account-id-secret.yaml' });
 
       const cluster = config.static_resources.clusters.find(
         (c: any) => c.name === 'cluster_codex_chatgpt_com',

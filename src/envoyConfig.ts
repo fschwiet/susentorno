@@ -328,8 +328,8 @@ end
 `;
 
 // github.com -> Basic gate + github_basic_auth; api.github.com -> token/Bearer gate + github_api_token.
-// Each SDS resource lives in its own watched file: Envoy's filesystem SDS rejects a
-// watched file that holds more than the one resource a given sds_config expects.
+// Each SDS resource lives in its own file: Envoy's filesystem SDS rejects a
+// file that holds more than the one resource a given sds_config expects.
 const GITHUB_INJECTION: Record<string, { sdsResource: string; sdsFile: string; gate: string }> = {
   'github.com': {
     sdsResource: 'github_basic_auth',
@@ -419,7 +419,6 @@ function buildGithubEntry(
                       sds_config: {
                         path_config_source: {
                           path: `/etc/envoy/secrets/${sdsFile}`,
-                          watched_directory: { path: '/etc/envoy/secrets' },
                         },
                         resource_api_version: 'V3',
                       },
@@ -527,7 +526,6 @@ function buildClaudeEntry(entry: string, overrides: UpstreamOverride[], verifyOv
                       sds_config: {
                         path_config_source: {
                           path: '/etc/envoy/secrets/sds-secret.yaml',
-                          watched_directory: { path: '/etc/envoy/secrets' },
                         },
                         resource_api_version: 'V3',
                       },
@@ -663,7 +661,6 @@ function buildCodexEntry(entry: string, overrides: UpstreamOverride[], verifyOve
                       sds_config: {
                         path_config_source: {
                           path: '/etc/envoy/secrets/codex-secret.yaml',
-                          watched_directory: { path: '/etc/envoy/secrets' },
                         },
                         resource_api_version: 'V3',
                       },
@@ -689,7 +686,6 @@ function buildCodexEntry(entry: string, overrides: UpstreamOverride[], verifyOve
                       sds_config: {
                         path_config_source: {
                           path: '/etc/envoy/secrets/codex-account-id-secret.yaml',
-                          watched_directory: { path: '/etc/envoy/secrets' },
                         },
                         resource_api_version: 'V3',
                       },
