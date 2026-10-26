@@ -4,11 +4,11 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** ready-for-review
 
-- [ ] The success output says that `run-hosting` must be restarted for the new GitHub credential to take effect. It still never echoes the token.
-- [ ] No comment in the command describes the secrets directory as watched.
-- [ ] `cli` `write-github-config` test asserts the restart notice.
+- [x] The success output says that `run-hosting` must be restarted for the new GitHub credential to take effect. It still never echoes the token.
+- [x] No comment in the command describes the secrets directory as watched.
+- [x] `cli` `write-github-config` test asserts the restart notice.
 
 **Verification:** Don't run `pnpm check` or the full `pnpm test`; ticket 05 runs the whole pipeline once at the end. Run these, in this order:
 

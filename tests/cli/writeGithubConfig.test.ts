@@ -90,6 +90,8 @@ describe('susentorno write-github-config', () => {
       expect(exitCode).toBe(0);
       // The real token is never printed.
       expect(stdout).not.toContain(validToken);
+      // run-hosting doesn't watch the GitHub secret files, so it must be restarted.
+      expect(stdout).toContain('run-hosting must be restarted');
 
       // VM share gets identity + the placeholder PAT, never the real token.
       const vmConfig = readFileSync(

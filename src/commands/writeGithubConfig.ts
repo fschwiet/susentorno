@@ -60,8 +60,10 @@ export function registerWriteGithubConfig(program: Command): void {
         );
       }
 
-      // Proxy watched dir: the real credential, in sibling SDS files run-hosting never rewrites.
-      // Envoy's filesystem SDS requires one resource per watched file, hence two files.
+      // Proxy secrets dir: the real credential, in sibling SDS files run-hosting never rewrites.
+      // Envoy's filesystem SDS requires one resource per file, hence two files. run-hosting
+      // doesn't watch these files; the credential reaches the proxy stack only when run-hosting
+      // next brings up a fresh Envoy color, so the user must restart it (see the output below).
       mkdirSync(dirname(paths.githubBasicSecret), { recursive: true });
       writeFileSync(paths.githubBasicSecret, formatGithubBasicSecret(username, token));
       writeFileSync(paths.githubApiTokenSecret, formatGithubApiTokenSecret(token));
@@ -71,6 +73,9 @@ export function registerWriteGithubConfig(program: Command): void {
         `write-github-config: wrote placeholder github-config.txt to vm-shared-linux and vm-shared-windows, ` +
           `and the real credential to github-basic-secret.yaml and github-api-token-secret.yaml ` +
           `for ${username} <${email}>`,
+      );
+      console.log(
+        'write-github-config: run-hosting must be restarted for the new GitHub credential to take effect.',
       );
     });
 }
