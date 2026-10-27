@@ -43,6 +43,10 @@ describe('autoinstall seed generators', () => {
     // cloud-init removes the key written by the late-command and makes a new
     // one, which defeats the harness's deterministic known_hosts trust.
     expect(ai['user-data']).toMatchObject({ ssh_deletekeys: false });
+    // A geoip-selected country mirror can be unreachable from the build host
+    // (co.archive.ubuntu.com behind a susentorno proxy), which stalls
+    // Subiquity's Mirror step until waitForOff's deadline.
+    expect(ai.apt).toEqual({ geoip: false });
     expect(ai.storage.layout).toEqual({ name: 'direct', match: { size: 'largest' } });
     expect(ai.packages).toEqual(
       expect.arrayContaining(['network-manager', 'jq', 'linux-cloud-tools-virtual']),

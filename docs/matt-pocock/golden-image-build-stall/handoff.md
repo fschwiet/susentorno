@@ -1,6 +1,6 @@
 # Hand-off: guest tier golden Ubuntu image build stalls at Subiquity's mirror step
 
-**Status:** needs-triage
+**Status:** resolved
 
 Related: [golden-image-installer-kernel-oops/issues/01](../golden-image-installer-kernel-oops/issues/01-installer-kernel-oops-hangs-golden-build.md) describes an intermittent hang at the same point. This is not yet shown to be the same bug (see "Differences from the earlier ticket").
 
@@ -87,3 +87,32 @@ The log stopping may mean the installer hung with nothing to print, or the seria
 - Whether the installer was alive during the 39 silent minutes.
 - Whether the same commit builds on a non-nested host. (The earlier ticket suggests it can.)
 - What run 1's log looked like beyond its last lines, which I only saw in the output tail.
+
+## Comments
+
+### 2026-10-26: Diagnosed — geoip country mirror unreachable through this host's proxy
+
+**Cause.** Hypothesis 2 (restricted egress), in a specific form. This host is itself a susentorno guest. Its DNS answers every name with `192.168.67.1` (its Envoy), and the nested build VM's traffic leaves through the Default Switch NAT into that same Envoy. Subiquity's default `apt.geoip: true` looked up `geoip.ubuntu.com`, which reports the egress IP as Colombia, and swapped in `co.archive.ubuntu.com` as the primary mirror. Envoy allows that host but cannot reach it upstream:
+
+```
+GET /ubuntu/dists/resolute/InRelease   Host: co.archive.ubuntu.com
+HTTP/1.1 503 Service Unavailable   server: envoy
+upstream connect error or disconnect/reset before header
+```
+
+The same request from the host reproduces it in ~5.5 s, while `archive.ubuntu.com` and `us.archive.ubuntu.com` return 200. This is not an allowlist denial: a denied host gets `403` (e.g. `http://example.com`).
+
+**Evidence from a live repro** (host packet capture with `pktmon`, plus a shell on the live installer's tty2 via the VM's virtual keyboard):
+
+- Unfixed build: every mirror-check request went to `co.archive.ubuntu.com` and got 503. After the second `cmd-apt-config` the VM sent no packets at all, at ~0% CPU, and the console matched the serial log line for line. So the serial reader was not losing output (hypothesis 4 ruled out). No oops (hypothesis 3 not involved), and nested virtualisation (hypothesis 1) was not implicated: the VM was healthy and responsive.
+- Fixed build (`apt: { geoip: false }`): `finish: subiquity/Mirror/apply_autoinstall_config` was logged at ~2 min, a line no failing run reached. The installer log said `Mirror checking successful`, the target's sources were `archive.ubuntu.com` / `security.ubuntu.com`, and the VM powered off by itself after ~26 min.
+
+**Fix.** `tests/guest/autoinstall.ts` sets `apt: { geoip: false }`, so the build's mirror is `archive.ubuntu.com` regardless of where the host's egress geolocates. (Subiquity still queries `geoip.ubuntu.com` for the timezone; that lookup times out after 10 s and does not block the install.) The unit test in `tests/unit/guest/autoinstall.test.ts` asserts it. That is a configuration assertion: the failure itself only reproduces on a host whose country mirror is unreachable, so no automated test reaches the real failure path.
+
+**Caution for the "fail early on serial silence" idea under Things to try:** after the Mirror step, the serial console stays silent for 10+ minutes during a healthy install, with no Subiquity events while curtin installs and runs `unattended-upgrades` in the target. A silence threshold would need to be long, or limited to the steps before Install, or it will fail healthy builds.
+
+**Relation to the earlier ticket:** separate. That one printed a real `ubuntu-drivers` overlayfs oops on a host without this proxy.
+
+**Follow-up:** [issues/01](issues/01-pin-primary-mirror.md) pins `apt.mirror-selection.primary` explicitly, so the fix no longer relies on how Subiquity merges its default apt config.
+
+**Follow-up:** [issues/02](issues/02-cheaper-golden-build-failures.md) carries "Things to try" item 5 (cheaper failure diagnosis), with the serial-silence constraint above.

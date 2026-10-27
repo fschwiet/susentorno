@@ -65,6 +65,12 @@ export function buildUserData(inputs: AutoinstallInputs): string {
     // on its first boot, invalidating the harness's deterministic known_hosts.
     '  user-data:',
     '    ssh_deletekeys: false',
+    // Subiquity otherwise swaps in the geoip country mirror (CC.archive.ubuntu.com).
+    // A country mirror the build host cannot reach makes every mirror check
+    // fail, and the installer then sits silent after the Mirror step until
+    // waitForOff's deadline.
+    '  apt:',
+    '    geoip: false',
     '  storage:',
     '    layout:',
     '      name: direct',
