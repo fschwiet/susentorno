@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] The Compose template sets a `susentorno.`-namespaced label on both colors. Its value is the environment directory, filled in from the bring-up environment.
 - [x] `verify-proxy.ps1` compares the label, after path normalization, with the environment it was invoked for. A missing label, an inspect failure, or a mismatch each fail closed and exit immediately, as the current check does.

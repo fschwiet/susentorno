@@ -1,6 +1,6 @@
 # Spec: proxy containers receive their configuration by copy, not bind mount
 
-Status: ready-for-agent
+Status: resolved
 
 ## Problem Statement
 

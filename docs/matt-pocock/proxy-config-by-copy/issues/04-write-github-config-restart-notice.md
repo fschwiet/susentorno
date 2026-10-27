@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] The success output says that `run-hosting` must be restarted for the new GitHub credential to take effect. It still never echoes the token.
 - [x] No comment in the command describes the secrets directory as watched.

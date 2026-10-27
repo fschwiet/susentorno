@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] No rendered SDS source declares a watched directory. Each one still names its secret file.
 - [x] `unit` proxy config tests assert the SDS file paths and the absence of a watched directory.

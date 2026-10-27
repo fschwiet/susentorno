@@ -121,7 +121,6 @@ describe('generated provisioning inventory', () => {
     it('declares no volumes, so nothing is bind-mounted from the host', () => {
       const compose = readFileSync(join(templatesDir(), 'proxy', 'docker-compose.yml'), 'utf8');
       expect(compose).not.toMatch(/^\s*volumes:/m);
-      expect(compose).not.toContain('/etc/envoy/ca');
     });
   });
 

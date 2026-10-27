@@ -1,4 +1,5 @@
 import { execa } from 'execa';
+import { containerName } from './colorContainer';
 import type { Color } from './types';
 
 /**
@@ -24,7 +25,7 @@ export async function isColorRunning(color: Color, composeDir: string): Promise<
   try {
     const { stdout } = await execa(
       'docker',
-      ['inspect', '--format', '{{.State.Status}} {{.RestartCount}}', `susentorno-envoy-${color}`],
+      ['inspect', '--format', '{{.State.Status}} {{.RestartCount}}', containerName(color)],
       { cwd: composeDir },
     );
     const [status, restarts] = stdout.trim().split(/\s+/);

@@ -126,8 +126,8 @@ beforeAll(async () => {
   );
   await execa('node', [cliPath, 'generate-ca'], { cwd: envParent });
 
-  // The proxy's watched secrets dir must hold both github secrets before Envoy starts,
-  // since each chain's SDS subscription watches its own single-resource file.
+  // The proxy's secrets dir must hold both github secrets before Envoy starts (they are
+  // copied in at bring-up), since each chain's SDS source reads its own single-resource file.
   mkdirSync(join(proxyDir, 'secrets'), { recursive: true });
   writeFileSync(
     join(proxyDir, 'secrets', 'github-basic-secret.yaml'),

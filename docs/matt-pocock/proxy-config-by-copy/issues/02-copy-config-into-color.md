@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 (ownership label), because removing the bind mounts would otherwise break `verify-proxy.ps1`'s ownership check.
 
-**Status:** ready-for-review
+**Status:** resolved
 
 - [x] The Compose template declares no volumes for the Envoy services. The image, restart policy, host-gateway mapping, command, published ports, and the ownership label from 01 are unchanged.
 - [x] Color bring-up keeps its contract with the run-hosting loop: it resolves once the color is started and rejects on any failure, including a failed copy, so the current color keeps serving.

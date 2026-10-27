@@ -1,7 +1,7 @@
 /**
  * Render the two Envoy file-based SDS secrets consumed from
  * .susentorno/proxy/secrets/. Each file carries exactly one resource:
- * Envoy's filesystem SDS rejects a watched file that holds more than the one
+ * Envoy's filesystem SDS rejects a file that holds more than the one
  * resource a given sds_config subscription expects. `github_basic_auth`
  * (git's Basic auth to github.com) and `github_api_token` (gh's `token`-scheme
  * auth to api.github.com) are therefore two separate files, both derived from

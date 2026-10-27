@@ -42,7 +42,7 @@ export interface RunHostingDeps {
   ensureLeaf: (sans: string[]) => string;
   /** Allocate three distinct free loopback ports for the next color to bring up. */
   allocatePorts: () => Promise<ColorPorts>;
-  /** Force-recreate the given color's container, published on `ports`. */
+  /** Recreate the given color's container with fresh configuration, published on `ports`. */
   bringUpColor: (color: Color, ports: ColorPorts) => Promise<void>;
   /** Poll the color's own admin /ready; ready once it serves, else exited/timeout. */
   waitColorReady: (
