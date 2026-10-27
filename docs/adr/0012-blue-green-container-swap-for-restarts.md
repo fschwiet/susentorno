@@ -4,7 +4,7 @@ Every proxy configuration change — a credential rotation or network-policy edi
 
 ## Considered Options
 
-- **File-based SDS `watched_directory` hot-reload (no restart).** Rejected: it covers only secrets, while network-policy edits change static listeners and clusters in `envoy.yaml` and still need a restart, so it would add a second update path beside blue/green. Each container holds a configuration snapshot taken at creation ([[proxy-containers-receive-configuration-by-copy]]), so hot-reload would also mean writing files into a running container.
+- **File-based SDS `watched_directory` hot-reload (no restart).** Rejected: it covers only secrets, while network-policy edits change static listeners and clusters in `envoy.yaml` and still need a restart, so it would add a second update path beside blue/green. Secrets and policy reach a color only when it is brought up ([[proxy-containers-bind-mount-configuration-read-only]]), so blue/green stays the one supported path for a change to reach Envoy.
 - **REST SDS hot-reload (Envoy polls `run-hosting` over HTTP).** Verified working, but **rejected on security grounds**: it requires `run-hosting` to serve the raw bearer token on a container-reachable port, which is exactly the exposure this proxy exists to prevent.
 - **Full dynamic xDS (file LDS/CDS/SDS).** A large, higher-risk rewrite for a benefit blue/green already delivers.
 

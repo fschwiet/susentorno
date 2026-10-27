@@ -1,5 +1,7 @@
 # Proxy containers receive their configuration by copy, not bind mount
 
+Status: superseded by [[proxy-containers-bind-mount-configuration-read-only]] (ADR 0030).
+
 Each Envoy color container is created, has the environment's proxy configuration (`envoy.yaml`, `gate.lua`, `ca/` without the root CA key `ca/key.pem`, and `secrets/`) copied into its own filesystem with `docker cp`, and only then started. No host path is bind-mounted. Bind mounts made Docker Desktop's Hyper-V backend prompt for a file-sharing grant for every new environment directory, including each test run's `test-results/.susentorno`. `docker cp` streams over the Docker API, so file sharing never applies, and it behaves the same on the WSL 2 backend. The host's `.susentorno/proxy` remains the single source of truth; a container holds a snapshot taken when it was created, which is all [[blue-green-container-swap-for-restarts]] ever relied on, since every change is already applied by recreating a color.
 
 ## Considered Options

@@ -61,7 +61,7 @@ describe('proxy configuration generation', () => {
       );
       expect(hcm.http_filters[1].typed_config.overwrite).toBe(false);
       // The SDS source names its secret file and declares no watched directory: secrets
-      // never change inside a running container (ADR 0012, ADR 0029).
+      // never change inside a running container (ADR 0012, ADR 0030).
       expect(
         hcm.http_filters[1].typed_config.credential.typed_config.credential.sds_config
           .path_config_source,

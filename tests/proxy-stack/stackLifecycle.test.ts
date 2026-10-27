@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startMockUpstream, stopMockUpstream, type MockUpstream } from './mockUpstream';
 import {
-  expectRunningEnvoysConfiguredByCopy,
+  expectRunningEnvoysConfigured,
   expectRunningEnvoysOwnedByTestEnvironment,
 } from '../proxyStack';
 import { envParent, envRoot } from '../testEnvRoot';
@@ -199,8 +199,8 @@ describe('proxy stack lifecycle & replacement', () => {
     await expectRunningEnvoysOwnedByTestEnvironment();
   });
 
-  it('configures the running Envoy container by copy, without the root CA key', async () => {
-    await expectRunningEnvoysConfiguredByCopy();
+  it('configures the running Envoy container with its certificates and without the root CA key', async () => {
+    await expectRunningEnvoysConfigured();
   });
 
   it('swaps blue->green->blue across rotations and serves the new token each time', async () => {

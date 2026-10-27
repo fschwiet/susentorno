@@ -7,7 +7,7 @@ Requirements and setup for running susentorno's own test suite. See [testing.md]
 - All [host prerequisites](README.md#host-prerequisites).
 - An **elevated (Administrator)** terminal. The `host-network` and `guest` tiers create and delete real Hyper-V switches, firewall rules, VMs, VHDs, SMB shares, and a Windows local account.
 - **Hyper-V** enabled, with a working **Default Switch** (the guest tier's golden-image build needs ICS internet through it).
-- **Docker Desktop** running, for the `proxy-stack` and `guest` tiers.
+- **Docker Desktop** running on the **WSL 2 backend**, for the `proxy-stack` and `guest` tiers.
 - A running **`ssh-agent`**. Windows ships the service **Disabled**, so a fresh machine needs:
   ```powershell
   Set-Service ssh-agent -StartupType Automatic

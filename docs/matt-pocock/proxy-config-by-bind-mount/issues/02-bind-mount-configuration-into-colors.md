@@ -11,7 +11,7 @@ Ticket 01 already keeps the root CA private key out of the mounted CA directory.
 
 **Blocked by:** 01 (keep the root CA private key outside the proxy directory). Without it, mounting the CA directory would expose the key inside Envoy.
 
-**Status:** ready-for-agent
+**Status:** ready-for-review
 
 - [ ] The Compose template's shared Envoy definition bind-mounts the four configuration paths read-only. It keeps the ownership label, image, restart policy, host-gateway mapping, command, and per-color published ports.
 - [ ] Color bring-up keeps its contract with the run-hosting loop: same inputs, including the environment directory for the label. It resolves once the color is started and rejects on failure, so the current color keeps serving.

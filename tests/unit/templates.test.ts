@@ -117,10 +117,14 @@ describe('generated provisioning inventory', () => {
     });
   });
 
-  describe('envoy configuration by copy', () => {
-    it('declares no volumes, so nothing is bind-mounted from the host', () => {
+  describe('envoy configuration by bind mount', () => {
+    it('mounts the four configuration paths read-only, with the proxy CA directory as the CA source', () => {
       const compose = readFileSync(join(templatesDir(), 'proxy', 'docker-compose.yml'), 'utf8');
-      expect(compose).not.toMatch(/^\s*volumes:/m);
+      const anchor = compose.slice(compose.indexOf('x-envoy:'), compose.indexOf('services:'));
+      expect(anchor).toContain('- ./envoy.yaml:/etc/envoy/envoy.yaml:ro');
+      expect(anchor).toContain('- ./gate.lua:/etc/envoy/gate.lua:ro');
+      expect(anchor).toContain('- ./ca:/etc/envoy/ca:ro');
+      expect(anchor).toContain('- ./secrets:/etc/envoy/secrets:ro');
     });
   });
 

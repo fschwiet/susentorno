@@ -235,8 +235,6 @@ export async function startProxyStack(options: ProxyStackOptions = {}): Promise<
 export interface RunningEnvoyContainer {
   name: string;
   labels: Record<string, string>;
-  /** Mounts Docker reports for the container; a copy-configured container has none. */
-  mounts: Array<{ Type: string; Source?: string; Destination: string }>;
 }
 
 /** Every running Envoy container of the susentorno compose project, as Docker reports it. */
@@ -256,12 +254,10 @@ export async function inspectRunningEnvoyContainers(): Promise<RunningEnvoyConta
     JSON.parse(stdout) as Array<{
       Name: string;
       Config: { Labels: Record<string, string> };
-      Mounts: RunningEnvoyContainer['mounts'] | null;
     }>
   ).map((c) => ({
     name: c.Name.replace(/^\//, ''),
     labels: c.Config.Labels ?? {},
-    mounts: c.Mounts ?? [],
   }));
 }
 
@@ -279,15 +275,17 @@ export async function expectRunningEnvoysOwnedByTestEnvironment(): Promise<void>
 }
 
 /**
- * Assert every running Envoy container received its configuration by copy: no
- * bind mounts, the leaf key and upstream trust bundle present at the CA path,
- * and the root CA private key absent from it.
+ * Assert every running Envoy container is owned by this test environment, has the
+ * leaf certificate, leaf key and upstream trust bundle at its CA path, and has no
+ * root CA private key there.
  */
-export async function expectRunningEnvoysConfiguredByCopy(): Promise<void> {
+export async function expectRunningEnvoysConfigured(): Promise<void> {
   const containers = await inspectRunningEnvoyContainers();
   expect(containers.length).toBeGreaterThan(0);
-  for (const { name, mounts } of containers) {
-    expect(mounts, `${name} mounts`).toEqual([]);
+  for (const { name, labels } of containers) {
+    expect(resolve(labels['susentorno.environment'] ?? '').toLowerCase(), `${name} label`).toBe(
+      resolve(envParent).toLowerCase(),
+    );
     const { stdout } = await execa('docker', ['exec', name, 'ls', '/etc/envoy/ca']);
     const caFiles = stdout.split(/\s+/).filter(Boolean);
     expect(caFiles, `${name} CA directory`).toEqual(

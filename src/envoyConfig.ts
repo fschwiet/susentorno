@@ -7,7 +7,7 @@ export interface UpstreamOverride {
   target: string;
 }
 
-/** Where run-hosting copies the assembled bundle in the Envoy container (the `ca/` directory is copied to `/etc/envoy/ca`). */
+/** Where the assembled bundle appears in the Envoy container (the `ca/` directory is mounted at `/etc/envoy/ca`). */
 export const UPSTREAM_TRUST_BUNDLE_CONTAINER_PATH = '/etc/envoy/ca/upstream-trust.pem';
 
 /**

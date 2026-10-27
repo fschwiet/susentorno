@@ -6,7 +6,7 @@ susentorno sets up isolated environments for coding agents. A Windows and/or Lin
 
 - Windows Pro
 - **Hyper-V** for the isolated VM (see [setup-machine.md](setup-machine.md) and [setup-guest.md](setup-guest.md)).
-- Docker and Docker Compose.
+- Docker and Docker Compose. On Windows, Docker Desktop must use the **WSL 2 backend** (not Hyper-V).
 - Node.js >= 18 and pnpm.
 - The `claude` CLI installed and logged in (so `~/.claude/.credentials.json` exists).
 - The `codex` CLI installed and logged in (so `~/.codex/auth.json` exists).
