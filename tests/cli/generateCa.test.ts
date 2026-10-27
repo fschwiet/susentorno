@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execa } from 'execa';
 import { fileURLToPath } from 'node:url';
 import { X509Certificate } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -12,7 +12,8 @@ const authFixture = fileURLToPath(new URL('../fixtures/auth.json', import.meta.u
 
 let dir: string;
 const caCert = () => join(dir, '.susentorno', 'proxy', 'ca', 'cert.pem');
-const caKey = () => join(dir, '.susentorno', 'proxy', 'ca', 'key.pem');
+const caKey = () => join(dir, '.susentorno', 'ca-private', 'key.pem');
+const legacyCaKey = () => join(dir, '.susentorno', 'proxy', 'ca', 'key.pem');
 const caLeafCert = () => join(dir, '.susentorno', 'proxy', 'ca', 'leaf-cert.pem');
 const caLeafKey = () => join(dir, '.susentorno', 'proxy', 'ca', 'leaf-key.pem');
 const vmCert = () => join(dir, '.susentorno', 'vm-shared-linux', 'cert.pem');
@@ -36,6 +37,7 @@ describe('susentorno generate-ca', () => {
     const { exitCode } = await execa('node', [cliPath, 'generate-ca'], { cwd: dir });
     expect(exitCode).toBe(0);
     expect(existsSync(caKey())).toBe(true);
+    expect(existsSync(legacyCaKey())).toBe(false);
     expect(existsSync(caLeafCert())).toBe(true);
     expect(existsSync(caLeafKey())).toBe(true);
 
@@ -100,6 +102,39 @@ describe('susentorno generate-ca', () => {
     expect(exitCode).toBe(1);
     expect(stderr).toContain('key.pem');
     expect(readFileSync(caKey(), 'utf8')).toBe('garbage');
+  });
+
+  it('moves a key found only at the old location, keeping the root and a valid leaf', async () => {
+    await execa('node', [cliPath, 'generate-ca'], { cwd: dir });
+    const keyBefore = readFileSync(caKey(), 'utf8');
+    const rootBefore = readFileSync(caCert(), 'utf8');
+    const leafBefore = readFileSync(caLeafCert(), 'utf8');
+    renameSync(caKey(), legacyCaKey());
+
+    const { exitCode, stdout } = await execa('node', [cliPath, 'generate-ca'], { cwd: dir });
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain('moved root CA key');
+    expect(readFileSync(caKey(), 'utf8')).toBe(keyBefore);
+    expect(existsSync(legacyCaKey())).toBe(false);
+    expect(readFileSync(caCert(), 'utf8')).toBe(rootBefore);
+    expect(readFileSync(caLeafCert(), 'utf8')).toBe(leafBefore);
+    expect(stdout).toContain('reused leaf');
+  });
+
+  it('fails naming both paths when keys exist at both locations, changing neither', async () => {
+    await execa('node', [cliPath, 'generate-ca'], { cwd: dir });
+    writeFileSync(legacyCaKey(), 'old key');
+    const newBefore = readFileSync(caKey(), 'utf8');
+
+    const { exitCode, stderr } = await execa('node', [cliPath, 'generate-ca'], {
+      cwd: dir,
+      reject: false,
+    });
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain(legacyCaKey());
+    expect(stderr).toContain(caKey());
+    expect(readFileSync(legacyCaKey(), 'utf8')).toBe('old key');
+    expect(readFileSync(caKey(), 'utf8')).toBe(newBefore);
   });
 
   it('exits 1 without an environment', async () => {

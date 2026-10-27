@@ -10,7 +10,7 @@ The proxy stack still receives its configuration by copy in this ticket. The cop
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** ready-for-review
 
 - [ ] The environment paths name the root CA private key at `.susentorno/ca-private/key.pem` and expose the old proxy-CA-directory location separately for detection. The environment's `.gitignore` template is unchanged and still ignores the new directory.
 - [ ] `cli` test: `generate-ca` in a fresh environment writes the key to the private directory and no key file to the proxy CA directory.

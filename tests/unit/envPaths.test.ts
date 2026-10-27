@@ -18,7 +18,8 @@ describe('environment paths & layout', () => {
       expect(paths.envoyConfig).toBe(join(root, 'proxy', 'envoy.yaml'));
       expect(paths.caDir).toBe(join(root, 'proxy', 'ca'));
       expect(paths.caCert).toBe(join(root, 'proxy', 'ca', 'cert.pem'));
-      expect(paths.caKey).toBe(join(root, 'proxy', 'ca', 'key.pem'));
+      expect(paths.caKey).toBe(join(root, 'ca-private', 'key.pem'));
+      expect(paths.legacyCaKey).toBe(join(root, 'proxy', 'ca', 'key.pem'));
       expect(paths.caLeafCert).toBe(join(root, 'proxy', 'ca', 'leaf-cert.pem'));
       expect(paths.caLeafKey).toBe(join(root, 'proxy', 'ca', 'leaf-key.pem'));
       expect(paths.secretsDir).toBe(join(root, 'proxy', 'secrets'));

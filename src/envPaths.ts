@@ -31,7 +31,11 @@ export interface EnvPaths {
   envoyConfig: string;
   caDir: string;
   caCert: string;
+  /** Directory holding the root CA private key; never mounted or copied into a container. */
+  caPrivateDir: string;
   caKey: string;
+  /** Where the root CA key lived before it moved out of the proxy CA directory (detection only). */
+  legacyCaKey: string;
   caLeafCert: string;
   caLeafKey: string;
   upstreamTrustBundle: string;
@@ -79,7 +83,9 @@ export function envPaths(cwd: string): EnvPaths {
     envoyConfig: join(proxy, 'envoy.yaml'),
     caDir: join(proxy, 'ca'),
     caCert: join(proxy, 'ca', 'cert.pem'),
-    caKey: join(proxy, 'ca', 'key.pem'),
+    caPrivateDir: join(root, 'ca-private'),
+    caKey: join(root, 'ca-private', 'key.pem'),
+    legacyCaKey: join(proxy, 'ca', 'key.pem'),
     caLeafCert: join(proxy, 'ca', 'leaf-cert.pem'),
     caLeafKey: join(proxy, 'ca', 'leaf-key.pem'),
     upstreamTrustBundle: join(proxy, 'ca', 'upstream-trust.pem'),
