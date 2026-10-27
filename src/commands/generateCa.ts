@@ -37,7 +37,7 @@ export function registerGenerateCa(program: Command): void {
       if (existsSync(paths.legacyCaKey)) {
         if (existsSync(paths.caKey)) {
           console.error(
-            `generate-ca: root CA keys exist at both ${paths.legacyCaKey} and ${paths.caKey} — ` +
+            `generate-ca: root CA keys exist at both ${paths.legacyCaKey} and ${paths.caKey} â€” ` +
               'neither was changed; delete the one you do not want and re-run',
           );
           process.exitCode = 1;

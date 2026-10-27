@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { execa } from 'execa';
 import { fileURLToPath } from 'node:url';
-import { mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -63,6 +63,30 @@ describe('CLI interface', () => {
       });
       expect(exitCode).toBe(1);
       expect(stderr).toContain("run 'susentorno generate-ca'");
+      expect(stderr).toContain('is still at');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('run-hosting refuses to start while a key remains in the proxy CA directory', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'susentorno-'));
+    try {
+      await execa(
+        'node',
+        [cliPath, 'init', '--credentials', credentialsFixture, '--codex-credentials', authFixture],
+        { cwd: dir },
+      );
+      await execa('node', [cliPath, 'generate-ca'], { cwd: dir });
+      copyFileSync(
+        join(dir, '.susentorno', 'ca-private', 'key.pem'),
+        join(dir, '.susentorno', 'proxy', 'ca', 'key.pem'),
+      );
+      const { exitCode, stderr } = await execa('node', [cliPath, 'run-hosting'], {
+        cwd: dir,
+        reject: false,
+      });
+      expect(exitCode).toBe(1);
       expect(stderr).toContain('is still at');
     } finally {
       rmSync(dir, { recursive: true, force: true });

@@ -197,10 +197,11 @@ export function registerRunHosting(program: Command): void {
         if (!paths) return;
         // run-hosting reissues the leaf itself but never the root: the root must
         // already exist (and be trusted in the guest) via generate-ca.
-        if (!existsSync(paths.caKey) && existsSync(paths.legacyCaKey)) {
+        if (existsSync(paths.legacyCaKey)) {
           console.error(
             `run-hosting: the root CA key is still at ${paths.legacyCaKey}, inside the proxy CA ` +
-              `directory — run 'susentorno generate-ca' to move it to ${paths.caKey}`,
+              `directory â€” run 'susentorno generate-ca' to move it to ${paths.caKey} ` +
+              '(if a key already exists there, generate-ca names both and asks you to delete one)',
           );
           process.exitCode = 1;
           return;
