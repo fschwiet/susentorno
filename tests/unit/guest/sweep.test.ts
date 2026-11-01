@@ -17,7 +17,6 @@ describe('isSweepableChildVhd', () => {
       'susentorno-test-windows-golden.vhdx',
       'ubuntu-26.04-live-server-amd64.iso',
       'susentorno-test-golden.vhdx.stamp',
-      'golden-build-serial.log',
       'harness_ed25519',
       'susentorno-other-e2e.vhdx',
       'my-vm.vhdx',

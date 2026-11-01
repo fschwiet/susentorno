@@ -73,10 +73,14 @@ export async function captureScreenshotFrame(
   vmName: string,
   dir: string,
   label = '',
+  size: { width: number; height: number } = {
+    width: SCREENSHOT_WIDTH,
+    height: SCREENSHOT_HEIGHT,
+  },
 ): Promise<boolean> {
   try {
     const { exitCode, stdout } = await exec.run(
-      buildThumbnailCommand(vmName, SCREENSHOT_WIDTH, SCREENSHOT_HEIGHT),
+      buildThumbnailCommand(vmName, size.width, size.height),
     );
     if (exitCode !== 0) return false;
     const raw = Buffer.from(stdout.trim(), 'base64');
@@ -84,8 +88,8 @@ export async function captureScreenshotFrame(
     // width*height*2 on every call, regardless of resolution (confirmed on
     // a real host at 80x60, 160x120, and 320x240 alike) — trim to the
     // trailing pixel payload rgb565ToBmp actually expects.
-    const pixels = raw.subarray(raw.length - SCREENSHOT_WIDTH * SCREENSHOT_HEIGHT * 2);
-    const bmp = rgb565ToBmp(pixels, SCREENSHOT_WIDTH, SCREENSHOT_HEIGHT);
+    const pixels = raw.subarray(raw.length - size.width * size.height * 2);
+    const bmp = rgb565ToBmp(pixels, size.width, size.height);
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, `${label}${stamp}.bmp`), bmp);
@@ -100,9 +104,9 @@ export interface ScreenshotHandle {
 }
 
 /**
- * Frames land wherever the caller says: the build writes to .image-cache/ so a
- * failed build's evidence survives into the next run (the same reasoning
- * goldenBuildSerialLogPath documents), while a role writes to its per-run
+ * Frames land wherever the caller says: the Windows build writes under
+ * test-results/golden-build/ so a failed build's evidence survives into the
+ * next run (see goldenBuildEvidenceRoot), while a role writes to its per-run
  * artifacts directory and is discarded with the rest of that run.
  */
 export function startScreenshotCapture(

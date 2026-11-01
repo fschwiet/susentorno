@@ -1,4 +1,5 @@
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { buildStartVmCommand } from '../../../src/guestSetup/hyperVOperations';
 import { buildGetVmCommand, parseGetVmResult } from '../../../src/guestSetup/hyperVQueries';
@@ -15,14 +16,16 @@ import {
 } from './goldenStamp';
 import { ensureIso } from './isoCache';
 import {
-  goldenBuildSerialLogPath,
   goldenVhdPath,
   imageCacheDir,
   isoPath,
   isoUrl,
   NAME_PREFIX,
+  ubuntuGoldenBuildEvidenceDir,
 } from './imageCache';
+import { buildVmEvidenceCommand, findKernelFailure, rotateAttempt } from './goldenBuildEvidence';
 import { startSerialLog } from './serialLog';
+import { captureScreenshotFrame } from './vmScreenshot';
 import {
   buildCopyTreeCommand,
   buildCreateFat32VolumeCommand,
@@ -107,14 +110,47 @@ async function removeBuildVm(exec: PowerShellExec): Promise<void> {
   }
   await exec.run(buildRemoveVmCommand(goldenBuildVmName));
 }
-async function waitForOff(exec: PowerShellExec): Promise<void> {
+/** Best effort: nothing here may replace the build error or block cleanup. */
+async function captureFailureEvidence(exec: PowerShellExec, dir: string): Promise<void> {
+  try {
+    mkdirSync(dir, { recursive: true });
+    const result = await exec.run(buildVmEvidenceCommand(goldenBuildVmName));
+    writeFileSync(join(dir, 'vm-state.txt'), result.stdout);
+  } catch {
+    // ignored
+  }
+  await captureScreenshotFrame(exec, goldenBuildVmName, dir, 'console-', {
+    width: 640,
+    height: 480,
+  });
+}
+async function readSerialLog(path: string): Promise<string> {
+  try {
+    return await readFile(path, 'utf8');
+  } catch {
+    return '';
+  }
+}
+async function waitForOff(
+  exec: PowerShellExec,
+  evidenceDir: string,
+  serialLogPath: string,
+): Promise<void> {
   const deadline = Date.now() + 45 * 60_000;
   while (Date.now() < deadline) {
     const result = await exec.run(buildGetVmCommand(goldenBuildVmName));
     if (parseGetVmResult(result.stdout, goldenBuildVmName)?.state === 'Off') return;
+    const failure = findKernelFailure(await readSerialLog(serialLogPath));
+    if (failure) {
+      await captureFailureEvidence(exec, evidenceDir);
+      throw new Error(
+        `goldenImage: kernel failure in build VM serial log: ${failure.trim()}; see ${evidenceDir}`,
+      );
+    }
     await new Promise((resolve) => setTimeout(resolve, 15_000));
   }
-  throw new Error(`goldenImage: build VM did not power off; see ${goldenBuildSerialLogPath}`);
+  await captureFailureEvidence(exec, evidenceDir);
+  throw new Error(`goldenImage: build VM did not power off; see ${evidenceDir}`);
 }
 export async function ensureGoldenImage(
   exec: PowerShellExec,
@@ -142,7 +178,8 @@ export async function ensureGoldenImage(
   await ensureIso();
   await removeBuildVm(exec);
   rmSync(goldenVhdPath, { force: true });
-  rmSync(goldenBuildSerialLogPath, { force: true });
+  const attempt = rotateAttempt(ubuntuGoldenBuildEvidenceDir),
+    serialLogPath = join(attempt.current, 'serial.log');
   await makeInstaller(exec, grubCfg);
   await makeSeed(exec, userData, metaData);
   await run(exec, buildNewVhdCommand(goldenVhdPath, targetSize), 'create golden disk');
@@ -179,8 +216,8 @@ export async function ensureGoldenImage(
     // few seconds after Start-VM. Connecting during that hand-off consistently
     // loses the pipe before Subiquity starts; attach to the stable console.
     await new Promise((resolve) => setTimeout(resolve, 20_000));
-    serial = startSerialLog(goldenBuildPipeName, goldenBuildSerialLogPath);
-    await waitForOff(exec);
+    serial = startSerialLog(goldenBuildPipeName, serialLogPath);
+    await waitForOff(exec, attempt.current, serialLogPath);
   } finally {
     await serial?.stop();
     await removeBuildVm(exec);

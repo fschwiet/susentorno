@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { PowerShellExec } from '../../../src/guestSetup/powerShellExec';
 import {
   buildThumbnailCommand,
+  captureScreenshotFrame,
   rgb565ToBmp,
   SCREENSHOT_HEIGHT,
   SCREENSHOT_RETAIN,
@@ -82,6 +83,44 @@ describe('startScreenshotCapture', () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
       await handle.stop();
       expect(readdirSync(dir).filter((name) => name.endsWith('.bmp'))).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('captureScreenshotFrame at a caller-supplied size', () => {
+  it('writes a BMP whose header reports 640x480', async () => {
+    const raw = Buffer.alloc(640 * 480 * 2 + 4);
+    const exec: PowerShellExec = {
+      run: async () => ({ exitCode: 0, stdout: raw.toString('base64') }),
+    };
+    const dir = mkdtempSync(join(tmpdir(), 'vm-screenshot-'));
+    try {
+      expect(await captureScreenshotFrame(exec, 'vm', dir, 'x-', { width: 640, height: 480 })).toBe(
+        true,
+      );
+      const [name] = readdirSync(dir);
+      const bmp = readFileSync(join(dir, name!));
+      expect(bmp.readInt32LE(18)).toBe(640);
+      expect(bmp.readInt32LE(22)).toBe(480);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('defaults to 320x240', async () => {
+    const raw = Buffer.alloc(320 * 240 * 2);
+    const exec: PowerShellExec = {
+      run: async () => ({ exitCode: 0, stdout: raw.toString('base64') }),
+    };
+    const dir = mkdtempSync(join(tmpdir(), 'vm-screenshot-'));
+    try {
+      await captureScreenshotFrame(exec, 'vm', dir);
+      const [name] = readdirSync(dir);
+      const bmp = readFileSync(join(dir, name!));
+      expect(bmp.readInt32LE(18)).toBe(320);
+      expect(bmp.readInt32LE(22)).toBe(240);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

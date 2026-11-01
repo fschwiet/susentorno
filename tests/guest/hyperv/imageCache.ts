@@ -30,10 +30,16 @@ export const isoPath = join(imageCacheDir, 'ubuntu-26.04-live-server-amd64.iso')
 export const goldenVhdPath = join(imageCacheDir, `${NAME_PREFIX}-golden.vhdx`);
 export const goldenStampPath = `${goldenVhdPath}.stamp`;
 /**
- * Deliberately not under test-results/<timestamp>/: a failed build's log has to
- * still be there on the next run, and a per-run directory cannot do that.
+ * Golden-build evidence (serial log, failure evidence, Windows build frames)
+ * describes a build attempt, not a cached image, so it lives under test-results/
+ * rather than .image-cache/. It is deliberately not under the per-run
+ * test-results/guest/<timestamp>/: a failed build's evidence has to still be
+ * there on the next run, and a per-run directory cannot do that. Nothing
+ * deletes test-results/ wholesale, and it is gitignored.
  */
-export const goldenBuildSerialLogPath = join(imageCacheDir, 'golden-build-serial.log');
+export const goldenBuildEvidenceRoot = join(repoRoot, 'test-results', 'golden-build');
+/** Ubuntu build attempts: `current/` is the latest, `previous/` the one before. */
+export const ubuntuGoldenBuildEvidenceDir = join(goldenBuildEvidenceRoot, 'ubuntu');
 
 /** The client key ssh-agent gets; its public half is baked into the image. */
 export const harnessKeyPath = join(imageCacheDir, 'harness_ed25519');
@@ -91,8 +97,5 @@ export const windowsGoldenStampPath = `${windowsGoldenVhdPath}.stamp`;
 export const windowsCredentialPath = join(imageCacheDir, `${NAME_PREFIX}-windows-credential.json`);
 /** The one-file ISO carrying autounattend.xml, attached as a second DVD. */
 export const windowsAnswerIsoPath = join(imageCacheDir, `${NAME_PREFIX}-windows-answer.iso`);
-/**
- * Deliberately not under test-results/<timestamp>/: like the Ubuntu build's
- * serial log, a failed build's frames have to still be there on the next run.
- */
-export const windowsBuildScreenshotDir = join(imageCacheDir, 'windows-build-screenshots');
+/** See goldenBuildEvidenceRoot for why this is not under .image-cache/. */
+export const windowsBuildScreenshotDir = join(goldenBuildEvidenceRoot, 'windows', 'screenshots');
