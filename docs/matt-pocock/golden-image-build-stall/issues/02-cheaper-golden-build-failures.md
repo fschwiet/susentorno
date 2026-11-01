@@ -1,6 +1,6 @@
 # 02: Make a stalled golden build cheaper to diagnose
 
-**Status:** ready-for-review
+**Status:** resolved
 
 **Blocked by:** None (can start immediately).
 
