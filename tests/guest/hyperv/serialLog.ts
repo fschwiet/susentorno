@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { spawn } from 'node:child_process';
+import { quoteForPowerShell } from '../../../src/guestSetup/quoteForPowerShell';
 
 export interface SerialLogHandle {
   stop(): Promise<void>;
@@ -12,12 +13,15 @@ const unreadableLogsReported = new Set<string>();
 /**
  * Reads a serial log for polling checks such as `findKernelFailure`. A log
  * that does not exist yet reads as empty. A log that exists but cannot be read
- * also reads as empty, but is reported once per path so a check that has gone
- * blind is visible in the test output.
+ * also reads as empty, but is reported once per unreadable spell (until the
+ * path is read again) so a check that has gone blind is visible in the test
+ * output.
  */
 export async function readSerialLog(path: string): Promise<string> {
   try {
-    return await readFile(path, 'utf8');
+    const log = await readFile(path, 'utf8');
+    unreadableLogsReported.delete(path);
+    return log;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '';
     if (!unreadableLogsReported.has(path)) {
@@ -28,16 +32,16 @@ export async function readSerialLog(path: string): Promise<string> {
   }
 }
 
-const psLiteral = (value: string): string => `'${value.replaceAll("'", "''")}'`;
-
 /**
  * Captures Hyper-V's COM pipe using the Windows named-pipe implementation.
  * Node's duplex pipe client loses this one-way Hyper-V endpoint during the
  * hand-off from early boot to systemd; NamedPipeClientStream remains attached.
  *
- * The writer holds the log open for the life of the process, sharing read and
- * write access, so readers (the harness, a human, a scanner) can open it at any
- * time without making a write fail. Lines that cannot be written are counted,
+ * The writer holds the log open for the life of the process, sharing read,
+ * write and delete access, so readers (the harness, a human, a scanner) can open
+ * it at any time without making a write fail, and a writer that outlives
+ * `stop()` cannot block the next build's evidence rotation from renaming or
+ * deleting its directory. Lines that cannot be written are counted,
  * and a marker naming the count and the error is written as soon as the log
  * can be written again, so a truncated log is distinguishable from a quiet VM.
  */
@@ -45,15 +49,15 @@ export function startSerialLog(pipeName: string, filePath: string): SerialLogHan
   mkdirSync(dirname(filePath), { recursive: true });
   const script = [
     "$ErrorActionPreference = 'Stop'",
-    `$pipeName = ${psLiteral(pipeName)}`,
-    `$path = ${psLiteral(filePath)}`,
+    `$pipeName = ${quoteForPowerShell(pipeName)}`,
+    `$path = ${quoteForPowerShell(filePath)}`,
     '$writer = $null',
     '$dropped = 0',
     "$lastError = ''",
     'function Open-SerialLog {',
     '  if ($null -ne $script:writer) { return $true }',
     '  try {',
-    '    $stream = [System.IO.File]::Open($path, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)',
+    '    $stream = [System.IO.File]::Open($path, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, ([System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete))',
     '    $script:writer = [System.IO.StreamWriter]::new($stream, [System.Text.UTF8Encoding]::new($false))',
     '    $script:writer.AutoFlush = $true',
     '    return $true',

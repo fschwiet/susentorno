@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { quoteForPowerShell } from '../../../src/guestSetup/quoteForPowerShell';
 import { readSerialLog, startSerialLog, type SerialLogHandle } from '../../guest/hyperv/serialLog';
 
 // A stand-in for Hyper-V's COM pipe: a local named-pipe server that hands each
@@ -99,18 +100,16 @@ function stopProcess(child: ChildProcess): Promise<void> {
   });
 }
 
-const psLiteral = (value: string): string => `'${value.replaceAll("'", "''")}'`;
-
 describe.skipIf(process.platform !== 'win32')('startSerialLog', () => {
   let dir: string;
   let pipe: FakeComPipe | undefined;
   let serial: SerialLogHandle | undefined;
-  const helpers: ChildProcess[] = [];
+  const otherFileHolders: ChildProcess[] = [];
 
   afterEach(async () => {
     await serial?.stop();
     serial = undefined;
-    for (const helper of helpers.splice(0)) await stopProcess(helper);
+    for (const holder of otherFileHolders.splice(0)) await stopProcess(holder);
     await pipe?.close();
     pipe = undefined;
     if (dir) rmSync(dir, { recursive: true, force: true });
@@ -127,24 +126,29 @@ describe.skipIf(process.platform !== 'win32')('startSerialLog', () => {
     serial = startSerialLog(pipe.name, logPath);
     const connection = await pipe.nextConnection();
 
-    // A reader that, like many tools, opens the file without sharing write
-    // access, holding it briefly over and over.
-    helpers.push(
-      await startPowerShell(
-        [
-          "$ErrorActionPreference = 'SilentlyContinue'",
-          `$path = ${psLiteral(logPath)}`,
-          "Write-Output 'ready'",
-          'while ($true) {',
-          '  try {',
-          "    $stream = [System.IO.File]::Open($path, 'Open', 'Read', 'Read')",
-          '    Start-Sleep -Milliseconds 5',
-          '    $stream.Dispose()',
-          '  } catch {}',
-          '}',
-        ].join('\n'),
-      ),
+    // A reader in another process that opens and reads the whole log over and
+    // over, holding it briefly each time, and reports every successful read.
+    const reader = await startPowerShell(
+      [
+        "$ErrorActionPreference = 'SilentlyContinue'",
+        `$path = ${quoteForPowerShell(logPath)}`,
+        "Write-Output 'ready'",
+        'while ($true) {',
+        '  try {',
+        "    $stream = [System.IO.File]::Open($path, 'Open', 'Read', 'ReadWrite')",
+        '    $null = [System.IO.StreamReader]::new($stream).ReadToEnd()',
+        '    Start-Sleep -Milliseconds 5',
+        '    $stream.Dispose()',
+        "    [Console]::Out.WriteLine('read-ok')",
+        '  } catch {}',
+        '}',
+      ].join('\n'),
     );
+    otherFileHolders.push(reader);
+    let successfulReads = 0;
+    reader.stdout!.on('data', (chunk: Buffer) => {
+      successfulReads += chunk.toString().split('read-ok').length - 1;
+    });
 
     const expected: string[] = [];
     for (let batch = 0; batch < 40; batch++) {
@@ -156,6 +160,7 @@ describe.skipIf(process.platform !== 'win32')('startSerialLog', () => {
 
     const log = await waitForLog(logPath, (text) => text.includes('line 399'));
     expect(logLines(log)).toEqual(expected);
+    expect(successfulReads).toBeGreaterThan(10);
   }, 60_000);
 
   it('marks the log when lines could not be written, then keeps logging', async () => {
@@ -163,7 +168,7 @@ describe.skipIf(process.platform !== 'win32')('startSerialLog', () => {
     // Another process holds the log exclusively until told to let go.
     const holder = await startPowerShell(
       [
-        `$path = ${psLiteral(logPath)}`,
+        `$path = ${quoteForPowerShell(logPath)}`,
         '$null = New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path)',
         "$stream = [System.IO.File]::Open($path, 'OpenOrCreate', 'ReadWrite', 'None')",
         "Write-Output 'ready'",
@@ -173,7 +178,7 @@ describe.skipIf(process.platform !== 'win32')('startSerialLog', () => {
         'Start-Sleep -Seconds 30',
       ].join('\n'),
     );
-    helpers.push(holder);
+    otherFileHolders.push(holder);
     pipe = await startFakeComPipe();
     serial = startSerialLog(pipe.name, logPath);
     const connection = await pipe.nextConnection();
@@ -194,6 +199,22 @@ describe.skipIf(process.platform !== 'win32')('startSerialLog', () => {
     expect(lines.slice(-2)).toEqual(['after 1', 'after 2']);
     expect(lines).toHaveLength(3);
     expect(lines[0]).toMatch(/dropped 3 line/);
+  }, 60_000);
+
+  it('lets the log directory be deleted while it is writing', async () => {
+    const logPath = newLogPath();
+    pipe = await startFakeComPipe();
+    serial = startSerialLog(pipe.name, logPath);
+    const connection = await pipe.nextConnection();
+    await writeLines(connection, ['line 1']);
+    await waitForLog(logPath, (text) => text.includes('line 1'));
+
+    // As the next golden build's evidence rotation must manage when a writer
+    // outlives its build's stop().
+    const logDir = join(dir, 'nested');
+    rmSync(logDir, { recursive: true });
+
+    expect(existsSync(logDir)).toBe(false);
   }, 60_000);
 
   it('reconnects after the pipe disconnects and appends to the same log', async () => {
@@ -242,7 +263,7 @@ describe.skipIf(process.platform !== 'win32')('readSerialLog', () => {
     writeFileSync(logPath, 'line 1\n');
     holder = await startPowerShell(
       [
-        `$stream = [System.IO.File]::Open(${psLiteral(logPath)}, 'Open', 'ReadWrite', 'None')`,
+        `$stream = [System.IO.File]::Open(${quoteForPowerShell(logPath)}, 'Open', 'ReadWrite', 'None')`,
         "Write-Output 'ready'",
         'Start-Sleep -Seconds 60',
       ].join('\n'),
@@ -254,5 +275,30 @@ describe.skipIf(process.platform !== 'win32')('readSerialLog', () => {
 
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0][0])).toContain(logPath);
+  });
+
+  it('warns again when a log it has since read becomes unreadable again', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'serial-log-'));
+    const logPath = join(dir, 'serial.log');
+    writeFileSync(logPath, 'line 1\n');
+    const holdExclusively = () =>
+      startPowerShell(
+        [
+          `$stream = [System.IO.File]::Open(${quoteForPowerShell(logPath)}, 'Open', 'ReadWrite', 'None')`,
+          "Write-Output 'ready'",
+          'Start-Sleep -Seconds 60',
+        ].join('\n'),
+      );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    holder = await holdExclusively();
+    expect(await readSerialLog(logPath)).toBe('');
+    await stopProcess(holder);
+    expect(await readSerialLog(logPath)).toBe('line 1\n');
+    holder = await holdExclusively();
+    expect(await readSerialLog(logPath)).toBe('');
+    expect(await readSerialLog(logPath)).toBe('');
+
+    expect(warn).toHaveBeenCalledTimes(2);
   });
 });

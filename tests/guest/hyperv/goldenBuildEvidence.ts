@@ -1,4 +1,4 @@
-import { mkdirSync, renameSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { quoteForPowerShell } from '../../../src/guestSetup/quoteForPowerShell';
 
@@ -20,6 +20,11 @@ export interface AttemptPaths {
 /**
  * Starts a new build attempt under `root`: the old `previous/` is dropped,
  * `current/` (if any) becomes `previous/`, and an empty `current/` is created.
+ *
+ * Windows refuses to rename a directory while any file in it is open, which is
+ * the case when the last attempt's serial log writer outlived its build. That
+ * writer shares delete access, so `current/` is then copied to `previous/` and
+ * deleted instead.
  */
 export function rotateAttempt(root: string): AttemptPaths {
   const current = join(root, 'current'),
@@ -28,7 +33,11 @@ export function rotateAttempt(root: string): AttemptPaths {
   try {
     renameSync(current, previous);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'EPERM' || code === 'EBUSY' || code === 'EACCES') {
+      cpSync(current, previous, { recursive: true });
+      rmSync(current, { recursive: true, force: true });
+    } else if (code !== 'ENOENT') throw error;
   }
   mkdirSync(current, { recursive: true });
   return { current, previous };

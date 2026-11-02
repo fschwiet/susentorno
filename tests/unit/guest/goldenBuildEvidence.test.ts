@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { spawn } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -15,6 +16,7 @@ import {
   findKernelFailure,
   rotateAttempt,
 } from '../../guest/hyperv/goldenBuildEvidence';
+import { quoteForPowerShell } from '../../../src/guestSetup/quoteForPowerShell';
 
 describe('findKernelFailure', () => {
   it('matches the kernel failure lines seen in the installer oops', () => {
@@ -80,6 +82,55 @@ describe('rotateAttempt', () => {
     }
   });
 });
+
+describe.skipIf(process.platform !== 'win32')(
+  'rotateAttempt with a lingering serial writer',
+  () => {
+    it('rotates while a process from the last attempt still holds its serial log open', async () => {
+      const root = mkdtempSync(join(tmpdir(), 'rotate-'));
+      // Shares read, write and delete access, as the serial log writer does.
+      const writer = spawn(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          [
+            `$path = ${quoteForPowerShell(join(root, 'current', 'serial.log'))}`,
+            '$null = New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path)',
+            "$stream = [System.IO.File]::Open($path, 'Append', 'Write', 'ReadWrite, Delete')",
+            '$bytes = [System.Text.Encoding]::UTF8.GetBytes("one")',
+            '$stream.Write($bytes, 0, $bytes.Length)',
+            '$stream.Flush()',
+            "Write-Output 'ready'",
+            'Start-Sleep -Seconds 60',
+          ].join('\n'),
+        ],
+        { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true },
+      );
+      try {
+        await new Promise<void>((resolve, reject) => {
+          writer.stdout.on('data', (chunk: Buffer) => {
+            if (chunk.toString().includes('ready')) resolve();
+          });
+          writer.once('exit', (code) => reject(new Error(`writer exited early (${code})`)));
+        });
+
+        const paths = rotateAttempt(root);
+
+        expect(readFileSync(join(paths.previous, 'serial.log'), 'utf8')).toBe('one');
+        expect(readdirNames(paths.current)).toEqual([]);
+      } finally {
+        if (writer.exitCode === null) {
+          const exited = new Promise((resolve) => writer.once('exit', resolve));
+          writer.kill();
+          await exited;
+        }
+        rmSync(root, { recursive: true, force: true });
+      }
+    }, 60_000);
+  },
+);
 
 function readdirNames(dir: string): string[] {
   return readdirSync(dir);
