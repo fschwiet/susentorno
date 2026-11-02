@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import type { EnvPaths } from './envPaths';
-import { generateLeaf, validateCaPair, isSignedBy, certSans, namesIssuerByKey } from './ca';
+import { generateLeaf, validateCaPair, isSignedBy, certSans } from './ca';
 
 function sameHosts(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
@@ -27,10 +27,6 @@ export function ensureLeaf(
       return (
         validateCaPair(leafCertPem, leafKeyPem) &&
         isSignedBy(leafCertPem, caCertPem) &&
-        // Reissue leaves from before leaves named their root by key, so an
-        // existing environment gets the authorityKeyIdentifier on its next
-        // generate-ca even though its root keeps its original name.
-        namesIssuerByKey(leafCertPem, caCertPem) &&
         sameHosts(certSans(leafCertPem), sans)
       );
     })();

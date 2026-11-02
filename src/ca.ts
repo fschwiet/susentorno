@@ -119,7 +119,7 @@ function rootKeyIdentifier(caCert: forge.pki.Certificate): string {
 /**
  * True when `leafPem`'s authorityKeyIdentifier names `caPem`'s key, so a
  * verifier picks this root by key even if it trusts another root with the
- * same name. False for leaves issued before leaves carried one.
+ * same name. False for a leaf without one.
  */
 export function namesIssuerByKey(leafPem: string, caPem: string): boolean {
   try {
