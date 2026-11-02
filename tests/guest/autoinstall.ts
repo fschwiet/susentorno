@@ -68,9 +68,20 @@ export function buildUserData(inputs: AutoinstallInputs): string {
     // Subiquity otherwise swaps in the geoip country mirror (CC.archive.ubuntu.com).
     // A country mirror the build host cannot reach makes every mirror check
     // fail, and the installer then sits silent after the Mirror step until
-    // waitForOff's deadline.
+    // waitForOff's deadline. The primary mirror is pinned explicitly so the
+    // build does not depend on whether Subiquity merges this section with its
+    // default candidate list (country-mirror first); geoip stays off to record
+    // the intent if the explicit list is ever dropped. fallback is set to
+    // abort because the autoinstall reference contradicts itself on the
+    // default (offline-install vs abort): an unreachable mirror must fail the
+    // build loudly, not produce an offline image whose late-commands' apt-get
+    // then fails.
     '  apt:',
     '    geoip: false',
+    '    fallback: abort',
+    '    mirror-selection:',
+    '      primary:',
+    '        - uri: "http://archive.ubuntu.com/ubuntu"',
     '  storage:',
     '    layout:',
     '      name: direct',

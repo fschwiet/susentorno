@@ -1,6 +1,6 @@
 # 01: Pin the golden build's primary apt mirror explicitly instead of relying on Subiquity's default list
 
-**Status:** ready-for-agent
+**Status:** ready-for-review
 
 **Blocked by:** None (can start immediately).
 
@@ -51,3 +51,17 @@ apt:
   - Type commands one key at a time with `TypeKey` virtual-key codes, holding Shift (`0x10`) for uppercase letters and shifted symbols. `TypeText` garbled the input and toggled Caps Lock; `TypeKey 0x14` toggles it back.
   - Read the output with `GetVirtualSystemThumbnailImage` at 640x480. That is legible; the 320x240 that `tests/guest/hyperv/vmScreenshot.ts` uses is not.
 - **Seeing the build VM's traffic:** `pktmon start --capture` on the host shows its HTTP requests, including the `Host:` header, and Envoy's responses. The build VM's DNS answers every name with the host's Envoy (`192.168.67.1`) on this kind of host.
+
+## Comments
+
+### 2026-11-01: Implemented and verified with a forced build
+
+**Change.** `buildUserData` now emits `apt: { geoip: false, fallback: abort, mirror-selection: { primary: [{ uri: "http://archive.ubuntu.com/ubuntu" }] } }`. `fallback: abort` is set explicitly, because the reference contradicts itself on the default. A failed mirror check should fail the build loudly. It should not produce an offline image whose late-commands' `apt-get` then fails. The code comment records this. `tests/unit/guest/autoinstall.test.ts` asserts the full `apt` object.
+
+**Verification.**
+
+1. The updated unit test failed first against the old user-data. After the change, `pnpm format:check`, `pnpm lint`, `pnpm typecheck` and `pnpm test:unit` (134 files, 1450 tests) all pass.
+2. `ensureGoldenImage(exec, keys, { force: true })` ran from a throwaway Vitest file under `test-results/` (elevated shell, Hyper-V) and passed in 1022 s (~17 min) through `waitForOff`. The new golden stamp was written.
+3. Live installer checks, done over tty2 via `Msvm_Keyboard` and read from 640x480 thumbnails while the build VM ran:
+   - `subiquity-server-debug.log`: `controllers.mirror:203 Iterating over [{'uri': 'http://archive.ubuntu.com/ubuntu'}]`, then `Mirror checking successful` about 6 s later (`apply_autoinstall_config` 01:11:09.378 → SUCCESS 01:11:15.521). A grep for `next candidate|candidate mirror` matched nothing. So no candidate was rejected first, and the ~10 s retry from the earlier run is gone.
+   - `/target/etc/apt/sources.list.d/ubuntu.sources` (checked after `configure_apt` finished) lists `http://archive.ubuntu.com/ubuntu` (`resolute resolute-updates resolute-backports`) and `http://security.ubuntu.com/ubuntu/` (`resolute-security`). `cdrom.sources` (`file:///cdrom`) was also present at that point, as install-time scaffolding. I did not re-inspect the finished image's sources after power-off.

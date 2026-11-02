@@ -45,8 +45,14 @@ describe('autoinstall seed generators', () => {
     expect(ai['user-data']).toMatchObject({ ssh_deletekeys: false });
     // A geoip-selected country mirror can be unreachable from the build host
     // (co.archive.ubuntu.com behind a susentorno proxy), which stalls
-    // Subiquity's Mirror step until waitForOff's deadline.
-    expect(ai.apt).toEqual({ geoip: false });
+    // Subiquity's Mirror step until waitForOff's deadline. The primary mirror
+    // is pinned so the build does not depend on how Subiquity merges its
+    // default candidate list, and a failed mirror check aborts the install.
+    expect(ai.apt).toEqual({
+      geoip: false,
+      fallback: 'abort',
+      'mirror-selection': { primary: [{ uri: 'http://archive.ubuntu.com/ubuntu' }] },
+    });
     expect(ai.storage.layout).toEqual({ name: 'direct', match: { size: 'largest' } });
     expect(ai.packages).toEqual(
       expect.arrayContaining(['network-manager', 'jq', 'linux-cloud-tools-virtual']),
