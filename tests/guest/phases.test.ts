@@ -174,6 +174,14 @@ describe('provisioning during the setup phase', () => {
     const { stdout } = await guestCapture(target, "bash -lc 'echo $NODE_EXTRA_CA_CERTS'");
     expect(stdout).toContain('/etc/ssl/certs/ca-certificates.crt');
   });
+
+  it('keeps the self-signed proxy CA for Claude Code in login shells', async () => {
+    const { stdout } = await guestCapture(
+      target,
+      "bash -lc 'echo $CLAUDE_CODE_DISABLE_SELF_NAMED_CERT_DROP'",
+    );
+    expect(stdout.trim()).toBe('1');
+  });
 });
 
 describe('transition to the isolated phase', () => {

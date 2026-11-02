@@ -520,6 +520,14 @@ describe('generated provisioning inventory', () => {
       expect(s).toContain('come from the host via DHCP');
       expect(s).not.toContain('python3');
     });
+
+    it('ubuntu configure-network keeps the self-signed proxy CA Claude Code would otherwise drop', () => {
+      const s = readFileSync(
+        join(templatesDir(), 'vm-shared-linux', 'pre-scripts', 'nn-configure-network.sh'),
+        'utf8',
+      );
+      expect(s).toContain('export CLAUDE_CODE_DISABLE_SELF_NAMED_CERT_DROP=1');
+    });
   });
 
   describe('home settings transform manifest', () => {

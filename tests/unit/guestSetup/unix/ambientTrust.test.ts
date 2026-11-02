@@ -29,6 +29,13 @@ describe('buildSetNodeExtraCaCertsCommand', () => {
     expect(command).toContain('NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt');
     expect(command).toContain('/etc/environment');
   });
+
+  it('keeps the self-signed proxy CA that Claude Code would otherwise drop, without duplicating the line on reruns', () => {
+    expect(command).toContain(
+      "sed -i '/^CLAUDE_CODE_DISABLE_SELF_NAMED_CERT_DROP=/d' /etc/environment",
+    );
+    expect(command).toContain('CLAUDE_CODE_DISABLE_SELF_NAMED_CERT_DROP=1');
+  });
 });
 
 describe('buildListGuestFingerprintsCommand', () => {

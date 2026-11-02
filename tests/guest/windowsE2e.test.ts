@@ -483,6 +483,13 @@ describe('setup-guest-windows against a disposable Windows 11 guest', () => {
       expect(stdout.trim()).toBe(`ok ${GUEST_TRUST_BUNDLE_PATH}`);
     });
 
+    it('sets machine CLAUDE_CODE_DISABLE_SELF_NAMED_CERT_DROP so Claude Code keeps the proxy CA', async () => {
+      const stdout = await capture(
+        "[Environment]::GetEnvironmentVariable('CLAUDE_CODE_DISABLE_SELF_NAMED_CERT_DROP','Machine')",
+      );
+      expect(stdout.trim()).toBe('1');
+    });
+
     it('set git to validate through schannel', async () => {
       const stdout = await capture('git config --global http.sslBackend');
       expect(stdout.trim()).toBe('schannel');

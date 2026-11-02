@@ -20,8 +20,14 @@ sudo update-ca-certificates
 
 # Node.js bundles its own CA list and ignores the system trust store, so tools
 # built on it (e.g. the claude CLI) still fail with DEPTH_ZERO_SELF_SIGNED_CERT
-# against the proxy unless NODE_EXTRA_CA_CERTS points at the CA.
-echo 'export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt' | sudo tee /etc/profile.d/node-extra-ca-certs.sh > /dev/null
+# against the proxy unless NODE_EXTRA_CA_CERTS points at the CA. Recent Claude
+# Code releases also drop a NODE_EXTRA_CA_CERTS certificate that names itself as
+# its issuer when they cannot confirm its self-signature, which drops the proxy
+# CA; CLAUDE_CODE_DISABLE_SELF_NAMED_CERT_DROP=1 keeps it.
+printf '%s\n' \
+  'export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt' \
+  'export CLAUDE_CODE_DISABLE_SELF_NAMED_CERT_DROP=1' |
+  sudo tee /etc/profile.d/node-extra-ca-certs.sh > /dev/null
 sudo chmod 644 /etc/profile.d/node-extra-ca-certs.sh
 
 echo "configure-network: installed and trusted $cert_path; NODE_EXTRA_CA_CERTS configured for new shells"
