@@ -100,4 +100,4 @@ The generated user-data sets `autoinstall.source.search_drivers: false`, so Subi
 
 **Verified:** the new assertion failed before the change and passes after. `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, and the full `pnpm test:unit` (135 files, 1462 tests) all pass.
 
-**Not verified:** the guest-tier run (`pnpm test:guest`) was NOT run. The host is elevated with Hyper-V and the Windows ISO is set, but the `ssh-agent` prerequisite fails (the Windows service is disabled). The serial-log check for no `subiquity/Drivers` event is still outstanding and needs a human or an agent on a host with ssh-agent running.
+**Verified (2026-11-02):** `pnpm test:guest` from PowerShell (elevated, Hyper-V host) rebuilt the golden image and passed (5 files, 74 tests). The new `serial.log` shows `subiquity/Drivers/_list_drivers` start and finish with no `cmd-in-target` step in between (the pre-change log had one), so `ubuntu-drivers` no longer runs. No `Oops` in the log. This is one run, so it cannot show the intermittent oops is gone, only that its trigger is removed.
