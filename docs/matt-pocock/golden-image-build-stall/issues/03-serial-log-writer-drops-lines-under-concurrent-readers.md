@@ -1,6 +1,8 @@
 # 03: The serial log writer drops lines silently when another process holds the file
 
-**Status:** needs-triage
+**Status:** ready-for-agent
+
+**Category:** bug
 
 **Blocked by:** None (can start immediately).
 
@@ -38,19 +40,24 @@ During that run a diagnostic loop (not part of the harness) ran `grep` on `seria
 - Whether the diagnostic `grep` loop caused the loss, or whether it happens without any outside reader. Before this run, the failed 11:23 run's log (54 KB) was written fine up to the stall with only the harness reading it.
 - What held the file for 30 minutes (the writer, Defender, or something else). A `handle.exe` or Process Monitor capture during a run would answer this.
 
-## Candidate fix (to settle in triage)
+## Fix
 
-- Open the log once per writer process with `[System.IO.File]::Open(path, Append, Write, FileShare.ReadWrite)` (or a `FileStream` with `FileShare.Read`), wrap it in a `StreamWriter` with `AutoFlush = $true`, and write each line through that handle. Readers such as `readSerialLog` and humans can then open the file at any time without blocking the writer.
-- Stop swallowing write errors silently. At minimum, record a marker line or a separate `serial.errors.log` entry when a write fails, so a truncated log can be told apart from a quiet VM.
-- Decide whether `readSerialLog` should tell "file unreadable" apart from "file empty" (for example, log it once), so a blind kernel-failure check is visible.
-- Check whether the pipe reconnect loop (`while ($true)` around `Connect(5000)`) keeps working once the file handle lives outside the per-connection `try`.
+- Open the log once per writer process with `[System.IO.File]::Open(path, Append, Write, FileShare.ReadWrite)`, wrap it in a `StreamWriter` with `AutoFlush = $true`, and write each line through that handle. Readers such as `readSerialLog` and humans can then open the file at any time without blocking the writer.
+- Do not swallow write errors silently. When a write fails, the writer records a marker line in the log itself, so a truncated log can be told apart from a quiet VM.
+- `readSerialLog` logs once when the file is unreadable (as opposed to empty), so a blind `findKernelFailure` check is visible.
+- The pipe reconnect loop (`while ($true)` around `Connect(5000)`) must keep working once the file handle lives outside the per-connection `try`.
+- The public signature of `startSerialLog` is unchanged; `testGuest.ts` also calls it for every role VM.
 
-## Acceptance (draft)
+## Acceptance
 
-- While the writer runs, another process can read the log repeatedly, and no lines are lost. This needs a test that does not require Hyper-V: for example, drive the writer script with a local named-pipe server written in Node, and read the file concurrently.
-- A forced Ubuntu golden build, run while the log is being polled from another process, leaves a complete serial log through `finish: subiquity/Mirror/apply_autoinstall_config` and beyond.
-- Role-VM serial logs under `test-results/guest/<timestamp>/` still work.
+- [ ] A test that does not need Hyper-V drives the writer script with a local Node named-pipe server while another process reads the file repeatedly. No lines are lost.
+- [ ] A write failure produces a visible marker in the log (test by holding the file with an exclusive lock).
+- [ ] The reconnect loop still works after the pipe disconnects and reconnects.
+- [ ] A forced Ubuntu golden build, run while the log is polled from another process, leaves a complete serial log through `finish: subiquity/Mirror/apply_autoinstall_config` and beyond.
+- [ ] Role-VM serial logs under `test-results/guest/<timestamp>/` still work.
+- [ ] Follow `testing.md` for tier placement; do not add assertions on script template text.
 
-## Related
+## Out of scope
 
-- The intermittent Mirror-step stall from the same 2026-11-01 session is not addressed here. Its live cause (network path from the nested build VM to the mirror) was not reproduced. If it recurs, inspect the live VM as described in the [hand-off](../handoff.md).
+- The intermittent Mirror-step stall from the same 2026-11-01 session (the pinned mirror in commit 02c0bd6 targets it). Its live cause (network path from the nested build VM to the mirror) was not reproduced. If it recurs, inspect the live VM as described in the [hand-off](../handoff.md).
+- Identifying what held the file for 30 minutes.
