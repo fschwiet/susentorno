@@ -83,6 +83,14 @@ export function buildUserData(inputs: AutoinstallInputs): string {
     '    mirror-selection:',
     '      primary:',
     '        - uri: "http://archive.ubuntu.com/ubuntu"',
+    // Subiquity otherwise runs `ubuntu-drivers list` in an apt overlay after
+    // the Mirror step. On the 26.04 live kernel (7.0.0-14-generic) that once
+    // oopsed in overlayfs (ovl_iterate_merged) and hung the build. A Hyper-V
+    // guest needs no third-party drivers. No source id: the default install
+    // source stays. See
+    // docs/matt-pocock/golden-image-installer-kernel-oops/issues/01-installer-kernel-oops-hangs-golden-build.md
+    '  source:',
+    '    search_drivers: false',
     '  storage:',
     '    layout:',
     '      name: direct',
