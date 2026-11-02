@@ -52,10 +52,12 @@ export async function createTestGuest(
   await exec.run(buildTurnOffVmCommand(vmName));
   await exec.run(buildRemoveVmCommand(vmName));
   rmSync(vhdPath, { force: true });
-  // 4 GiB startup and minimum, up to 6 GiB (the Windows guest's ceiling). At
-  // 2 GiB the phases guest's isolated-phase reboot was once handed only ~96 MB
-  // usable and panicked unpacking its initramfs ("System is deadlocked on
-  // memory"). Guest test files run one at a time, so the headroom is affordable.
+  // 4 GiB startup, dynamic 4-6 GiB. At 2 GiB the phases guest's isolated-phase
+  // reboot was once handed only ~96 MB usable and panicked unpacking its
+  // initramfs ("System is deadlocked on memory"). The minimum equals startup
+  // (unlike the Windows test guest's 2 GiB floor) so Hyper-V cannot reclaim
+  // the guest below what a boot needs. Guest test files run one at a time
+  // (fileParallelism: false), so the headroom is affordable.
   for (const [command, what] of [
     [buildNewDifferencingVhdCommand(vhdPath, goldenVhdPath), 'create the differencing disk'],
     [
