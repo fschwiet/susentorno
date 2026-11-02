@@ -1,6 +1,6 @@
 # 03: The serial log writer drops lines silently when another process holds the file
 
-**Status:** ready-for-agent
+**Status:** ready-for-review
 
 **Category:** bug
 
@@ -50,14 +50,24 @@ During that run a diagnostic loop (not part of the harness) ran `grep` on `seria
 
 ## Acceptance
 
-- [ ] A test that does not need Hyper-V drives the writer script with a local Node named-pipe server while another process reads the file repeatedly. No lines are lost.
-- [ ] A write failure produces a visible marker in the log (test by holding the file with an exclusive lock).
-- [ ] The reconnect loop still works after the pipe disconnects and reconnects.
-- [ ] A forced Ubuntu golden build, run while the log is polled from another process, leaves a complete serial log through `finish: subiquity/Mirror/apply_autoinstall_config` and beyond.
-- [ ] Role-VM serial logs under `test-results/guest/<timestamp>/` still work.
-- [ ] Follow `testing.md` for tier placement; do not add assertions on script template text.
+- [x] A test that does not need Hyper-V drives the writer script with a local Node named-pipe server while another process reads the file repeatedly. No lines are lost.
+- [x] A write failure produces a visible marker in the log (test by holding the file with an exclusive lock).
+- [x] The reconnect loop still works after the pipe disconnects and reconnects.
+- [x] A forced Ubuntu golden build, run while the log is polled from another process, leaves a complete serial log through `finish: subiquity/Mirror/apply_autoinstall_config` and beyond.
+- [x] Role-VM serial logs under `test-results/guest/<timestamp>/` still work.
+- [x] Follow `testing.md` for tier placement; do not add assertions on script template text.
 
 ## Out of scope
 
 - The intermittent Mirror-step stall from the same 2026-11-01 session (the pinned mirror in commit 02c0bd6 targets it). Its live cause (network path from the nested build VM to the mirror) was not reproduced. If it recurs, inspect the live VM as described in the [hand-off](../handoff.md).
 - Identifying what held the file for 30 minutes.
+
+## Comments
+
+### 2026-11-02: Implemented — ready-for-review
+
+- `startSerialLog` (`tests/guest/hyperv/serialLog.ts`) now opens the log once per writer process with `[System.IO.File]::Open(path, Append, Write, ReadWrite)` behind an auto-flushing `StreamWriter`, outside the pipe reconnect loop. A line that cannot be written is counted. Once the log can be written again, the writer adds a `[serial-log] dropped N line(s): <error>` marker before the next line. The script now goes in via `-EncodedCommand`, and the signature is unchanged.
+- `readSerialLog` moved from `goldenImage.ts` to `serialLog.ts` and is exported. A missing log reads as empty without a warning. A log that exists but cannot be read also reads as empty, and logs one `console.warn` per path.
+- Unit tests (`tests/unit/guest/serialLog.test.ts`, Windows-only via `describe.skipIf`) drive the real writer against a local Node named-pipe server. They cover: a concurrent reader process that opens the log with `FileShare.Read` every few ms, with no lines lost (all lines were lost with the old `Add-Content` writer); an exclusive lock held by another process, which yields the dropped-lines marker and then normal logging (this fails against the old writer); a pipe disconnect and reconnect, which appends to the same log; and `readSerialLog`'s empty-versus-unreadable behaviour.
+- A forced Ubuntu golden build (throwaway Vitest file under `test-results/forced-golden/`, 996 s) ran while Git Bash ran `grep -c` on `serial.log` every 5 s. Every poll after the file appeared succeeded. None hit `Device or resource busy`. The log ran to 907 lines (82 KB), through `finish: subiquity/Mirror/apply_autoinstall_config` and on to `reboot: Power down`, with no dropped-line markers.
+- A following `pnpm test:guest` passed (5 files, 74 tests). The role serial logs for e2e, phases, fresh, and ambientTrust under `test-results/guest/<timestamp>/<role>/serial.log` were complete (72–337 KB) with no markers.

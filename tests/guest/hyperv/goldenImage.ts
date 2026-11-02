@@ -1,5 +1,4 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { buildStartVmCommand } from '../../../src/guestSetup/hyperVOperations';
 import { buildGetVmCommand, parseGetVmResult } from '../../../src/guestSetup/hyperVQueries';
@@ -24,7 +23,7 @@ import {
   ubuntuGoldenBuildEvidenceDir,
 } from './imageCache';
 import { buildVmEvidenceCommand, findKernelFailure, rotateAttempt } from './goldenBuildEvidence';
-import { startSerialLog } from './serialLog';
+import { readSerialLog, startSerialLog } from './serialLog';
 import { captureScreenshotFrame } from './vmScreenshot';
 import {
   buildCopyTreeCommand,
@@ -123,13 +122,6 @@ async function captureFailureEvidence(exec: PowerShellExec, dir: string): Promis
     width: 640,
     height: 480,
   });
-}
-async function readSerialLog(path: string): Promise<string> {
-  try {
-    return await readFile(path, 'utf8');
-  } catch {
-    return '';
-  }
 }
 async function waitForOff(
   exec: PowerShellExec,
