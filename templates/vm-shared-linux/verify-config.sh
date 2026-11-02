@@ -73,7 +73,9 @@ else
 fi
 
 node_ca="$(bash -lc 'echo $NODE_EXTRA_CA_CERTS')"
-if printf '%s' "$node_ca" | grep -q 'susentorno-proxy-certificate-authority.crt'; then
+# The full system bundle, which holds the proxy CA (checked above) and any
+# ambient roots: configure-network and setup-guest-unix both set this path.
+if [ "$node_ca" = '/etc/ssl/certs/ca-certificates.crt' ]; then
   ok 'NODE_EXTRA_CA_CERTS set for login shells'
 else
   bad 'NODE_EXTRA_CA_CERTS set for login shells' "got '${node_ca:-empty}'"

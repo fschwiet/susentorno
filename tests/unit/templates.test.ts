@@ -512,6 +512,17 @@ describe('generated provisioning inventory', () => {
       expect(tools).not.toContain('dotnet');
     });
 
+    it('ubuntu verify-config expects the NODE_EXTRA_CA_CERTS path configure-network sets', () => {
+      const net = readFileSync(
+        join(templatesDir(), 'vm-shared-linux', 'pre-scripts', 'nn-configure-network.sh'),
+        'utf8',
+      );
+      const v = readFileSync(join(templatesDir(), 'vm-shared-linux', 'verify-config.sh'), 'utf8');
+      const set = net.match(/export NODE_EXTRA_CA_CERTS=(\S+?)'/);
+      expect(set).not.toBeNull();
+      expect(v).toContain(`[ "$node_ca" = '${set![1]}' ]`);
+    });
+
     it('ubuntu configure-network leaves addressing and DNS to DHCP', () => {
       const s = readFileSync(
         join(templatesDir(), 'vm-shared-linux', 'pre-scripts', 'nn-configure-network.sh'),
