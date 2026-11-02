@@ -52,16 +52,20 @@ export async function createTestGuest(
   await exec.run(buildTurnOffVmCommand(vmName));
   await exec.run(buildRemoveVmCommand(vmName));
   rmSync(vhdPath, { force: true });
+  // 4 GiB startup and minimum, up to 6 GiB (the Windows guest's ceiling). At
+  // 2 GiB the phases guest's isolated-phase reboot was once handed only ~96 MB
+  // usable and panicked unpacking its initramfs ("System is deadlocked on
+  // memory"). Guest test files run one at a time, so the headroom is affordable.
   for (const [command, what] of [
     [buildNewDifferencingVhdCommand(vhdPath, goldenVhdPath), 'create the differencing disk'],
     [
-      buildNewVmCommand(vmName, { memoryStartupBytes: 2048 * 1024 ** 2, switchName }),
+      buildNewVmCommand(vmName, { memoryStartupBytes: 4096 * 1024 ** 2, switchName }),
       'create the VM',
     ],
     [buildAddVmHardDiskCommand(vmName, vhdPath), 'attach the differencing disk'],
     [buildSetVmProcessorCommand(vmName, 2), 'set the processor count'],
     [
-      buildSetVmDynamicMemoryCommand(vmName, 2048 * 1024 ** 2, 4096 * 1024 ** 2),
+      buildSetVmDynamicMemoryCommand(vmName, 4096 * 1024 ** 2, 6144 * 1024 ** 2),
       'enable dynamic memory',
     ],
     [buildEnableSecureBootCommand(vmName), 'enable Secure Boot'],
