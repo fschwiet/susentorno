@@ -1,6 +1,6 @@
 # 01: Ubuntu 26.04 installer kernel oops can hang the guest tier's golden image build
 
-**Status:** ready-for-review
+**Status:** resolved
 
 **Category:** bug
 
