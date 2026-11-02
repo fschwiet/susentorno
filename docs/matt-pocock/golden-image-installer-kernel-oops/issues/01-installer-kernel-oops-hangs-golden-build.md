@@ -1,6 +1,10 @@
 # 01: Ubuntu 26.04 installer kernel oops can hang the guest tier's golden image build
 
-**Status:** needs-triage
+**Status:** ready-for-human
+
+**Category:** bug
+
+**Why human:** deciding between waiting for an upstream fix and an autoinstall-config workaround is a judgment call, and measuring a failure rate needs repeated forced golden builds (about 16 minutes each) on a Hyper-V host.
 
 **What happened:** On 2026-09-26 a full `pnpm test` (elevated, Windows 11 Pro 10.0.26200 host, first golden build on that machine) failed in the `guest` tier's global setup, before any guest test ran:
 
@@ -15,7 +19,7 @@ The serial log showed the live installer's kernel oopsing in overlayfs while Sub
 
 The failing commit was `f85d8a9` (codex real-account-id work). That change doesn't touch the golden image build, the autoinstall config, or the ISO.
 
-**Evidence** (from `.image-cache/golden-build-serial.log`; the next build overwrites that file, so the key lines are kept here):
+**Evidence** (from the serial log of the failing build, which the next build overwrote; the key lines are kept here):
 
 ```
 start: subiquity/Mirror/cmd-apt-config: curtin command apt-config
@@ -41,5 +45,10 @@ finish: subiquity/Mirror/cmd-apt-config: curtin command apt-config
 **Questions to investigate:**
 - Is this a known 26.04 / 7.0 kernel overlayfs bug? Is a fixed point-release ISO or kernel available?
 - The autoinstall user-data sets no `drivers:` section, so Subiquity runs `ubuntu-drivers` by default. Would `drivers: { install: false }` (or an equivalent) stop Subiquity invoking `ubuntu-drivers` during the install, avoiding the crash path? Check whether Subiquity still calls it just to list drivers.
-- Should `waitForOff` fail fast when the serial log shows a kernel `Oops`/`BUG`, rather than waiting the full 45 minutes? That wouldn't fix the flake, but it would make it much cheaper and point straight at the cause.
 - How often does it happen? Repeated forced golden builds (`ensureGoldenImage(..., { force: true })`) would give a rough rate.
+
+## Notes
+
+- Fail-fast on a kernel `Oops`/`BUG` is already in place (`findKernelFailure` in `tests/guest/hyperv/goldenBuildEvidence.ts`, used by `waitForOff`). Serial logs now live under `test-results/golden-build/ubuntu/current/`.
+- Do [build-stall issue 03](../../golden-image-build-stall/issues/03-serial-log-writer-drops-lines-under-concurrent-readers.md) first. Without a reliable serial log, a hang can't be told apart as an oops, a Mirror stall, or a lost write, which skews any failure-rate measurement.
+- The 2026-11-01 stall was a Mirror-step stall with no kernel failure, so it is a different problem from this one.
