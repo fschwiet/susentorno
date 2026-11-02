@@ -1,6 +1,6 @@
 # 03: The serial log writer drops lines silently when another process holds the file
 
-**Status:** ready-for-review
+**Status:** resolved
 
 **Category:** bug
 
@@ -78,3 +78,7 @@ During that run a diagnostic loop (not part of the harness) ran `grep` on `seria
 - The concurrent-reader test's reader now opens with `FileShare.ReadWrite` and reads the whole log each time. It reports each successful read, and the test asserts more than 10 reads succeeded as well as no lost lines. The old reader opened with `FileShare.Read`, which conflicts with the writer's handle, so it never managed to read.
 - The writer opens the log with `FileShare.ReadWrite -bor FileShare.Delete`, so a writer that outlives `stop()` (5 s fallback) no longer blocks deletion of its directory. Windows still refuses to rename a directory with any file open inside it, even with delete sharing. So when `rotateAttempt` gets `EPERM`/`EBUSY`/`EACCES` from the rename, it now copies `current/` to `previous/` and deletes `current/`. Both have unit tests: the log directory can be deleted while the writer runs, and rotation works while another process holds `current/serial.log` with delete sharing.
 - `readSerialLog` clears a path's warn-once entry after a successful read, so a reused path such as `ubuntu/current/serial.log` warns again each time it becomes unreadable. This has a unit test.
+
+### 2026-11-02: Resolved
+
+Code review findings were fixed in 685601a. The full `pnpm check` then passed every stage except one guest-tier run. In that run `vmReconcile` timed out because the e2e guest's `multipathd.service/stop` job held up shutdown for up to 1 min 37 s, longer than the 60 s + 30 s that `Stop-VM` and the Off check allow. The new serial log captured that whole shutdown. The stall is unrelated to this ticket, and a rerun of `pnpm test:guest` passed (5 files, 74 tests).
