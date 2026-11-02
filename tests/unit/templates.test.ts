@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { templatesDir } from '../../src/templates';
 import { loadManifest } from '../../src/homeJqTransforms';
 import { parseAllowListFile, parseAuthListFile } from '../../src/allowlist';
+import { buildSetNodeExtraCaCertsCommand } from '../../src/guestSetup/unix/ambientTrust';
 import {
   NO_AUTH_MARKER_HEADER,
   NO_AUTH_SENTINEL_VALUE,
@@ -521,6 +522,8 @@ describe('generated provisioning inventory', () => {
       const set = net.match(/export NODE_EXTRA_CA_CERTS=(\S+?)'/);
       expect(set).not.toBeNull();
       expect(v).toContain(`[ "$node_ca" = '${set![1]}' ]`);
+      // setup-guest-unix's /etc/environment writer sets the same path.
+      expect(buildSetNodeExtraCaCertsCommand()).toContain(`NODE_EXTRA_CA_CERTS=${set![1]}\\n`);
     });
 
     it('ubuntu configure-network leaves addressing and DNS to DHCP', () => {

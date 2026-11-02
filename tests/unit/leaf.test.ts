@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ensureLeaf } from '../../src/leaf';
-import { generateRootCa, certSans, isSignedBy } from '../../src/ca';
+import forge from 'node-forge';
+import { generateRootCa, certSans, isSignedBy, namesIssuerByKey } from '../../src/ca';
 import { envPaths, type EnvPaths } from '../../src/envPaths';
 
 let dir: string;
@@ -53,5 +54,32 @@ describe('leaf certificate issuance & reuse', () => {
       'a.example.com',
       'new.example.com',
     ]);
+  });
+
+  it('reissues a leaf that does not name its root by key', () => {
+    // Leaves issued before leaves carried an authorityKeyIdentifier: still
+    // signed by the root with the right SANs, but a verifier that also trusts
+    // another root with the same name could pick the wrong issuer.
+    const sans = ['a.example.com'];
+    const keys = forge.pki.rsa.generateKeyPair(2048);
+    const caCert = forge.pki.certificateFromPem(caCertPem);
+    const cert = forge.pki.createCertificate();
+    cert.publicKey = keys.publicKey;
+    cert.serialNumber = '01';
+    cert.validity.notBefore = new Date();
+    cert.validity.notAfter = new Date(Date.now() + 86_400_000);
+    cert.setSubject([{ name: 'commonName', value: 'old-style-leaf' }]);
+    cert.setIssuer(caCert.subject.attributes);
+    cert.setExtensions([
+      { name: 'subjectAltName', altNames: sans.map((value) => ({ type: 2, value })) },
+    ]);
+    cert.sign(forge.pki.privateKeyFromPem(caKeyPem), forge.md.sha256.create());
+    writeFileSync(paths.caLeafCert, forge.pki.certificateToPem(cert));
+    writeFileSync(paths.caLeafKey, forge.pki.privateKeyToPem(keys.privateKey));
+    expect(namesIssuerByKey(readFileSync(paths.caLeafCert, 'utf8'), caCertPem)).toBe(false);
+
+    const status = ensureLeaf(paths, caCertPem, caKeyPem, sans);
+    expect(status).toContain('issued leaf for 1 host(s)');
+    expect(namesIssuerByKey(readFileSync(paths.caLeafCert, 'utf8'), caCertPem)).toBe(true);
   });
 });

@@ -2,12 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { X509Certificate } from 'node:crypto';
 import forge from 'node-forge';
 import {
-  CA_COMMON_NAME,
+  CA_COMMON_NAME_PREFIX,
   LEAF_COMMON_NAME,
   generateRootCa,
   generateLeaf,
   validateCaPair,
   isSignedBy,
+  namesIssuerByKey,
   certSans,
 } from '../../src/ca';
 
@@ -17,8 +18,8 @@ describe('CA creation', () => {
 
     it('is a self-signed CA with the susentorno CN and no server SANs', () => {
       const cert = new X509Certificate(ca.caCertPem);
-      expect(cert.subject).toContain(CA_COMMON_NAME);
-      expect(cert.issuer).toContain(CA_COMMON_NAME); // self-signed
+      expect(cert.subject).toContain(CA_COMMON_NAME_PREFIX);
+      expect(cert.issuer).toContain(CA_COMMON_NAME_PREFIX); // self-signed
       expect(cert.ca).toBe(true);
       expect(cert.subjectAltName).toBeUndefined();
     });
@@ -28,14 +29,10 @@ describe('CA creation', () => {
     });
 
     it('gives every root its own subject, so two susentorno roots never share an issuer name', () => {
-      // A guest can trust two susentorno roots at once (an ambient one copied
-      // from the host plus the environment's own). With one fixed name, a
-      // verifier looking up a leaf's issuer by name could pick the wrong
-      // root and fail with "certificate signature failure".
       const other = generateRootCa();
       const subjects = [ca, other].map((root) => new X509Certificate(root.caCertPem).subject);
       for (const subject of subjects) {
-        expect(subject).toMatch(new RegExp(`^CN=${CA_COMMON_NAME}-[0-9a-f]{8}$`));
+        expect(subject).toMatch(new RegExp(`^CN=${CA_COMMON_NAME_PREFIX}-[0-9a-f]{8}$`));
       }
       expect(subjects[0]).not.toBe(subjects[1]);
     });
@@ -49,7 +46,7 @@ describe('CA creation', () => {
     it('is a non-CA cert carrying the given SANs, issued by the root', () => {
       const cert = new X509Certificate(leaf.leafCertPem);
       expect(cert.subject).toContain(LEAF_COMMON_NAME);
-      expect(cert.issuer).toContain(CA_COMMON_NAME);
+      expect(cert.issuer).toContain(CA_COMMON_NAME_PREFIX);
       expect(cert.ca).toBe(false);
       for (const san of sans) expect(cert.subjectAltName).toContain(`DNS:${san}`);
     });
@@ -62,11 +59,31 @@ describe('CA creation', () => {
         .certificateFromPem(leaf.leafCertPem)
         .getExtension('authorityKeyIdentifier') as { value: string } | null;
       expect(rootSki).not.toBeNull();
-      expect(leafAki).not.toBeNull();
-      // AuthorityKeyIdentifier ::= SEQUENCE { [0] keyIdentifier, ... }: 30 16 80 14 <20-byte id>
-      expect(forge.util.bytesToHex(leafAki!.value)).toBe(
-        `30168014${rootSki!.subjectKeyIdentifier}`,
+      expect(forge.util.bytesToHex(leafAki!.value)).toMatch(
+        new RegExp(`${rootSki!.subjectKeyIdentifier}$`),
       );
+      expect(namesIssuerByKey(leaf.leafCertPem, ca.caCertPem)).toBe(true);
+      expect(namesIssuerByKey(leaf.leafCertPem, generateRootCa().caCertPem)).toBe(false);
+    });
+
+    it('names by key a root that carries no subject key identifier extension', () => {
+      const keys = forge.pki.rsa.generateKeyPair(2048);
+      const cert = forge.pki.createCertificate();
+      cert.publicKey = keys.publicKey;
+      cert.serialNumber = '01';
+      cert.validity.notBefore = new Date();
+      cert.validity.notAfter = new Date(Date.now() + 86_400_000);
+      const attrs = [{ name: 'commonName', value: 'root-without-ski' }];
+      cert.setSubject(attrs);
+      cert.setIssuer(attrs);
+      cert.setExtensions([{ name: 'basicConstraints', cA: true, critical: true }]);
+      cert.sign(keys.privateKey, forge.md.sha256.create());
+      const rootPem = forge.pki.certificateToPem(cert);
+      const issued = generateLeaf(rootPem, forge.pki.privateKeyToPem(keys.privateKey), [
+        'a.invalid',
+      ]);
+      expect(isSignedBy(issued.leafCertPem, rootPem)).toBe(true);
+      expect(namesIssuerByKey(issued.leafCertPem, rootPem)).toBe(true);
     });
 
     it('verifies against the root public key', () => {

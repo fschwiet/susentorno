@@ -1,7 +1,8 @@
 import { X509Certificate, createPrivateKey } from 'node:crypto';
 import forge from 'node-forge';
 
-export const CA_COMMON_NAME = 'susentorno-proxy-certificate-authority';
+/** Each root's CommonName is this prefix plus `-` and the start of its key identifier. */
+export const CA_COMMON_NAME_PREFIX = 'susentorno-proxy-certificate-authority';
 export const LEAF_COMMON_NAME = 'susentorno-proxy-leaf';
 
 const VALIDITY_DAYS = 3650;
@@ -36,8 +37,8 @@ export function generateRootCa(): { caCertPem: string; caKeyPem: string; attempt
     // from the host's trust store as ambient trust, plus the environment's
     // own); with one fixed name, a verifier finding a leaf's issuer by name
     // could pick the wrong root and fail with "certificate signature failure".
-    const keyId = cert.generateSubjectKeyIdentifier().toHex();
-    const attrs = [{ name: 'commonName', value: `${CA_COMMON_NAME}-${keyId.slice(0, 8)}` }];
+    const keyId = rootKeyIdentifier(cert);
+    const attrs = [{ name: 'commonName', value: `${CA_COMMON_NAME_PREFIX}-${keyId.slice(0, 8)}` }];
     cert.setSubject(attrs);
     cert.setIssuer(attrs); // self-signed root
     cert.setExtensions([
@@ -85,7 +86,10 @@ export function generateLeaf(
       // Names the issuing root by key, not only by subject name, so a verifier
       // that also trusts another root with the same name (such as a root made
       // before roots had unique names) still picks this one.
-      { name: 'authorityKeyIdentifier', keyIdentifier: rootKeyIdentifier(caCert) },
+      {
+        name: 'authorityKeyIdentifier',
+        keyIdentifier: forge.util.hexToBytes(rootKeyIdentifier(caCert)),
+      },
     ]);
     cert.sign(caKey, forge.md.sha256.create()); // signed by the root key
     const leafCertPem = forge.pki.certificateToPem(cert);
@@ -102,17 +106,38 @@ export function generateLeaf(
 }
 
 /**
- * The root's subject key identifier as raw bytes: the value of its own
- * extension when it has one, else the same SHA-1-of-public-key forge writes
- * for a new root's extension.
+ * The root's subject key identifier, as hex: the value of its own extension
+ * when it has one, else the SHA-1 of its public key, which is what forge
+ * writes for a new root's extension.
  */
 function rootKeyIdentifier(caCert: forge.pki.Certificate): string {
   const extension = caCert.getExtension('subjectKeyIdentifier') as
     { subjectKeyIdentifier?: string } | undefined;
-  if (extension?.subjectKeyIdentifier) {
-    return forge.util.hexToBytes(extension.subjectKeyIdentifier);
+  return extension?.subjectKeyIdentifier ?? caCert.generateSubjectKeyIdentifier().toHex();
+}
+
+/**
+ * True when `leafPem`'s authorityKeyIdentifier names `caPem`'s key, so a
+ * verifier picks this root by key even if it trusts another root with the
+ * same name. False for leaves issued before leaves carried one.
+ */
+export function namesIssuerByKey(leafPem: string, caPem: string): boolean {
+  try {
+    const extension = forge.pki
+      .certificateFromPem(leafPem)
+      .getExtension('authorityKeyIdentifier') as { value?: string } | undefined;
+    if (!extension?.value) return false;
+    // AuthorityKeyIdentifier ::= SEQUENCE { keyIdentifier [0] IMPLICIT OCTET STRING OPTIONAL, ... }
+    const sequence = forge.asn1.fromDer(extension.value);
+    const keyIdentifier = (sequence.value as forge.asn1.Asn1[]).find(
+      (part) => part.tagClass === forge.asn1.Class.CONTEXT_SPECIFIC && part.type === 0,
+    );
+    if (!keyIdentifier || typeof keyIdentifier.value !== 'string') return false;
+    const root = forge.pki.certificateFromPem(caPem);
+    return forge.util.bytesToHex(keyIdentifier.value) === rootKeyIdentifier(root);
+  } catch {
+    return false;
   }
-  return caCert.generateSubjectKeyIdentifier().getBytes();
 }
 
 /** True when Node's strict X509 parser accepts the PEM (guards against rare malformed DER from node-forge). */

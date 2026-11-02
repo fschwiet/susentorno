@@ -19,7 +19,7 @@ if printf '%s' "$node_ca" | grep -q 'susentorno-proxy-certificate-authority.crt'
 The guest stopped pointing `NODE_EXTRA_CA_CERTS` at the single proxy CA file in commit `40e5807` (2026-08-16, "point NODE_EXTRA_CA_CERTS at the full system bundle, not one file"). Both writers now set `/etc/ssl/certs/ca-certificates.crt`:
 
 - `templates/vm-shared-linux/pre-scripts/nn-configure-network.sh` (`/etc/profile.d/node-extra-ca-certs.sh`);
-- `src/guestSetup/unix/ambientTrust.ts` `buildSetNodeTrustEnvironmentCommand` (`/etc/environment`).
+- `src/guestSetup/unix/ambientTrust.ts` `buildSetNodeExtraCaCertsCommand` (`/etc/environment`).
 
 `40e5807` updated `nn-configure-network.sh` and `tests/guest/phases.test.ts`, but not `verify-config.sh`. So on a correctly configured guest this check should always report `FAIL NODE_EXTRA_CA_CERTS set for login shells`, making `verify-config.sh` exit non-zero. That is from reading the code: no one has run it on a guest to confirm.
 
