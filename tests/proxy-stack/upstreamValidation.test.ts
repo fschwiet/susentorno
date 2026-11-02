@@ -68,14 +68,13 @@ const stdoutLines: string[] = [];
 
 /**
  * A throwaway root CA with a name that cannot collide with a real susentorno
- * proxy CA. generateRootCa() (src/ca.ts) always uses the fixed CommonName
- * 'susentorno-proxy-certificate-authority' — fine for the one real CA a host
- * has, but a second CA reusing that identical Subject Name would make Envoy's
- * chain builder pick between two same-named-but-different-keyed candidates
- * when this suite's ambient trust snapshot includes a previously-trusted
- * susentorno CA from earlier work on the same machine, which fails RSA
- * signature verification outright rather than falling back to the other
- * candidate.
+ * proxy CA. Roots made before generateRootCa() (src/ca.ts) gave each root its
+ * own name all share the CommonName 'susentorno-proxy-certificate-authority',
+ * and this suite's ambient trust snapshot may include one from earlier work on
+ * the same machine. A second CA with that identical Subject Name would make
+ * Envoy's chain builder pick between two same-named-but-different-keyed
+ * candidates, which fails RSA signature verification outright rather than
+ * falling back to the other candidate.
  */
 function mintThrowawayRootCa(): { caCertPem: string; caKeyPem: string } {
   const keys = forge.pki.rsa.generateKeyPair(2048);

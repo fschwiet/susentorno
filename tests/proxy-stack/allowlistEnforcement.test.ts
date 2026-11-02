@@ -3,6 +3,7 @@ import { execa } from 'execa';
 import { connect as tlsConnect } from 'node:tls';
 import { request as httpsRequest } from 'node:https';
 import { request as httpRequest } from 'node:http';
+import { X509Certificate } from 'node:crypto';
 import type { MockUpstream } from './mockUpstream';
 import {
   startProxyStack,
@@ -123,7 +124,7 @@ describe('proxy stack policy enforcement', () => {
       // Handshake succeeded with `ca: caCertPem` (rejectUnauthorized defaults true), so the leaf
       // already chained to the installed root. Confirm it is a distinct leaf, not the CA itself.
       expect(peer.subjectCN).toBe('susentorno-proxy-leaf');
-      expect(peer.issuerCN).toBe('susentorno-proxy-certificate-authority');
+      expect(peer.issuerCN).toBe(new X509Certificate(caCertPem).subject.replace(/^CN=/, ''));
       expect(peer.subjectCN).not.toBe(peer.issuerCN);
     });
   });

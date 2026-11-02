@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { X509Certificate } from 'node:crypto';
+import forge from 'node-forge';
 import {
   CA_COMMON_NAME,
   LEAF_COMMON_NAME,
@@ -25,6 +26,19 @@ describe('CA creation', () => {
     it('is a matching cert/key pair', () => {
       expect(validateCaPair(ca.caCertPem, ca.caKeyPem)).toBe(true);
     });
+
+    it('gives every root its own subject, so two susentorno roots never share an issuer name', () => {
+      // A guest can trust two susentorno roots at once (an ambient one copied
+      // from the host plus the environment's own). With one fixed name, a
+      // verifier looking up a leaf's issuer by name could pick the wrong
+      // root and fail with "certificate signature failure".
+      const other = generateRootCa();
+      const subjects = [ca, other].map((root) => new X509Certificate(root.caCertPem).subject);
+      for (const subject of subjects) {
+        expect(subject).toMatch(new RegExp(`^CN=${CA_COMMON_NAME}-[0-9a-f]{8}$`));
+      }
+      expect(subjects[0]).not.toBe(subjects[1]);
+    });
   });
 
   describe('leaf issuance', () => {
@@ -38,6 +52,21 @@ describe('CA creation', () => {
       expect(cert.issuer).toContain(CA_COMMON_NAME);
       expect(cert.ca).toBe(false);
       for (const san of sans) expect(cert.subjectAltName).toContain(`DNS:${san}`);
+    });
+
+    it("names its root by key: the authority key identifier is the root's subject key identifier", () => {
+      const rootSki = forge.pki
+        .certificateFromPem(ca.caCertPem)
+        .getExtension('subjectKeyIdentifier') as { subjectKeyIdentifier: string } | null;
+      const leafAki = forge.pki
+        .certificateFromPem(leaf.leafCertPem)
+        .getExtension('authorityKeyIdentifier') as { value: string } | null;
+      expect(rootSki).not.toBeNull();
+      expect(leafAki).not.toBeNull();
+      // AuthorityKeyIdentifier ::= SEQUENCE { [0] keyIdentifier, ... }: 30 16 80 14 <20-byte id>
+      expect(forge.util.bytesToHex(leafAki!.value)).toBe(
+        `30168014${rootSki!.subjectKeyIdentifier}`,
+      );
     });
 
     it('verifies against the root public key', () => {
