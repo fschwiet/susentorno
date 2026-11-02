@@ -189,12 +189,6 @@ export function buildPublishScript(input: {
  * Point machine-scoped NODE_EXTRA_CA_CERTS at the bundle and verify both: the
  * bundle holds exactly the expected fingerprints, once each, and the variable
  * reads back as the bundle's path.
- *
- * Also sets machine CLAUDE_CODE_DISABLE_SELF_NAMED_CERT_DROP=1: recent Claude
- * Code releases drop a NODE_EXTRA_CA_CERTS certificate that names itself as its
- * issuer when they cannot confirm its self-signature, which dropped the proxy
- * root CA and failed the Claude Code install. Every certificate in the bundle
- * is trusted on purpose, so keep them all.
  */
 export function buildSetEnvironmentScript(expectedBundle: string[]): string {
   return [
@@ -214,8 +208,6 @@ export function buildSetEnvironmentScript(expectedBundle: string[]): string {
       "[Environment]::SetEnvironmentVariable('NODE_EXTRA_CA_CERTS', $bundlePath, 'Machine')",
       "$actual = [Environment]::GetEnvironmentVariable('NODE_EXTRA_CA_CERTS', 'Machine')",
       "if ($actual -ne $bundlePath) { throw 'machine NODE_EXTRA_CA_CERTS did not read back as the bundle path' }",
-      "[Environment]::SetEnvironmentVariable('CLAUDE_CODE_DISABLE_SELF_NAMED_CERT_DROP', '1', 'Machine')",
-      "if ([Environment]::GetEnvironmentVariable('CLAUDE_CODE_DISABLE_SELF_NAMED_CERT_DROP', 'Machine') -ne '1') { throw 'machine CLAUDE_CODE_DISABLE_SELF_NAMED_CERT_DROP did not read back as 1' }",
       "$result = @{ Outcome = 'ok'; Certificates = $found.Count }",
     ]),
   ].join('\n');

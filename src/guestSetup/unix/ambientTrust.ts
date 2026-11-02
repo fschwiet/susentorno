@@ -7,22 +7,14 @@ export class AmbientTrustError extends Error {}
 const NODE_EXTRA_CA_CERTS_PATH = '/etc/ssl/certs/ca-certificates.crt';
 
 /**
- * Removes any prior NODE_EXTRA_CA_CERTS and CLAUDE_CODE_DISABLE_SELF_NAMED_CERT_DROP
- * lines before appending the canonical ones, so a rerun leaves exactly one of
- * each rather than duplicating them — propagateAmbientTrust runs this
- * unconditionally on every invocation.
- *
- * CLAUDE_CODE_DISABLE_SELF_NAMED_CERT_DROP=1: recent Claude Code releases drop
- * a NODE_EXTRA_CA_CERTS certificate that names itself as its issuer when they
- * cannot confirm its self-signature. That drops the proxy root CA and breaks
- * Claude Code's TLS through the proxy. Every certificate in the bundle is
- * trusted on purpose, so keep them all.
+ * Removes any prior NODE_EXTRA_CA_CERTS line before appending the canonical
+ * one, so a rerun leaves exactly one line rather than duplicating it —
+ * propagateAmbientTrust runs this unconditionally on every invocation.
  */
 export function buildSetNodeExtraCaCertsCommand(): string {
   return (
     "sudo sed -i '/^NODE_EXTRA_CA_CERTS=/d' /etc/environment && " +
-    "sudo sed -i '/^CLAUDE_CODE_DISABLE_SELF_NAMED_CERT_DROP=/d' /etc/environment && " +
-    `printf 'NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS_PATH}\\nCLAUDE_CODE_DISABLE_SELF_NAMED_CERT_DROP=1\\n' | sudo tee -a /etc/environment >/dev/null`
+    `printf 'NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS_PATH}\\n' | sudo tee -a /etc/environment >/dev/null`
   );
 }
 

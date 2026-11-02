@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  buildPublishScript,
-  buildSetEnvironmentScript,
-} from '../../../../src/guestSetup/windows/trustScripts';
+import { buildPublishScript } from '../../../../src/guestSetup/windows/trustScripts';
 
 describe('trust scripts: atomic replacement in Windows PowerShell 5.1', () => {
   it('never passes a bare $null as File.Replace backup path', () => {
@@ -18,18 +15,5 @@ describe('trust scripts: atomic replacement in Windows PowerShell 5.1', () => {
     expect(script).toContain('[System.IO.File]::Replace(');
     expect(script).toContain('[NullString]::Value');
     expect(script).not.toMatch(/File\]::Replace\([^)]*\$null\)/);
-  });
-});
-
-describe('trust scripts: machine environment for Node-based tools', () => {
-  const script = buildSetEnvironmentScript(['a'.repeat(64)]);
-
-  it('keeps the self-signed proxy CA that Claude Code would otherwise drop from NODE_EXTRA_CA_CERTS', () => {
-    expect(script).toContain(
-      "[Environment]::SetEnvironmentVariable('CLAUDE_CODE_DISABLE_SELF_NAMED_CERT_DROP', '1', 'Machine')",
-    );
-    expect(script).toContain(
-      "[Environment]::GetEnvironmentVariable('CLAUDE_CODE_DISABLE_SELF_NAMED_CERT_DROP', 'Machine')",
-    );
   });
 });
