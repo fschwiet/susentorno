@@ -1,6 +1,6 @@
 # 01: Ubuntu verify-config.sh checks NODE_EXTRA_CA_CERTS against a path the guest no longer uses
 
-**Status:** ready-for-agent
+**Status:** ready-for-review
 
 **Category:** bug
 
@@ -37,3 +37,11 @@ Found during the code review for `golden-image-build-stall/issues/01-pin-primary
 1. `verify-config.sh` passes its `NODE_EXTRA_CA_CERTS` check on a guest configured by the current templates and setup.
 2. A test fails if `verify-config.sh` and the writers disagree on the path again.
 3. `pnpm test:unit` passes, plus any tier the new test lands in.
+
+## Comments
+
+### 2026-11-02: Implemented
+
+`verify-config.sh` now passes the check only when `NODE_EXTRA_CA_CERTS` equals `/etc/ssl/certs/ca-certificates.crt` (commit `473f282`). A new `tests/unit/templates.test.ts` case reads the path `nn-configure-network.sh` exports and fails if `verify-config.sh` checks anything else. That covers acceptance 2. `pnpm check` passes, covering acceptance 3.
+
+Acceptance 1 is **not verified**: no one has run `verify-config.sh` on a guest since the change, and no test runs it. I did not add a guest-tier test for it, because the script makes real outbound requests to allow-listed hosts.

@@ -1,6 +1,6 @@
 # 01: Pin the golden build's primary apt mirror explicitly instead of relying on Subiquity's default list
 
-**Status:** ready-for-review
+**Status:** resolved
 
 **Blocked by:** None (can start immediately).
 
@@ -65,3 +65,14 @@ apt:
 3. Live installer checks, done over tty2 via `Msvm_Keyboard` and read from 640x480 thumbnails while the build VM ran:
    - `subiquity-server-debug.log`: `controllers.mirror:203 Iterating over [{'uri': 'http://archive.ubuntu.com/ubuntu'}]`, then `Mirror checking successful` about 6 s later (`apply_autoinstall_config` 01:11:09.378 → SUCCESS 01:11:15.521). A grep for `next candidate|candidate mirror` matched nothing. So no candidate was rejected first, and the ~10 s retry from the earlier run is gone.
    - `/target/etc/apt/sources.list.d/ubuntu.sources` (checked after `configure_apt` finished) lists `http://archive.ubuntu.com/ubuntu` (`resolute resolute-updates resolute-backports`) and `http://security.ubuntu.com/ubuntu/` (`resolute-security`). `cdrom.sources` (`file:///cdrom`) was also present at that point, as install-time scaffolding. I did not re-inspect the finished image's sources after power-off.
+
+### 2026-11-02: Reviewed, full pipeline passes, resolved
+
+The changeset review (standards and spec) found nothing wrong with the mirror pin. Follow-up: the `apt` comment in `buildUserData` was split so each setting carries its own reason.
+
+Getting the full pipeline (`pnpm check`) green surfaced two guest-tier problems unrelated to this ticket. Both are fixed in the same range:
+
+- **Unix test guest out of memory.** The phases guest's isolated-phase reboot was handed ~96 MB usable at 2 GiB and panicked unpacking its initramfs. `createTestGuest` now gives it 4 GiB startup, dynamic 4–6 GiB.
+- **Proxy root CAs shared one name.** Every root was `CN=susentorno-proxy-certificate-authority`. Ambient trust copied an older susentorno root from the host into each guest next to the environment's own, so issuer lookup by name could pick the wrong root, giving "certificate signature failure" (the Windows guest's Claude Code install, and the Unix ambient-trust test's `openssl verify`) depending on bundle order. `src/ca.ts` now suffixes each root's CN with the start of its key identifier and adds an authorityKeyIdentifier to leaves. A first attempt that set `CLAUDE_CODE_DISABLE_SELF_NAMED_CERT_DROP=1` in guests was reverted: Claude Code was rightly rejecting the wrong-issuer pick, and the variable did not stop the failure.
+
+Final `pnpm check`: preflight 14, unit 1453, cli 53 (+1 skipped), host-network 4, proxy-stack 67, guest 74, all passing.
