@@ -34,4 +34,15 @@ describe('access-log output formatting', () => {
       }),
     ).toBe('09:00:00  AUTH CANDIDATE  partner.example.com:443  https  Authorization=Bearer abc12');
   });
+
+  it('formats an upstream rejection with the 401 called out', () => {
+    expect(
+      formatOutput({
+        time: '2026-07-18T09:00:00',
+        tag: 'AUTH REJECTED',
+        domain: 'api.anthropic.com',
+        port: 443,
+      }),
+    ).toBe('09:00:00  AUTH REJECTED  api.anthropic.com:443  upstream returned 401');
+  });
 });

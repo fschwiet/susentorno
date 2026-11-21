@@ -10,7 +10,8 @@ export type Tag =
   | 'BLOCK TLS'
   | 'BLOCK HTTP'
   | 'BLOCK LIST'
-  | 'AUTH CANDIDATE';
+  | 'AUTH CANDIDATE'
+  | 'AUTH REJECTED';
 
 export interface Entry {
   time: string;
@@ -70,5 +71,13 @@ export function classify(line: AccessLine): Entry[] {
     return tag ? [{ time: line.time, tag, domain, port: 80 }] : [];
   }
   const tag = TAG_BY_443_PATH_ID[line.pathId];
-  return tag ? [{ time: line.time, tag, domain, port: 443 }] : [];
+  if (!tag) return [];
+  const entries: Entry[] = [{ time: line.time, tag, domain, port: 443 }];
+  // A 401 on a credential-injected host means upstream refused the request — usually
+  // the injected host token (stale or mid-rotation), though a request the guest sent
+  // without any credential also lands here.
+  if (line.pathId === 'term' && line.responseCode === '401') {
+    entries.push({ time: line.time, tag: 'AUTH REJECTED', domain, port: 443 });
+  }
+  return entries;
 }

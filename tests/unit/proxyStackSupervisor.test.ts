@@ -432,7 +432,7 @@ describe('proxy stack supervision', () => {
       );
       expect(h.mocks.bringUpColor).toHaveBeenCalledWith('green', expect.anything());
       expect(h.mocks.log).toHaveBeenCalledWith(
-        'run-hosting: restarting proxy — claude credentials changed',
+        'run-hosting: restarting proxy — claude credentials changed (token expires 01:00:00Z, in 1h0m; no nudge pending)',
       );
       expect(h.mocks.log).toHaveBeenCalledWith('run-hosting: swap complete — now serving green');
 
@@ -442,6 +442,24 @@ describe('proxy stack supervision', () => {
       expect(h.mocks.log).not.toHaveBeenCalled();
       h.feedLogLine(CRED_LINE); // a new key still prints (stream is live)
       expect(h.mocks.log).toHaveBeenCalledWith('12:00:01  ALLOW CRED  api.anthropic.com:443');
+    });
+
+    it('prints every upstream 401 on a credential-injected host, not just the first', async () => {
+      const h = makeHarness({ accessToken: 'A', expiresAt: 60 * MIN });
+      void runHostingLoop(baseConfig([h.channelConfig]), h.deps);
+      await flush();
+      h.mocks.log.mockClear();
+
+      const rejected = (time: string) =>
+        `envoy-1  | CFGM|term|${time}|api.anthropic.com|api.anthropic.com|via_upstream|401|-|10|100`;
+      h.feedLogLine(rejected('2026-07-10T12:00:01'));
+      h.feedLogLine(rejected('2026-07-10T12:00:02'));
+
+      expect(h.mocks.log.mock.calls.map((c) => c[0])).toEqual([
+        '12:00:01  ALLOW CRED  api.anthropic.com:443',
+        '12:00:01  AUTH REJECTED  api.anthropic.com:443  upstream returned 401',
+        '12:00:02  AUTH REJECTED  api.anthropic.com:443  upstream returned 401',
+      ]);
     });
 
     it('alternates the active color across successive swaps', async () => {

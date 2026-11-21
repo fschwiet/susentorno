@@ -168,6 +168,8 @@ export function runHostingLoop(config: RunHostingConfig, deps: RunHostingDeps): 
           now: deps.now,
           onExhausted: (message) => fatal(message),
           isSettled: () => settled,
+          log: deps.log,
+          error: deps.error,
         }),
     );
 
@@ -176,7 +178,8 @@ export function runHostingLoop(config: RunHostingConfig, deps: RunHostingDeps): 
       const access = parseLine(raw);
       if (!access) return;
       for (const entry of classify(access)) {
-        if (!unique.shouldPrint(entry)) continue;
+        // Every rejection prints: their timing against credential swaps is the diagnostic.
+        if (entry.tag !== 'AUTH REJECTED' && !unique.shouldPrint(entry)) continue;
         deps.log(formatOutput(entry));
       }
     };
@@ -272,7 +275,11 @@ export function runHostingLoop(config: RunHostingConfig, deps: RunHostingDeps): 
             if (result.restartNeeded) {
               restartNeeded = true;
               appliedChannels.push(channel);
-              reasons.push(`${channel.name} credentials changed`);
+              reasons.push(
+                result.detail
+                  ? `${channel.name} credentials changed (${result.detail})`
+                  : `${channel.name} credentials changed`,
+              );
             }
           }
 

@@ -19,6 +19,8 @@ function makeChannel(
     writeSecret: vi.fn(),
     nudgeRefresh: vi.fn().mockResolvedValue({ ok: true, stderr: '' }),
     onExhausted: vi.fn(),
+    log: vi.fn<(message: string) => void>(),
+    error: vi.fn<(message: string) => void>(),
   };
   const config: CredentialChannelConfig = {
     name: 'test',
@@ -37,6 +39,8 @@ function makeChannel(
     now: () => Date.now(),
     onExhausted: mocks.onExhausted,
     isSettled: () => false,
+    log: mocks.log,
+    error: mocks.error,
     ...depsOverrides,
   };
   return { channel: new CredentialChannel(config, deps), creds, mocks };
@@ -78,7 +82,11 @@ describe('credential channel lifecycle', () => {
       mocks.writeSecret.mockClear();
 
       creds.value = { accessToken: 'B', expiresAt: 60 * MIN };
-      expect(channel.prepareRestart()).toEqual({ restartNeeded: true, readable: true });
+      expect(channel.prepareRestart()).toEqual({
+        restartNeeded: true,
+        readable: true,
+        detail: expect.any(String),
+      });
       expect(mocks.writeSecret).toHaveBeenCalledWith(
         { accessToken: 'B', expiresAt: 60 * MIN },
         '/fake/secret.yaml',
@@ -112,7 +120,11 @@ describe('credential channel lifecycle', () => {
       mocks.writeSecret.mockClear();
 
       creds.value = { accessToken: 'A', expiresAt: 60 * MIN, accountId: 'acct-2' };
-      expect(channel.prepareRestart()).toEqual({ restartNeeded: true, readable: true });
+      expect(channel.prepareRestart()).toEqual({
+        restartNeeded: true,
+        readable: true,
+        detail: expect.any(String),
+      });
       expect(mocks.writeSecret).toHaveBeenCalledWith(
         { accessToken: 'A', expiresAt: 60 * MIN, accountId: 'acct-2' },
         '/fake/secret.yaml',
@@ -242,6 +254,93 @@ describe('credential channel lifecycle', () => {
       channel.armTimer();
       await vi.advanceTimersByTimeAsync(10 * MIN);
       expect(mocks.nudgeRefresh).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('diagnostic logging', () => {
+    it('logs the token expiry on the startup read', () => {
+      const { channel, mocks } = makeChannel({ accessToken: 'A', expiresAt: 90 * MIN });
+      channel.startupRead();
+      expect(mocks.log).toHaveBeenCalledWith(
+        'run-hosting: test: token expires 01:30:00Z, in 1h30m',
+      );
+    });
+
+    it('logs a nudge firing and succeeding', async () => {
+      const { channel, mocks } = makeChannel({ accessToken: 'A', expiresAt: 2 * MIN });
+      channel.startupRead();
+      channel.commit();
+      channel.armTimer(); // within the refresh window -> nudge now
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mocks.log).toHaveBeenCalledWith(
+        'run-hosting: test: nudging the CLI to refresh (token expires 00:02:00Z, in 2m0s)',
+      );
+      expect(mocks.log).toHaveBeenCalledWith(
+        'run-hosting: test: nudge succeeded; waiting up to 2m0s for the refreshed token',
+      );
+      expect(mocks.error).not.toHaveBeenCalled();
+    });
+
+    it('logs a failed nudge with its stderr and attempt count', async () => {
+      const { channel, mocks } = makeChannel({ accessToken: 'A', expiresAt: 2 * MIN });
+      mocks.nudgeRefresh.mockResolvedValueOnce({ ok: false, stderr: 'boom\n  second line\n' });
+      channel.startupRead();
+      channel.commit();
+      channel.armTimer();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mocks.error).toHaveBeenCalledWith(
+        'run-hosting: test: nudge failed: boom second line (attempt 1/3)',
+      );
+    });
+
+    it('logs a nudge whose token never arrived', async () => {
+      const { channel, mocks } = makeChannel({ accessToken: 'A', expiresAt: 2 * MIN });
+      channel.startupRead();
+      channel.commit();
+      channel.armTimer();
+      await vi.advanceTimersByTimeAsync(2 * MIN);
+
+      expect(mocks.error).toHaveBeenCalledWith(
+        'run-hosting: test: token was not refreshed within 2m0s of the nudge (attempt 1/3)',
+      );
+    });
+
+    it('attributes a refresh to a pending nudge', async () => {
+      const { channel, creds } = makeChannel({ accessToken: 'A', expiresAt: 2 * MIN });
+      channel.startupRead();
+      channel.commit();
+      channel.armTimer();
+      await vi.advanceTimersByTimeAsync(0);
+
+      creds.value = { accessToken: 'B', expiresAt: 482 * MIN };
+      expect(channel.prepareRestart().detail).toBe(
+        'expiry 00:02:00Z → 08:02:00Z; after a run-hosting nudge',
+      );
+    });
+
+    it('attributes a refresh with no nudge pending to something outside run-hosting', () => {
+      const { channel, creds } = makeChannel({ accessToken: 'A', expiresAt: 60 * MIN });
+      channel.startupRead();
+      channel.commit();
+      channel.armTimer(); // far from expiry: no nudge yet
+
+      creds.value = { accessToken: 'B', expiresAt: 540 * MIN };
+      expect(channel.prepareRestart().detail).toBe(
+        'expiry 01:00:00Z → 09:00:00Z; no nudge pending',
+      );
+    });
+
+    it('describes a token change whose expiry did not advance', () => {
+      const { channel, creds } = makeChannel({ accessToken: 'A', expiresAt: 60 * MIN });
+      channel.startupRead();
+      channel.commit();
+
+      creds.value = { accessToken: 'B', expiresAt: 60 * MIN };
+      expect(channel.prepareRestart().detail).toBe(
+        'token expires 01:00:00Z, in 1h0m; no nudge pending',
+      );
     });
   });
 

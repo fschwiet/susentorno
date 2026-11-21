@@ -85,4 +85,19 @@ describe('access-log line classification', () => {
       { time: '2026-07-06T12:00:00', tag: 'ALLOW MCP', domain: 'filesystem.internal', port: 443 },
     ]);
   });
+
+  it('adds AUTH REJECTED when a credential-injected host returns 401', () => {
+    expect(
+      classify(line({ pathId: 'term', serverName: 'api.anthropic.com', responseCode: '401' })),
+    ).toEqual([
+      { time: '2026-07-06T12:00:00', tag: 'ALLOW CRED', domain: 'api.anthropic.com', port: 443 },
+      { time: '2026-07-06T12:00:00', tag: 'AUTH REJECTED', domain: 'api.anthropic.com', port: 443 },
+    ]);
+    expect(
+      classify(line({ pathId: 'term', serverName: 'api.anthropic.com', responseCode: '403' })),
+    ).toHaveLength(1);
+    expect(
+      classify(line({ pathId: 'pass', serverName: 'pypi.org', responseCode: '401' })),
+    ).toHaveLength(1);
+  });
 });

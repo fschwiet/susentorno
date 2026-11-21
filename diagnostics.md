@@ -22,6 +22,18 @@ Read-only diagnostic scripts report whether the proxy stack and a guest are set 
 - `BLOCK TLS` — :443, no allow-list match (connection dropped)
 - `BLOCK HTTP` — :80, not allow-listed (403)
 - `BLOCK LIST` — denied specifically because the host matched an entry in `block-list.txt` (`--skip-allow-list` does not override this)
+- `AUTH REJECTED` — a TLS-terminated host answered 401. Unlike the tags above, it prints on every occurrence. It usually means upstream refused the injected host token, though a request the guest sent with no credential at all also lands here.
+
+## Credential refresh lines
+
+`run-hosting` keeps each host credential (`claude`, `codex`) fresh by watching its file and, 3 minutes before expiry (`--refresh-window`), nudging that CLI on the host to refresh. Clock times on these lines are UTC, like the access-log lines.
+
+- `claude: token expires 01:32:05Z, in 7h59m` — startup: the expiry of the token the proxy is serving.
+- `claude: nudging the CLI to refresh (...)`, then `claude: nudge succeeded; waiting up to 2m0s for the refreshed token` — a nudge fired and the CLI exited cleanly. Success means only that the CLI ran; the refresh has landed once the restart line below appears.
+- `claude: nudge failed: <stderr> (attempt n/3)` or `claude: token was not refreshed within 2m0s of the nudge (attempt n/3)` — a failed attempt. Exhausting `--max-attempts` stops `run-hosting`.
+- `restarting proxy — claude credentials changed (expiry 17:32:05Z → 01:32:05Z; after a run-hosting nudge)` — the refresh followed a nudge. `no nudge pending` instead means the file changed from outside `run-hosting`, such as running `claude` on the host yourself.
+
+A guest that reports "Login expired · Please run /login" around a rotation is worth checking against these lines: `AUTH REJECTED` lines for `api.anthropic.com` near a `restarting proxy` line point at the window while the proxy still served the previous token.
 
 ## A terminated destination returns 503
 

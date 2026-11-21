@@ -1,5 +1,6 @@
 import { planNextActions } from './planNextActions';
 import type { Credentials, NudgeResult, RefreshState } from './types';
+import { describeExpiry, formatDuration, formatUtcClock } from './describeTime';
 
 export interface CredentialChannelConfig {
   name: string;
@@ -28,11 +29,21 @@ export interface CredentialChannelDeps {
   onExhausted: (message: string) => void;
   /** True once the loop has begun shutting down; the channel stops acting on async outcomes. */
   isSettled: () => boolean;
+  /** Progress lines: the token's expiry at startup, a nudge firing, a nudge succeeding. */
+  log: (message: string) => void;
+  /** Problem lines: a nudge failing, or a nudge that did not refresh the token in time. */
+  error: (message: string) => void;
 }
 
 export interface PrepareResult {
   restartNeeded: boolean;
   readable: boolean;
+  /**
+   * Set when restartNeeded: what changed and whether it followed one of our nudges, so
+   * the restart line tells a nudge-driven refresh apart from one made outside run-hosting
+   * (e.g. the user running claude on the host).
+   */
+  detail?: string;
 }
 
 /**
@@ -78,6 +89,9 @@ export class CredentialChannel {
     this.lastReadCreds = creds;
     this.lastSeenExpiresAt = creds.expiresAt;
     this.syncAccountId(creds.accountId);
+    this.deps.log(
+      `run-hosting: ${this.name}: token ${describeExpiry(creds.expiresAt, this.deps.now())}`,
+    );
     return creds;
   }
 
@@ -95,12 +109,14 @@ export class CredentialChannel {
     });
 
     let restartNeeded = false;
+    let detail: string | undefined;
     const accountIdChanged = creds.accountId !== this.lastAppliedAccountId;
     if (plan.propagate || accountIdChanged) {
       this.config.writeSecret(creds, this.config.secretPath);
       this.pendingToken = creds.accessToken;
       this.pendingAccountId = creds.accountId;
       restartNeeded = true;
+      detail = this.describeChange(creds, advanced);
     }
     // Compared against the last successful sync rather than what the proxy last
     // committed: the sync doesn't wait on a proxy swap, so a failed swap doesn't cause
@@ -113,7 +129,17 @@ export class CredentialChannel {
     }
     this.lastReadCreds = creds;
     this.lastSeenExpiresAt = creds.expiresAt;
-    return { restartNeeded, readable: true };
+    return { restartNeeded, readable: true, detail };
+  }
+
+  /** Read before the advance resets awaitingOutcome, so it still knows a nudge was pending. */
+  private describeChange(creds: Credentials, advanced: boolean): string {
+    const expiry =
+      advanced && this.lastSeenExpiresAt !== null
+        ? `expiry ${formatUtcClock(this.lastSeenExpiresAt)} → ${formatUtcClock(creds.expiresAt)}`
+        : `token ${describeExpiry(creds.expiresAt, this.deps.now())}`;
+    const source = this.awaitingOutcome ? 'after a run-hosting nudge' : 'no nudge pending';
+    return `${expiry}; ${source}`;
   }
 
   commit(): void {
@@ -176,7 +202,9 @@ export class CredentialChannel {
     if (this.deps.isSettled()) return;
     if (this.awaitingOutcome) {
       // Outcome deadline reached with no observed advance -> failed attempt.
-      this.handleFailedAttempt();
+      this.handleFailedAttempt(
+        `token was not refreshed within ${formatDuration(this.config.retryIntervalMs)} of the nudge`,
+      );
     } else {
       await this.doNudge();
     }
@@ -187,19 +215,35 @@ export class CredentialChannel {
     this.lastNudgeAt = this.deps.now();
     // Arm the outcome deadline: retryInterval from now.
     this.armAt(this.lastNudgeAt + this.config.retryIntervalMs);
+    const expiry = this.lastReadCreds
+      ? `token ${describeExpiry(this.lastReadCreds.expiresAt, this.lastNudgeAt)}`
+      : 'token expiry unknown';
+    this.deps.log(`run-hosting: ${this.name}: nudging the CLI to refresh (${expiry})`);
     const result = await this.config.nudgeRefresh();
-    if (this.deps.isSettled() || !this.awaitingOutcome) return;
+    if (this.deps.isSettled()) return;
+    if (result.ok) {
+      // A refresh the watcher already saw has cleared awaitingOutcome; only a pending one waits.
+      this.deps.log(
+        this.awaitingOutcome
+          ? `run-hosting: ${this.name}: nudge succeeded; waiting up to ${formatDuration(this.config.retryIntervalMs)} for the refreshed token`
+          : `run-hosting: ${this.name}: nudge succeeded`,
+      );
+    }
+    if (!this.awaitingOutcome) return;
     if (result.ok) {
       this.lastNudgeStderr = null;
     } else {
       this.lastNudgeStderr = result.stderr;
-      this.handleFailedAttempt();
+      this.handleFailedAttempt(`nudge failed: ${summarizeStderr(result.stderr)}`);
     }
   }
 
-  private handleFailedAttempt(): void {
+  private handleFailedAttempt(reason: string): void {
     this.clearTimer();
     this.consecutiveFailures += 1;
+    this.deps.error(
+      `run-hosting: ${this.name}: ${reason} (attempt ${this.consecutiveFailures}/${this.config.maxAttempts})`,
+    );
     if (this.consecutiveFailures >= this.config.maxAttempts) {
       this.deps.onExhausted(
         this.lastNudgeStderr ??
@@ -209,4 +253,11 @@ export class CredentialChannel {
     }
     void this.doNudge();
   }
+}
+
+/** One line of the nudge's stderr, bounded, for the per-attempt failure line. */
+function summarizeStderr(stderr: string): string {
+  const flat = stderr.replace(/\s+/g, ' ').trim();
+  if (flat === '') return 'the CLI exited non-zero with no stderr';
+  return flat.length > 300 ? `${flat.slice(0, 300)}…` : flat;
 }
