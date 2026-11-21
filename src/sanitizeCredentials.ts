@@ -7,8 +7,8 @@ export const PLACEHOLDER_REFRESH_TOKEN = 'susentorno-placeholder-refresh-token';
 export const PLACEHOLDER_EXPIRES_AT = 4102444800000;
 
 /**
- * Turn a real host credentials file into the VM placeholder copy: tokens and expiry
- * become placeholders, every other field passes through so the file matches the
+ * Turn a real host credentials file into the VM placeholder copy: tokens and both
+ * expiries become placeholders, every other field passes through so the file matches the
  * user's real account shape. Output is pretty-printed JSON, LF line endings only.
  */
 export function sanitizeCredentials(raw: string): string {
@@ -28,6 +28,9 @@ export function sanitizeCredentials(raw: string): string {
   record.accessToken = PLACEHOLDER_ACCESS_TOKEN;
   record.refreshToken = PLACEHOLDER_REFRESH_TOKEN;
   record.expiresAt = PLACEHOLDER_EXPIRES_AT;
+  // Claude Code treats a refresh token as usable only while this is in the future; the
+  // host's value would go stale in the guest's long-lived copy.
+  record.refreshTokenExpiresAt = PLACEHOLDER_EXPIRES_AT;
 
   return JSON.stringify(parsed, null, 2) + '\n';
 }

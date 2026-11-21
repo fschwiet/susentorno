@@ -31,6 +31,19 @@ describe('credential sanitization — claude credential channel (placeholder swa
     expect(output).not.toContain('real-refresh-secret');
   });
 
+  it("replaces the host's refresh-token expiry, which would otherwise freeze into the share", () => {
+    // Claude Code only treats a refresh token as usable while refreshTokenExpiresAt is in
+    // the future, so a passed-through host value goes stale in the guest's copy.
+    const withRefreshExpiry = JSON.stringify({
+      claudeAiOauth: {
+        ...JSON.parse(realCredentials).claudeAiOauth,
+        refreshTokenExpiresAt: 1787112751128,
+      },
+    });
+    const parsed = JSON.parse(sanitizeCredentials(withRefreshExpiry));
+    expect(parsed.claudeAiOauth.refreshTokenExpiresAt).toBe(PLACEHOLDER_EXPIRES_AT);
+  });
+
   it('emits LF-only output ending with a newline', () => {
     const output = sanitizeCredentials(realCredentials);
     expect(output).not.toContain('\r');
