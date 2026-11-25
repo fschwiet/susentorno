@@ -12,7 +12,7 @@ Issues and specs for this repo live as markdown files in `docs/matt-pocock/`.
 
 ## When a skill says "publish to the issue tracker"
 
-Create a new file under `docs/matt-pocock/<feature-slug>/` (creating the directory if needed).
+Create a new file under `docs/matt-pocock/<feature-slug>/` (creating the directory if needed). Commit the file. If creating multiple tickets commit them together. If the ticket is based of a spec file make sure that spec is committed as well.
 
 ## When a skill says "fetch the relevant ticket"
 
