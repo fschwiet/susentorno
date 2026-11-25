@@ -54,8 +54,7 @@ export function parseVmNames(stdout: string): string[] {
  * Windows guests boot with the Microsoft Windows template; the UEFI CA
  * template above is for Ubuntu's shim. No vTPM accompanies it — Secure Boot
  * and vTPM are independent, and omitting the TPM is what keeps automatic
- * device encryption from sealing the golden volume to the build VM (see the
- * spec's section 1.4).
+ * device encryption from sealing the golden volume to the build VM.
  */
 export const SECURE_BOOT_WINDOWS_TEMPLATE = 'MicrosoftWindows';
 

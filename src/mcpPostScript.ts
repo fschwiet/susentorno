@@ -3,8 +3,9 @@ import type { McpServerConfig } from './mcpServers';
 /**
  * Unconditional remove-then-add per server, per CLI: converges additions/edits on
  * every re-run (a server whose hostname changed gets re-registered), but does NOT
- * remove a server deleted or renamed out of mcp-servers.yaml — that's a documented,
- * accepted manual step (see the design spec). `codex mcp` has no --scope flag.
+ * remove a server deleted or renamed out of mcp-servers.yaml — that's an accepted
+ * manual step: run `claude mcp remove` / `codex mcp remove` in the guest. `codex mcp`
+ * has no --scope flag.
  */
 export function generateMcpPostScript(servers: McpServerConfig[], platform: 'sh' | 'ps1'): string {
   if (servers.length === 0) return '';

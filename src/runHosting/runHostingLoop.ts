@@ -365,8 +365,9 @@ export function runHostingLoop(config: RunHostingConfig, deps: RunHostingDeps): 
         hostname: s.hostname,
         port: mcpPorts[i],
       }));
-      // {ip} is always 127.0.0.1: the spawned process itself must bind loopback only
-      // (see the design spec) — only the Envoy cluster upstream uses host.docker.internal.
+      // {ip} is always 127.0.0.1: the spawned process itself must bind loopback only,
+      // because a host-run MCP server has no authentication and must be reachable only
+      // through Envoy — only the Envoy cluster upstream uses host.docker.internal.
       const mcpSpecs: McpServerSpec[] = mcpServerConfigs.map((s, i) => ({
         name: s.name,
         hostname: s.hostname,

@@ -56,7 +56,6 @@ describe('autoinstall seed generators', () => {
     // Subiquity's driver-listing run (`ubuntu-drivers list` in an apt overlay)
     // once oopsed the live kernel in overlayfs and hung the build. Turning off
     // search_drivers skips it; nothing may turn driver installation on.
-    // See docs/matt-pocock/golden-image-installer-kernel-oops/.
     expect(ai.source).toEqual({ search_drivers: false });
     expect(ai.drivers?.install ?? false).toBe(false);
     expect(ai.storage.layout).toEqual({ name: 'direct', match: { size: 'largest' } });

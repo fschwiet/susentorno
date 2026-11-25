@@ -153,8 +153,8 @@ function isBridgeError(
  * Credential-scoped PowerShell Direct executor. Every invocation starts a
  * short-lived bridge (templates/powershell/windowsGuestBridge.ps1): only the
  * bridge path and VM name go in argv, and the credential and base64 script
- * go over stdin as one JSON request. See the spec's "PowerShell Direct
- * boundary" section.
+ * go over stdin as one JSON request, so the guest password never appears in
+ * a process command line.
  */
 export function createWindowsGuestExecutor(
   options: CreateWindowsGuestExecutorOptions,
