@@ -74,6 +74,8 @@ susentorno creates development environments in which coding agents run inside is
 
 **Post-isolation step**: A provisioning step that runs after general network access has been removed from the guest. _Avoid_: Post-script, offline script
 
+**Replay**: A rerun of guest setup that returns the guest to the setup phase and runs every provisioning step again from the start, rather than resuming where a failure stopped. _Avoid_: Resume, retry
+
 **Home settings transform**: An ordered, declarative customization that merges environment-specific values into a guest user's JSON settings. _Avoid_: jq file, settings patch
 
 **Guest role**: One disposable guest identity within the guest test tier, from which its VM name, differencing disk, diagnostic channel, and artifacts directory all derive. Follows **Isolation name** in reaching from domain vocabulary into the test tiers. _Avoid_: test guest, VM name
